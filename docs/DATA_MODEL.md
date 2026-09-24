@@ -44,7 +44,7 @@ Every business-owned table is declared with the `tenantTable()` helper, which ad
 | RLS                        | `ENABLE` + `FORCE ROW LEVEL SECURITY` + the generated standard policy (ARCHITECTURE.md §RLS)            |
 
 - `app.touch_row()` (BEFORE UPDATE on `businesses` and every tenant table) also rejects changes to `id`, `business_id`, `created_by`, `created_at`.
-- Idempotent create: on `id` conflict compare `business_id`, `created_by`, `request_hash`. Same → return the existing row. Different → typed `CONFLICT`. Never a bare `ON CONFLICT DO NOTHING`.
+- Idempotent create: on `id` conflict compare `business_id`, `created_by`, `request_hash`. Same → return the existing row. Different → typed `CONFLICT`. Never a bare `ON CONFLICT DO NOTHING`. IMPLEMENTED as `insertIdempotent(tx, table, values)` in `packages/db`: `ON CONFLICT (id) DO NOTHING`, then the comparison (creator = the current user); a mismatch, or an id taken in another business (invisible under RLS), throws `ConflictError`; any other unique violation still raises 23505.
 - No hard deletes of business data. Disabling a module hides its data, never deletes it.
 
 ### 1.3 Actor columns and auth references
@@ -184,6 +184,7 @@ Tenant root: `businesses.id` is the `business_id` used everywhere. Has `created_
 - `module_key text` (code manifest key) · `enabled boolean` · `enabled_at timestamptz` · `enabled_by uuid` (no FK).
 - `UNIQUE (business_id, module_key)`.
 - Availability (`released` | `planned`) lives in code manifests, not in the DB. Setup may enable a planned module; it appears only after release. Disabling hides; data is kept.
+- No row = the default: core modules on, optional modules off. A row switches a module on or off; Dashboard and Settings are always on and their rows are ignored (D-059). Smart Setup writes `enabled = false` rows for the core modules a business does not use.
 
 ### locations
 
@@ -217,7 +218,7 @@ Tenant root: `businesses.id` is the `business_id` used everywhere. Has `created_
 - `member_permission_overrides`: `member_id` · `permission_key` · `effect` (`allow` | `deny`). `UNIQUE (business_id, member_id, permission_key)`.
 - `member_locations`: `member_id` · `location_id` (both composite FKs). `UNIQUE (business_id, member_id, location_id)`.
 - Resolved by the domain engine (`resolveEffective`, `can`), fully tested in M1. M1 UI = role templates, assign role, edit role permissions only; override and location-scope UI come with the first module that has sensitive fields.
-- OPEN: meaning of an empty location set (proposal: all locations). Settle when building the engine.
+- An empty location set means **all** locations of the business, including ones added later; a non-empty set limits the member to those locations (D-054).
 
 ### business_invitations
 

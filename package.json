@@ -14,7 +14,9 @@
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "db:reset": "supabase db reset",
-    "db:test": "supabase test db && pnpm --filter @bizcost/db test:db"
+    "db:test": "supabase test db && pnpm --filter @bizcost/db test:db",
+    "api:test": "pnpm --filter @bizcost/api test:api",
+    "auth:signing-key": "node -e \"const fs=require('node:fs');const f='supabase/signing_keys.json';if(fs.existsSync(f)){console.error(f+' already exists (delete it to rotate the local key)');process.exit(1)}fs.writeFileSync(f,'[]')\" && supabase gen signing-key --algorithm ES256 --yes"
   },
   "devDependencies": {
     "@bizcost/config": "workspace:*",

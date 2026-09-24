@@ -1,0 +1,50 @@
+export {
+  CAPABILITIES,
+  CAPABILITY_KEYS,
+  DERIVED_CAPABILITY_KEYS,
+  isCapabilityKey,
+  isStoredCapabilityKey,
+  resolveCapabilities,
+  STORED_CAPABILITY_KEYS,
+  type Capabilities,
+  type CapabilityDefinition,
+  type CapabilityKey,
+  type CapabilityStorage,
+  type DerivedCapabilityKey,
+  type ResolveCapabilitiesInput,
+  type StoredCapabilityKey,
+} from './capabilities'
+export {
+  ALWAYS_ENABLED_MODULE_IDS,
+  MODULE_IDS,
+  MODULES,
+  type ModuleAvailability,
+  type ModuleId,
+  type ModuleKind,
+  type ModuleManifest,
+  type ModulePermissionKey,
+  type NavEntry,
+  type QuickAction,
+} from './manifests'
+export { isCatalogPermissionKey, PERMISSION_CATALOG, type PermissionKey } from './permissions'
+export {
+  isRoleTemplateKey,
+  ROLE_TEMPLATE_KEYS,
+  ROLE_TEMPLATES,
+  roleTemplateByKey,
+  type RoleTemplate,
+  type RoleTemplateKey,
+} from './role-templates'
+export {
+  buildModuleNav,
+  isModuleActive,
+  isModuleEnabled,
+  isModuleReleased,
+  isModuleVisible,
+  moduleById,
+  releasedModules,
+  resolveEnabledModules,
+  visibleNav,
+  visibleQuickActions,
+  type ModuleState,
+} from './registry'

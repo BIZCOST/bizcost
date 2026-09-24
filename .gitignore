@@ -28,3 +28,9 @@ supabase/.temp/
 Thumbs.db
 .vscode/*
 !.vscode/extensions.json
+
+# Local JWT signing keys (supabase gen signing-key): private key material, never committed
+supabase/signing_keys.json
+
+# Next.js
+next-env.d.ts

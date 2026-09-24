@@ -12,6 +12,8 @@ concurrency:
 jobs:
   check:
     runs-on: ubuntu-latest
+    env:
+      NEXT_TELEMETRY_DISABLED: '1'
     steps:
       - uses: actions/checkout@v7
       - uses: pnpm/action-setup@v6
@@ -22,6 +24,8 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - run: pnpm format:check
       - run: pnpm check
+      # The web app builds without any environment (it is read on the first request).
+      - run: pnpm --filter @bizcost/web build
 
   db:
     runs-on: ubuntu-latest
@@ -44,7 +48,14 @@ jobs:
           pnpm --filter @bizcost/db db:generate
           git status --porcelain supabase/migrations
           test -z "$(git status --porcelain supabase/migrations)"
-      # Applies supabase/migrations and supabase/seed.sql to a fresh local database.
-      - run: supabase db start
+      # A throwaway ES256 signing key for this run's Auth server (config.toml signing_keys_path; the
+      # file is gitignored). The API accepts only asymmetric tokens, verified with getClaims().
+      - run: pnpm auth:signing-key
+      # Postgres (migrations + seed.sql), Auth and the API gateway: what pgTAP, the @bizcost/db tests
+      # and the @bizcost/api integration tests need. `supabase db start` alone has no Auth server.
+      - run: >-
+          supabase start
+          -x realtime,storage-api,imgproxy,mailpit,postgrest,postgres-meta,studio,edge-runtime,logflare,vector,supavisor
       - run: supabase test db
       - run: pnpm --filter @bizcost/db test:db
+      - run: pnpm --filter @bizcost/api test:api

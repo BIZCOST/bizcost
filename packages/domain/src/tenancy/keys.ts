@@ -22,6 +22,14 @@ export type InvitationStatus = (typeof INVITATION_STATUSES)[number]
 export const CAPABILITY_SOURCES = ['setup', 'user'] as const
 export type CapabilitySource = (typeof CAPABILITY_SOURCES)[number]
 
+/** `profiles.locale` and `businesses.default_locale`. */
+export const LOCALES = ['en', 'ar'] as const
+export type Locale = (typeof LOCALES)[number]
+
+export function isLocale(value: unknown): value is Locale {
+  return (LOCALES as readonly unknown[]).includes(value)
+}
+
 /** audit_log.action, written by the database audit trigger. */
 export const AUDIT_ACTIONS = ['insert', 'update', 'delete'] as const
 export type AuditAction = (typeof AUDIT_ACTIONS)[number]

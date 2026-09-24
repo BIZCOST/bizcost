@@ -25,6 +25,27 @@ const UI_AND_IO = [
 
 const SERVER_PACKAGES = ['@bizcost/db', '@bizcost/db/*', '@bizcost/api', '@bizcost/api/*']
 
+// Layer order domain → contracts → modules → db → api (docs/ARCHITECTURE.md §Package dependency
+// rules): a package imports only packages earlier in the chain.
+const LAYERS = ['domain', 'contracts', 'modules', 'db', 'api']
+
+const PURE_IMPORTS = {
+  group: [...UI_AND_IO, ...SERVER_PACKAGES, '@bizcost/app-core', '@bizcost/app-core/*'],
+  message: 'Pure packages must not import UI, framework, database or server code.',
+}
+
+function laterLayers(layer) {
+  const later = LAYERS.slice(LAYERS.indexOf(layer) + 1)
+  return {
+    group: later.flatMap((name) => [`@bizcost/${name}`, `@bizcost/${name}/*`]),
+    message: `Layer order is ${LAYERS.join(' → ')}: ${layer} may import only earlier layers.`,
+  }
+}
+
+function restrictedImports(...patterns) {
+  return { 'no-restricted-imports': ['error', { patterns }] }
+}
+
 // Money and quantities are decimal strings / decimal.js — never JS floats (docs/ARCHITECTURE.md).
 const NO_FLOAT_MONEY = [
   {
@@ -91,17 +112,28 @@ export default tseslint.config(
     ],
     rules: { 'bizcost/no-raw-set': 'error' },
   },
-  // Package boundaries (dependency direction: domain ← contracts ← modules ← db ← api).
+  // Package boundaries: pure packages, then the layer order (a later block replaces the rule's
+  // options for its files, so each layer block repeats the pure-package patterns).
+  { files: PURE_PACKAGES, rules: restrictedImports(PURE_IMPORTS) },
+  ...['domain', 'contracts', 'modules'].map((layer) => ({
+    files: [`packages/${layer}/**`],
+    rules: restrictedImports(PURE_IMPORTS, laterLayers(layer)),
+  })),
+  { files: ['packages/db/**'], rules: restrictedImports(laterLayers('db')) },
+  // The API reaches the database only through ctx.tenantTx / ctx.tx, which bind withTenantTx to the
+  // verified caller and the request id (context.ts). The raw pool is never on the context.
   {
-    files: PURE_PACKAGES,
+    files: ['packages/api/src/**/*.ts'],
+    ignores: ['packages/api/src/context.ts', '**/*.test.ts'],
     rules: {
       'no-restricted-imports': [
         'error',
         {
-          patterns: [
+          paths: [
             {
-              group: [...UI_AND_IO, ...SERVER_PACKAGES, '@bizcost/app-core', '@bizcost/app-core/*'],
-              message: 'Pure packages must not import UI, framework, database or server code.',
+              name: '@bizcost/db',
+              importNames: ['createDb', 'withTenantTx'],
+              message: 'Use ctx.tenantTx() / ctx.tx(): every data access runs as the caller.',
             },
           ],
         },

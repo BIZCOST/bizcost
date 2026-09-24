@@ -3,7 +3,7 @@
 Purpose: technical system design, repo structure and engineering conventions for BizCost (web + mobile + shared backend).
 Last updated: 2026-09-25
 
-**Status:** the repo scaffold (Step 0a) and the data foundation (Step 1: `packages/db`, `supabase/` migrations and pgTAP tests) exist. Everything below is **DECIDED** design. Items tagged **[Later]** are planned but not part of M1. Product rules are in PRODUCT.md, tables in DATA_MODEL.md, steps and deadlines in ROADMAP.md, and the reasons behind each choice in DECISIONS.md.
+**Status:** the repo scaffold (Step 0a), the data foundation (Step 1: `packages/db`, `supabase/` migrations and pgTAP tests) and the API core (Step 2: `packages/contracts`, `packages/modules`, `packages/api`, and `apps/web` as the API host) exist. Everything below is **DECIDED** design. Items tagged **[Later]** are planned but not part of M1. Product rules are in PRODUCT.md, tables in DATA_MODEL.md, steps and deadlines in ROADMAP.md, and the reasons behind each choice in DECISIONS.md.
 
 ## Overview
 
@@ -61,7 +61,7 @@ Upgrade triggers: ROADMAP.md §Later.
 
 ## Repo structure
 
-Planned layout. Exists today: root config, `packages/config`, `packages/domain`, `packages/db`, `supabase/`, `docs/`, `.github/workflows/ci.yml`. The rest is created by the step that needs it.
+Planned layout. Exists today: root config, `packages/config`, `packages/domain`, `packages/contracts`, `packages/modules`, `packages/db`, `packages/api`, `apps/web` (only `app/layout.tsx`, `app/api/trpc/[trpc]/route.ts`, `instrumentation.ts`, `src/lib/{env,sentry,report-error}.ts`, `vercel.json`), `supabase/`, `docs/`, `.github/workflows/ci.yml`. The rest is created by the step that needs it.
 
 ```
 apps/
@@ -108,11 +108,12 @@ CLAUDE.md, package.json, pnpm-workspace.yaml, turbo.json, .npmrc, .gitattributes
 
 ### Package dependency rules (enforced by lint)
 
-- Layer order: `domain` → `contracts` → `modules` → `db` → `api`. A package imports only packages earlier in this chain.
+- Layer order: `domain` → `contracts` → `modules` → `db` → `api`. A package imports only packages earlier in this chain (`no-restricted-imports` per layer; probe tests in `packages/config/eslint/boundaries.test.js`).
 - `app-core` imports `domain`, `contracts`, `modules` and `i18n`. From `api` it takes types only (`import type { AppRouter }`).
 - Apps never import `db` or `api`. The only exceptions are `apps/web/app/api/trpc/[trpc]/route.ts` and `apps/web/src/lib/trpc/server.tsx` (the server caller).
 - No `react-dom` or `react-native` in shared packages. No `react` at all in `domain`, `contracts`, `modules` or `i18n`.
 - `packages/db` and `packages/api` start with `import 'server-only'`. `adminDb` has its own lint-restricted import path.
+- Inside `packages/api/src`, only `context.ts` may import `createDb`/`withTenantTx`; everything else reaches the database through `ctx.tenantTx`/`ctx.tx`.
 
 ### Platform roles & parity
 
@@ -125,12 +126,22 @@ CLAUDE.md, package.json, pnpm-workspace.yaml, turbo.json, .npmrc, .gitattributes
 
 - **Web:** same-origin `/api/trpc` with `@supabase/ssr` cookies. `proxy.ts` (Next 16) refreshes the session. Mutations check the `Origin` header.
 - **Mobile:** `https://app.<domain>/api/trpc` with `Authorization: Bearer <access_token>`, `x-business-id` and `x-app-version`. No CORS is needed.
-- **Session check:** Supabase uses asymmetric JWT signing keys. The server calls only `supabase.auth.getClaims()`, which verifies locally against JWKS, for both cookies and Bearer tokens.
+- **Session check:** Supabase uses asymmetric JWT signing keys. The server calls only `supabase.auth.getClaims()`, which verifies locally against JWKS, for both cookies and Bearer tokens. An `Authorization` header wins over cookies. Only ES256/RS256 tokens are accepted: an HS* token is rejected before `getClaims()`, which would otherwise ask the Auth server and accept tokens signed with the legacy JWT secret (D-056). Before `getClaims()`, a token must be three parts with a JSON header naming ES256/RS256 and a `kid` (so auth-js verifies against the JWKS and never falls back to asking the Auth server) and a JSON payload with a numeric `exp`; the cookie path reads the stored session only to take its access token and checks it the same way. Anything `getClaims()` returns or throws for a bad token (bad signature, expiry, key-type mismatch, malformed JSON) is 401 and is not reported; only an unreachable Auth server (JWKS or refresh) is `internal`. The claims must have `role` and `aud` `authenticated`, a UUID `sub` and `is_anonymous` false. On the cookie path `@supabase/ssr` may refresh an expiring session and send the new cookies on the same response.
 - **No Server Actions for data.** The tRPC router is the only write path. No `'use cache'` for business data.
 - **RSC is for layouts only.** They call procedures through `createCaller` (no HTTP hop), e.g. `b/[businessId]/layout.tsx` loads `me` as `initialData`. Screens are client components. [Later]: prefetch + `HydrationBoundary` for the dashboard.
 - **tRPC links per platform:** the `app-core` factory takes the link from the app. Web uses `httpBatchStreamLink`/`httpBatchLink`. Mobile uses `httpBatchLink`, or `expo/fetch` if streaming is needed.
 - **Wire format:** plain JSON with no superjson. Decimals are strings, timestamps are ISO, `business_date` is `YYYY-MM-DD`.
 - **Procedure bases:** `public`, `authed`, `business`. Errors are typed and carry i18n keys.
+- **As built in Step 2 (`packages/api`, D-057):**
+  - `createFetchHandler(deps)` (fetch Request → Response) is mounted by `apps/web/app/api/trpc/[trpc]/route.ts`. A batch may hold at most `API_MAX_BATCH_SIZE` (20, `@bizcost/contracts`) calls, else 400 before any procedure runs; client batch links set `maxItems` to it. `createContext({ req, resHeaders, deps, router })` gives each request a UUIDv7 `requestId`: response header `x-request-id`, passed to `withTenantTx`, so every audit row of the request carries it. A server-side caller (the RSC caller, Step 3) builds the context the same way with `appRouter` and calls `createCallerFactory(appRouter)(ctx)`.
+  - Middleware order on every procedure: `mapErrors → appVersionGate → originCheck → [authed → businessScoped] → redact → [requireModule → requirePermission] → output validation → handler`. A contract test walks every procedure of `appRouter`: Zod `.output()`, redact placement, sensitive fields only in business procedures that return `withMeta()`.
+  - The context holds no database pool: `ctx.tenantTx(businessId | null, fn)` runs `withTenantTx` as the verified caller with the request id (UNAUTHORIZED without a session), so a procedure cannot act as another user. `authed` adds `ctx.auth`. `business` reads `x-business-id` (not a UUID → `validation`); loads membership, role, role permissions, overrides, member locations, enabled modules, stored capabilities and `businesses.vat_registered` in ONE statement inside `withTenantTx` (memoized per request, so a batch loads it once); answers "not a member" and "no such business" with the same FORBIDDEN; adds `ctx.access` and `ctx.tx(fn)`; sends `x-permissions-version`. Procedures reach the database only through `ctx.tx`/`ctx.tenantTx` (lint: only `context.ts` imports `withTenantTx`/`createDb`).
+  - `requireModule(id)`: released and enabled, else MODULE_DISABLED. Core modules are on unless a `business_modules` row switches them off; optional modules are on only through an enabled row; Dashboard and Settings are always on (D-059). `requirePermission(key)`: `can()`, else FORBIDDEN. `assertQueryable(ctx, fields)`: FORBIDDEN when a filter/sort/group/search/export field has a hidden category.
+  - Errors: `error.data` carries `appCode` (`APP_ERROR_CODES`) and `i18nKey` (`errors.<code>`). Database failures are mapped by SQLSTATE (23505/40001/40P01 → conflict; 23514/23503/23502/22P02/22001 → validation; 42501 → forbidden), with the original kept only as `cause`. In production the message is the app code and there is no stack. `app_version_unsupported` is HTTP 412; `module_disabled` is 403.
+  - App-version gate: an `x-app-version` below `MIN_SUPPORTED_APP_VERSION`, or not a valid semver, gets `app_version_unsupported`. Web sends no header.
+  - Origin check: every mutation without an `Authorization` header (cookie session or signed out) needs an `Origin` equal to one of `APP_ORIGINS`, else FORBIDDEN. Bearer requests skip it.
+  - Routers: `health` (public: `{ok, region: VERCEL_REGION ?? 'local', version}`), `me` (authed, memoized per request so a batch reads once), `business.context` (business). `me` creates the profile if missing (display name = email local part; locale from `user_metadata.locale`, else `ar`; an existing profile is never overwritten) and lists the businesses the caller can open (active memberships of live businesses), each with its role template read in that business's own `withTenantTx` (roles are tenant rows).
+  - Idempotent creates: `insertIdempotent(tx, table, values)` in `packages/db` (DATA_MODEL.md §1.2) throws `ConflictError`, which the API maps to CONFLICT.
 - **API evolution:** tRPC serves our own apps only. Changes are additive, and anything removed first gets a deprecation window. When `x-app-version` is below `minSupportedVersion`, the server returns a typed error and the app shows a force-update screen. EAS Update uses a fingerprint runtime.
 - [Later]: REST `/v1` (OpenAPI generated from the same Zod schemas) for integrations, webhooks under `/api/hooks`, jobs under `/api/jobs`.
 
@@ -193,6 +204,7 @@ CLAUDE.md, package.json, pnpm-workspace.yaml, turbo.json, .npmrc, .gitattributes
 ### Secrets & server-only code
 
 - The service/secret key is server-only, used for exactly: Auth admin, Storage signed URLs, background jobs. Sentry scrubs cost values. The AI layer [Later] only creates drafts a human confirms, and its output passes through redaction.
+- **Telemetry (Step 2, D-058):** Sentry (`@sentry/nextjs`, server only, on only when `SENTRY_DSN` is set) collects no user info, cookies, bodies, query strings, DB query data or stack-frame variables (`dataCollection`). `beforeSend` drops request bodies, cookies and query strings, replaces any key like cost/profit/margin/price/salary/wage/payroll or a credential, and strips Drizzle's bound `params:` from error messages, causes included. Internal API errors are also logged with the request id and the same scrubbing (`apps/web/src/lib/report-error.ts`).
 
 ### Storage
 
@@ -217,6 +229,7 @@ CLAUDE.md, package.json, pnpm-workspace.yaml, turbo.json, .npmrc, .gitattributes
   - `.output()` is mandatory on every procedure (CI check). Zod objects strip unknown keys.
   - Sensitivity categories: `cost`, `profit_margin`, `supplier_price`, `payroll`, `employee_pii`. They are grouped so a hidden value cannot be derived from visible ones (e.g. price + margin reveals cost). Tags go in Zod v4 metadata.
   - The `redact` middleware reads the output-schema metadata automatically. A hidden field is removed and listed in `meta.redacted`, and the UI shows a lock instead of a misleading 0.
+  - As built (D-057, D-060): the middleware takes the output schema of the procedure being served from the router. Before the handler runs it fails closed (INTERNAL) when the schema has sensitive fields outside a business procedure or without the `withMeta()` envelope, or when the redactor cannot check it; after output validation it removes the hidden fields. `sensitive()` may tag object fields only (also behind wrappers, pipes or `z.lazy()`; not array items, record or catchall values, union options, intersection sides, or fields under a transform or codec). Every output value must be typed: `z.unknown()`/`any()`/`custom()`, loose/passthrough objects, `.transform()` results, Map/Set/promise and unknown Zod types are rejected. These are schema errors that the contract test reports. `meta.redacted` lists dotted schema paths relative to `data`, with `*` for every array item, record value or `.catchall()` key (e.g. `lines.*.unitCost`), whether or not a value is present.
   - Aggregates such as dashboard profit are withheld in `services`.
   - Redaction covers lists, details, reports, exports, search, errors, logs and telemetry.
   - Filtering, sorting, grouping, searching or exporting on a sensitive field the user cannot see returns **FORBIDDEN**, never a silent ignore.
@@ -234,6 +247,7 @@ The manifest in `packages/modules` is the single source for the sidebar, mobile 
 ```
 
 - Nav, tabs and "+" show a module only when it is `released`, enabled for the business and permitted. In M1 only Dashboard and Settings are released.
+- Enabled (D-059, `resolveEnabledModules`): a core module is on unless its `business_modules` row switches it off; an optional module is on only through an enabled row; Dashboard and Settings are always on and their rows are ignored. Smart Setup writes `enabled = false` rows for the core modules a business does not use.
 - There are no placeholder routes. A planned module's enabled flag is saved but stays invisible.
 - Disabling a module hides it and never deletes its data. Customize warns about dependencies.
 
@@ -290,10 +304,17 @@ The manifest in `packages/modules` is the single source for the sidebar, mobile 
 - **Supabase plans are per organization:** either two orgs (Free for dev/staging, Pro for prod) or both projects in one Pro org (~$35+/mo). Start on Free. Upgrade prod before the first real customer, because the custom domain and leaked-password protection need Pro. A Free staging project pauses when idle. PITR before the first paying customer. Open items: ROADMAP.md §Open, with deadline.
 - **Config:** `supabase/config.toml` holds the OTP settings, templates, rate limits and exposed schemas (without `app`). Apply it to hosted projects with `supabase config push`, never by hand in the dashboard.
 - **Vercel Pro:** one project with functions pinned to `bom1` in `vercel.json` (the default is iad1). A smoke check verifies the region after deploy. Not dxb1: the DB is in Mumbai, and dxb1 is reportedly under maintenance.
-- **Serverless pooling:** postgres.js `max: 1` + `idle_timeout`, and `attachDatabasePool` (@vercel/functions) with Fluid compute. Role-level `statement_timeout`.
+- **Serverless pooling:** postgres.js `max: 1` + `idle_timeout`, and `attachDatabasePool` (@vercel/functions) with Fluid compute. Role-level `statement_timeout`. Step 2 ships `createDb()` only; `attachDatabasePool` and the pool size under Fluid concurrency are settled with the first deploy (ROADMAP.md Step 2).
 - **EAS:** Build (iOS without a Mac), Submit and Update. Channels: development, preview, production. `runtimeVersion` policy `fingerprint`. Internal testing on TestFlight and the Play internal track.
+- **Web environment** (validated on the first request by `apps/web/src/lib/env.ts`, so `next build` needs none; names in `.env.example`): `NEXT_PUBLIC_SUPABASE_URL` (or `SUPABASE_URL`), `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY`, `DATABASE_URL` (bizcost_api), `MIN_SUPPORTED_APP_VERSION` (default 0.0.0), `APP_ORIGINS` (required in production; dev default `http://localhost:3000,http://127.0.0.1:3000`). `SENTRY_DSN` (optional) is not part of it: only `instrumentation.ts` reads it, and an invalid value only turns Sentry off. `health.version` is the first 12 characters of `VERCEL_GIT_COMMIT_SHA` (`dev` locally).
 - **Migrations:** Drizzle schema → `drizzle-kit generate` into `supabase/migrations`, applied **only via the Supabase CLI** (`db reset` locally, `db push` from `db-migrate.yml`, manual approval for prod). Never `db push --include-seed` or `db reset --linked`: the seed holds the local password. Layout and rules: DATA_MODEL.md §1.1.
 - **Heavy work** [Later]: cost recomputation and reports need background jobs (pgmq, pg_cron or Vercel Cron) before those phases (ROADMAP.md).
+
+### Local setup
+
+- One-time, per machine: `pnpm auth:signing-key` creates `supabase/signing_keys.json` (an ES256 private key, gitignored; `config.toml` sets `[auth] signing_keys_path`) with `supabase gen signing-key --algorithm ES256`. Every Supabase CLI command loads `config.toml` and fails without the file (`start`, `status`, `db reset`, `test db`, `migration new`, `db push`), so run it right after cloning. The Auth server reads the key at start: after creating or rotating it, restart the stack (`pnpm exec supabase stop && pnpm exec supabase start`; data is kept). To rotate, delete the file and run the script again. CI writes a throwaway key the same way; `db-migrate.yml` (Step 9) must also create the file (an empty `[]` is enough) before `supabase db push`.
+- Web: put the names from `.env.example` in `apps/web/.env.local`, with the local values from `pnpm exec supabase status -o env` (API_URL, PUBLISHABLE_KEY) and the local `DATABASE_URL`; then `pnpm --filter @bizcost/web dev`.
+- Integration tests: `pnpm db:test` (pgTAP + `@bizcost/db`) and `pnpm api:test` (`@bizcost/api` through the fetch handler, with real users in the local Auth server; keys are read from `supabase status`). Both need the local stack; neither is part of `pnpm check`. `api:test` makes only two password sign-ins per run (the local limit is 30 per 5 minutes per IP); other tests mint tokens with the local signing key (`mintToken`), which `getClaims()` verifies exactly like real ones.
 
 ### Runbooks (written in Step 9 as subsections here)
 
@@ -305,18 +326,18 @@ The manifest in `packages/modules` is the single source for the sidebar, mobile 
 
 GitHub Actions: `ci.yml` (every PR) and `db-migrate.yml` (applies migrations; manual approval for prod).
 
-| Check                         | Covers                                                                                                                                                                                |
-| ----------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Typecheck, lint               | Package boundaries, server-only, no float money, no raw SET, no server `changeLanguage`, logical RTL classes/props                                                                    |
-| Vitest (+ fast-check)         | `domain`: decimals, rounding, permission engine, `recommend()` per industry (units from M2)                                                                                           |
-| pgTAP                         | RLS isolation (`rls_*`, 2 businesses × 2 users), `grants` (SECURITY DEFINER rules, `audit_log` read-only), `catalog_coverage`, InitPlan in EXPLAIN, invariants, account deletion path |
-| Migration drift               | Drizzle schema vs `supabase/migrations`                                                                                                                                               |
-| DB integration (`db` CI job)  | `supabase db start`, pgTAP, then `@bizcost/db` Vitest against the real DB as `bizcost_api` (tenancy, owner-rule races). Locally: `pnpm db:reset && pnpm db:test`                      |
-| Contract checks               | `.output()` on every procedure, redaction oracle per role template, FORBIDDEN on sensitive filter/sort                                                                                |
-| Static checks                 | Missing Arabic keys, token parity (web/native), no `supabase.co` in bundles                                                                                                           |
-| Playwright                    | AR (RTL) + EN smoke at 375/768/1440 px                                                                                                                                                |
-| Cross-tenant attacks          | 2 businesses × 2 users through the API, PostgREST with a real JWT, and Storage paths                                                                                                  |
-| Mobile (Expo spike + devices) | Arabic plurals, Intl on Hermes, golden rounding web vs Hermes, RTL restart, LargeSecureStore failure path                                                                             |
+| Check                         | Covers                                                                                                                                                                                                                                                                                 |
+| ----------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Typecheck, lint               | Package boundaries and layer order, one DB entry in the API, server-only, no float money, no raw SET, no server `changeLanguage`, logical RTL classes/props. Next's generated route types (`.next/types`) are type-checked by `next build` and, once generated, by typecheck           |
+| Vitest (+ fast-check)         | `domain`: decimals, rounding, permission engine, `recommend()` per industry (units from M2)                                                                                                                                                                                            |
+| pgTAP                         | RLS isolation (`rls_*`, 2 businesses × 2 users), `grants` (SECURITY DEFINER rules, `audit_log` read-only), `catalog_coverage`, InitPlan in EXPLAIN, invariants, account deletion path                                                                                                  |
+| Migration drift               | Drizzle schema vs `supabase/migrations`                                                                                                                                                                                                                                                |
+| DB integration (`db` CI job)  | `pnpm auth:signing-key`, `supabase start -x …` (Postgres, Auth, API gateway), pgTAP, `@bizcost/db` Vitest as `bizcost_api` (tenancy, owner-rule races), then the `@bizcost/api` integration tests. Locally: `pnpm db:reset && pnpm db:test && pnpm api:test`                           |
+| Contract checks               | `.output()`, redact placement and a fully typed output on every procedure (`packages/api` unit test); redaction for every starter role template against a hand-written oracle, and FORBIDDEN on a sensitive sort (API integration tests); Step 9 extends the oracle to every procedure |
+| Static checks                 | Missing Arabic keys, token parity (web/native), no `supabase.co` in bundles                                                                                                                                                                                                            |
+| Playwright                    | AR (RTL) + EN smoke at 375/768/1440 px                                                                                                                                                                                                                                                 |
+| Cross-tenant attacks          | 2 businesses × 2 users through the API, PostgREST with a real JWT, and Storage paths                                                                                                                                                                                                   |
+| Mobile (Expo spike + devices) | Arabic plurals, Intl on Hermes, golden rounding web vs Hermes, RTL restart, LargeSecureStore failure path                                                                                                                                                                              |
 
 ## Key risks
 

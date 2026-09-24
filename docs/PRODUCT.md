@@ -159,7 +159,20 @@ Nothing is released yet. The Phase column follows ROADMAP.md, which is authorita
 
 - Every team member has their own login. Auth details: ARCHITECTURE.md §Auth.
 - **Staff without email (DECIDED):** they sign in with a PIN on a shared branch device. From M1 the data model allows a member without a login account. The PIN sign-in screens come later.
-- Role templates are copied into each business and can be edited. The owner's list: Owner, Admin, Manager, Accountant, Sales, Supervisor, Employee. The final starter set is settled in M1.
+- Role templates are copied into each business and can be edited. Starter set (DECIDED in M1 Step 2; keys in `packages/modules`):
+
+  | Template   | Can do and see                                                                                                  |
+  | ---------- | --------------------------------------------------------------------------------------------------------------- |
+  | Owner      | Everything, including permissions added later; cannot be locked out. Only an owner can transfer ownership       |
+  | Admin      | Every permission (not ownership transfer)                                                                       |
+  | Manager    | Dashboard; view the business and the team; manage locations; see cost, profit/margin and supplier prices        |
+  | Accountant | Dashboard; view the business; see cost, profit/margin, supplier prices and payroll (not employee personal data) |
+  | Sales      | Dashboard only                                                                                                  |
+  | Supervisor | Dashboard; view the team                                                                                        |
+  | Employee   | Dashboard only (sees no sensitive field)                                                                        |
+
+  Modules add their own permissions to the templates when they are released. Every member can open Settings for their own profile and language.
+
 - Custom permissions, for example: View/Create/Edit Orders, View Customers, View Selling Price, View Product Cost, View Profit, Create/Approve Expenses, View Payroll, Manage Employees, Manage Projects.
 - **Never assume every user can see cost or profit.** Sensitive fields (cost, profit/margin, supplier price, payroll, employee personal data) are removed on the server. The UI shows a lock, not a misleading zero. Users can't filter, sort or search by a field they can't see. Mechanism: ARCHITECTURE.md §Permissions, modules & capabilities.
 - A business always has at least one active owner. Transferring ownership is an explicit action.

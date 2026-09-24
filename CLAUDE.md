@@ -36,7 +36,9 @@ BizCost is a multi-tenant SaaS for cost intelligence, profit intelligence and us
 
 ## Commands (Windows, PowerShell; Node 24, pnpm 10)
 
-- `pnpm install` — install workspace deps.
+- `pnpm install` — install workspace deps. After a fresh clone: `pnpm auth:signing-key` once (local ES256 key; every Supabase CLI command needs it).
+- Docker Desktop must be running; in Git Bash add `/c/Program Files/Docker/Docker/resources/bin` to `PATH` for Supabase CLI commands.
 - `pnpm check` — typecheck + lint + test (all packages, via Turborepo). Must pass before every commit.
+- `pnpm db:reset` / `pnpm db:test` (pgTAP + DB integration) / `pnpm api:test` (API integration) — need the local Supabase stack.
 - `pnpm format` / `pnpm format:check` — Prettier.
 - `pnpm --filter @bizcost/domain test` — run one package's task.
