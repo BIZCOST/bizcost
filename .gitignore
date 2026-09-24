@@ -1,0 +1,30 @@
+# dependencies
+node_modules/
+
+# build / tooling output
+.turbo/
+dist/
+coverage/
+*.tsbuildinfo
+.next/
+out/
+.expo/
+web-build/
+android/
+ios/
+
+# env & secrets
+.env
+.env.*
+!.env.example
+
+# supabase local
+supabase/.branches/
+supabase/.temp/
+
+# logs & OS
+*.log
+.DS_Store
+Thumbs.db
+.vscode/*
+!.vscode/extensions.json
