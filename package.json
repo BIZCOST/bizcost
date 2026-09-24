@@ -18,6 +18,7 @@
     "@bizcost/config": "workspace:*",
     "eslint": "catalog:",
     "prettier": "catalog:",
+    "supabase": "2.117.0",
     "turbo": "catalog:",
     "typescript": "catalog:"
   }
