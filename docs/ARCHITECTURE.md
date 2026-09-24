@@ -1,9 +1,9 @@
 # BizCost Architecture
 
 Purpose: technical system design, repo structure and engineering conventions for BizCost (web + mobile + shared backend).
-Last updated: 2026-09-24
+Last updated: 2026-09-25
 
-**Status:** only the repo scaffold exists (Step 0a done: workspace, tooling, CI, `packages/config`, first `packages/domain` code). Everything below is **DECIDED** design. Items tagged **[Later]** are planned but not part of M1. Product rules are in PRODUCT.md, tables in DATA_MODEL.md, steps and deadlines in ROADMAP.md, and the reasons behind each choice in DECISIONS.md.
+**Status:** the repo scaffold (Step 0a) and the data foundation (Step 1: `packages/db`, `supabase/` migrations and pgTAP tests) exist. Everything below is **DECIDED** design. Items tagged **[Later]** are planned but not part of M1. Product rules are in PRODUCT.md, tables in DATA_MODEL.md, steps and deadlines in ROADMAP.md, and the reasons behind each choice in DECISIONS.md.
 
 ## Overview
 
@@ -61,7 +61,7 @@ Upgrade triggers: ROADMAP.md §Later.
 
 ## Repo structure
 
-Planned layout. Exists today: root config, `packages/config`, `packages/domain`, `docs/`, `.github/workflows/ci.yml`. The rest is created by the step that needs it.
+Planned layout. Exists today: root config, `packages/config`, `packages/domain`, `packages/db`, `supabase/`, `docs/`, `.github/workflows/ci.yml`. The rest is created by the step that needs it.
 
 ```
 apps/
@@ -169,7 +169,7 @@ CLAUDE.md, package.json, pnpm-workspace.yaml, turbo.json, .npmrc, .gitattributes
 - Drizzle + postgres.js through the Supavisor transaction pooler (port 6543, `prepare: false`), logging in as `bizcost_api.<project_ref>`. Fallback: a dedicated pooler or a direct connection. To be proved in Step 0c.
 - `bizcost_api`: no BYPASSRLS, not a superuser, does not own tables. It **fails closed**: a query without tenant context returns zero rows. Provisioning (NOLOGIN in migrations, default privileges, timeouts, per-environment password from a secret via §Runbooks): DATA_MODEL.md §1.1.
 - Schema `app` is not exposed to the Data API (PostgREST), and `anon`/`authenticated` get zero grants on it.
-- `withTenantTx(ctx, fn)` is the **only** data entry point. Its first statement sets `app.user_id`, `app.business_id` and `app.request_id` with `set_config(…, true)` (transaction-local). Lint bans raw `SET`, and a test asserts the context is empty after each transaction.
+- `withTenantTx(ctx, fn)` is the **only** data entry point. Its first statement sets `app.user_id`, `app.business_id` and `app.request_id` with `set_config(…, true)` (transaction-local); it rejects non-UUID inputs before touching the DB. Lint (`bizcost/no-raw-set`) bans raw `SET`/`RESET` and `set_config` everywhere else, and a test asserts the context is empty after each transaction.
 - The transaction pooler supports no prepared statements, LISTEN or session locks. Design around this.
 
 ### RLS
@@ -180,7 +180,8 @@ CLAUDE.md, package.json, pnpm-workspace.yaml, turbo.json, .npmrc, .gitattributes
   and (select app.is_active_member(app.current_business_id()))
   ```
   No row column is passed to a function, so Postgres evaluates it once per query as an InitPlan. pgTAP/EXPLAIN tests assert InitPlan and no SubPlan.
-- Identity tables (`businesses`, `business_members`, `business_invitations`) have their own membership policies. Creating a business and accepting an invitation go through narrow SECURITY DEFINER functions.
+- Identity tables (`profiles`, `businesses`, `business_members`) have their own policies (DATA_MODEL.md §2). Creating a business and accepting an invitation go through narrow SECURITY DEFINER functions.
+- Database triggers hold the rules no API path may skip: `app.audit_row()` writes `audit_log` for every write (the API role can only read it), `app.touch_row()` maintains `updated_*`/`version`, and a deferred constraint trigger keeps at least one active owner per live business (DATA_MODEL.md §1.2, §1.6, §4).
 - RLS handles **tenant isolation only**. Roles, permissions, module gates and redaction live only in TypeScript, so no rule is written twice.
 - A CI catalog check asserts that every table with `business_id` has FORCE RLS + the standard policy. The schema also enforces tenancy with composite FKs `(business_id, x_id)` (DATA_MODEL.md §1.2).
 
@@ -283,7 +284,7 @@ The manifest in `packages/modules` is the single source for the sidebar, mobile 
 
 | Env           | Where                                                                                                         |
 | ------------- | ------------------------------------------------------------------------------------------------------------- |
-| Local         | Supabase CLI + Docker Desktop (WSL2), Mailpit for codes. Fallback: hosted dev project (decided on day 1)      |
+| Local         | Supabase CLI + Docker Desktop (WSL2), Mailpit for codes. `supabase/seed.sql` sets the local-only API password |
 | Staging, Prod | Supabase projects in ap-south-1 (there is no Middle East region, and the region cannot change later) + Vercel |
 
 - **Supabase plans are per organization:** either two orgs (Free for dev/staging, Pro for prod) or both projects in one Pro org (~$35+/mo). Start on Free. Upgrade prod before the first real customer, because the custom domain and leaked-password protection need Pro. A Free staging project pauses when idle. PITR before the first paying customer. Open items: ROADMAP.md §Open, with deadline.
@@ -291,7 +292,7 @@ The manifest in `packages/modules` is the single source for the sidebar, mobile 
 - **Vercel Pro:** one project with functions pinned to `bom1` in `vercel.json` (the default is iad1). A smoke check verifies the region after deploy. Not dxb1: the DB is in Mumbai, and dxb1 is reportedly under maintenance.
 - **Serverless pooling:** postgres.js `max: 1` + `idle_timeout`, and `attachDatabasePool` (@vercel/functions) with Fluid compute. Role-level `statement_timeout`.
 - **EAS:** Build (iOS without a Mac), Submit and Update. Channels: development, preview, production. `runtimeVersion` policy `fingerprint`. Internal testing on TestFlight and the Play internal track.
-- **Migrations:** Drizzle schema → `drizzle-kit generate` into `supabase/migrations`, applied **only via the Supabase CLI** (`db reset` locally, `db push` from `db-migrate.yml`, manual approval for prod). Full rules: DATA_MODEL.md §1.1.
+- **Migrations:** Drizzle schema → `drizzle-kit generate` into `supabase/migrations`, applied **only via the Supabase CLI** (`db reset` locally, `db push` from `db-migrate.yml`, manual approval for prod). Never `db push --include-seed` or `db reset --linked`: the seed holds the local password. Layout and rules: DATA_MODEL.md §1.1.
 - **Heavy work** [Later]: cost recomputation and reports need background jobs (pgmq, pg_cron or Vercel Cron) before those phases (ROADMAP.md).
 
 ### Runbooks (written in Step 9 as subsections here)
@@ -304,17 +305,18 @@ The manifest in `packages/modules` is the single source for the sidebar, mobile 
 
 GitHub Actions: `ci.yml` (every PR) and `db-migrate.yml` (applies migrations; manual approval for prod).
 
-| Check                         | Covers                                                                                                                                                                              |
-| ----------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Typecheck, lint               | Package boundaries, server-only, no float money, no raw SET, no server `changeLanguage`, logical RTL classes/props                                                                  |
-| Vitest (+ fast-check)         | `domain`: decimals, rounding, permission engine, `recommend()` per industry (units from M2)                                                                                         |
-| pgTAP                         | RLS isolation (`rls_*`, 2 businesses × 2 users), `grants` (SECURITY DEFINER rules, no UPDATE/DELETE on `audit_log`), `catalog_coverage`, InitPlan in EXPLAIN, account deletion path |
-| Migration drift               | Drizzle schema vs `supabase/migrations`                                                                                                                                             |
-| Contract checks               | `.output()` on every procedure, redaction oracle per role template, FORBIDDEN on sensitive filter/sort                                                                              |
-| Static checks                 | Missing Arabic keys, token parity (web/native), no `supabase.co` in bundles                                                                                                         |
-| Playwright                    | AR (RTL) + EN smoke at 375/768/1440 px                                                                                                                                              |
-| Cross-tenant attacks          | 2 businesses × 2 users through the API, PostgREST with a real JWT, and Storage paths                                                                                                |
-| Mobile (Expo spike + devices) | Arabic plurals, Intl on Hermes, golden rounding web vs Hermes, RTL restart, LargeSecureStore failure path                                                                           |
+| Check                         | Covers                                                                                                                                                                                |
+| ----------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Typecheck, lint               | Package boundaries, server-only, no float money, no raw SET, no server `changeLanguage`, logical RTL classes/props                                                                    |
+| Vitest (+ fast-check)         | `domain`: decimals, rounding, permission engine, `recommend()` per industry (units from M2)                                                                                           |
+| pgTAP                         | RLS isolation (`rls_*`, 2 businesses × 2 users), `grants` (SECURITY DEFINER rules, `audit_log` read-only), `catalog_coverage`, InitPlan in EXPLAIN, invariants, account deletion path |
+| Migration drift               | Drizzle schema vs `supabase/migrations`                                                                                                                                               |
+| DB integration (`db` CI job)  | `supabase db start`, pgTAP, then `@bizcost/db` Vitest against the real DB as `bizcost_api` (tenancy, owner-rule races). Locally: `pnpm db:reset && pnpm db:test`                      |
+| Contract checks               | `.output()` on every procedure, redaction oracle per role template, FORBIDDEN on sensitive filter/sort                                                                                |
+| Static checks                 | Missing Arabic keys, token parity (web/native), no `supabase.co` in bundles                                                                                                           |
+| Playwright                    | AR (RTL) + EN smoke at 375/768/1440 px                                                                                                                                                |
+| Cross-tenant attacks          | 2 businesses × 2 users through the API, PostgREST with a real JWT, and Storage paths                                                                                                  |
+| Mobile (Expo spike + devices) | Arabic plurals, Intl on Hermes, golden rounding web vs Hermes, RTL restart, LargeSecureStore failure path                                                                             |
 
 ## Key risks
 

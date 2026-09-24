@@ -92,10 +92,63 @@ const noPhysicalStyleProps = {
   },
 }
 
+// Tenant context (app.user_id / app.business_id / app.request_id) is set only by withTenantTx()
+// (packages/db/src/tenant.ts), transaction-locally. A raw SET/RESET or set_config() elsewhere could
+// leave context (or a role) on a pooled connection for the next request.
+const RAW_SET = /^\s*(?:set|reset)\s/i
+const SET_CONFIG = /\bset_config\s*\(/i
+// Calls that take raw SQL text: drizzle sql.raw(), postgres.js .unsafe(), execute()/query().
+const RAW_SQL_CALLEES = new Set(['raw', 'unsafe', 'execute', 'query'])
+
+function templateText(node) {
+  return node.quasis.map((q) => q.value.cooked ?? q.value.raw).join(' ')
+}
+
+const noRawSet = {
+  meta: {
+    type: 'problem',
+    docs: { description: 'Disallow raw SET/RESET and set_config() in SQL (use withTenantTx).' },
+    messages: {
+      rawSet:
+        'Raw SET/RESET and set_config() are not allowed: tenant context is set only by withTenantTx() (packages/db), transaction-locally.',
+    },
+    schema: [],
+  },
+  create(context) {
+    function check(node, text, first) {
+      if (RAW_SET.test(first) || SET_CONFIG.test(text)) {
+        context.report({ node, messageId: 'rawSet' })
+      }
+    }
+    return {
+      // sql`...`, tx`...`, db.execute(sql`...`): any tagged template is treated as SQL.
+      TaggedTemplateExpression(node) {
+        const quasis = node.quasi.quasis
+        check(node, templateText(node.quasi), quasis[0]?.value.cooked ?? quasis[0]?.value.raw ?? '')
+      },
+      CallExpression(node) {
+        const callee = node.callee
+        const name =
+          callee.type === 'MemberExpression' && callee.property.type === 'Identifier'
+            ? callee.property.name
+            : null
+        if (!name || !RAW_SQL_CALLEES.has(name)) return
+        const arg = node.arguments[0]
+        if (arg?.type === 'Literal' && typeof arg.value === 'string') {
+          check(node, arg.value, arg.value)
+        } else if (arg?.type === 'TemplateLiteral') {
+          check(node, templateText(arg), arg.quasis[0]?.value.cooked ?? '')
+        }
+      },
+    }
+  },
+}
+
 export default {
   meta: { name: 'bizcost' },
   rules: {
     'no-physical-direction-classes': noPhysicalDirectionClasses,
     'no-physical-style-props': noPhysicalStyleProps,
+    'no-raw-set': noRawSet,
   },
 }

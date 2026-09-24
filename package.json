@@ -12,7 +12,9 @@
     "test": "turbo run test",
     "check": "turbo run typecheck lint test",
     "format": "prettier --write .",
-    "format:check": "prettier --check ."
+    "format:check": "prettier --check .",
+    "db:reset": "supabase db reset",
+    "db:test": "supabase test db && pnpm --filter @bizcost/db test:db"
   },
   "devDependencies": {
     "@bizcost/config": "workspace:*",

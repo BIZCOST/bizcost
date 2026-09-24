@@ -2,3 +2,4 @@ pnpm-lock.yaml
 docs/mockups/
 coverage/
 .turbo/
+supabase/migrations/meta/

@@ -22,3 +22,29 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - run: pnpm format:check
       - run: pnpm check
+
+  db:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      # Same Supabase CLI version as local development: the root package.json pin is the only source.
+      - id: supabase-cli
+        run: echo "version=$(jq -r '.devDependencies.supabase' package.json)" >> "$GITHUB_OUTPUT"
+      - uses: supabase/setup-cli@v3
+        with:
+          version: ${{ steps.supabase-cli.outputs.version }}
+      - name: Migrations match the Drizzle schema
+        run: |
+          pnpm --filter @bizcost/db db:generate
+          git status --porcelain supabase/migrations
+          test -z "$(git status --porcelain supabase/migrations)"
+      # Applies supabase/migrations and supabase/seed.sql to a fresh local database.
+      - run: supabase db start
+      - run: supabase test db
+      - run: pnpm --filter @bizcost/db test:db

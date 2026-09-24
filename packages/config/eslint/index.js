@@ -78,6 +78,19 @@ export default tseslint.config(
     ignores: ['packages/config/**'],
     rules: { 'no-restricted-syntax': ['error', ...NO_FLOAT_MONEY] },
   },
+  // Tenant context only through withTenantTx() (docs/ARCHITECTURE.md §Tenancy & security). Tests may
+  // switch roles or run `set constraints` on purpose.
+  {
+    files: ['packages/**/*.ts', 'apps/**/*.{ts,tsx}'],
+    ignores: [
+      'packages/config/**',
+      'packages/db/src/tenant.ts',
+      '**/*.test.ts',
+      '**/*.test.tsx',
+      '**/test/**',
+    ],
+    rules: { 'bizcost/no-raw-set': 'error' },
+  },
   // Package boundaries (dependency direction: domain ← contracts ← modules ← db ← api).
   {
     files: PURE_PACKAGES,

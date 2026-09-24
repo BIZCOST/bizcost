@@ -1,9 +1,9 @@
 # BizCost: Decision Log
 
 Purpose: a numbered record of every confirmed decision, why we made it, and what we rejected. The details live in the doc each entry links to.
-Last updated: 2026-09-24
+Last updated: 2026-09-25
 
-- **Status:** every entry is DECIDED. Nothing is implemented yet beyond the Step 0a repo scaffold. "Open:" marks a sub-choice that is still unsettled, tracked in ROADMAP.md §Open, with deadline.
+- **Status:** every entry is DECIDED. Implemented so far: the Step 0a repo scaffold and the Step 1 data foundation (D-047–D-053 and the data/tenancy entries they build on). "Open:" marks a sub-choice that is still unsettled, tracked in ROADMAP.md §Open, with deadline.
 - **Editing:** append new entries with the next number and never renumber. To change a decision, add a new entry and mark the old one "Superseded by D-0xx".
 - **Sources:** the owner's spec, the owner's confirmations (2026-09-24), and the architecture panel as corrected by its critique.
 
@@ -301,3 +301,47 @@ Last updated: 2026-09-24
 - **Decision:** Work one milestone and one step at a time; the owner approves each milestone before the next begins. Web leads M1, with a 2–3 day Expo spike right after the API core; mobile M1 ends in TestFlight and Play internal builds. Do not build future phases early: no cost engine, inventory/waste math, AI, POS APIs, payroll, full VAT or advanced reporting. Ask the owner only when a missing decision would cause significant rework, and report the files changed.
 - **Why:** This is the owner's rule; it keeps a solo build focused and surfaces mobile risks in weeks 1–2.
 - **Rejected:** fully parallel web and mobile builds; deferring all mobile work to M2; speculative scaffolding. Details: ROADMAP.md §Milestone 1
+
+## Data foundation (Step 1)
+
+### D-047 · 2026-09-25 · Migration layout, API role details and the local password
+
+- **Decision:** Four migrations: `app_schema` (generated), `api_role_and_context` (custom), `m1_tables` (generated), `tenancy_security` (custom: functions, triggers, RLS, grants). Custom ones are made with `drizzle-kit generate --custom`, so Drizzle's journal in `supabase/migrations/meta/` (ignored by the Supabase CLI) stays consistent and CI's drift check works. `bizcost_api` also gets `search_path = extensions` (citext operators), and `postgres` may `SET ROLE bizcost_api` without inheriting its rights (pgTAP). Locally only, `supabase/seed.sql` sets the password `bizcost_local_dev` and refuses to run unless it sees the local stack's demo JWT secret. `db push --include-seed` and `db reset --linked` are forbidden.
+- **Why:** The context functions must exist before the tables (the `created_by` default calls one). The Supabase CLI can apply seeds to hosted projects, so the seed must not rely on "seeds only run locally".
+- **Rejected:** a separate Drizzle journal folder; setting the local password from test tooling (the web app needs it too). Details: DATA_MODEL.md §1.1
+
+### D-048 · 2026-09-25 · Identity-table policies, co-member names, and two indexes not led by business_id
+
+- **Decision:** `profiles`: own row (select/insert/update, no delete). `businesses`: read those where the caller is an active member (`app.my_business_ids()`), update only the current one; no insert/delete policy. `business_members`: the tenant policy, plus reads of the caller's own memberships in every business (switcher). `business_invitations` and `audit_log`: the tenant policy. Co-members' names come from `business_members.display_name`, which is NOT NULL for every kind; the API keeps it in sync with the profile. Two indexes do not lead with business_id: global `UNIQUE (token_hash)` and `business_members (user_id)`.
+- **Why:** Profiles stay private, and the switcher works before a business is chosen. The token is looked up before the business is known, and per-user lookups would otherwise scan every business's members.
+- **Rejected:** a membership-scoped read of other users' profiles. Details: DATA_MODEL.md §2, §4
+
+### D-049 · 2026-09-25 · Bootstrap functions; the Owner's permissions are implicit
+
+- **Decision:** `app.create_business()` inserts the business, one role with `template_key 'owner'`, and the caller's active account membership. The other role templates and the default location come from Smart Setup (Step 5). The Owner template holds every permission implicitly (no `role_permissions` rows). `app.accept_invitation(token, member_id)` hashes the token (SHA-256 hex), requires the caller's verified auth email to match, and raises one generic `invitation_invalid` for every token/email failure (`already_member` only after both match). Rows the database writes itself (audit rows, the overrides and locations created on acceptance) get ids from `app.uuid_v7()`; everything else keeps client ids (D-031).
+- **Why:** RLS blocks these first writes by design. An Owner must never lose access because a new permission key was added.
+- **Rejected:** copying every permission into an Owner role; revealing whether a token exists. Details: DATA_MODEL.md §2, §4
+
+### D-050 · 2026-09-25 · Audit rows are written only by a database trigger
+
+- **Decision:** `app.audit_row()` (SECURITY DEFINER) runs AFTER INSERT/UPDATE/DELETE on `businesses` and every tenant table. It records the actor and `request_id` from the tenant context and `{before, after}` without secret columns (`token_hash`, `pin_hash`). `bizcost_api` has SELECT only on `audit_log`: no INSERT either (changed from the Step 1 plan after the security review).
+- **Why:** No write path can skip the audit, and a member cannot forge rows (another actor, a backdated time).
+- **Rejected:** auditing in API services; an INSERT grant for the API. Details: DATA_MODEL.md §1.6, §4 audit_log
+
+### D-051 · 2026-09-25 · "At least one active Owner" is enforced by the database
+
+- **Decision:** A DEFERRABLE INITIALLY DEFERRED constraint trigger checks at commit that every live business keeps an active, non-deleted account member whose role has `template_key 'owner'`. It fires on `business_members` writes, on `roles` `template_key`/`deleted_at` changes and on restoring a soft-deleted business; soft-deleted businesses are exempt. An advisory lock serialises the checks per business, and the owner it relies on is confirmed with `FOR SHARE NOWAIT`, so concurrent removals fail with 23514, or 40001 in REPEATABLE READ/SERIALIZABLE (the API retries 40001).
+- **Why:** Ownership transfer must work in one transaction, and the rule must hold under any isolation level the API role can pick.
+- **Rejected:** API-only checks; an advisory lock alone (a stale REPEATABLE READ snapshot slips through). Details: DATA_MODEL.md §4 businesses
+
+### D-052 · 2026-09-25 · `vat_registered` is stored once, on `businesses`
+
+- **Decision:** A capability that mirrors a `businesses` column is read from that column. `business_capabilities` has CHECK `key <> 'vat_registered'`.
+- **Why:** One source of truth; two copies would drift.
+- **Rejected:** a mirrored capability row kept in sync. Details: DATA_MODEL.md §4 business_capabilities
+
+### D-053 · 2026-09-25 · Shape of `@bizcost/db`
+
+- **Decision:** `packages/db` is server-only (`import 'server-only'`). It exports `createDb(url)` (postgres.js with `prepare:false`, `max` 1 by default, `idle_timeout` 20, plus Drizzle), `withTenantTx(db, {userId, businessId, requestId}, fn)`, the schema tables and their types. `newId()` (UUIDv7) and the stored keys/enums (`OWNER_TEMPLATE_KEY`, member kinds and statuses, …) live in `@bizcost/domain`. No `adminDb` until a step needs it. Turborepo `test`/`lint` depend on a `transit` task, so a change in a workspace dependency re-runs its dependents.
+- **Why:** Pure code (permission engine, contracts) needs the same keys without importing the DB layer, and cached test results must not hide a broken dependency.
+- **Rejected:** constants in the schema files; `adminDb` in Step 1. Details: ARCHITECTURE.md §Database access

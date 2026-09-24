@@ -1,5 +1,5 @@
 {
-  "name": "@bizcost/domain",
+  "name": "@bizcost/db",
   "version": "0.0.0",
   "private": true,
   "type": "module",
@@ -9,13 +9,20 @@
   "scripts": {
     "typecheck": "tsc -p tsconfig.json",
     "lint": "eslint .",
-    "test": "vitest run"
+    "test": "vitest run",
+    "test:db": "vitest run --config vitest.db.config.ts",
+    "db:generate": "drizzle-kit generate"
   },
   "dependencies": {
-    "uuid": "catalog:"
+    "@bizcost/domain": "workspace:*",
+    "drizzle-orm": "catalog:",
+    "postgres": "catalog:",
+    "server-only": "catalog:"
   },
   "devDependencies": {
     "@bizcost/config": "workspace:*",
+    "@types/node": "catalog:",
+    "drizzle-kit": "catalog:",
     "eslint": "catalog:",
     "typescript": "catalog:",
     "vite": "catalog:",

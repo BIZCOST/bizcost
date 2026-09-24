@@ -40,3 +40,27 @@ tester.run('no-physical-style-props', plugin.rules['no-physical-style-props'], {
     { code: `const s = { textAlign: 'left' }`, errors: [{ messageId: 'textAlign' }] },
   ],
 })
+
+tester.run('no-raw-set', plugin.rules['no-raw-set'], {
+  valid: [
+    { code: 'tx.execute(sql`select * from app.locations where id = ${id}`)' },
+    { code: 'sql`update app.locations set name = ${name} where id = ${id}`' },
+    { code: `const label = 'Set up your business'` },
+    { code: `t('settings.reset')` },
+  ],
+  invalid: [
+    {
+      code: 'tx.execute(sql`set app.business_id = ${id}`)',
+      errors: [{ messageId: 'rawSet' }],
+    },
+    { code: 'sql`  SET LOCAL ROLE postgres`', errors: [{ messageId: 'rawSet' }] },
+    { code: 'sql`reset app.user_id`', errors: [{ messageId: 'rawSet' }] },
+    {
+      code: "sql`select set_config('app.business_id', ${id}, false)`",
+      errors: [{ messageId: 'rawSet' }],
+    },
+    { code: "sql.raw('set search_path = public')", errors: [{ messageId: 'rawSet' }] },
+    { code: "client.unsafe('set role bizcost_api')", errors: [{ messageId: 'rawSet' }] },
+    { code: 'db.execute(`reset all`)', errors: [{ messageId: 'rawSet' }] },
+  ],
+})

@@ -1,0 +1,34 @@
+{
+  "version": "7",
+  "dialect": "postgresql",
+  "entries": [
+    {
+      "idx": 0,
+      "version": "7",
+      "when": 1790281279846,
+      "tag": "20260924202119_app_schema",
+      "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1790281285869,
+      "tag": "20260924202125_api_role_and_context",
+      "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1790284575376,
+      "tag": "20260924211615_m1_tables",
+      "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1790284584399,
+      "tag": "20260924211624_tenancy_security",
+      "breakpoints": true
+    }
+  ]
+}

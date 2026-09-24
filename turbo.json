@@ -1,10 +1,17 @@
 {
   "$schema": "https://turborepo.com/schema.json",
   "tasks": {
+    "transit": {
+      "dependsOn": ["^transit"]
+    },
     "typecheck": {
       "dependsOn": ["^typecheck"]
     },
-    "lint": {},
-    "test": {}
+    "lint": {
+      "dependsOn": ["transit"]
+    },
+    "test": {
+      "dependsOn": ["transit"]
+    }
   }
 }
