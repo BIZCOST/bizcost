@@ -1,6 +1,6 @@
 import type { TFunction } from 'i18next'
 import { SearchCheckIcon, TargetIcon, TrendingUpIcon } from 'lucide-react'
-import type { ReactNode } from 'react'
+import type { ReactNode, Ref } from 'react'
 import Link from 'next/link'
 import { Logo } from '@/components/brand/logo'
 import { LanguageMenu } from '@/components/language-menu'
@@ -78,11 +78,17 @@ export function AuthShell({ t, children }: { t: TFunction; children: ReactNode }
 /** The card of one sign-in page. */
 export function AuthCard({
   title,
+  titleRef,
   description,
   children,
   footer,
 }: {
   title: ReactNode
+  /**
+   * Makes the title focusable from script: a step that replaces another moves focus to it, so screen
+   * readers start at the new heading.
+   */
+  titleRef?: Ref<HTMLHeadingElement>
   description?: ReactNode
   children: ReactNode
   footer?: ReactNode
@@ -91,7 +97,13 @@ export function AuthCard({
     <>
       <section className="rounded-2xl bg-card p-6 shadow-[0_1px_2px_rgb(16_24_40/0.04),0_8px_24px_-12px_rgb(16_24_40/0.12)] ring-1 ring-foreground/[0.06] sm:p-8">
         <header className="mb-6 space-y-1.5">
-          <h1 className="text-2xl font-semibold tracking-tight text-balance">{title}</h1>
+          <h1
+            ref={titleRef}
+            tabIndex={titleRef ? -1 : undefined}
+            className="text-2xl font-semibold tracking-tight text-balance outline-none"
+          >
+            {title}
+          </h1>
           {description ? (
             <p className="text-sm leading-relaxed text-muted-foreground">{description}</p>
           ) : null}

@@ -14,6 +14,7 @@ export type AuthClient = Pick<
   | 'resetPasswordForEmail'
   | 'updateUser'
   | 'signOut'
+  | 'getSession'
 >
 
 /** Emails are compared and sent trimmed and lowercased (the code is tied to the exact address). */

@@ -79,6 +79,7 @@ export {
   type PasswordResetOptions,
   type PasswordResetState,
   type ResetField,
+  type ResetStep,
 } from './auth/reset-flow'
 export {
   createPasswordChange,

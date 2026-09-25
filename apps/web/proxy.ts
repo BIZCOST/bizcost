@@ -10,8 +10,8 @@ import { NextResponse, type NextRequest } from 'next/server'
 const AUTH_PAGES = new Set(['/login', '/signup', '/verify', '/forgot'])
 
 /**
- * Open either way: the reset code signs the user in before the new password is saved, so the reset
- * page must stay reachable with a session.
+ * Open either way: the reset code signs the user in before they choose a new password or go
+ * straight in (D-071), so the reset page must stay reachable with a session.
  */
 const OPEN_PAGES = new Set(['/reset'])
 

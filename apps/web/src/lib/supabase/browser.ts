@@ -43,6 +43,7 @@ const lazyAuthClient: AuthClient = {
   resetPasswordForEmail: (email, options) => auth().resetPasswordForEmail(email, options),
   updateUser: (attributes, options) => auth().updateUser(attributes, options),
   signOut: (options) => auth().signOut(options),
+  getSession: () => auth().getSession(),
 }
 
 export function authClient(): AuthClient {

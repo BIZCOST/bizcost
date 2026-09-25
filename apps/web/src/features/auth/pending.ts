@@ -13,6 +13,13 @@ export interface PendingCode {
   sentAt: number
   /** Shown above the code form. */
   notice?: 'confirmEmailFirst'
+  /**
+   * The reset code was accepted in this tab. Opened again (a reload, Back), the page no longer
+   * knows the session was just verified, so it offers no password change (D-071).
+   */
+  verified?: true
+  /** The reset code confirmed the address, so a new password is required (D-071). */
+  passwordRequired?: true
 }
 
 const KEY = 'bz_pending_code'

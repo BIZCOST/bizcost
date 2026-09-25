@@ -10,7 +10,7 @@ import { zodResolver } from '@hookform/resolvers/zod'
 import { ArrowLeftIcon } from 'lucide-react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useForm } from 'react-hook-form'
 import { useTranslation } from 'react-i18next'
 import { AuthCard } from '@/components/auth/auth-shell'
@@ -19,13 +19,28 @@ import { TextField } from '@/components/form/text-field'
 import { useMessage } from '@/components/form/use-message'
 import { Button } from '@/components/ui/button'
 import { authClient } from '@/lib/supabase/browser'
-import { savePending } from './pending'
+import { readPending, savePending, usePending } from './pending'
 
 export function ForgotForm() {
   const { t } = useTranslation()
   const message = useMessage()
   const router = useRouter()
   const [error, setError] = useState<AuthMessageKey | null>(null)
+  // Back from /reset after the code signed the user in (the browser shows this page from its
+  // cache, without the proxy): return to /reset, which lets them continue.
+  const pending = usePending(['recovery'])
+  useEffect(() => {
+    if (!pending?.verified) return
+    let active = true
+    void authClient()
+      .getSession()
+      .then(({ data }) => {
+        if (active && data.session) router.replace('/reset')
+      })
+    return () => {
+      active = false
+    }
+  }, [pending, router])
   const form = useForm<EmailForm>({
     resolver: zodResolver(emailFormSchema),
     defaultValues: { email: '' },
@@ -35,7 +50,18 @@ export function ForgotForm() {
     setError(null)
     const result = await requestPasswordReset(authClient(), values)
     if (!result.ok) return setError(result.error)
-    savePending({ email: result.email, purpose: 'recovery', sentAt: Date.now() })
+    // A new password stays required for this address when an earlier code in this tab required it.
+    const previous = readPending()
+    const required =
+      previous?.purpose === 'recovery' &&
+      previous.email === result.email &&
+      previous.passwordRequired === true
+    savePending({
+      email: result.email,
+      purpose: 'recovery',
+      sentAt: Date.now(),
+      ...(required ? { passwordRequired: true as const } : {}),
+    })
     router.push('/reset')
   })
 

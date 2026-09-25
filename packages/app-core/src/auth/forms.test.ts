@@ -11,6 +11,7 @@ import type * as z from 'zod/mini'
 import { isCompleteCode, normalizeCode, secondsUntil } from './code'
 import {
   changeEmailSchema,
+  changePasswordSchema,
   codeFormSchema,
   emailCodesSchema,
   formMessage,
@@ -83,8 +84,12 @@ describe('form schemas', () => {
   })
 
   it('require the new password twice', () => {
-    const value = { code: '123456', password: 'long-enough-1', confirmPassword: 'long-enough-2' }
+    const value = { password: 'long-enough-1', confirmPassword: 'long-enough-2' }
     expect(messages(resetPasswordSchema, value)).toEqual({
+      confirmPassword: 'auth.validation.passwordsDontMatch',
+    })
+    expect(messages(changePasswordSchema, { ...value, code: '12' })).toEqual({
+      code: 'auth.validation.codeIncomplete',
       confirmPassword: 'auth.validation.passwordsDontMatch',
     })
   })

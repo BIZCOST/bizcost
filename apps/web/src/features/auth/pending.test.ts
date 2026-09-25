@@ -27,6 +27,18 @@ describe('pending code storage', () => {
     expect(readPending()).toBeNull()
   })
 
+  it('keeps whether a reset code was used and whether it requires a new password', () => {
+    const pending = {
+      email: 'a@example.com',
+      purpose: 'recovery',
+      sentAt: 1,
+      verified: true,
+      passwordRequired: true,
+    } as const
+    savePending(pending)
+    expect(readPending()).toEqual(pending)
+  })
+
   it('ignores malformed or foreign values', () => {
     for (const raw of ['{', 'null', '"x"', '{"email":"a@b.c","purpose":"admin","sentAt":1}']) {
       sessionStorage.setItem('bz_pending_code', raw)

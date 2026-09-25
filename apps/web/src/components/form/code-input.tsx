@@ -2,6 +2,7 @@
 
 import { normalizeCode } from '@bizcost/app-core'
 import { AUTH_OTP_LENGTH } from '@bizcost/contracts'
+import type { Ref } from 'react'
 import { InputOTP, InputOTPGroup, InputOTPSlot } from '@/components/ui/input-otp'
 
 // The email code: AUTH_OTP_LENGTH cells, paste support, the browser's one-time-code autofill, and
@@ -11,6 +12,7 @@ import { InputOTP, InputOTPGroup, InputOTPSlot } from '@/components/ui/input-otp
 const DIGITS = '^[0-9٠-٩۰-۹]*$'
 
 export interface CodeInputProps {
+  ref?: Ref<HTMLInputElement>
   id?: string
   value: string
   onChange: (value: string) => void

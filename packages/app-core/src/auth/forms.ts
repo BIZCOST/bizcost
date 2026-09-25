@@ -40,15 +40,11 @@ export const codeSchema = z.pipe(
   z.string().check(z.length(AUTH_OTP_LENGTH, { error: 'auth.validation.codeIncomplete' })),
 )
 
-/** A code and a new password typed twice. */
-const codeAndNewPasswordSchema = z
-  .object({ code: codeSchema, password: newPasswordSchema, confirmPassword: z.string() })
-  .check(
-    z.refine(
-      (value: { password: string; confirmPassword: string }) =>
-        value.password === value.confirmPassword,
-      { error: 'auth.validation.passwordsDontMatch', path: ['confirmPassword'] },
-    ),
+/** The new password typed twice must match. */
+const samePasswordTwice = () =>
+  z.refine<{ password: string; confirmPassword: string }>(
+    (value) => value.password === value.confirmPassword,
+    { error: 'auth.validation.passwordsDontMatch', path: ['confirmPassword'] },
   )
 
 export const signInSchema = z.object({ email: emailSchema, password: passwordSchema })
@@ -56,10 +52,14 @@ export const signUpSchema = z.object({ email: emailSchema, password: newPassword
 /** "Send me a code" and "Forgot password". */
 export const emailFormSchema = z.object({ email: emailSchema })
 export const codeFormSchema = z.object({ code: codeSchema })
-/** Reset screen: code + new password (once the code is verified, its field is kept but ignored). */
-export const resetPasswordSchema = codeAndNewPasswordSchema
-/** Account → change password (after the code was sent). */
-export const changePasswordSchema = codeAndNewPasswordSchema
+/** Reset screen, after the code was accepted and the user chose to change it: a new password twice. */
+export const resetPasswordSchema = z
+  .object({ password: newPasswordSchema, confirmPassword: z.string() })
+  .check(samePasswordTwice())
+/** Account → change password (after the code was sent): the code and a new password twice. */
+export const changePasswordSchema = z
+  .object({ code: codeSchema, password: newPasswordSchema, confirmPassword: z.string() })
+  .check(samePasswordTwice())
 export const changeEmailSchema = z.object({ newEmail: emailSchema })
 export const emailCodesSchema = z.object({ currentCode: codeSchema, newCode: codeSchema })
 /** Account → profile: the name co-members see (the API applies the same limits). */
