@@ -1,3 +1,4 @@
+import { secureSessionCookies } from '@bizcost/contracts'
 import { isLocale, isUuid, type Locale } from '@bizcost/domain'
 import { createServerClient, parseCookieHeader, serializeCookieHeader } from '@supabase/ssr'
 import {
@@ -27,6 +28,12 @@ export interface AuthUser {
   readonly emailVerified: boolean
   /** user_metadata.locale when it is a supported locale (kept in sync with profiles.locale). */
   readonly locale: Locale | null
+  /**
+   * When the user last proved who they are in this session (seconds since the epoch): the newest
+   * `amr` entry (a password sign-in, or an emailed code they entered). Null when the token has no
+   * timestamped entry. Account deletion requires it to be recent (AUTH_RECENT_SIGN_IN_SECONDS).
+   */
+  readonly authenticatedAt: number | null
 }
 
 /**
@@ -99,6 +106,7 @@ function bearerClient(config: ApiConfig): SupabaseClient {
  */
 function cookieClient(req: Request, resHeaders: Headers, config: ApiConfig): SupabaseClient {
   return createServerClient(config.supabaseUrl, config.supabasePublishableKey, {
+    cookieOptions: { secure: secureSessionCookies(req.url) },
     cookies: {
       getAll: () =>
         parseCookieHeader(req.headers.get('cookie') ?? '').map(({ name, value }) => ({
@@ -119,6 +127,22 @@ function hasAudience(claims: JwtPayload, audience: string): boolean {
   return Array.isArray(claims.aud) ? claims.aud.includes(audience) : claims.aud === audience
 }
 
+/** The newest timestamp of the token's authentication methods (`amr`), if it has any. */
+export function authenticatedAtOf(amr: unknown): number | null {
+  if (!Array.isArray(amr)) return null
+  let newest: number | null = null
+  for (const entry of amr as unknown[]) {
+    const timestamp =
+      typeof entry === 'object' && entry !== null && 'timestamp' in entry
+        ? entry.timestamp
+        : undefined
+    if (typeof timestamp === 'number' && Number.isFinite(timestamp)) {
+      newest = newest === null ? timestamp : Math.max(newest, timestamp)
+    }
+  }
+  return newest
+}
+
 /** Maps verified claims to the caller; null for anything that is not a signed-in user's token. */
 export function userFromClaims(algorithm: string | undefined, claims: JwtPayload): AuthUser | null {
   if (algorithm === undefined || !ACCEPTED_ALGORITHMS.has(algorithm)) return null
@@ -132,6 +156,7 @@ export function userFromClaims(algorithm: string | undefined, claims: JwtPayload
     email,
     emailVerified: email !== null && metadata.email_verified === true,
     locale: isLocale(metadata.locale) ? metadata.locale : null,
+    authenticatedAt: authenticatedAtOf(claims.amr),
   }
 }
 

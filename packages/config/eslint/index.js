@@ -11,6 +11,7 @@ const PURE_PACKAGES = ['domain', 'contracts', 'modules', 'i18n', 'tokens'].map(
 
 const UI_AND_IO = [
   'react',
+  'react-i18next',
   'react-dom',
   'react-native',
   'next',
@@ -32,6 +33,17 @@ const LAYERS = ['domain', 'contracts', 'modules', 'db', 'api']
 const PURE_IMPORTS = {
   group: [...UI_AND_IO, ...SERVER_PACKAGES, '@bizcost/app-core', '@bizcost/app-core/*'],
   message: 'Pure packages must not import UI, framework, database or server code.',
+}
+
+const API_DB_ENTRY = {
+  name: '@bizcost/db',
+  importNames: ['createDb', 'withTenantTx'],
+  message: 'Use ctx.tenantTx() / ctx.tx(): every data access runs as the caller.',
+}
+
+const API_ADMIN = {
+  group: ['**/admin', '**/admin/*'],
+  message: 'The Supabase Admin API (secret key) is for the account service only.',
 }
 
 function laterLayers(layer) {
@@ -122,23 +134,20 @@ export default tseslint.config(
   { files: ['packages/db/**'], rules: restrictedImports(laterLayers('db')) },
   // The API reaches the database only through ctx.tenantTx / ctx.tx, which bind withTenantTx to the
   // verified caller and the request id (context.ts). The raw pool is never on the context.
+  // The Supabase Admin API (secret key, packages/api/src/admin) is used by the account service only.
   {
     files: ['packages/api/src/**/*.ts'],
-    ignores: ['packages/api/src/context.ts', '**/*.test.ts'],
-    rules: {
-      'no-restricted-imports': [
-        'error',
-        {
-          paths: [
-            {
-              name: '@bizcost/db',
-              importNames: ['createDb', 'withTenantTx'],
-              message: 'Use ctx.tenantTx() / ctx.tx(): every data access runs as the caller.',
-            },
-          ],
-        },
-      ],
-    },
+    ignores: ['**/*.test.ts'],
+    rules: { 'no-restricted-imports': ['error', { paths: [API_DB_ENTRY], patterns: [API_ADMIN] }] },
+  },
+  {
+    files: ['packages/api/src/context.ts'],
+    rules: { 'no-restricted-imports': ['error', { patterns: [API_ADMIN] }] },
+  },
+  {
+    files: ['packages/api/src/services/account.ts', 'packages/api/src/admin/**/*.ts'],
+    ignores: ['**/*.test.ts'],
+    rules: { 'no-restricted-imports': ['error', { paths: [API_DB_ENTRY] }] },
   },
   {
     files: ['packages/app-core/**'],
@@ -157,6 +166,21 @@ export default tseslint.config(
               message: 'app-core may only import types from server packages (e.g. AppRouter).',
             },
           ],
+        },
+      ],
+    },
+  },
+  // i18n on web: one instance per request on the server (createI18n inside React cache()) and a new
+  // instance for a new language in the browser. changeLanguage on a shared instance would leak one
+  // request's language into another (docs/ARCHITECTURE.md §i18n & RTL).
+  {
+    files: ['apps/web/**/*.{ts,tsx}', 'packages/api/**/*.ts', 'packages/i18n/**/*.ts'],
+    rules: {
+      'no-restricted-properties': [
+        'error',
+        {
+          property: 'changeLanguage',
+          message: 'Create an instance for the locale with createI18n({ locale }) (@bizcost/i18n).',
         },
       ],
     },

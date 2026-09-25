@@ -11,6 +11,11 @@ export interface ApiConfig {
   readonly allowedOrigins: readonly string[]
   /** Server build version reported by `health`. */
   readonly version: string
+  /**
+   * Supabase secret key, for the Auth admin API only (deleting the auth user in account.delete,
+   * src/admin). Required in production; account deletion fails with an internal error without it.
+   */
+  readonly supabaseSecretKey?: string
 }
 
 export interface ApiDeps {

@@ -51,11 +51,27 @@ jobs:
       # A throwaway ES256 signing key for this run's Auth server (config.toml signing_keys_path; the
       # file is gitignored). The API accepts only asymmetric tokens, verified with getClaims().
       - run: pnpm auth:signing-key
-      # Postgres (migrations + seed.sql), Auth and the API gateway: what pgTAP, the @bizcost/db tests
-      # and the @bizcost/api integration tests need. `supabase db start` alone has no Auth server.
+      # Postgres (migrations + seed.sql), Auth, the API gateway and Mailpit (the emailed codes): what
+      # pgTAP, the @bizcost/db tests, the @bizcost/api integration tests and the e2e tests need.
+      # `supabase db start` alone has no Auth server.
       - run: >-
           supabase start
-          -x realtime,storage-api,imgproxy,mailpit,postgrest,postgres-meta,studio,edge-runtime,logflare,vector,supavisor
+          -x realtime,storage-api,imgproxy,postgrest,postgres-meta,studio,edge-runtime,logflare,vector,supavisor
       - run: supabase test db
       - run: pnpm --filter @bizcost/db test:db
       - run: pnpm --filter @bizcost/api test:api
+      # End-to-end (Playwright, Chromium only) against a production build of the web app
+      # (tests/e2e; it also reads supabase/signing_keys.json created above).
+      - run: pnpm --filter @bizcost/e2e exec playwright install --with-deps chromium
+      - run: pnpm e2e
+        env:
+          CI: 'true'
+          NEXT_TELEMETRY_DISABLED: '1'
+      - if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: e2e-results
+          path: |
+            tests/e2e/test-results
+            tests/e2e/playwright-report
+          retention-days: 7

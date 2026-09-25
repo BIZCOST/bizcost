@@ -1,0 +1,61 @@
+{
+  "title": "Account",
+  "subtitle": "Your profile, sign-in and language.",
+  "profile": {
+    "title": "Profile",
+    "description": "This is the name your team sees.",
+    "displayName": "Name",
+    "displayNameRequired": "Enter your name.",
+    "displayNameTooLong_one": "Use {{count}} character or fewer.",
+    "displayNameTooLong_other": "Use {{count}} characters or fewer.",
+    "saved": "Your name is saved."
+  },
+  "language": {
+    "title": "Language",
+    "description": "The language of BizCost and of the emails we send you.",
+    "saved": "Language changed."
+  },
+  "email": {
+    "title": "Email",
+    "description": "You sign in with this email.",
+    "current": "Current email",
+    "change": "Change email",
+    "newEmail": "New email",
+    "sameEmail": "This is already your email.",
+    "sendCodes": "Send codes",
+    "codesSent": "We sent a code to your current email and one to the new email. Enter both codes below.",
+    "currentCode": "Code sent to your current email",
+    "newCode": "Code sent to your new email",
+    "submit": "Change email",
+    "changed": "Your email is now {{email}}.",
+    "noCodes": "Didn't get the codes? Check the address and your spam folder, then send new codes.",
+    "resendCodes": "Send new codes",
+    "resendCodesIn_one": "You can ask for new codes in {{count}} second.",
+    "resendCodesIn_other": "You can ask for new codes in {{count}} seconds."
+  },
+  "password": {
+    "title": "Password",
+    "description": "To keep your account safe, we'll email you a code first.",
+    "change": "Change password",
+    "codeSent": "We sent a code to {{email}}.",
+    "submit": "Change password",
+    "changed": "Your password is changed."
+  },
+  "sessions": {
+    "title": "Sign out everywhere",
+    "description": "Sign out of BizCost on all your devices, including this one.",
+    "action": "Sign out everywhere",
+    "confirmTitle": "Sign out on all devices?",
+    "confirmBody": "You'll need to sign in again on each device.",
+    "confirm": "Sign out everywhere"
+  },
+  "delete": {
+    "title": "Delete account",
+    "description": "Your sign-in and your name are removed, and you lose access to your businesses. This can't be undone.",
+    "action": "Delete my account",
+    "confirmTitle": "Delete your account?",
+    "confirmBody": "You lose access to BizCost right away. Businesses where you are the only member are deleted too. This can't be undone.",
+    "codeSent": "To keep your account safe, enter the code we sent to {{email}}.",
+    "confirm": "Delete account"
+  }
+}

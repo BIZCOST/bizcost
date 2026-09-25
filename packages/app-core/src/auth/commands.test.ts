@@ -1,0 +1,142 @@
+import { describe, expect, it } from 'vitest'
+import { apiError, failOnce, fakeAuth } from '../test/fake-auth'
+import {
+  requestPasswordReset,
+  requestSignInCode,
+  signInWithPassword,
+  signOut,
+  signUp,
+  syncAuthLocale,
+} from './commands'
+import { AuthRetryableFetchError } from '@supabase/supabase-js'
+
+describe('signUp', () => {
+  it('sends the locale as user metadata and normalizes the email', async () => {
+    const { auth, calls } = fakeAuth()
+    const result = await signUp(auth, {
+      email: '  Sara@Example.COM ',
+      password: 'long-enough-1',
+      locale: 'ar',
+    })
+    expect(result).toEqual({ ok: true, email: 'sara@example.com' })
+    expect(calls.signUp).toHaveBeenCalledWith({
+      email: 'sara@example.com',
+      password: 'long-enough-1',
+      options: { data: { locale: 'ar' } },
+    })
+  })
+
+  it('answers an existing address exactly like a new one', async () => {
+    const { auth, calls } = fakeAuth()
+    failOnce(calls, 'signUp', apiError('user_already_exists', 422))
+    const existing = await signUp(auth, { email: 'a@b.co', password: 'x'.repeat(10), locale: 'en' })
+    const fresh = await signUp(auth, { email: 'a@b.co', password: 'x'.repeat(10), locale: 'en' })
+    expect(existing).toEqual(fresh)
+  })
+
+  it('shows real problems', async () => {
+    const { auth, calls } = fakeAuth()
+    failOnce(calls, 'signUp', apiError('weak_password', 422))
+    expect(await signUp(auth, { email: 'a@b.co', password: 'x', locale: 'en' })).toEqual({
+      ok: false,
+      error: 'auth.errors.weakPassword',
+    })
+  })
+
+  it('says when no email can be sent right now instead of pretending one was sent', async () => {
+    const { auth, calls } = fakeAuth()
+    failOnce(calls, 'signUp', apiError('over_email_send_rate_limit', 429))
+    expect(await signUp(auth, { email: 'a@b.co', password: 'x'.repeat(10), locale: 'en' })).toEqual(
+      { ok: false, error: 'auth.errors.emailRateLimited' },
+    )
+  })
+})
+
+describe('signInWithPassword', () => {
+  it('signs in', async () => {
+    const { auth } = fakeAuth()
+    expect(await signInWithPassword(auth, { email: 'a@b.co', password: 'pw' })).toEqual({
+      ok: true,
+      next: 'signedIn',
+    })
+  })
+
+  it('says only "email or password is wrong" for a wrong password or an unknown email', async () => {
+    const { auth, calls } = fakeAuth()
+    failOnce(calls, 'signInWithPassword', apiError('invalid_credentials'))
+    expect(await signInWithPassword(auth, { email: 'a@b.co', password: 'pw' })).toEqual({
+      ok: false,
+      error: 'auth.errors.invalidCredentials',
+    })
+  })
+
+  it('sends a new sign-up code when the email is not confirmed yet', async () => {
+    const { auth, calls } = fakeAuth()
+    failOnce(calls, 'signInWithPassword', apiError('email_not_confirmed'))
+    failOnce(calls, 'resend', apiError('over_email_send_rate_limit', 429))
+    expect(await signInWithPassword(auth, { email: 'A@b.co', password: 'pw' })).toEqual({
+      ok: true,
+      next: 'confirmEmail',
+      email: 'a@b.co',
+    })
+    expect(calls.resend).toHaveBeenCalledWith({ type: 'signup', email: 'a@b.co' })
+  })
+})
+
+describe('requestSignInCode', () => {
+  it('asks for a code for any address, creating a missing account in the page language', async () => {
+    const { auth, calls } = fakeAuth()
+    await requestSignInCode(auth, { email: ' A@b.co', locale: 'ar' })
+    expect(calls.signInWithOtp).toHaveBeenCalledWith({
+      email: 'a@b.co',
+      options: { shouldCreateUser: true, data: { locale: 'ar' } },
+    })
+  })
+
+  it('treats "Signups not allowed for otp" (sign-ups closed) exactly like success', async () => {
+    const { auth, calls } = fakeAuth()
+    failOnce(calls, 'signInWithOtp', apiError('otp_disabled', 422))
+    const unknown = await requestSignInCode(auth, { email: 'nobody@b.co', locale: 'en' })
+    const known = await requestSignInCode(auth, { email: 'nobody@b.co', locale: 'en' })
+    expect(unknown).toEqual({ ok: true, email: 'nobody@b.co' })
+    expect(unknown).toEqual(known)
+  })
+
+  it('reports a network failure', async () => {
+    const { auth, calls } = fakeAuth()
+    failOnce(calls, 'signInWithOtp', new AuthRetryableFetchError('fetch failed', 0))
+    expect(await requestSignInCode(auth, { email: 'a@b.co', locale: 'en' })).toEqual({
+      ok: false,
+      error: 'errors.network',
+    })
+  })
+})
+
+describe('requestPasswordReset', () => {
+  it('answers the same for any address', async () => {
+    const { auth, calls } = fakeAuth()
+    failOnce(calls, 'resetPasswordForEmail', apiError('user_not_found', 404))
+    expect(await requestPasswordReset(auth, { email: 'x@b.co' })).toEqual({
+      ok: true,
+      email: 'x@b.co',
+    })
+    expect(calls.resetPasswordForEmail).toHaveBeenCalledWith('x@b.co')
+  })
+})
+
+describe('signOut and syncAuthLocale', () => {
+  it('signs out here or everywhere; a session already gone counts as signed out', async () => {
+    const { auth, calls } = fakeAuth()
+    expect(await signOut(auth, 'global')).toEqual({ ok: true })
+    expect(calls.signOut).toHaveBeenCalledWith({ scope: 'global' })
+    failOnce(calls, 'signOut', apiError('session_not_found', 404))
+    expect(await signOut(auth, 'local')).toEqual({ ok: true })
+    expect(calls.signOut).toHaveBeenLastCalledWith({ scope: 'local' })
+  })
+
+  it('saves the language in user metadata for the auth emails', async () => {
+    const { auth, calls } = fakeAuth()
+    expect(await syncAuthLocale(auth, 'en')).toEqual({ ok: true })
+    expect(calls.updateUser).toHaveBeenCalledWith({ data: { locale: 'en' } })
+  })
+})

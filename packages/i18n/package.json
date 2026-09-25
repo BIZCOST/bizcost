@@ -1,0 +1,28 @@
+{
+  "name": "@bizcost/i18n",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "sideEffects": false,
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc -p tsconfig.json",
+    "lint": "eslint .",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@bizcost/domain": "workspace:*",
+    "decimal.js": "catalog:",
+    "i18next": "catalog:"
+  },
+  "devDependencies": {
+    "@bizcost/config": "workspace:*",
+    "@bizcost/contracts": "workspace:*",
+    "eslint": "catalog:",
+    "typescript": "catalog:",
+    "vite": "catalog:",
+    "vitest": "catalog:"
+  }
+}

@@ -1,0 +1,14 @@
+{
+  "unauthorized": "Your session ended. Please sign in again.",
+  "forbidden": "You don't have access to this.",
+  "not_found": "We couldn't find what you're looking for.",
+  "conflict": "This was changed somewhere else at the same time. Refresh and try again.",
+  "validation": "Some details aren't valid. Check them and try again.",
+  "module_disabled": "This feature is turned off for this business.",
+  "app_version_unsupported": "Please update BizCost to continue.",
+  "rate_limited": "Too many tries. Wait a moment and try again.",
+  "sole_owner": "You are the only owner of a business that has other members. First make another member an owner, or remove the other members.",
+  "reauth_required": "To keep your account safe, confirm it's you with the code we email you, then try again.",
+  "internal": "Something went wrong on our side. Please try again.",
+  "network": "Can't connect. Check your internet and try again."
+}

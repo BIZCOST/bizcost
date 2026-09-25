@@ -303,6 +303,8 @@ describe('APP_ERROR_CODES', () => {
     'module_disabled',
     'app_version_unsupported',
     'rate_limited',
+    'sole_owner',
+    'reauth_required',
     'internal',
   ]
 

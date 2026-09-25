@@ -1,0 +1,92 @@
+/* Generated from packages/tokens/src/tokens.ts by `pnpm --filter @bizcost/tokens generate`. Do not edit. */
+
+@theme {
+  --radius-sm: 0.375rem;
+  --radius-md: 0.5rem;
+  --radius-lg: 0.625rem;
+  --radius-xl: 0.875rem;
+}
+
+@layer theme {
+  :root {
+    @variant light {
+      --color-background: #f5f7fa;
+      --color-foreground: #101828;
+      --color-card: #ffffff;
+      --color-card-foreground: #101828;
+      --color-popover: #ffffff;
+      --color-popover-foreground: #101828;
+      --color-primary: #1668c2;
+      --color-primary-foreground: #ffffff;
+      --color-secondary: #eef3fa;
+      --color-secondary-foreground: #12305a;
+      --color-muted: #eef1f5;
+      --color-muted-foreground: #5b6676;
+      --color-accent: #e8f0fb;
+      --color-accent-foreground: #0f3f75;
+      --color-destructive: #c62f3a;
+      --color-destructive-foreground: #ffffff;
+      --color-border: #e1e6ed;
+      --color-input: #808b9e;
+      --color-ring: #1668c2;
+      --color-brand: #0b4f8f;
+      --color-brand-foreground: #ffffff;
+      --color-profit: #0b7f5b;
+      --color-profit-foreground: #ffffff;
+      --color-loss: #c62f3a;
+      --color-loss-foreground: #ffffff;
+      --color-success: #0b7f5b;
+      --color-success-foreground: #ffffff;
+      --color-warning: #a85a07;
+      --color-warning-foreground: #ffffff;
+      --color-info: #0a74b0;
+      --color-info-foreground: #ffffff;
+      --color-chart-1: #2f80d1;
+      --color-chart-2: #18a06b;
+      --color-chart-3: #f2b01e;
+      --color-chart-4: #e0443e;
+      --color-chart-5: #7b5cd6;
+      --color-chart-6: #1f3a5f;
+    }
+
+    @variant dark {
+      --color-background: #0b1220;
+      --color-foreground: #e6edf6;
+      --color-card: #111a2b;
+      --color-card-foreground: #e6edf6;
+      --color-popover: #111a2b;
+      --color-popover-foreground: #e6edf6;
+      --color-primary: #5aa2ee;
+      --color-primary-foreground: #08203d;
+      --color-secondary: #1a2638;
+      --color-secondary-foreground: #e6edf6;
+      --color-muted: #172233;
+      --color-muted-foreground: #9aa8bb;
+      --color-accent: #1c2b42;
+      --color-accent-foreground: #e6edf6;
+      --color-destructive: #f0606b;
+      --color-destructive-foreground: #1f0306;
+      --color-border: #223047;
+      --color-input: #617189;
+      --color-ring: #5aa2ee;
+      --color-brand: #0e3f72;
+      --color-brand-foreground: #ffffff;
+      --color-profit: #34c790;
+      --color-profit-foreground: #04241a;
+      --color-loss: #f0606b;
+      --color-loss-foreground: #1f0306;
+      --color-success: #34c790;
+      --color-success-foreground: #04241a;
+      --color-warning: #f2a33a;
+      --color-warning-foreground: #2b1700;
+      --color-info: #4db3e6;
+      --color-info-foreground: #03202f;
+      --color-chart-1: #5aa2ee;
+      --color-chart-2: #34c790;
+      --color-chart-3: #f5c04a;
+      --color-chart-4: #f0606b;
+      --color-chart-5: #a08bf0;
+      --color-chart-6: #8ea3bf;
+    }
+  }
+}

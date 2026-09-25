@@ -18,6 +18,8 @@ describe('AppError', () => {
     ['app_version_unsupported', 'PRECONDITION_FAILED'],
     ['validation', 'BAD_REQUEST'],
     ['conflict', 'CONFLICT'],
+    ['sole_owner', 'CONFLICT'],
+    ['reauth_required', 'FORBIDDEN'],
     ['internal', 'INTERNAL_SERVER_ERROR'],
   ] as const)('%s uses the tRPC code %s', (appCode, trpcCode) => {
     const error = new AppError(appCode)

@@ -1,0 +1,48 @@
+{{- $en := eq (printf "%v" .Data.locale) "en" -}}
+<!DOCTYPE html>
+<html lang="{{ if $en }}en{{ else }}ar{{ end }}" dir="{{ if $en }}ltr{{ else }}rtl{{ end }}">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="color-scheme" content="light only">
+    <title>{{ if $en }}Your BizCost code{{ else }}رمزك في BizCost{{ end }}</title>
+  </head>
+  <body style="margin:0;padding:0;background-color:#F5F7FA;">
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" bgcolor="#F5F7FA" style="background-color:#F5F7FA;">
+      <tr>
+        <td align="center" style="padding:32px 16px;">
+          <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="max-width:480px;">
+            <tr>
+              <td align="center" dir="ltr" style="padding:0 0 20px 0;">
+                <table role="presentation" cellpadding="0" cellspacing="0" border="0">
+                  <tr>
+                    <td valign="bottom" style="padding:0 4px 5px 0;"><table role="presentation" cellpadding="0" cellspacing="0" border="0"><tr><td width="8" height="11" bgcolor="#0B4F8F" style="width:8px;height:11px;background-color:#0B4F8F;border-radius:2px 2px 0 0;font-size:0;line-height:0;">&nbsp;</td></tr></table></td>
+                    <td valign="bottom" style="padding:0 4px 5px 0;"><table role="presentation" cellpadding="0" cellspacing="0" border="0"><tr><td width="8" height="19" bgcolor="#0B4F8F" style="width:8px;height:19px;background-color:#0B4F8F;border-radius:2px 2px 0 0;font-size:0;line-height:0;">&nbsp;</td></tr></table></td>
+                    <td valign="bottom" style="padding:0 4px 5px 0;"><table role="presentation" cellpadding="0" cellspacing="0" border="0"><tr><td width="8" height="28" bgcolor="#0B4F8F" style="width:8px;height:28px;background-color:#0B4F8F;border-radius:2px 2px 0 0;font-size:0;line-height:0;">&nbsp;</td></tr></table></td>
+                    <td valign="bottom" style="padding:0 0 0 6px;font-family:'IBM Plex Sans Arabic','IBM Plex Sans','Segoe UI',Tahoma,Arial,sans-serif;font-size:28px;line-height:34px;font-weight:700;color:#101828;">BizCost</td>
+                  </tr>
+                </table>
+              </td>
+            </tr>
+            <tr>
+              <td dir="{{ if $en }}ltr{{ else }}rtl{{ end }}" align="{{ if $en }}left{{ else }}right{{ end }}" bgcolor="#FFFFFF" style="padding:32px 24px;background-color:#FFFFFF;border:1px solid #E1E6ED;border-radius:12px;font-family:'IBM Plex Sans Arabic','IBM Plex Sans','Segoe UI',Tahoma,Arial,sans-serif;color:#101828;">
+              <h1 style="margin:0 0 12px 0;font-size:22px;line-height:32px;font-weight:700;color:#101828;">{{ if $en }}Your BizCost code{{ else }}رمزك في BizCost{{ end }}</h1>
+              <p style="margin:0 0 24px 0;font-size:16px;line-height:26px;">{{ if $en }}Enter this code in BizCost to continue.{{ else }}أدخل هذا الرمز في BizCost للمتابعة.{{ end }}</p>
+              <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
+                <tr>
+                  <td align="center" dir="ltr" bgcolor="#EEF3FA" style="padding:16px 8px 16px 16px;background-color:#EEF3FA;border:1px solid #E1E6ED;border-radius:10px;font-family:'IBM Plex Mono',Consolas,'Courier New',monospace;font-size:34px;line-height:40px;font-weight:700;letter-spacing:8px;color:#0B4F8F;">{{ .Token }}</td>
+                </tr>
+              </table>
+              <p style="margin:24px 0 0 0;font-size:14px;line-height:22px;color:#5B6676;">{{ if $en }}This code expires in 10 minutes. Don't share it with anyone.{{ else }}ينتهي هذا الرمز بعد 10 دقائق. لا تشاركه مع أي شخص.{{ end }}</p>
+              <p style="margin:8px 0 0 0;font-size:14px;line-height:22px;color:#5B6676;">{{ if $en }}If you didn't ask for this, ignore this email.{{ else }}إذا لم تطلب هذا الرمز، تجاهل هذه الرسالة.{{ end }}</p>
+              </td>
+            </tr>
+            <tr>
+              <td dir="{{ if $en }}ltr{{ else }}rtl{{ end }}" align="center" style="padding:20px 8px 0 8px;font-family:'IBM Plex Sans Arabic','IBM Plex Sans','Segoe UI',Tahoma,Arial,sans-serif;font-size:12px;line-height:18px;color:#5B6676;">{{ if $en }}Know your costs. Grow your business.{{ else }}اعرف تكلفتك الحقيقية. وطوّر أعمالك.{{ end }}</td>
+            </tr>
+          </table>
+        </td>
+      </tr>
+    </table>
+  </body>
+</html>

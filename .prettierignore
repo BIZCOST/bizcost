@@ -3,3 +3,7 @@ docs/mockups/
 coverage/
 .turbo/
 supabase/migrations/meta/
+# Auth email templates: hand-tuned email HTML with Go template actions Prettier does not understand.
+supabase/templates/
+test-results/
+playwright-report/

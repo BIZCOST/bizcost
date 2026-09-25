@@ -7,7 +7,7 @@ import { isVerifiableToken, userFromClaims } from './auth'
 import { createContext } from './context'
 import type { ApiConfig } from './deps'
 import { appCodeOf } from './errors'
-import { defaultDisplayName } from './routers/me'
+import { defaultDisplayName } from './services/profile'
 import {
   assertQueryable,
   authedProcedure,
@@ -252,6 +252,10 @@ describe('userFromClaims', () => {
     iat: 0,
     aal: 'aal1' as const,
     session_id: 's',
+    amr: [
+      { method: 'password', timestamp: 1_700_000_000 },
+      { method: 'otp', timestamp: 1_700_000_600 },
+    ],
   }
 
   it('maps the claims of a signed-in user', () => {
@@ -260,7 +264,13 @@ describe('userFromClaims', () => {
       email: 'rashed@example.com',
       emailVerified: true,
       locale: 'en',
+      authenticatedAt: 1_700_000_600,
     })
+  })
+
+  it('has no sign-in time without timestamped amr entries', () => {
+    expect(userFromClaims('ES256', { ...claims, amr: ['password'] })?.authenticatedAt).toBeNull()
+    expect(userFromClaims('ES256', { ...claims, amr: undefined })?.authenticatedAt).toBeNull()
   })
 
   it('ignores an unsupported locale', () => {

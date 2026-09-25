@@ -14,6 +14,8 @@ const TRPC_CODE_OF: Record<AppErrorCode, TRPC_ERROR_CODE_KEY> = {
   module_disabled: 'FORBIDDEN',
   app_version_unsupported: 'PRECONDITION_FAILED',
   rate_limited: 'TOO_MANY_REQUESTS',
+  sole_owner: 'CONFLICT',
+  reauth_required: 'FORBIDDEN',
   internal: 'INTERNAL_SERVER_ERROR',
 }
 

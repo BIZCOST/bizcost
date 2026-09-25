@@ -34,3 +34,7 @@ supabase/signing_keys.json
 
 # Next.js
 next-env.d.ts
+
+# Playwright (tests/e2e)
+test-results/
+playwright-report/

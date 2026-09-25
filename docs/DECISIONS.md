@@ -3,7 +3,7 @@
 Purpose: a numbered record of every confirmed decision, why we made it, and what we rejected. The details live in the doc each entry links to.
 Last updated: 2026-09-25
 
-- **Status:** every entry is DECIDED. Implemented so far: the Step 0a repo scaffold, the Step 1 data foundation (D-047–D-053 and the data/tenancy entries they build on) and the Step 2 API core (D-054–D-061). "Open:" marks a sub-choice that is still unsettled, tracked in ROADMAP.md §Open, with deadline.
+- **Status:** every entry is DECIDED. Implemented so far: the Step 0a repo scaffold, the Step 1 data foundation (D-047–D-053 and the data/tenancy entries they build on), the Step 2 API core (D-054–D-061) and the Step 3 web auth (D-062–D-070). "Open:" marks a sub-choice that is still unsettled, tracked in ROADMAP.md §Open, with deadline.
 - **Editing:** append new entries with the next number and never renumber. To change a decision, add a new entry and mark the old one "Superseded by D-0xx".
 - **Sources:** the owner's spec, the owner's confirmations (2026-09-24), and the architecture panel as corrected by its critique.
 
@@ -252,6 +252,8 @@ Last updated: 2026-09-25
 
 ### D-039 · 2026-09-24 · Never reveal whether an account exists
 
+Superseded in part by D-062: "send me a code" now creates a missing account.
+
 - **Decision:** Code sign-in (`signInWithOtp`, `shouldCreateUser:false`) treats "Signups not allowed for otp" exactly like success and shows "If you have an account, we sent a code". The signup-code screen links to sign-in and to password reset, because signing up with an existing email sends no code. Supabase errors map to i18n keys by `error.code`, never by the message text.
 - **Why:** Responses must not reveal whether an email is registered.
 - **Rejected:** showing Supabase's raw errors. Details: ARCHITECTURE.md §Auth
@@ -263,6 +265,8 @@ Last updated: 2026-09-25
 - **Rejected:** a Send Email Hook in M1; Supabase's default SMTP; link-based templates. Details: ARCHITECTURE.md §Auth
 
 ### D-041 · 2026-09-24 · Session checks, and LargeSecureStore on mobile
+
+The sign-out scope is refined by D-066 (header: this device; account page: every device).
 
 - **Decision:** Use asymmetric JWT keys and the new publishable/secret keys. The server trusts only `getClaims()`, which verifies locally against JWKS for both cookie and Bearer tokens. Web uses @supabase/ssr with the Next `proxy.ts`. Expo uses supabase-js with LargeSecureStore: the AES key is in expo-secure-store and the encrypted session is in AsyncStorage. Set `android.allowBackup:false`, or exclude AsyncStorage from backups. If decryption fails, clear the session and show the user as signed out. Auto-refresh follows AppState. Sign-out uses `scope:'global'`.
 - **Why:** SecureStore has a 2048-byte limit. A restored backup has no Keystore key, so decryption would crash the app.
@@ -395,3 +399,59 @@ Last updated: 2026-09-25
 - **Decision:** (1) Before `getClaims()`, a token (Bearer or the cookie session's access token) must have a JSON header with ES256/RS256 and a `kid` and a JSON payload with a numeric `exp`; anything `getClaims()` returns or throws for a bad token is 401 and is not reported, and only an unreachable Auth server is `internal`. (2) A batch holds at most `API_MAX_BATCH_SIZE` = 20 calls (400 otherwise; clients set `maxItems` to it), and `me` is memoized per request. (3) The context never holds the pool: `ctx.tenantTx` binds `withTenantTx` to the verified caller and the request id, and lint allows `withTenantTx`/`createDb` only in `context.ts`. Lint also enforces the layer order domain → contracts → modules → db → api. (4) `SENTRY_DSN` is read only by `instrumentation.ts`, never by the API's env schema.
 - **Why:** Crafted tokens made auth-js throw (WebCrypto `DataError`, JSON `SyntaxError`), turning 401 into 500 and flooding error reporting; a token without `kid` made auth-js ask the Auth server on every request. One unbounded batch of `me` held the single connection for seconds. A pool on the context was guarded only by a narrow lint selector. A malformed optional DSN failed every API request.
 - **Rejected:** accepting RS256 only when the JWKS has an RSA key (the key-type mismatch is already a 401); a larger pool instead of a batch limit (still unbounded work per request). Details: ARCHITECTURE.md §API & request flow, §Package dependency rules
+
+## Web auth (Step 3)
+
+### D-062 · 2026-09-25 · Account existence: what the app hides, and what Supabase still reveals
+
+- **Decision:** (1) `[auth.sms] enable_confirmations = true` (BizCost has no phone sign-in): with SMS auto-confirm on, Supabase answers a sign-up with a registered email with `user_already_exists` instead of the answer a new email gets. (2) "Send me a code" calls `signInWithOtp({ shouldCreateUser: true })` with the page language in `data.locale`: an address without an account gets one (unconfirmed until the code is entered; its email is the sign-up code), so a registered and a new address get the same `200 {}`. The code screen says "We sent a code to …". This supersedes the `shouldCreateUser:false` part of D-039. (3) A sign-up that hits the email rate limit shows "We can't send you an email right now" instead of pretending a code was sent (a new address can only hit the project-wide budget, which reveals nothing); the code requests keep treating it as success. (4) `[auth.rate_limit] email_sent = 100` per hour, a production value for custom SMTP (Supabase's default of 2 would let any visitor use up the budget). (5) Still revealed by Supabase's public endpoints, and accepted for now: `/recover` answers a second request within 60 s with 429 only for a registered address; response timing (creating an account takes longer); `email_exists` when a signed-in user changes to an address in use. Mitigations: per-IP rate limits, and CAPTCHA (Cloudflare Turnstile on sign-up, code and reset) before the first real user (owner action).
+- **Why:** The Step 3 security review showed the browser itself receives different answers (`otp_disabled` 422 vs 200, `user_already_exists` 422 vs 200), so a stranger could list accounts with the publishable key. A code for a new address is also what a person on the wrong tab most likely wants.
+- **Rejected:** proxying auth calls through our API (the public endpoint stays callable, and every rate limit would see one server IP); keeping `shouldCreateUser:false` (it cannot give the same answer); promising more than the platform can hold ("the screens never reveal" is the promise; the API-level gaps above are listed). Details: ARCHITECTURE.md §Auth
+
+### D-063 · 2026-09-25 · "Confirm it's you" is an emailed code that Supabase checks
+
+- **Decision:** Changing the password (and deleting an account signed in more than 10 minutes ago, D-064) first emails the user's own sign-in code (`signInWithOtp`, `shouldCreateUser:false`) and checks it with `verifyOtp(type 'email')`, which also renews the session; only then is `updateUser({ password })` sent. The app does not call `reauthenticate()`. The magic-link template's wording is neutral ("Your BizCost code … to continue") because it serves sign-in and this check. Remaining gap: Supabase lets any session younger than 24 hours call `updateUser({ password })` directly, so a stolen fresh session can still change the password outside the app; when the Supabase CLI supports them, turn on "require the current password" and the "password changed" email.
+- **Why:** With `secure_password_change`, Supabase checks the `reauthenticate()` nonce only for sessions older than 24 hours, so on a fresh session any 6 digits changed the password (a misleading step). `verifyOtp` is always checked by the server, and a wrong code never reaches the password update.
+- **Rejected:** the `reauthenticate()` nonce (not enforced); asking for the current password in the UI only (not enforced either, and accounts created by a code have none); checking Supabase's nonce hash in our database (copies Auth internals). Details: ARCHITECTURE.md §Auth
+
+### D-064 · 2026-09-25 · Account deletion as built
+
+- **Decision:** `account.delete` checks before any change: the secret key is set; the caller is not the only active owner of a business with other members (`sole_owner`); the Auth admin API works (`getUserById`: a wrong or rotated key or an outage is `internal`); the newest `amr` entry of the access token is at most `AUTH_RECENT_SIGN_IN_SECONDS` = 600 s old (`reauth_required`, HTTP 403; the web dialog then emails a D-063 code and retries). Then, per business in its own transaction (the tenant context is one business): a business whose only member is the caller is soft-deleted after its row is locked `FOR UPDATE` and the plan re-checked (adding a member takes a key-share lock on that row, so it either commits first and blocks the deletion, or waits); the caller's membership becomes `removed` with display name 'Deleted user'. Last, in one transaction, the profile is anonymized and the auth user deleted with the Admin API, so a failed Admin call rolls the anonymization back. Every step is idempotent; if the auth user is already gone, a retry only finishes the anonymization.
+- **Why:** The review showed a wrong secret key left a live account with its business deleted and its name anonymized, and a fresh or stolen session could delete everything with one click. Per-business transactions follow from the one-business tenant context; a member joining between the check and the write is the remaining window, and a half-finished deletion (some businesses already left) is simply retried.
+- **Rejected:** one transaction across businesses (not possible with the tenant context); SERIALIZABLE with retries (the row lock is enough for M1's join paths); deleting the auth user first (a failed database step would leave data nobody can clean up). Details: ARCHITECTURE.md §Auth; DATA_MODEL.md §4 businesses
+
+### D-065 · 2026-09-25 · Deleted accounts' tokens, and the name co-members see
+
+- **Decision:** Access tokens are verified locally, so a deleted account's token stays valid until it expires (up to 1 hour). Every `authedProcedure` (outside a business) therefore checks once per request that the caller's profile is not anonymized (`unauthorized` otherwise; the web shows "session ended"), and `account.updateProfile` changes only a profile that is not anonymized. Business procedures need no extra check: deletion removes every membership first. A new display name is copied to the caller's active memberships (`business_members.display_name`), each in its business's own transaction, as D-048 requires.
+- **Why:** The review showed a deleted user could keep calling `me` and rename the anonymized profile back, and that co-members kept seeing a deleted person's name or email.
+- **Rejected:** a shorter JWT lifetime (more refreshes, still a window); a database trigger that copies names across businesses. Details: ARCHITECTURE.md §API & request flow
+
+### D-066 · 2026-09-25 · Sign-out: this device from the header, every device from the account page
+
+- **Decision:** "Sign out" in the app header ends this device's session (`signOut({ scope: 'local' })`, which also revokes it on the server). "Sign out everywhere" on the account page, behind a confirmation, ends every session (`scope: 'global'`). This refines D-041 ("sign-out uses `scope:'global'`"); mobile follows the same split in Step 8.
+- **Why:** Signing out on a shared computer should not silently sign the user out of their phone, and two actions with the same effect were described differently.
+- **Rejected:** global sign-out from the header (surprising); a confirmation on every sign-out. Details: ARCHITECTURE.md §Auth
+
+### D-067 · 2026-09-25 · Arabic tone and the default language
+
+- **Decision:** Arabic UI copy is simple, friendly Modern Standard Arabic (فصحى مبسطة): short sentences, no accounting jargon, gender-neutral where possible ("أدخل" is fine as the usual imperative), and the glossary in PRODUCT.md §13 (e.g. the brand line "اعرف تكلفتك الحقيقية. وطوّر أعمالك."). English is plain and short. Latin digits (`ar-AE-u-nu-latn`); Arabic-Indic digits are accepted in inputs. A visitor gets the `bz_locale` cookie's language, else the first `ar*`/`en*` of Accept-Language, else Arabic. For a signed-in user `profiles.locale` wins: the (app) layout writes it to the cookie when they differ. A new profile is named after the email's local part, so home says "Welcome to BizCost" until the user sets a name. The owner's Gulf wording for the Smart Setup questions stays open until Step 5.
+- **Why:** The lead settled the tone for Step 3 (F1). A cookie-first order lets every page render without a database call.
+- **Rejected:** Gulf dialect across the app; greeting people by their email prefix. Details: PRODUCT.md §13; ARCHITECTURE.md §i18n & RTL
+
+### D-068 · 2026-09-25 · Auth emails as built
+
+- **Decision:** Five templates in `supabase/templates` (confirmation, magic_link, recovery, email_change, reauthentication) show only `{{ .Token }}`, in its own table cell, with inline styles and the brand blue. Body and subject switch language on `user_metadata.locale` (`"en"` gives English, anything else Arabic with `dir="rtl"`), since Supabase evaluates Go templates in subjects too. `user_metadata.locale` is set at sign-up (and by a code request that creates an account) and updated with `profiles.locale` when the user changes language. Locally, a new template or subject needs the Auth container recreated; edits to an existing file are picked up by Auth.
+- **Why:** One code per email, readable in both languages, without a Send Email Hook (D-040).
+- **Rejected:** one bilingual subject line (not needed); links in emails. Details: ARCHITECTURE.md §Auth
+
+### D-069 · 2026-09-25 · Shape of the web auth code
+
+- **Decision:** `packages/tokens` generates `theme.web.css` and `theme.native.css` from `tokens.ts` (a test keeps them current). `packages/i18n` (no React) gives a new i18next instance per call, typed keys, formatters and `dir()`. `packages/app-core` holds the auth flows as reducers with small controllers around an injected supabase-js client, the client form schemas (`zod/mini`, so the browser bundles no Zod locales) and the tRPC/Query setup; the pure packages are marked `sideEffects: false`. `apps/web` uses Tailwind v4 + shadcn/ui (`rtl: true`), IBM Plex Sans + IBM Plex Sans Arabic, `proxy.ts` for session refresh and routing, a sessionStorage hand-off from a code request to `/verify` or `/reset` (only the email, the purpose and the send time) and a server-side `me` for the (app) layout. Session cookies are `Secure` except on plain http to a host other than localhost. Every response sends `X-Frame-Options: DENY`, CSP `frame-ancestors 'none'`, HSTS, `nosniff` and a strict referrer policy, and no `X-Powered-By`. Tap targets are at least 44 px, except on large screens with a mouse. Deferred: the browser bundle still holds both languages' messages (~24 KB gzip); split them per locale when Steps 5–6 add namespaces.
+- **Why:** Mobile (Step 8) reuses the flows and schemas. The review measured 113 KB gzip of Zod locales on every page and found non-Secure session cookies and no anti-framing headers.
+- **Rejected:** Server Actions for auth; classic Zod in the browser. Details: ARCHITECTURE.md §Repo structure, §Styling, §i18n & RTL
+
+### D-070 · 2026-09-25 · End-to-end tests
+
+- **Decision:** Playwright (Chromium only) in `tests/e2e` runs against a production build of `apps/web` in its own folder (`.next/e2e`, via `NEXT_DIST_DIR`) on `E2E_PORT` (default 3100), with the local stack's Auth and Mailpit (codes are read from the email's code cell). Locally: `pnpm e2e`. In CI it runs in the `db` job after the API tests, with Mailpit started, and uploads its results on failure. It stays out of `pnpm check`. Test addresses are letters only, so no digits sit next to a code.
+- **Why:** The flows need a real Auth server and real emails; a production build avoids first-visit compile timeouts and can run next to a developer's `next dev`.
+- **Rejected:** `next dev` for e2e (slow first visits, clashes with a running dev server); keeping e2e local-only (the CI job already starts Auth). Details: ARCHITECTURE.md §Testing & CI

@@ -1,16 +1,11 @@
 import { meDto, type MeDto, type MembershipDto } from '@bizcost/contracts'
 import { businesses, businessMembers, profiles, roles } from '@bizcost/db'
-import { isLocale } from '@bizcost/domain'
 import { and, asc, eq, isNull } from 'drizzle-orm'
 import type { AuthUser } from '../auth'
 import { memoized, type Context } from '../context'
 import { AppError } from '../errors'
+import { ensureProfile, profileColumns, toProfileDto } from '../services/profile'
 import { authedProcedure } from '../trpc'
-
-/** Default display name for a new profile: the local part of the email. */
-export function defaultDisplayName(email: string | null): string {
-  return email?.split('@')[0]?.trim() ?? ''
-}
 
 /**
  * `me` (authed): the caller's profile and the businesses they can open.
@@ -30,23 +25,12 @@ export const me = authedProcedure
   .query(({ ctx }) => memoized(ctx, 'me', () => loadMe(ctx, ctx.auth)))
 
 async function loadMe(ctx: Context, auth: AuthUser): Promise<MeDto> {
-  const { userId, email, locale } = auth
+  const { userId, email } = auth
 
   const { profile, memberships } = await ctx.tenantTx(null, async (tx) => {
     // Create-if-missing keyed by the auth user id (not an idempotent client create).
-    await tx
-      .insert(profiles)
-      .values({ id: userId, displayName: defaultDisplayName(email), locale: locale ?? 'ar' })
-      .onConflictDoNothing({ target: profiles.id })
-    const [profile] = await tx
-      .select({
-        id: profiles.id,
-        displayName: profiles.displayName,
-        locale: profiles.locale,
-        lastBusinessId: profiles.lastBusinessId,
-      })
-      .from(profiles)
-      .where(eq(profiles.id, userId))
+    await ensureProfile(tx, auth)
+    const [profile] = await tx.select(profileColumns).from(profiles).where(eq(profiles.id, userId))
     const memberships = await tx
       .select({
         businessId: businessMembers.businessId,
@@ -97,12 +81,7 @@ async function loadMe(ctx: Context, auth: AuthUser): Promise<MeDto> {
   }
 
   return {
-    profile: {
-      id: profile.id,
-      displayName: profile.displayName ?? defaultDisplayName(email),
-      locale: isLocale(profile.locale) ? profile.locale : 'ar',
-      lastBusinessId: profile.lastBusinessId,
-    },
+    profile: toProfileDto(profile, email),
     memberships: withRoles,
   }
 }

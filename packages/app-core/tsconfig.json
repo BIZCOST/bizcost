@@ -1,0 +1,9 @@
+{
+  "extends": "@bizcost/config/tsconfig.base.json",
+  "compilerOptions": {
+    "lib": ["ES2023", "DOM", "DOM.Iterable"],
+    // `import type { AppRouter } from '@bizcost/api'` type-checks the API's server sources too.
+    "types": ["node"]
+  },
+  "include": ["src"]
+}

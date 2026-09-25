@@ -1,0 +1,19 @@
+{
+  "name": "@bizcost/e2e",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "typecheck": "tsc -p tsconfig.json",
+    "lint": "eslint .",
+    "e2e": "playwright test"
+  },
+  "devDependencies": {
+    "@bizcost/config": "workspace:*",
+    "@playwright/test": "catalog:",
+    "@types/node": "catalog:",
+    "eslint": "catalog:",
+    "postgres": "catalog:",
+    "typescript": "catalog:"
+  }
+}

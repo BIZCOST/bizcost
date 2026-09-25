@@ -1,0 +1,73 @@
+{
+  "appName": "BizCost",
+  "tagline": "Know your costs. Grow your business.",
+  "brand": {
+    "logoLabel": "BizCost home",
+    "headline": "Know your costs. Grow your business.",
+    "points": {
+      "trueCost": "See the true cost of what you sell.",
+      "moneyLost": "Find where money is lost.",
+      "realProfit": "Know your real profit."
+    }
+  },
+  "language": {
+    "label": "Language",
+    "change": "Change language",
+    "en": "English",
+    "ar": "العربية"
+  },
+  "actions": {
+    "cancel": "Cancel",
+    "save": "Save",
+    "tryAgain": "Try again",
+    "signOut": "Sign out"
+  },
+  "status": {
+    "saving": "Saving…",
+    "sending": "Sending…",
+    "checking": "Checking…",
+    "signingIn": "Signing in…",
+    "creatingAccount": "Creating your account…",
+    "signingOut": "Signing out…",
+    "deleting": "Deleting…"
+  },
+  "password": {
+    "show": "Show password",
+    "hide": "Hide password"
+  },
+  "nav": {
+    "skipToContent": "Skip to main content",
+    "main": "Main",
+    "home": "Home",
+    "account": "Account",
+    "accountMenu": "Account menu"
+  },
+  "home": {
+    "greeting": "Hello, {{name}}",
+    "welcome": "Welcome to BizCost",
+    "subtitle": "Welcome to BizCost.",
+    "addName": "Add your name in your account, so your team knows who you are.",
+    "businessesTitle": "Your businesses",
+    "emptyTitle": "No business yet",
+    "emptyBody": "Soon you can set up your business here in a few simple steps with Smart Setup.",
+    "manageAccount": "Manage your account"
+  },
+  "roles": {
+    "owner": "Owner",
+    "admin": "Admin",
+    "manager": "Manager",
+    "accountant": "Accountant",
+    "sales": "Sales",
+    "supervisor": "Supervisor",
+    "employee": "Employee",
+    "custom": "Custom role"
+  },
+  "notFound": {
+    "title": "Page not found",
+    "body": "This page doesn't exist or was moved.",
+    "home": "Go to home"
+  },
+  "errorPage": {
+    "title": "Something went wrong"
+  }
+}

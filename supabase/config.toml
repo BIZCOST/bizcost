@@ -110,7 +110,7 @@ port = 54324
 # smtp_port = 54325
 # pop3_port = 54326
 # admin_email = "admin@email.com"
-# sender_name = "Admin"
+sender_name = "BizCost"
 
 [storage]
 enabled = true
@@ -196,7 +196,10 @@ password_requirements = ""
 
 [auth.rate_limit]
 # Number of emails that can be sent per hour. Requires auth.email.smtp to be enabled.
-email_sent = 2
+# BizCost: one budget for every auth email of the whole project (sign-up, codes, resets, email
+# changes). Production sends through custom SMTP (Resend, D-040), so this is a production value, not
+# Supabase's default of 2. Locally the CLI sends to Mailpit without this limit.
+email_sent = 100
 # Number of SMS messages that can be sent per hour. Requires auth.sms to be enabled.
 sms_sent = 30
 # Number of anonymous sign-ins that can be made per hour per IP address. Requires enable_anonymous_sign_ins = true.
@@ -243,10 +246,35 @@ otp_expiry = 600
 # admin_email = "admin@email.com"
 # sender_name = "Admin"
 
-# Uncomment to customize email template
-# [auth.email.template.invite]
-# subject = "You have been invited"
-# content_path = "./supabase/templates/invite.html"
+# BizCost auth emails (D-040): code only ({{ .Token }}), no links. Subject and body switch
+# language on user_metadata.locale: "en" gives English, anything else (or missing) gives Arabic.
+# printf "%v" keeps the check safe when locale is missing or not a string. content_path is
+# relative to the repo root. Locally, a new template or subject needs `supabase stop && supabase
+# start`; edits to an existing .html file are picked up by Auth within 10 minutes.
+# `invite` stays the default: BizCost invitations do not use Supabase invites (D-029).
+[auth.email.template.confirmation]
+subject = '{{ if eq (printf "%v" .Data.locale) "en" }}Your BizCost sign-up code{{ else }}رمز تأكيد التسجيل في BizCost{{ end }}'
+content_path = "./supabase/templates/confirmation.html"
+
+# magic_link: the code of "sign in with a code" and of "confirm it's you" on the account page
+# (change password, delete account), so its wording is neutral (D-063).
+[auth.email.template.magic_link]
+subject = '{{ if eq (printf "%v" .Data.locale) "en" }}Your BizCost code{{ else }}رمزك في BizCost{{ end }}'
+content_path = "./supabase/templates/magic_link.html"
+
+[auth.email.template.recovery]
+subject = '{{ if eq (printf "%v" .Data.locale) "en" }}Your BizCost password reset code{{ else }}رمز إعادة تعيين كلمة المرور في BizCost{{ end }}'
+content_path = "./supabase/templates/recovery.html"
+
+[auth.email.template.email_change]
+subject = '{{ if eq (printf "%v" .Data.locale) "en" }}Confirm your BizCost email change{{ else }}تأكيد تغيير البريد الإلكتروني في BizCost{{ end }}'
+content_path = "./supabase/templates/email_change.html"
+
+# reauthentication: the app does not call reauthenticate() (Supabase checks that code only for
+# sessions older than 24 hours, D-063); the template stays bilingual for any direct call.
+[auth.email.template.reauthentication]
+subject = '{{ if eq (printf "%v" .Data.locale) "en" }}Your BizCost verification code{{ else }}رمز التحقق في BizCost{{ end }}'
+content_path = "./supabase/templates/reauthentication.html"
 
 # Uncomment to customize notification email template
 # [auth.email.notification.password_changed]
@@ -258,7 +286,10 @@ otp_expiry = 600
 # Allow/disallow new user signups via SMS to your project.
 enable_signup = false
 # If enabled, users need to confirm their phone number before signing in.
-enable_confirmations = false
+# BizCost has no phone sign-in, but this must stay true: with SMS auto-confirm on, Supabase Auth
+# answers a sign-up with a registered email with `user_already_exists` instead of the answer a new
+# email gets, which would reveal the account (D-062).
+enable_confirmations = true
 # Template for sending OTP to users
 template = "Your code is {{ .Code }}"
 # Controls the minimum amount of time that must pass before sending another sms otp.

@@ -10,6 +10,10 @@ export const APP_ERROR_CODES = [
   'module_disabled',
   'app_version_unsupported',
   'rate_limited',
+  /** Account deletion: the caller is the only owner of a business that has other members. */
+  'sole_owner',
+  /** Account deletion: the caller must confirm it's them (a sign-in or an emailed code) first. */
+  'reauth_required',
   'internal',
 ] as const
 export type AppErrorCode = (typeof APP_ERROR_CODES)[number]

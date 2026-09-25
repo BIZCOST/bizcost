@@ -222,7 +222,8 @@ The design must handle all four without hacks. Use them to test the setup recomm
 ## 13. UI language & terminology
 
 - English + Arabic from day one, with LTR and RTL. Labels, validation and system messages are all translated. English is kept simple.
-- Arabic UI uses simple Modern Standard Arabic and shows Latin digits by default (OPEN: the owner's Smart Setup example uses Gulf wording, "شو طبيعة شغلك؟"; confirm the tone before Step 5). Arabic-Indic digits are accepted when typing. TRNs, codes and numbers display left-to-right. Implementation: ARCHITECTURE.md (i18n & RTL).
+- **Arabic tone (DECIDED, D-067):** simple, friendly Modern Standard Arabic (فصحى مبسطة). Short sentences, no accounting jargon, gender-neutral where possible ("أدخل" is fine as the usual imperative), and the terms in the table below (e.g. the brand line "اعرف تكلفتك الحقيقية. وطوّر أعمالك."). English is plain and short. Latin digits by default; Arabic-Indic digits are accepted when typing. TRNs, codes, emails and numbers display left-to-right. OPEN: the owner's Smart Setup example uses Gulf wording ("شو طبيعة شغلك؟"); confirm the wording of the Smart Setup questions before Step 5.
+- **Default language (DECIDED, D-067):** a new visitor gets Arabic or English from the browser's language (Arabic when it is neither). The choice is remembered on the device; once signed in, the language saved in the account wins, and it is also the language of the emails we send. Implementation: ARCHITECTURE.md (i18n & RTL).
 
 | English (UI)          | Arabic (UI)           | Meaning / note                                                 |
 | --------------------- | --------------------- | -------------------------------------------------------------- |

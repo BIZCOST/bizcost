@@ -28,7 +28,7 @@ function env(name: string): string {
 
 export const SUPABASE_URL = env('SUPABASE_API_URL')
 const PUBLISHABLE_KEY = env('SUPABASE_PUBLISHABLE_KEY')
-const SECRET_KEY = env('SUPABASE_SECRET_KEY')
+export const SECRET_KEY = env('SUPABASE_SECRET_KEY')
 /** The local stack's legacy HS256 secret (a public demo value), for forged-token tests. */
 export const LEGACY_JWT_SECRET = env('SUPABASE_JWT_SECRET')
 
@@ -186,10 +186,15 @@ export async function signWithForeignKey(payload: object, kid: string): Promise<
 /**
  * An access token for `user` with the claims the Auth server puts in one, signed with the local
  * stack's real key: verified by getClaims() exactly like a token from a password sign-in, without
- * using up the sign-in rate limit.
+ * using up the sign-in rate limit. `signedInAt` (seconds) is the password sign-in time in `amr`
+ * (default now).
  */
-export async function mintToken(user: TestUser): Promise<string> {
+export async function mintToken(
+  user: TestUser,
+  options: { signedInAt?: number } = {},
+): Promise<string> {
   const now = Math.floor(Date.now() / 1000)
+  const signedInAt = options.signedInAt ?? now
   return signWithLocalKey({
     iss: `${SUPABASE_URL}/auth/v1`,
     sub: user.id,
@@ -202,7 +207,7 @@ export async function mintToken(user: TestUser): Promise<string> {
     user_metadata: { ...user.metadata, email: user.email, email_verified: true, sub: user.id },
     role: 'authenticated',
     aal: 'aal1',
-    amr: [{ method: 'password', timestamp: now }],
+    amr: [{ method: 'password', timestamp: signedInAt }],
     session_id: newId(),
     is_anonymous: false,
   })

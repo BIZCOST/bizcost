@@ -16,6 +16,7 @@ describe('parseServerEnv', () => {
       minSupportedAppVersion: '0.0.0',
       allowedOrigins: ['http://localhost:3000', 'http://127.0.0.1:3000'],
       version: 'dev',
+      supabaseSecretKey: undefined,
     })
   })
 
@@ -23,6 +24,7 @@ describe('parseServerEnv', () => {
     const env = parseServerEnv({
       ...base,
       NODE_ENV: 'production',
+      SUPABASE_SECRET_KEY: 'sb_secret_x',
       APP_ORIGINS: 'https://app.example.com, https://www.example.com',
       MIN_SUPPORTED_APP_VERSION: '1.4.0',
       VERCEL_GIT_COMMIT_SHA: '0123456789abcdef0123',
@@ -30,6 +32,16 @@ describe('parseServerEnv', () => {
     expect(env.allowedOrigins).toEqual(['https://app.example.com', 'https://www.example.com'])
     expect(env.minSupportedAppVersion).toBe('1.4.0')
     expect(env.version).toBe('0123456789ab')
+    expect(env.supabaseSecretKey).toBe('sb_secret_x')
+  })
+
+  it('requires SUPABASE_SECRET_KEY in production only', () => {
+    const production = { ...base, NODE_ENV: 'production', APP_ORIGINS: 'https://app.example.com' }
+    expect(() => parseServerEnv(production)).toThrow(/SUPABASE_SECRET_KEY/)
+    expect(() => parseServerEnv({ ...production, SUPABASE_SECRET_KEY: '' })).toThrow(
+      /SUPABASE_SECRET_KEY/,
+    )
+    expect(parseServerEnv(base).supabaseSecretKey).toBeUndefined()
   })
 
   it('does not depend on SENTRY_DSN (telemetry is optional)', () => {
@@ -44,7 +56,9 @@ describe('parseServerEnv', () => {
   })
 
   it('requires APP_ORIGINS in production', () => {
-    expect(() => parseServerEnv({ ...base, NODE_ENV: 'production' })).toThrow(/APP_ORIGINS/)
+    expect(() =>
+      parseServerEnv({ ...base, NODE_ENV: 'production', SUPABASE_SECRET_KEY: 'sb_secret_x' }),
+    ).toThrow(/APP_ORIGINS/)
   })
 
   it('rejects origins with a path or trailing slash', () => {

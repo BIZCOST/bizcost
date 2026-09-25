@@ -170,6 +170,7 @@ Tenant root: `businesses.id` is the `business_id` used everywhere. Has `created_
 - Invariant: at least one active Owner at all times. Ownership transfer is an explicit action. Enforced by the DEFERRABLE INITIALLY DEFERRED constraint trigger `app.enforce_active_owner()` on `business_members`, on `roles` (`template_key`/`deleted_at` changes) and on `businesses` (restore): at commit, a live business needs an active, non-deleted `account` member whose role has `template_key = 'owner'`. Soft-deleted businesses are exempt. If two transactions remove the last two owners, one commit fails with 23514 (40001 in REPEATABLE READ/SERIALIZABLE; the API retries 40001).
 - CHECKs: `trn` (above), `default_locale in ('en','ar')`.
 - Business deletion + data export: semantics documented in M1, no UI. Model supports it: every row keyed by `business_id`, every file under `{business_id}/`.
+- Deleting an account soft-deletes (`deleted_at`) every business whose only member is that user, after locking the business row (`FOR UPDATE`: adding a member takes a key-share lock on it); the user's memberships become `removed` with display name 'Deleted user' (D-064).
 
 ### business_capabilities
 

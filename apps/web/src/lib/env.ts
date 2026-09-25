@@ -26,6 +26,8 @@ const schema = z
     /** Same URL for server-only contexts (CI, scripts) where the public name is not set. */
     SUPABASE_URL: optional(z.url()),
     NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY: z.string().min(1),
+    /** Server only: the Auth admin API (account deletion). Required in production. */
+    SUPABASE_SECRET_KEY: optional(z.string().min(1)),
     /** postgres URL of the API role bizcost_api (never postgres/service_role). */
     DATABASE_URL: z.string().regex(/^postgres(ql)?:\/\//, 'must be a postgres:// URL'),
     MIN_SUPPORTED_APP_VERSION: optional(
@@ -49,6 +51,10 @@ const schema = z
       ctx.addIssue({ code: 'custom', message: 'APP_ORIGINS is required in production' })
       return z.NEVER
     }
+    if (production && !env.SUPABASE_SECRET_KEY) {
+      ctx.addIssue({ code: 'custom', message: 'SUPABASE_SECRET_KEY is required in production' })
+      return z.NEVER
+    }
     const allowedOrigins = origins ?? DEV_ORIGINS
     for (const value of allowedOrigins) {
       const checked = origin.safeParse(value)
@@ -64,6 +70,8 @@ const schema = z
       minSupportedAppVersion: env.MIN_SUPPORTED_APP_VERSION ?? '0.0.0',
       allowedOrigins,
       version: env.VERCEL_GIT_COMMIT_SHA?.slice(0, 12) ?? 'dev',
+      // In development account deletion reports a clear error when the key is missing.
+      supabaseSecretKey: env.SUPABASE_SECRET_KEY,
     }
   })
 

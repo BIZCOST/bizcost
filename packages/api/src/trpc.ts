@@ -8,10 +8,11 @@ import { loadBusinessAccess, type BusinessAccess } from './access'
 import { memoized, type Context } from './context'
 import { AppError, formatError, toAppError } from './errors'
 import { redactionFailure, redactOutput } from './redact'
+import { isDeletedAccount } from './services/profile'
 
 // tRPC setup and the procedure bases (docs/ARCHITECTURE.md §API & request flow, §Permissions).
 // Middleware order on every procedure:
-//   mapErrors → appVersionGate → originCheck → [authed → businessScoped] → redact
+//   mapErrors → appVersionGate → originCheck → [authed → openAccount | businessScoped] → redact
 //   → [requireModule → requirePermission] → output validation → handler
 
 const t = initTRPC.context<Context>().create({ errorFormatter: formatError })
@@ -79,6 +80,19 @@ const authed = t.middleware(async ({ ctx, next }) => {
 })
 
 /**
+ * Signed-in procedures outside a business also refuse a deleted account: its access token keeps a
+ * valid signature until it expires, so the anonymized profile is checked (once per request).
+ * Business procedures need no such check: deleting an account first removes every membership.
+ */
+const openAccount = authed.unstable_pipe(async ({ ctx, next }) => {
+  const deleted = await memoized(ctx, 'deleted-account', () =>
+    ctx.tenantTx(null, (tx) => isDeletedAccount(tx, ctx.auth.userId)),
+  )
+  if (deleted) throw new AppError('unauthorized')
+  return next()
+})
+
+/**
  * Active members of the business named by x-business-id only. The membership is read from the DB on
  * every request, so a removed or suspended member is rejected on their next request. The same
  * FORBIDDEN answers "no such business" and "not a member". Adds ctx.businessId, ctx.access and
@@ -137,8 +151,8 @@ const base = t.procedure.use(mapErrors).use(appVersionGate).use(originCheck)
 /** No sign-in required (health). Outputs must not contain sensitive fields. */
 export const publicProcedure = base.use(redact)
 
-/** Signed in, outside any business (me). Outputs must not contain sensitive fields. */
-export const authedProcedure = base.use(authed).use(redact)
+/** Signed in (not a deleted account), outside any business (me, account.*). No sensitive fields. */
+export const authedProcedure = base.use(openAccount).use(redact)
 
 /** Signed in and an active member of the business in x-business-id. */
 export const businessProcedure = base.use(businessScoped).use(redact)
