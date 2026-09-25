@@ -7,8 +7,13 @@ import {
   STORED_CAPABILITY_KEYS,
 } from './capabilities'
 import { MODULES } from './manifests'
-import { isCatalogPermissionKey, PERMISSION_CATALOG } from './permissions'
-import { isRoleTemplateKey, roleTemplateByKey } from './role-templates'
+import {
+  isCatalogPermissionKey,
+  keysMissingNeeds,
+  PERMISSION_CATALOG,
+  PERMISSION_NEEDS,
+} from './permissions'
+import { isRoleTemplateKey, ROLE_TEMPLATES, roleTemplateByKey } from './role-templates'
 import {
   buildModuleNav,
   isModuleActive,
@@ -57,6 +62,21 @@ describe('lookups', () => {
     expect(isCatalogPermissionKey('data.cost.view')).toBe(true)
     expect(isCatalogPermissionKey('settings.ownership.transfer')).toBe(false)
     expect(isCatalogPermissionKey(undefined)).toBe(false)
+  })
+
+  it('PERMISSION_NEEDS pairs catalog keys, and every role template is coherent', () => {
+    for (const [key, needed] of Object.entries(PERMISSION_NEEDS)) {
+      expect(isCatalogPermissionKey(key), key).toBe(true)
+      expect(isCatalogPermissionKey(needed), needed).toBe(true)
+    }
+    for (const template of ROLE_TEMPLATES) {
+      expect(keysMissingNeeds(template.permissionKeys), template.key).toEqual([])
+    }
+    expect(keysMissingNeeds(['settings.business.edit', 'settings.members.manage'])).toEqual([
+      'settings.business.edit',
+      'settings.members.manage',
+    ])
+    expect(keysMissingNeeds(['settings.members.manage', 'settings.members.view'])).toEqual([])
   })
 
   it('isRoleTemplateKey / roleTemplateByKey', () => {

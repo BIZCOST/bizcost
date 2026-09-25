@@ -1,6 +1,13 @@
 export { isLocale, LOCALES, type Locale } from '@bizcost/domain'
 export { createI18n, type CreateI18nOptions, type I18n } from './create'
-export { currencyDigits, formatCurrency, formatDate, formatDecimal, formatNumber } from './format'
+export {
+  currencyDigits,
+  formatCurrency,
+  formatDate,
+  formatDecimal,
+  formatList,
+  formatNumber,
+} from './format'
 export {
   DEFAULT_LOCALE,
   dir,

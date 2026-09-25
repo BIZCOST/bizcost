@@ -8,15 +8,41 @@ import { authedProcedure, businessProcedure, publicProcedure, router } from './t
 const costly = z.object({ name: z.string(), cost: sensitive(zDecimal, 'cost') })
 
 describe('appRouter contract', () => {
-  it('serves exactly the Step 2–5 procedures', () => {
+  it('serves exactly the Step 2–6 procedures', () => {
     expect(Object.keys(appRouter._def.procedures).sort()).toEqual([
       'account.delete',
       'account.setLastBusiness',
       'account.updateProfile',
       'business.context',
       'business.createFromSetup',
+      'business.customization',
+      'business.customize',
+      'business.logoUploadUrl',
+      'business.profile',
+      'business.removeLogo',
+      'business.setDefaultLocale',
+      'business.setLogo',
+      'business.updateProfile',
       'health',
+      'invitation.accept',
+      'invitation.create',
+      'invitation.list',
+      'invitation.preview',
+      'invitation.resend',
+      'invitation.revoke',
+      'location.create',
+      'location.list',
+      'location.remove',
+      'location.rename',
+      'location.setDefault',
       'me',
+      'member.changeRole',
+      'member.leave',
+      'member.list',
+      'member.remove',
+      'member.transferOwnership',
+      'role.list',
+      'role.updatePermissions',
     ])
   })
 

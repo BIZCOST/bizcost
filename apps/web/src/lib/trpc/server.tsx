@@ -32,6 +32,8 @@ function apiDeps(): ApiDeps {
         minSupportedAppVersion: env.minSupportedAppVersion,
         allowedOrigins: env.allowedOrigins,
         version: env.version,
+        appUrl: env.appUrl,
+        email: env.email,
       },
       reportError: reportApiError,
     }

@@ -211,7 +211,9 @@ select is_empty(
          'app.is_active_member(uuid)',
          'app.my_business_ids()',
          'app.create_business(uuid, text, text, text, uuid, uuid)',
-         'app.accept_invitation(text, uuid)'
+         'app.accept_invitation(text, uuid)',
+         'app.preview_invitation(text)',
+         'app.anonymize_my_memberships(text)'
        ]) as sig
       where to_regprocedure(sig) is null
          or not has_function_privilege('bizcost_api', to_regprocedure(sig), 'EXECUTE') $$,

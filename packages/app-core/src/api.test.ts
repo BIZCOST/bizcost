@@ -1,6 +1,12 @@
 import { TRPCClientError } from '@trpc/client'
 import { describe, expect, it } from 'vitest'
-import { apiErrorKey, createQueryClient, shouldRetry, API_STALE_TIME_MS } from './api'
+import {
+  apiErrorKey,
+  createQueryClient,
+  isAccessChange,
+  shouldRetry,
+  API_STALE_TIME_MS,
+} from './api'
 
 function serverError(appCode: string) {
   return new TRPCClientError('x', {
@@ -46,5 +52,33 @@ describe('query defaults', () => {
     const a = createQueryClient()
     expect(a).not.toBe(createQueryClient())
     expect(a.getDefaultOptions().queries?.staleTime).toBe(API_STALE_TIME_MS)
+  })
+})
+
+describe('access changes', () => {
+  it('are the refusals that mean the cached access is stale', () => {
+    for (const code of ['forbidden', 'capability_disabled', 'module_disabled']) {
+      expect(isAccessChange(serverError(code)), code).toBe(true)
+    }
+    for (const code of ['validation', 'conflict', 'internal', 'unauthorized']) {
+      expect(isAccessChange(serverError(code)), code).toBe(false)
+    }
+    expect(isAccessChange(new Error('boom'))).toBe(false)
+  })
+
+  it('call onAccessChange for a refused query or mutation, and nothing else', async () => {
+    let calls = 0
+    const client = createQueryClient({ onAccessChange: () => calls++ })
+    await client
+      .fetchQuery({ queryKey: ['a'], queryFn: () => Promise.reject(serverError('forbidden')) })
+      .catch(() => {})
+    await client
+      .fetchQuery({ queryKey: ['b'], queryFn: () => Promise.reject(serverError('validation')) })
+      .catch(() => {})
+    const mutation = client.getMutationCache().build(client, {
+      mutationFn: () => Promise.reject(serverError('capability_disabled')),
+    })
+    await mutation.execute(undefined).catch(() => {})
+    expect(calls).toBe(2)
   })
 })

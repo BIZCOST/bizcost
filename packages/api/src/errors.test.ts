@@ -1,7 +1,7 @@
 import { ConflictError } from '@bizcost/db'
 import { TRPCError } from '@trpc/server'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { AppError, appCodeOf, formatError, sqlStateOf, toAppError } from './errors'
+import { AppError, appCodeOf, constraintOf, formatError, sqlStateOf, toAppError } from './errors'
 
 /** A driver error wrapped the way drizzle and tRPC wrap it. */
 function dbFailure(code: string, message = 'duplicate key value violates unique constraint "x"') {
@@ -20,6 +20,15 @@ describe('AppError', () => {
     ['conflict', 'CONFLICT'],
     ['sole_owner', 'CONFLICT'],
     ['reauth_required', 'FORBIDDEN'],
+    ['capability_disabled', 'FORBIDDEN'],
+    ['invitation_invalid', 'NOT_FOUND'],
+    ['already_member', 'CONFLICT'],
+    ['already_invited', 'CONFLICT'],
+    ['team_in_use', 'CONFLICT'],
+    ['locations_in_use', 'CONFLICT'],
+    ['owner_transfer_required', 'CONFLICT'],
+    ['default_location', 'CONFLICT'],
+    ['file_invalid', 'BAD_REQUEST'],
     ['internal', 'INTERNAL_SERVER_ERROR'],
   ] as const)('%s uses the tRPC code %s', (appCode, trpcCode) => {
     const error = new AppError(appCode)
@@ -44,6 +53,8 @@ describe('toAppError', () => {
     ['22021', 'validation'],
     ['42501', 'forbidden'],
     ['BZ429', 'rate_limited'],
+    ['BZ404', 'invitation_invalid'],
+    ['BZ409', 'already_member'],
   ] as const)('maps SQLSTATE %s to %s', (state, appCode) => {
     const mapped = toAppError(dbFailure(state))
     expect(appCodeOf(mapped)).toBe(appCode)
@@ -65,6 +76,19 @@ describe('toAppError', () => {
   it('finds the SQLSTATE through the cause chain', () => {
     expect(sqlStateOf(dbFailure('23505'))).toBe('23505')
     expect(sqlStateOf(new Error('x'))).toBeUndefined()
+  })
+
+  it('finds the constraint name through the cause chain', () => {
+    const driver = Object.assign(new Error('duplicate key'), {
+      code: '23505',
+      constraint_name: 'business_invitations_one_pending_key',
+    })
+    const wrapped = new TRPCError({
+      code: 'INTERNAL_SERVER_ERROR',
+      cause: new Error('q', { cause: driver }),
+    })
+    expect(constraintOf(wrapped)).toBe('business_invitations_one_pending_key')
+    expect(constraintOf(dbFailure('23505'))).toBeUndefined()
   })
 })
 

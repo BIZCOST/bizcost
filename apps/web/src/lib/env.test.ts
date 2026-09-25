@@ -17,6 +17,8 @@ describe('parseServerEnv', () => {
       allowedOrigins: ['http://localhost:3000', 'http://127.0.0.1:3000'],
       version: 'dev',
       supabaseSecretKey: undefined,
+      appUrl: 'http://localhost:3000',
+      email: undefined,
     })
   })
 
@@ -26,6 +28,9 @@ describe('parseServerEnv', () => {
       NODE_ENV: 'production',
       SUPABASE_SECRET_KEY: 'sb_secret_x',
       APP_ORIGINS: 'https://app.example.com, https://www.example.com',
+      APP_URL: 'https://app.example.com',
+      RESEND_API_KEY: 're_x',
+      EMAIL_FROM: 'BizCost <notify@example.com>',
       MIN_SUPPORTED_APP_VERSION: '1.4.0',
       VERCEL_GIT_COMMIT_SHA: '0123456789abcdef0123',
     })
@@ -33,10 +38,22 @@ describe('parseServerEnv', () => {
     expect(env.minSupportedAppVersion).toBe('1.4.0')
     expect(env.version).toBe('0123456789ab')
     expect(env.supabaseSecretKey).toBe('sb_secret_x')
+    expect(env.appUrl).toBe('https://app.example.com')
+    expect(env.email).toEqual({
+      transport: 'resend',
+      apiKey: 're_x',
+      from: 'BizCost <notify@example.com>',
+    })
   })
 
   it('requires SUPABASE_SECRET_KEY in production only', () => {
-    const production = { ...base, NODE_ENV: 'production', APP_ORIGINS: 'https://app.example.com' }
+    const production = {
+      ...base,
+      NODE_ENV: 'production',
+      APP_ORIGINS: 'https://app.example.com',
+      APP_URL: 'https://app.example.com',
+      EMAIL_TRANSPORT: 'smtp',
+    }
     expect(() => parseServerEnv(production)).toThrow(/SUPABASE_SECRET_KEY/)
     expect(() => parseServerEnv({ ...production, SUPABASE_SECRET_KEY: '' })).toThrow(
       /SUPABASE_SECRET_KEY/,
@@ -59,6 +76,43 @@ describe('parseServerEnv', () => {
     expect(() =>
       parseServerEnv({ ...base, NODE_ENV: 'production', SUPABASE_SECRET_KEY: 'sb_secret_x' }),
     ).toThrow(/APP_ORIGINS/)
+  })
+
+  it('requires APP_URL and an email transport in production', () => {
+    const production = {
+      ...base,
+      NODE_ENV: 'production',
+      SUPABASE_SECRET_KEY: 'sb_secret_x',
+      APP_ORIGINS: 'https://app.example.com',
+    }
+    expect(() => parseServerEnv({ ...production, EMAIL_TRANSPORT: 'smtp' })).toThrow(/APP_URL/)
+    const withUrl = { ...production, APP_URL: 'https://app.example.com' }
+    expect(() => parseServerEnv(withUrl)).toThrow(/email transport/)
+    expect(() => parseServerEnv({ ...withUrl, RESEND_API_KEY: 're_x' })).toThrow(/EMAIL_FROM/)
+    expect(() => parseServerEnv({ ...withUrl, APP_URL: 'https://app.example.com/x' })).toThrow(
+      /APP_URL/,
+    )
+  })
+
+  it('sends email to the local Mailpit over SMTP with EMAIL_TRANSPORT=smtp', () => {
+    expect(parseServerEnv({ ...base, EMAIL_TRANSPORT: 'smtp' }).email).toEqual({
+      transport: 'smtp',
+      host: '127.0.0.1',
+      port: 54325,
+      from: 'BizCost <no-reply@bizcost.local>',
+    })
+    const custom = parseServerEnv({
+      ...base,
+      EMAIL_TRANSPORT: 'smtp',
+      SMTP_HOST: 'mail.local',
+      SMTP_PORT: '2525',
+      APP_URL: 'http://localhost:3100',
+    })
+    expect(custom.email).toMatchObject({ host: 'mail.local', port: 2525 })
+    expect(custom.appUrl).toBe('http://localhost:3100')
+    expect(() => parseServerEnv({ ...base, EMAIL_TRANSPORT: 'sendmail' })).toThrow(
+      /EMAIL_TRANSPORT/,
+    )
   })
 
   it('rejects origins with a path or trailing slash', () => {

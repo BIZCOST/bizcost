@@ -18,6 +18,26 @@ function assertUuid(name: string, value: unknown): void {
 }
 
 /**
+ * A transaction without a user or a business, for signed-out callers of public procedures. The tenant
+ * context is set empty, so RLS shows no row of any table; only SECURITY DEFINER functions written for
+ * anonymous callers (app.preview_invitation) do anything. The request id still reaches audit rows.
+ */
+export async function withAnonymousTx<T>(
+  db: Db,
+  ctx: { requestId: string },
+  fn: (tx: Tx) => Promise<T>,
+): Promise<T> {
+  assertUuid('requestId', ctx.requestId)
+
+  return db.transaction(async (tx) => {
+    await tx.execute(
+      sql`select set_config('app.user_id', '', true), set_config('app.business_id', '', true), set_config('app.request_id', ${ctx.requestId}, true)`,
+    )
+    return fn(tx)
+  })
+}
+
+/**
  * The only entry point to tenant data. Opens a transaction whose FIRST statement sets the tenant
  * context transaction-locally (set_config(..., true)); RLS reads it through app.current_user_id() and
  * app.current_business_id(). The context is gone when the transaction ends, so a pooled connection

@@ -9,6 +9,15 @@
   "rate_limited": "Too many tries. Wait a moment and try again.",
   "sole_owner": "You are the only owner of a business that has other members. First make another member an owner, or remove the other members.",
   "reauth_required": "To keep your account safe, confirm it's you with the code we email you, then try again.",
+  "capability_disabled": "This is turned off for your business. You can turn it on in Customize BizCost.",
+  "invitation_invalid": "This invitation link doesn't work. It may have expired or been cancelled, or it was sent to another email. Ask for a new invitation.",
+  "already_member": "This person is already a member of this business.",
+  "already_invited": "This email already has an invitation waiting. You can send it again instead.",
+  "team_in_use": "Your team still has members or invitations. Remove them first, then turn this off.",
+  "locations_in_use": "Your business still has more than one branch. Remove the other branches first, then turn this off.",
+  "owner_transfer_required": "The owner can only change by transferring ownership.",
+  "default_location": "This is your main branch. Make another branch the main one first.",
+  "file_invalid": "Use a PNG, JPG or WebP image of up to 2 MB.",
   "internal": "Something went wrong on our side. Please try again.",
   "network": "Can't connect. Check your internet and try again."
 }

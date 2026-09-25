@@ -2,14 +2,18 @@ import type { Locale } from '@bizcost/domain'
 import arAccount from '../locales/ar/account.json'
 import arAuth from '../locales/ar/auth.json'
 import arCommon from '../locales/ar/common.json'
+import arEmails from '../locales/ar/emails.json'
 import arErrors from '../locales/ar/errors.json'
 import arModules from '../locales/ar/modules.json'
+import arSettings from '../locales/ar/settings.json'
 import arSetup from '../locales/ar/setup.json'
 import enAccount from '../locales/en/account.json'
 import enAuth from '../locales/en/auth.json'
 import enCommon from '../locales/en/common.json'
+import enEmails from '../locales/en/emails.json'
 import enErrors from '../locales/en/errors.json'
 import enModules from '../locales/en/modules.json'
+import enSettings from '../locales/en/settings.json'
 import enSetup from '../locales/en/setup.json'
 
 // Translations: locales/<locale>/<namespace>.json. English is the source language and types every key;
@@ -20,7 +24,16 @@ import enSetup from '../locales/en/setup.json'
 // Use `useTranslation()` without a namespace and full keys (with `useTranslation('auth')`, the
 // unprefixed `errors.codeInvalid` would resolve in the errors namespace).
 
-export const NAMESPACES = ['common', 'auth', 'account', 'errors', 'setup', 'modules'] as const
+export const NAMESPACES = [
+  'common',
+  'auth',
+  'account',
+  'errors',
+  'setup',
+  'modules',
+  'emails',
+  'settings',
+] as const
 export type Namespace = (typeof NAMESPACES)[number]
 
 /** Namespace of keys written without a prefix. */
@@ -42,6 +55,8 @@ export const en = {
   errors: enErrors,
   setup: enSetup,
   modules: enModules,
+  emails: enEmails,
+  settings: enSettings,
 } as const
 export type SourceMessages = typeof en
 
@@ -54,6 +69,8 @@ export const resources: Readonly<Record<Locale, Readonly<Record<Namespace, Messa
     errors: arErrors,
     setup: arSetup,
     modules: arModules,
+    emails: arEmails,
+    settings: arSettings,
   },
 }
 

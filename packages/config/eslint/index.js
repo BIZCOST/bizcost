@@ -37,13 +37,14 @@ const PURE_IMPORTS = {
 
 const API_DB_ENTRY = {
   name: '@bizcost/db',
-  importNames: ['createDb', 'withTenantTx'],
+  importNames: ['createDb', 'withAnonymousTx', 'withTenantTx'],
   message: 'Use ctx.tenantTx() / ctx.tx(): every data access runs as the caller.',
 }
 
 const API_ADMIN = {
   group: ['**/admin', '**/admin/*'],
-  message: 'The Supabase Admin API (secret key) is for the account service only.',
+  message:
+    'The Supabase Admin API (secret key) is for the account service (Auth) and the business profile service (Storage: the logo) only.',
 }
 
 function laterLayers(layer) {
@@ -134,7 +135,8 @@ export default tseslint.config(
   { files: ['packages/db/**'], rules: restrictedImports(laterLayers('db')) },
   // The API reaches the database only through ctx.tenantTx / ctx.tx, which bind withTenantTx to the
   // verified caller and the request id (context.ts). The raw pool is never on the context.
-  // The Supabase Admin API (secret key, packages/api/src/admin) is used by the account service only.
+  // The Supabase Admin API (secret key, packages/api/src/admin) is used by the account service (Auth
+  // admin: account deletion) and the business profile service (Storage signed URLs for the logo) only.
   {
     files: ['packages/api/src/**/*.ts'],
     ignores: ['**/*.test.ts'],
@@ -145,7 +147,11 @@ export default tseslint.config(
     rules: { 'no-restricted-imports': ['error', { patterns: [API_ADMIN] }] },
   },
   {
-    files: ['packages/api/src/services/account.ts', 'packages/api/src/admin/**/*.ts'],
+    files: [
+      'packages/api/src/services/account.ts',
+      'packages/api/src/services/business-profile.ts',
+      'packages/api/src/admin/**/*.ts',
+    ],
     ignores: ['**/*.test.ts'],
     rules: { 'no-restricted-imports': ['error', { paths: [API_DB_ENTRY] }] },
   },

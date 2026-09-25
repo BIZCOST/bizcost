@@ -26,7 +26,13 @@ export {
   type NavEntry,
   type QuickAction,
 } from './manifests'
-export { isCatalogPermissionKey, PERMISSION_CATALOG, type PermissionKey } from './permissions'
+export {
+  isCatalogPermissionKey,
+  keysMissingNeeds,
+  PERMISSION_CATALOG,
+  PERMISSION_NEEDS,
+  type PermissionKey,
+} from './permissions'
 export {
   isRoleTemplateKey,
   ROLE_TEMPLATE_KEYS,
@@ -114,6 +120,7 @@ export {
   NO_ADJUSTMENTS,
   recommendedState,
   setupModuleRows,
+  toggleFromState,
   toggleSetupItem,
   type ApplyAdjustmentsResult,
   type SetupAdjustmentIssue,
@@ -121,6 +128,7 @@ export {
   type SetupItem,
   type SetupModuleRow,
   type SetupState,
+  type ToggleFromStateResult,
   type ToggleSetupItemResult,
 } from './setup/adjust'
 export {
@@ -137,3 +145,10 @@ export {
   type SetupReviewStatement,
   type StatementKey,
 } from './setup/review'
+export {
+  businessStateOf,
+  changedCapabilities,
+  changedModules,
+  toggleBusinessItem,
+  type BusinessSwitches,
+} from './customize'

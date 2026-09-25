@@ -84,11 +84,11 @@ describe('shared UI packages', () => {
 })
 
 describe('database entry in the API', () => {
-  const code = `import { withTenantTx, createDb, profiles } from '@bizcost/db'\nexport { withTenantTx, createDb, profiles }\n`
+  const code = `import { withTenantTx, withAnonymousTx, createDb, profiles } from '@bizcost/db'\nexport { withTenantTx, withAnonymousTx, createDb, profiles }\n`
 
-  it('bans withTenantTx and createDb in procedures and helpers', async () => {
-    expect(await restrictedImports('packages/api/src/routers/probe.ts', code)).toBe(2)
-    expect(await restrictedImports('packages/api/src/services/probe.ts', code)).toBe(2)
+  it('bans withTenantTx, withAnonymousTx and createDb in procedures and helpers', async () => {
+    expect(await restrictedImports('packages/api/src/routers/probe.ts', code)).toBe(3)
+    expect(await restrictedImports('packages/api/src/services/probe.ts', code)).toBe(3)
   })
 
   it('allows them where the context is built and in tests', async () => {
@@ -100,8 +100,11 @@ describe('database entry in the API', () => {
 describe('Supabase Admin API in the API', () => {
   const relative = `import { x } from '../admin/auth-admin'\nexport { x }\n`
 
-  it('is imported only by the account service', async () => {
+  it('is imported only by the account and business profile services', async () => {
     expect(await restrictedImports('packages/api/src/services/account.ts', relative)).toBe(0)
+    expect(await restrictedImports('packages/api/src/services/business-profile.ts', relative)).toBe(
+      0,
+    )
     expect(await restrictedImports('packages/api/src/routers/account.ts', relative)).toBe(1)
     expect(await restrictedImports('packages/api/src/services/probe.ts', relative)).toBe(1)
     const fromContext = `import { x } from './admin/auth-admin'\nexport { x }\n`
@@ -109,8 +112,9 @@ describe('Supabase Admin API in the API', () => {
     expect(await restrictedImports('packages/api/src/index.ts', fromContext)).toBe(1)
   })
 
-  it('keeps the database entry rule in the account service', async () => {
+  it('keeps the database entry rule in the account and business profile services', async () => {
     const code = `import { withTenantTx } from '@bizcost/db'\nexport { withTenantTx }\n`
     expect(await restrictedImports('packages/api/src/services/account.ts', code)).toBe(1)
+    expect(await restrictedImports('packages/api/src/services/business-profile.ts', code)).toBe(1)
   })
 })

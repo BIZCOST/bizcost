@@ -6,12 +6,14 @@ export {
   apiErrorKey,
   createApiClient,
   createQueryClient,
+  isAccessChange,
   shouldRetry,
   TRPCProvider,
   useMe,
   useTRPC,
   useTRPCClient,
   type ApiClient,
+  type QueryClientOptions,
 } from './api'
 export { normalizeEmail, type AuthClient } from './auth/client'
 export { isCompleteCode, normalizeCode, resendAvailableAt, secondsUntil } from './auth/code'

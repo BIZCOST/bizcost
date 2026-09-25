@@ -1,7 +1,7 @@
 import type { AppRouter } from '@bizcost/api'
 import { isAppErrorCode, type AppErrorCode } from '@bizcost/contracts'
 import type { I18nKey } from '@bizcost/i18n'
-import { QueryClient, useQuery } from '@tanstack/react-query'
+import { MutationCache, QueryCache, QueryClient, useQuery } from '@tanstack/react-query'
 import { createTRPCClient, TRPCClientError, type TRPCLink } from '@trpc/client'
 import { createTRPCContext } from '@trpc/tanstack-react-query'
 
@@ -47,9 +47,40 @@ export function shouldRetry(failureCount: number, error: unknown): boolean {
   return failureCount < MAX_RETRIES && (code === undefined || RETRYABLE.has(code))
 }
 
+/**
+ * Answers that mean the caller's access changed since the page loaded it (a new role, a switched-off
+ * capability or module, a removed membership): the cached `me` and business context are stale.
+ */
+const ACCESS_CHANGED: ReadonlySet<AppErrorCode> = new Set([
+  'forbidden',
+  'capability_disabled',
+  'module_disabled',
+])
+
+/** Whether a failed API call means the caller's access changed (refresh `me` and the context). */
+export function isAccessChange(error: unknown): boolean {
+  const code = apiErrorCode(error)
+  return code !== undefined && ACCESS_CHANGED.has(code)
+}
+
+export interface QueryClientOptions {
+  /**
+   * Called when a query or mutation is refused because the caller's access changed
+   * (isAccessChange), e.g. to refetch `me` and `business.context` (docs/ARCHITECTURE.md §Data
+   * fetching: stale permissions refresh after FORBIDDEN).
+   */
+  onAccessChange?: () => void
+}
+
 /** A fresh QueryClient: one per business (key the provider by businessId); sign-out drops it. */
-export function createQueryClient(): QueryClient {
+export function createQueryClient(options: QueryClientOptions = {}): QueryClient {
+  const { onAccessChange } = options
+  const onError = (error: unknown) => {
+    if (onAccessChange && isAccessChange(error)) onAccessChange()
+  }
   return new QueryClient({
+    queryCache: new QueryCache({ onError }),
+    mutationCache: new MutationCache({ onError }),
     defaultOptions: {
       queries: { staleTime: API_STALE_TIME_MS, retry: shouldRetry },
       mutations: { retry: false },

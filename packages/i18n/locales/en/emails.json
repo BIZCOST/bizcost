@@ -1,0 +1,14 @@
+{
+  "invitation": {
+    "subject": "{{inviter}} invited you to join {{business}} on BizCost",
+    "subjectNoInviter": "You're invited to join {{business}} on BizCost",
+    "title": "Join {{business}} on BizCost",
+    "body": "{{inviter}} invited you to join {{business}} as {{role}}.",
+    "bodyNoInviter": "You're invited to join {{business}} as {{role}}.",
+    "button": "Accept the invitation",
+    "linkHint": "If the button doesn't work, copy this link into your browser:",
+    "expiry": "This invitation expires in 7 days. To accept it, sign in or create an account with {{email}}.",
+    "ignore": "If you weren't expecting this, you can ignore this email."
+  },
+  "footer": "Know your costs. Grow your business."
+}

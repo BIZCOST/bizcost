@@ -308,6 +308,20 @@ describe('me', () => {
     expect(result.data?.memberships).toEqual([])
   })
 
+  it('copies a changed account email to the memberships (co-members see it, invitations check it)', async () => {
+    const mover = await createUser({ locale: 'en' })
+    const business = await createBusiness(db, mover, 'Moved Mail Co')
+    const changed = `moved-${newId()}@test.bizcost.local`
+    const result = await query(handler, 'me', {
+      token: await mintToken({ ...mover, email: changed }),
+    })
+    expect(result.error).toBeUndefined()
+    const [row] = await admin<{ email: string }[]>`
+      select email::text from app.business_members where business_id = ${business.id}`
+    expect(row?.email).toBe(changed)
+    await deleteUser(mover)
+  })
+
   it('lists the businesses the user can open, with their role template', async () => {
     const result = await query<{ memberships: unknown[] }>(handler, 'me', {
       token: session.access_token,

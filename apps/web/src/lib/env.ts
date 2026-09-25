@@ -1,4 +1,5 @@
 import 'server-only'
+import type { EmailConfig } from '@bizcost/api'
 import { z } from 'zod'
 
 // Server environment of the API, validated on first use (not at import, so `next build` needs no
@@ -6,6 +7,11 @@ import { z } from 'zod'
 // is optional and read by instrumentation.ts, so a bad DSN can never take the API down.
 
 const DEV_ORIGINS = ['http://localhost:3000', 'http://127.0.0.1:3000']
+
+// Local Supabase stack: Mailpit's SMTP port (supabase/config.toml [local_smtp] smtp_port).
+const DEV_SMTP_HOST = '127.0.0.1'
+const DEV_SMTP_PORT = 54325
+const DEV_EMAIL_FROM = 'BizCost <no-reply@bizcost.local>'
 
 // Unset and empty (`NAME=` in an .env file) both mean "not set".
 const optional = <T extends z.ZodType>(schema: T) =>
@@ -35,6 +41,16 @@ const schema = z
     ),
     /** Comma-separated origins allowed to send cookie-authenticated mutations. */
     APP_ORIGINS: optional(z.string()),
+    /** The web app's origin, for links in emails. Required in production. */
+    APP_URL: optional(origin),
+    /** 'smtp' sends the API's emails over SMTP (locally the stack's Mailpit on SMTP_PORT). */
+    EMAIL_TRANSPORT: optional(z.enum(['smtp'])),
+    SMTP_HOST: optional(z.string().min(1)),
+    SMTP_PORT: optional(z.coerce.number().int().min(1).max(65535)),
+    /** Server only: the Resend API key (production email). */
+    RESEND_API_KEY: optional(z.string().min(1)),
+    /** Sender of the API's emails, e.g. 'BizCost <notify@example.com>'. Required with Resend. */
+    EMAIL_FROM: optional(z.string().min(3)),
     VERCEL_GIT_COMMIT_SHA: optional(z.string()),
   })
   .transform((env, ctx) => {
@@ -55,6 +71,31 @@ const schema = z
       ctx.addIssue({ code: 'custom', message: 'SUPABASE_SECRET_KEY is required in production' })
       return z.NEVER
     }
+    if (production && !env.APP_URL) {
+      ctx.addIssue({ code: 'custom', message: 'APP_URL is required in production' })
+      return z.NEVER
+    }
+    let email: EmailConfig | undefined
+    if (env.EMAIL_TRANSPORT === 'smtp') {
+      email = {
+        transport: 'smtp',
+        host: env.SMTP_HOST ?? DEV_SMTP_HOST,
+        port: env.SMTP_PORT ?? DEV_SMTP_PORT,
+        from: env.EMAIL_FROM ?? DEV_EMAIL_FROM,
+      }
+    } else if (env.RESEND_API_KEY) {
+      if (!env.EMAIL_FROM) {
+        ctx.addIssue({ code: 'custom', message: 'EMAIL_FROM is required with RESEND_API_KEY' })
+        return z.NEVER
+      }
+      email = { transport: 'resend', apiKey: env.RESEND_API_KEY, from: env.EMAIL_FROM }
+    } else if (production) {
+      ctx.addIssue({
+        code: 'custom',
+        message: 'an email transport is required in production: RESEND_API_KEY or EMAIL_TRANSPORT',
+      })
+      return z.NEVER
+    }
     const allowedOrigins = origins ?? DEV_ORIGINS
     for (const value of allowedOrigins) {
       const checked = origin.safeParse(value)
@@ -72,6 +113,9 @@ const schema = z
       version: env.VERCEL_GIT_COMMIT_SHA?.slice(0, 12) ?? 'dev',
       // In development account deletion reports a clear error when the key is missing.
       supabaseSecretKey: env.SUPABASE_SECRET_KEY,
+      appUrl: env.APP_URL ?? allowedOrigins[0] ?? 'http://localhost:3000',
+      // Without a transport (development), sending an invitation fails with a clear error.
+      email,
     }
   })
 

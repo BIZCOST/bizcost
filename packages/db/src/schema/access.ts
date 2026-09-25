@@ -1,4 +1,10 @@
-import type { InvitationStatus, MemberKind, MemberStatus, PermissionEffect } from '@bizcost/domain'
+import type {
+  InvitationStatus,
+  Locale,
+  MemberKind,
+  MemberStatus,
+  PermissionEffect,
+} from '@bizcost/domain'
 import { sql } from 'drizzle-orm'
 import { check, index, integer, jsonb, text, unique, uniqueIndex, uuid } from 'drizzle-orm/pg-core'
 import { citext, timestamptz } from './_app'
@@ -37,6 +43,9 @@ export const businessMembers = tenantTable(
     userId: uuid('user_id'),
     kind: text('kind').$type<MemberKind>().notNull(),
     displayName: text('display_name').notNull(),
+    // The verified email the member joined with (app.accept_invitation, app.create_business), shown
+    // in the members list. NULL for pin_only staff. Not kept in sync with later email changes.
+    email: citext('email'),
     status: text('status').$type<MemberStatus>().notNull(),
     roleId: uuid('role_id').notNull(),
     permissionsVersion: integer('permissions_version').notNull().default(1),
@@ -113,9 +122,18 @@ export const businessInvitations = tenantTable(
       .array()
       .notNull()
       .default(sql`'{}'::uuid[]`),
-    // Rate-limit counters; the limits are counted in the DB by the API.
+    // Rate-limit counters, enforced by the trigger app.invitation_limits(): at most 20 invitations a
+    // day per business, 40 a day per inviting user, 3 resends (send_count ≤ 4) per invitation, and 4
+    // emails a day per address and business.
     sendCount: integer('send_count').notNull().default(0),
     lastSentAt: timestamptz('last_sent_at'),
+    // Language of the invitation email (the inviter's choice, default the business language); a
+    // resend uses it again.
+    locale: text('locale').$type<Locale>().notNull().default('ar'),
+    // Previews of the invitation link (app.preview_invitation): at most 30 per hour per invitation.
+    // An update of only these two columns neither touches the row nor writes to the audit log.
+    previewCount: integer('preview_count').notNull().default(0),
+    previewWindowStartedAt: timestamptz('preview_window_started_at'),
   },
   (t) => [
     tenantRef('business_invitations_role_fk', [t.businessId, t.roleId], roles),
@@ -125,12 +143,20 @@ export const businessInvitations = tenantTable(
       .on(t.businessId, sql`lower((email)::text)`)
       .where(sql`status = 'pending' and deleted_at is null`),
     index('business_invitations_role_idx').on(t.businessId, t.roleId),
+    // The daily limit counts a business's invitations of the last 24 hours.
+    index('business_invitations_created_idx').on(t.businessId, t.createdAt),
+    // The per-address limit counts the emails one address got from the business in 24 hours.
+    index('business_invitations_email_idx').on(t.businessId, sql`lower((email)::text)`),
+    // The per-user limit counts the invitations one user created in 24 hours, in every business.
+    index('business_invitations_created_by_idx').on(t.createdBy, t.createdAt),
     check(
       'business_invitations_status_check',
       sql`status in ('pending', 'accepted', 'revoked', 'expired')`,
     ),
     check('business_invitations_overrides_check', sql`jsonb_typeof(overrides) = 'object'`),
     check('business_invitations_send_count_check', sql`send_count >= 0`),
+    check('business_invitations_locale_check', sql`locale in ('en', 'ar')`),
+    check('business_invitations_preview_count_check', sql`preview_count >= 0`),
   ],
 )
 

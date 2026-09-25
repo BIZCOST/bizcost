@@ -220,7 +220,7 @@ export function DeleteAccountSection() {
               onClick={askingCode ? undefined : () => void deleteAccount()}
               disabled={busy}
             >
-              {busy ? statusLabel(t, check.status) : t('account.delete.confirm')}
+              {busy ? t(statusKey(check.status)) : t('account.delete.confirm')}
             </Button>
           </AlertDialogFooter>
         </AlertDialogContent>
@@ -229,11 +229,11 @@ export function DeleteAccountSection() {
   )
 }
 
-function statusLabel(
-  t: ReturnType<typeof useTranslation>['t'],
+/** The button's label while the deletion runs (a key: the component translates it). */
+function statusKey(
   status: 'idle' | 'sending' | 'verifying',
-): string {
-  if (status === 'sending') return t('status.sending')
-  if (status === 'verifying') return t('status.checking')
-  return t('status.deleting')
+): 'status.sending' | 'status.checking' | 'status.deleting' {
+  if (status === 'sending') return 'status.sending'
+  if (status === 'verifying') return 'status.checking'
+  return 'status.deleting'
 }

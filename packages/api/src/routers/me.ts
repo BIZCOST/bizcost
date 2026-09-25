@@ -1,6 +1,6 @@
 import { meDto, type MeDto, type MembershipDto } from '@bizcost/contracts'
 import { businesses, businessMembers, profiles, roles } from '@bizcost/db'
-import { and, asc, eq, isNull } from 'drizzle-orm'
+import { and, asc, eq, isNull, sql } from 'drizzle-orm'
 import type { AuthUser } from '../auth'
 import { memoized, type Context } from '../context'
 import { AppError } from '../errors'
@@ -16,7 +16,9 @@ import { authedProcedure } from '../trpc'
  *
  * Memberships come from the own_memberships and member_businesses policies, so only businesses where
  * the caller is an active member are listed. Roles are tenant rows, readable only inside that
- * business's context: each membership's role is read in its own withTenantTx.
+ * business's context: each membership's role is read in its own withTenantTx. That transaction also
+ * copies the account's verified email to the membership when it changed (business_members.email, which
+ * co-members see and invitations are checked against), the way a new name is copied (D-048).
  *
  * Memoized per request: a batch that repeats `me` reads the database once.
  */
@@ -56,8 +58,22 @@ async function loadMe(ctx: Context, auth: AuthUser): Promise<MeDto> {
 
   const withRoles: MembershipDto[] = []
   for (const membership of memberships) {
-    const [member] = await ctx.tenantTx(membership.businessId, (tx) =>
-      tx
+    const [member] = await ctx.tenantTx(membership.businessId, async (tx) => {
+      if (email) {
+        await tx
+          .update(businessMembers)
+          .set({ email })
+          .where(
+            and(
+              eq(businessMembers.businessId, membership.businessId),
+              eq(businessMembers.userId, userId),
+              eq(businessMembers.kind, 'account'),
+              isNull(businessMembers.deletedAt),
+              sql`${businessMembers.email} is distinct from ${email}::citext`,
+            ),
+          )
+      }
+      return tx
         .select({ templateKey: roles.templateKey })
         .from(businessMembers)
         .leftJoin(
@@ -74,8 +90,8 @@ async function loadMe(ctx: Context, auth: AuthUser): Promise<MeDto> {
             eq(businessMembers.userId, userId),
             isNull(businessMembers.deletedAt),
           ),
-        ),
-    )
+        )
+    })
     // Removed between the two reads: leave it out.
     if (member) withRoles.push({ ...membership, roleTemplateKey: member.templateKey })
   }

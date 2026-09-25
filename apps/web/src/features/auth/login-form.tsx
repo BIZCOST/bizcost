@@ -24,6 +24,8 @@ import { useMessage } from '@/components/form/use-message'
 import { Button } from '@/components/ui/button'
 import { useLocale } from '@/lib/i18n/client'
 import { authClient } from '@/lib/supabase/browser'
+import { InvitationBanner } from '@/features/invite/invitation-banner'
+import { takeReturnPath } from '@/features/invite/return-path'
 import { savePending, sentCode } from './pending'
 import { NOTICE_KEYS, type Notice } from './notices'
 
@@ -103,7 +105,8 @@ export function LoginForm({ notice }: { notice?: Notice }) {
       })
       return router.push('/verify')
     }
-    router.replace('/')
+    // Back to an invitation opened before signing in, else home.
+    router.replace(takeReturnPath())
     router.refresh()
   })
 
@@ -141,6 +144,7 @@ export function LoginForm({ notice }: { notice?: Notice }) {
         </>
       }
     >
+      <InvitationBanner />
       {notice ? (
         <FormAlert tone="info" className="mb-5">
           {t(NOTICE_KEYS[notice])}

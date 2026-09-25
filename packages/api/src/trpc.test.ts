@@ -28,6 +28,7 @@ const config: ApiConfig = {
   minSupportedAppVersion: '1.2.0',
   allowedOrigins: ['http://localhost:3000'],
   version: 'test',
+  appUrl: 'http://localhost:3000',
 }
 
 const unusedDb = new Proxy({} as Db, {

@@ -1,8 +1,9 @@
-import { withTenantTx, type Tx } from '@bizcost/db'
+import { withAnonymousTx, withTenantTx, type Tx } from '@bizcost/db'
 import { newId } from '@bizcost/domain'
 import type { AnyRouter } from '@trpc/server'
 import { authModeOf, resolveAuth, type AuthMode, type AuthUser } from './auth'
 import type { ApiConfig, ApiDeps } from './deps'
+import { emailSenderFor, type EmailSender } from './email/sender'
 import { AppError } from './errors'
 
 /**
@@ -27,6 +28,13 @@ export interface Context {
   readonly getAuth: () => Promise<AuthUser | null>
   /** withTenantTx as the verified caller (UNAUTHORIZED without a session). */
   readonly tenantTx: CallerTx
+  /**
+   * A transaction with no user and no business, for signed-out callers of public procedures: RLS
+   * shows nothing; only definer functions made for anonymous callers work (app.preview_invitation).
+   */
+  readonly anonymousTx: <T>(fn: (tx: Tx) => Promise<T>) => Promise<T>
+  /** Sends the API's own emails (invitations). */
+  readonly email: EmailSender
   /** Per-request memo for work shared by the calls of a batch (e.g. loading business access). */
   readonly memo: Map<string, Promise<unknown>>
 }
@@ -54,6 +62,7 @@ export function createContext({ req, resHeaders, deps, router }: CreateContextOp
     if (!caller) throw new AppError('unauthorized')
     return withTenantTx(deps.db, { userId: caller.userId, businessId, requestId }, fn)
   }
+  const anonymousTx = <T>(fn: (tx: Tx) => Promise<T>) => withAnonymousTx(deps.db, { requestId }, fn)
   return {
     req,
     resHeaders,
@@ -63,6 +72,8 @@ export function createContext({ req, resHeaders, deps, router }: CreateContextOp
     authMode: authModeOf(req),
     getAuth,
     tenantTx,
+    anonymousTx,
+    email: deps.emailSender ?? emailSenderFor(deps.config.email),
     memo: new Map(),
   }
 }

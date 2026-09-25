@@ -1,24 +1,20 @@
-import { createClient, type SupabaseClient } from '@supabase/supabase-js'
+import type { SupabaseClient } from '@supabase/supabase-js'
 import type { ApiConfig } from '../deps'
 import { AppError } from '../errors'
+import { adminClient as secretKeyClient, assertSecretKey } from './client'
 
 // The Supabase Auth admin API with the secret key (docs/ARCHITECTURE.md §Secrets & server-only code).
-// Lint allows only the account service to import this module.
+// Lint allows only the account service (and the business profile service, for Storage) to import src/admin.
+
+const PURPOSE = 'deleting an account'
 
 /** Fails before any change when the secret key is not configured (e.g. a local .env without it). */
 export function assertAuthAdmin(config: ApiConfig): string {
-  if (!config.supabaseSecretKey) {
-    throw new AppError('internal', {
-      message: 'SUPABASE_SECRET_KEY is not set: deleting an account needs the Supabase secret key',
-    })
-  }
-  return config.supabaseSecretKey
+  return assertSecretKey(config, PURPOSE)
 }
 
 function adminClient(config: ApiConfig): SupabaseClient {
-  return createClient(config.supabaseUrl, assertAuthAdmin(config), {
-    auth: { persistSession: false, autoRefreshToken: false, detectSessionInUrl: false },
-  })
+  return secretKeyClient(config, PURPOSE)
 }
 
 function isNotFound(error: { code?: string; status?: number }): boolean {

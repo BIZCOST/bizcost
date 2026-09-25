@@ -15,7 +15,7 @@ import { createServerClient } from '@supabase/ssr'
 import type { AnyRouter } from '@trpc/server'
 import { sql } from 'drizzle-orm'
 import postgres from 'postgres'
-import { createFetchHandler, type ApiConfig } from '../src'
+import { createFetchHandler, type ApiConfig, type ApiDeps } from '../src'
 
 // Integration-test helpers: real users in the local Auth server, real ES256 tokens, businesses created
 // through app.create_business as those users, and requests through the real fetch handler.
@@ -40,6 +40,7 @@ export const testConfig: ApiConfig = {
   minSupportedAppVersion: '1.0.0',
   allowedOrigins: [ORIGIN],
   version: 'test',
+  appUrl: ORIGIN,
 }
 
 /** Connects as `postgres` (BYPASSRLS): test setup and assertions only. */
@@ -53,8 +54,13 @@ export function connectApi(): Db {
   return createDb(env('DATABASE_URL'), { max: 1 })
 }
 
-export function handlerFor(db: Db, router?: AnyRouter, config: Partial<ApiConfig> = {}) {
-  return createFetchHandler({ db, config: { ...testConfig, ...config } }, { router })
+export function handlerFor(
+  db: Db,
+  router?: AnyRouter,
+  config: Partial<ApiConfig> = {},
+  extra: Pick<ApiDeps, 'emailSender'> = {},
+) {
+  return createFetchHandler({ db, config: { ...testConfig, ...config }, ...extra }, { router })
 }
 
 // ---------------------------------------------------------------------------------------------------
@@ -73,8 +79,11 @@ export interface Session {
   refresh_token: string
 }
 
-export async function createUser(metadata: Record<string, unknown> = {}): Promise<TestUser> {
-  const email = `api-${newId()}@test.bizcost.local`
+export async function createUser(
+  metadata: Record<string, unknown> = {},
+  options: { email?: string; confirmed?: boolean } = {},
+): Promise<TestUser> {
+  const email = options.email ?? `api-${newId()}@test.bizcost.local`
   const password = `pw-${newId()}`
   const response = await fetch(`${SUPABASE_URL}/auth/v1/admin/users`, {
     method: 'POST',
@@ -83,7 +92,12 @@ export async function createUser(metadata: Record<string, unknown> = {}): Promis
       authorization: `Bearer ${SECRET_KEY}`,
       'content-type': 'application/json',
     },
-    body: JSON.stringify({ email, password, email_confirm: true, user_metadata: metadata }),
+    body: JSON.stringify({
+      email,
+      password,
+      email_confirm: options.confirmed ?? true,
+      user_metadata: metadata,
+    }),
   })
   if (!response.ok) throw new Error(`createUser failed: ${response.status}`)
   const user = (await response.json()) as { id: string }

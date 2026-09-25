@@ -20,6 +20,7 @@ import { PasswordRules } from '@/components/form/password-rules'
 import { TextField } from '@/components/form/text-field'
 import { useMessage } from '@/components/form/use-message'
 import { Button } from '@/components/ui/button'
+import { InvitationBanner } from '@/features/invite/invitation-banner'
 import { useLocale } from '@/lib/i18n/client'
 import { authClient } from '@/lib/supabase/browser'
 import { savePending, sentCode } from './pending'
@@ -65,6 +66,7 @@ export function SignupForm() {
         </>
       }
     >
+      <InvitationBanner />
       {error ? (
         <FormAlert tone="error" className="mb-5">
           {message(error)}

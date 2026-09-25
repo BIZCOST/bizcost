@@ -51,12 +51,12 @@ jobs:
       # A throwaway ES256 signing key for this run's Auth server (config.toml signing_keys_path; the
       # file is gitignored). The API accepts only asymmetric tokens, verified with getClaims().
       - run: pnpm auth:signing-key
-      # Postgres (migrations + seed.sql), Auth, the API gateway and Mailpit (the emailed codes): what
-      # pgTAP, the @bizcost/db tests, the @bizcost/api integration tests and the e2e tests need.
-      # `supabase db start` alone has no Auth server.
+      # Postgres (migrations + seed.sql), Auth, Storage (the business logo), the API gateway and
+      # Mailpit (the emailed codes, and invitations over SMTP): what pgTAP, the @bizcost/db tests, the
+      # @bizcost/api integration tests and the e2e tests need. `supabase db start` alone has no Auth.
       - run: >-
           supabase start
-          -x realtime,storage-api,imgproxy,postgrest,postgres-meta,studio,edge-runtime,logflare,vector,supavisor
+          -x realtime,imgproxy,postgrest,postgres-meta,studio,edge-runtime,logflare,vector,supavisor
       - run: supabase test db
       - run: pnpm --filter @bizcost/db test:db
       - run: pnpm --filter @bizcost/api test:api

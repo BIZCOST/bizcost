@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto'
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
+import { crc32, deflateSync } from 'node:zlib'
 import { expect, type BrowserContext, type Page } from '@playwright/test'
 import postgres from 'postgres'
 import { baseURL, repoRoot, stack } from './stack'
@@ -367,4 +368,159 @@ export function drawn(element: Element, part: string): { text: string; lines: nu
       .join(''),
     lines: new Set(glyphs.map(({ top }) => top)).size,
   }
+}
+
+// ---------------------------------------------------------------------------------------------------
+// Businesses and settings (ROADMAP.md Step 6)
+// ---------------------------------------------------------------------------------------------------
+
+/** Workshop with a team, branches, stock, machines and VAT (every capability on). */
+export const WORKSHOP_ANSWERS = {
+  what_you_do: ['make_products'],
+  how_you_make: ['custom_jobs'],
+  workplace: 'workshop',
+  branches: true,
+  team: 'team',
+  team_tracking: ['hours', 'salaries', 'staff_cash'],
+  work_setup: ['stock', 'machines', 'vehicles'],
+  sales_channels: ['messages', 'quotes'],
+  vat: 'yes',
+}
+
+/** Solo home baker: no team, one location, no VAT (Orders on). */
+export const BAKER_ANSWERS = {
+  what_you_do: ['food_drinks'],
+  workplace: 'home',
+  team: 'alone',
+  work_setup: ['none'],
+  sales_channels: ['messages'],
+  vat: 'no',
+}
+
+export interface ApiResult<T> {
+  data?: T
+  appCode?: string
+}
+
+/**
+ * Calls a procedure of /api/trpc from the page (its cookies and Origin), like the app does: a query
+ * with GET, a mutation with POST; `businessId` goes in x-business-id.
+ */
+export async function callApi<T = unknown>(
+  page: Page,
+  path: string,
+  input: unknown,
+  options: { businessId?: string; query?: boolean } = {},
+): Promise<ApiResult<T>> {
+  return page.evaluate(
+    async ({ path, input, businessId, query }) => {
+      const headers: Record<string, string> = { 'content-type': 'application/json' }
+      if (businessId) headers['x-business-id'] = businessId
+      const url = query
+        ? `/api/trpc/${path}?input=${encodeURIComponent(JSON.stringify(input ?? {}))}`
+        : `/api/trpc/${path}`
+      const response = await fetch(url, {
+        method: query ? 'GET' : 'POST',
+        headers,
+        body: query ? undefined : JSON.stringify(input ?? {}),
+      })
+      const body = (await response.json()) as {
+        result?: { data: unknown }
+        error?: { data?: { appCode?: string } }
+      }
+      return body.error
+        ? { appCode: body.error.data?.appCode ?? 'unknown' }
+        : { data: body.result?.data as never }
+    },
+    { path, input, businessId: options.businessId, query: options.query ?? false },
+  ) as Promise<ApiResult<T>>
+}
+
+/** Creates a business through Smart Setup's confirm step, as the page's user; returns its id. */
+export async function createBusiness(
+  page: Page,
+  legalName: string,
+  answers: Record<string, unknown>,
+): Promise<string> {
+  const result = await callApi<{ businessId: string }>(page, 'business.createFromSetup', {
+    businessId: randomUUID(),
+    legalName,
+    locale: 'en',
+    questionSetVersion: 1,
+    answers,
+    adjustments: { modules: [], capabilities: [] },
+  })
+  if (!result.data) throw new Error(`createFromSetup: ${result.appCode}`)
+  return result.data.businessId
+}
+
+/** Sets the signed-in user's language (profile and this browser's cookie). */
+export async function setLanguage(page: Page, locale: 'en' | 'ar'): Promise<void> {
+  const result = await callApi(page, 'account.updateProfile', { locale })
+  if (result.appCode) throw new Error(`updateProfile: ${result.appCode}`)
+  await useLanguage(page.context(), locale)
+}
+
+/**
+ * The token of the next unread invitation email to `to` (Mailpit), waiting up to `timeout` ms. The
+ * email is marked read, so nextCode() skips it.
+ */
+export async function nextInvitation(
+  to: string,
+  timeout = 15_000,
+): Promise<{ token: string; subject: string }> {
+  const { mailpitUrl } = stack()
+  const deadline = Date.now() + timeout
+  while (Date.now() < deadline) {
+    for (const message of (await emailsTo(to)).reverse()) {
+      if (seen.has(message.ID)) continue
+      const detail = (await (await fetch(`${mailpitUrl}/api/v1/message/${message.ID}`)).json()) as {
+        Text: string
+      }
+      const token = /\/invite\/([A-Za-z0-9_-]{43})/.exec(detail.Text)?.[1]
+      if (!token) continue
+      seen.add(message.ID)
+      return { token, subject: message.Subject }
+    }
+    await new Promise((resolve) => setTimeout(resolve, 250))
+  }
+  throw new Error(`no invitation email to ${to}`)
+}
+
+/** A real PNG image (the logo's three bars), `size` pixels square. */
+export function pngImage(size = 64): Buffer {
+  const row = size * 4 + 1
+  const raw = Buffer.alloc(row * size, 255)
+  for (let y = 0; y < size; y++) {
+    raw[y * row] = 0
+    for (let x = 0; x < size; x++) {
+      const bar = Math.floor((x * 3) / size)
+      const top = size - Math.round(((bar + 1) * size * 0.8) / 3)
+      if (y >= top && x % Math.ceil(size / 3) < Math.ceil(size / 3) - 3) {
+        const i = y * row + 1 + x * 4
+        raw[i] = 29
+        raw[i + 1] = 78
+        raw[i + 2] = 216
+      }
+    }
+  }
+  const chunk = (type: string, data: Buffer) => {
+    const length = Buffer.alloc(4)
+    length.writeUInt32BE(data.length)
+    const body = Buffer.concat([Buffer.from(type, 'ascii'), data])
+    const crc = Buffer.alloc(4)
+    crc.writeUInt32BE(crc32(body))
+    return Buffer.concat([length, body, crc])
+  }
+  const header = Buffer.alloc(13)
+  header.writeUInt32BE(size, 0)
+  header.writeUInt32BE(size, 4)
+  header[8] = 8 // bit depth
+  header[9] = 6 // RGBA
+  return Buffer.concat([
+    Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]),
+    chunk('IHDR', header),
+    chunk('IDAT', deflateSync(raw)),
+    chunk('IEND', Buffer.alloc(0)),
+  ])
 }

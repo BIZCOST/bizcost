@@ -3,9 +3,11 @@
 import { useMe } from '@bizcost/app-core'
 import { terminologyKey } from '@bizcost/i18n'
 import { businessSummaryKeys, isRoleTemplateKey, type Capabilities } from '@bizcost/modules'
-import { InfoIcon } from 'lucide-react'
+import { InfoIcon, SettingsIcon } from 'lucide-react'
+import Link from 'next/link'
 import { useTranslation } from 'react-i18next'
 import { LogoMark } from '@/components/brand/logo'
+import { Button } from '@/components/ui/button'
 import { STATEMENT_ICONS } from '@/features/setup/icons'
 import { useBusinessContext } from '@/lib/trpc/client'
 import { cn } from '@/lib/utils'
@@ -82,10 +84,18 @@ export function BusinessHome({ businessId }: { businessId: string }) {
               )
             })}
           </ul>
-          <p className="mt-6 flex items-start gap-2.5 text-sm leading-relaxed text-muted-foreground">
-            <InfoIcon aria-hidden className="mt-0.5 size-4 shrink-0" />
-            {t('business.sectionsNote')}
-          </p>
+          <div className="mt-6 flex flex-col gap-4 border-t pt-5 sm:flex-row sm:items-center sm:justify-between">
+            <p className="flex items-start gap-2.5 text-sm leading-relaxed text-muted-foreground">
+              <InfoIcon aria-hidden className="mt-0.5 size-4 shrink-0" />
+              {t('business.sectionsNote')}
+            </p>
+            <Button asChild variant="outline" className="shrink-0">
+              <Link href={`/b/${businessId}/settings`}>
+                <SettingsIcon aria-hidden />
+                {t('nav.settings')}
+              </Link>
+            </Button>
+          </div>
         </div>
       </section>
     </div>

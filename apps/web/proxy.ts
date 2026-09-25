@@ -15,6 +15,14 @@ const AUTH_PAGES = new Set(['/login', '/signup', '/verify', '/forgot'])
  */
 const OPEN_PAGES = new Set(['/reset'])
 
+/**
+ * An invitation link (`/invite/<token>`) is open either way too: a signed-out visitor signs in or
+ * creates an account from it, and a signed-in one accepts it (or is told to switch accounts).
+ */
+function isOpenPage(pathname: string): boolean {
+  return OPEN_PAGES.has(pathname) || pathname.startsWith('/invite/')
+}
+
 /** A redirect that keeps what a session refresh set: its cookies and its no-store cache headers. */
 function redirectTo(
   request: NextRequest,
@@ -59,7 +67,7 @@ export async function proxy(request: NextRequest): Promise<NextResponse> {
   const signedIn = Boolean(data?.claims?.sub)
   const { pathname } = request.nextUrl
 
-  if (OPEN_PAGES.has(pathname)) return response
+  if (isOpenPage(pathname)) return response
   if (AUTH_PAGES.has(pathname)) {
     return signedIn ? redirectTo(request, '/', response, refreshHeaders) : response
   }

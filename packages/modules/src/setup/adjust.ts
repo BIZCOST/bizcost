@@ -100,6 +100,12 @@ function dependentsClosure(id: ModuleId): ModuleId[] {
   return [...out]
 }
 
+/**
+ * The part of a recommendation the switches read: the recommended modules a capability brings back
+ * when it is turned on again. Customize BizCost passes none (it has no recommendation in reach).
+ */
+type RecommendedModules = Pick<Recommendation, 'modules'>
+
 /** Modules a capability turns on with it (plus their deps). */
 const ANCHORS: Readonly<Partial<Record<CapabilityKey, readonly ModuleId[]>>> = {
   has_team: ['employees'],
@@ -174,7 +180,7 @@ function fits(d: Draft, id: ModuleId): boolean {
  * requires it (and their dependents).
  */
 function capabilityTo(
-  rec: Recommendation,
+  rec: RecommendedModules,
   d: Draft,
   key: CapabilityKey,
   enabled: boolean,
@@ -198,7 +204,7 @@ function capabilityTo(
 }
 
 function apply(
-  rec: Recommendation,
+  rec: RecommendedModules,
   d: Draft,
   item: SetupItem,
   enabled: boolean,
@@ -326,6 +332,56 @@ export function adjustmentsFor(rec: Recommendation, target: SetupState): SetupAd
   return toAdjustments(new Map(ITEMS.map((item) => [item, isSetupItemOn(target, item)])))
 }
 
+/** One switch flipped from a state: the new state and the other items that changed with it. */
+export type ToggleFromStateResult =
+  | {
+      readonly ok: true
+      readonly state: SetupState
+      /** Side effects, for "Also turned on:" / "Also turned off:" (the toggled item excluded). */
+      readonly turnedOn: readonly SetupItem[]
+      readonly turnedOff: readonly SetupItem[]
+    }
+  | { readonly ok: false; readonly issue: SetupAdjustmentIssue; readonly item: string }
+
+/**
+ * Flips one switch of `current` with the review's rules (capabilities: anchors on, requiring modules
+ * off; modules: deps on, dependents off; `needs_vat` refused). `rec` names the recommended modules a
+ * capability brings back when turned on again (none for Customize BizCost). A valid state stays valid.
+ */
+export function toggleFromState(
+  rec: RecommendedModules,
+  current: SetupState,
+  item: SetupItem,
+  enabled: boolean,
+): ToggleFromStateResult {
+  const name = item.kind === 'module' ? item.id : item.key
+  if (item.kind === 'module' && !isModuleId(item.id)) {
+    return { ok: false, issue: 'unknown_module', item: name }
+  }
+  if (item.kind === 'module' && isAlwaysOn(item.id)) {
+    return { ok: false, issue: 'always_on_module', item: name }
+  }
+  if (item.kind === 'capability' && !isCapabilityKey(item.key)) {
+    return { ok: false, issue: 'unknown_capability', item: name }
+  }
+  const d = draftOf(current)
+  const issue = apply(rec, d, item, enabled)
+  if (issue) return { ok: false, issue, item: name }
+  const state = freeze(d)
+  if (isValidSetupState(current) && !isValidSetupState(state)) {
+    return { ok: false, issue: 'invalid_state', item: name }
+  }
+  const changed = (on: boolean) =>
+    [
+      ...ITEMS.filter((i) => i.kind === 'module'),
+      ...ITEMS.filter((i) => i.kind === 'capability'),
+    ].filter(
+      (i) =>
+        !sameItem(i, item) && isSetupItemOn(current, i) !== on && isSetupItemOn(state, i) === on,
+    )
+  return { ok: true, state, turnedOn: changed(true), turnedOff: changed(false) }
+}
+
 export type ToggleSetupItemResult =
   | {
       readonly ok: true
@@ -349,37 +405,9 @@ export function toggleSetupItem(
 ): ToggleSetupItemResult {
   const current = applyAdjustments(rec, adj)
   if (!current.ok) return current
-  const name = item.kind === 'module' ? item.id : item.key
-  if (item.kind === 'module' && !isModuleId(item.id)) {
-    return { ok: false, issue: 'unknown_module', item: name }
-  }
-  if (item.kind === 'module' && isAlwaysOn(item.id)) {
-    return { ok: false, issue: 'always_on_module', item: name }
-  }
-  if (item.kind === 'capability' && !isCapabilityKey(item.key)) {
-    return { ok: false, issue: 'unknown_capability', item: name }
-  }
-  const d = draftOf(current.state)
-  const issue = apply(rec, d, item, enabled)
-  if (issue) return { ok: false, issue, item: name }
-  const state = freeze(d)
-  const changed = (on: boolean) =>
-    [
-      ...ITEMS.filter((i) => i.kind === 'module'),
-      ...ITEMS.filter((i) => i.kind === 'capability'),
-    ].filter(
-      (i) =>
-        !sameItem(i, item) &&
-        isSetupItemOn(current.state, i) !== on &&
-        isSetupItemOn(state, i) === on,
-    )
-  return {
-    ok: true,
-    adjustments: adjustmentsFor(rec, state),
-    state,
-    turnedOn: changed(true),
-    turnedOff: changed(false),
-  }
+  const result = toggleFromState(rec, current.state, item, enabled)
+  if (!result.ok) return result
+  return { ...result, adjustments: adjustmentsFor(rec, result.state) }
 }
 
 function sameItem(a: SetupItem, b: SetupItem): boolean {

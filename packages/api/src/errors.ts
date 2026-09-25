@@ -16,6 +16,15 @@ const TRPC_CODE_OF: Record<AppErrorCode, TRPC_ERROR_CODE_KEY> = {
   rate_limited: 'TOO_MANY_REQUESTS',
   sole_owner: 'CONFLICT',
   reauth_required: 'FORBIDDEN',
+  capability_disabled: 'FORBIDDEN',
+  invitation_invalid: 'NOT_FOUND',
+  already_member: 'CONFLICT',
+  already_invited: 'CONFLICT',
+  team_in_use: 'CONFLICT',
+  locations_in_use: 'CONFLICT',
+  owner_transfer_required: 'CONFLICT',
+  default_location: 'CONFLICT',
+  file_invalid: 'BAD_REQUEST',
   internal: 'INTERNAL_SERVER_ERROR',
 }
 
@@ -67,7 +76,11 @@ const APP_CODE_OF_SQLSTATE: Readonly<Record<string, AppErrorCode>> = {
   '22021': 'validation', // character_not_in_repertoire (U+0000 in text; the DTOs refuse it first)
   '22P05': 'validation', // untranslatable_character
   '42501': 'forbidden', // insufficient_privilege (RLS WITH CHECK, a revoked grant)
-  BZ429: 'rate_limited', // app.create_business: too many businesses created by one user in 24 hours
+  // app.create_business (10 businesses a user a day), app.invitation_limits (20 invitations a business
+  // a day, 3 resends an invitation), app.preview_invitation (30 previews an invitation an hour)
+  BZ429: 'rate_limited',
+  BZ404: 'invitation_invalid', // app.accept_invitation / app.preview_invitation: one answer for all
+  BZ409: 'already_member', // app.accept_invitation: the caller is already an active member
 }
 
 const SQLSTATE = /^[0-9A-Z]{5}$/
@@ -86,6 +99,16 @@ export function sqlStateOf(error: unknown): string | undefined {
   for (const current of causeChain(error)) {
     if ('code' in current && typeof current.code === 'string' && SQLSTATE.test(current.code)) {
       return current.code
+    }
+  }
+  return undefined
+}
+
+/** Name of the constraint a Postgres error in the cause chain names (unique, check, FK…). */
+export function constraintOf(error: unknown): string | undefined {
+  for (const current of causeChain(error)) {
+    if ('constraint_name' in current && typeof current.constraint_name === 'string') {
+      return current.constraint_name
     }
   }
   return undefined

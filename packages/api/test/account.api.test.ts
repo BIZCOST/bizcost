@@ -235,6 +235,28 @@ describe('account.delete', () => {
     expect(await profileRow(owner.id)).toBeUndefined()
   })
 
+  it('clears the email and name of every membership, also one removed earlier', async () => {
+    const { user: owner } = await newUser()
+    const { user: staff, token } = await newUser()
+    const kept = await createBusiness(db, owner, 'Kept Co')
+    const left = await createBusiness(db, owner, 'Left Co')
+    await addMember(db, owner, kept.id, staff, { template: 'employee' })
+    await addMember(db, owner, left.id, staff, { template: 'employee' })
+    await admin`update app.business_members set email = ${staff.email}
+                 where user_id = ${staff.id}`
+    // Removed from one business before deleting the account (RLS no longer lets them write it).
+    await admin`update app.business_members set status = 'removed'
+                 where business_id = ${left.id} and user_id = ${staff.id}`
+
+    expect((await mutate(handler, 'account.delete', { token })).error).toBeUndefined()
+    const rows = await admin<{ email: string | null; display_name: string }[]>`
+      select email::text, display_name from app.business_members where user_id = ${staff.id}`
+    expect(rows).toHaveLength(2)
+    for (const row of rows) {
+      expect(row).toEqual({ email: null, display_name: DELETED_USER_DISPLAY_NAME })
+    }
+  })
+
   it('fails before any change when the secret key is not configured', async () => {
     const { user, token } = await newUser()
     const business = await createBusiness(db, user, 'Unchanged Shop')

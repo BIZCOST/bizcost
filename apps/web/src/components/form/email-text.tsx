@@ -35,6 +35,14 @@ export function EmailText({
     | 'account.password.codeSent'
     | 'account.delete.codeSent'
     | 'account.email.changed'
+    | 'settings.members.transferCodeSent'
+    | 'auth.invite.useEmail'
+    | 'auth.invite.otherEmail'
+    | 'auth.invite.bannerEmail'
+    | 'settings.invite.sent'
+    | 'settings.invitations.resent'
+    | 'settings.invitations.revoked'
+    | 'settings.invitations.revokeBody'
   >
   email: string
 }) {

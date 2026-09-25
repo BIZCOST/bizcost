@@ -2,7 +2,12 @@
 
 import { createApiClient, createQueryClient, TRPCProvider, useTRPC } from '@bizcost/app-core'
 import { API_MAX_BATCH_SIZE, type BusinessContextDto, type MeDto } from '@bizcost/contracts'
-import { QueryClientProvider, useQuery, useQueryClient } from '@tanstack/react-query'
+import {
+  QueryClientProvider,
+  useQuery,
+  useQueryClient,
+  type QueryClient,
+} from '@tanstack/react-query'
 import { httpBatchLink } from '@trpc/client'
 import { useState, type ReactNode } from 'react'
 
@@ -10,15 +15,19 @@ import { useState, type ReactNode } from 'react'
 // /api/trpc with the session cookies. One QueryClient per mount; sign-out reloads the page, which
 // drops it. The layout passes `me` from the server so the first render needs no request.
 
-function SeedMe({ me, children }: { me: MeDto; children: ReactNode }) {
+function SeedMe({ me, children }: { me: MeDto | undefined; children: ReactNode }) {
   const trpc = useTRPC()
   const queryClient = useQueryClient()
-  useState(() => queryClient.setQueryData(trpc.me.queryKey(), me))
+  useState(() => (me ? queryClient.setQueryData(trpc.me.queryKey(), me) : undefined))
   return children
 }
 
-export function ApiProvider({ me, children }: { me: MeDto; children: ReactNode }) {
-  const [queryClient] = useState(createQueryClient)
+/**
+ * The API outside a business. Signed-in pages pass `me`; a page open to signed-out visitors (the
+ * invitation page) passes none and calls only what it may.
+ */
+export function ApiProvider({ me, children }: { me?: MeDto; children: ReactNode }) {
+  const [queryClient] = useState(() => createQueryClient())
   const [trpcClient] = useState(() =>
     createApiClient([httpBatchLink({ url: '/api/trpc', maxItems: API_MAX_BATCH_SIZE })]),
   )
@@ -30,6 +39,8 @@ export function ApiProvider({ me, children }: { me: MeDto; children: ReactNode }
     </QueryClientProvider>
   )
 }
+
+const ACCESS_REFRESH_GAP_MS = 5_000
 
 function SeedBusiness({
   me,
@@ -65,7 +76,22 @@ export function BusinessApiProvider({
   context: BusinessContextDto
   children: ReactNode
 }) {
-  const [queryClient] = useState(createQueryClient)
+  const [queryClient] = useState(() => {
+    let lastAccessRefresh = 0
+    const client: QueryClient = createQueryClient({
+      // A refusal because the caller's access changed (a new role, a switched-off capability, a
+      // removed membership): refetch `me` and the business context, at most every few seconds (the
+      // context itself may be refused, which must not loop). Keys: tRPC's pathKey of each procedure.
+      onAccessChange: () => {
+        const now = Date.now()
+        if (now - lastAccessRefresh < ACCESS_REFRESH_GAP_MS) return
+        lastAccessRefresh = now
+        void client.invalidateQueries({ queryKey: [['me']] })
+        void client.invalidateQueries({ queryKey: [['business', 'context']] })
+      },
+    })
+    return client
+  })
   const [trpcClient] = useState(() =>
     createApiClient([
       httpBatchLink({

@@ -36,6 +36,34 @@
       "when": 1790347375090,
       "tag": "20260925144255_business_create_limit",
       "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1790358075959,
+      "tag": "20260925174115_settings_columns",
+      "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1790358077226,
+      "tag": "20260925174117_settings_security",
+      "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1790365544777,
+      "tag": "20260925194544_settings_hardening_tables",
+      "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1790365549262,
+      "tag": "20260925194549_settings_hardening",
+      "breakpoints": true
     }
   ]
 }

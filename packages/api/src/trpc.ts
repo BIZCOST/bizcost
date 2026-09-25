@@ -1,6 +1,12 @@
 import type { Tx } from '@bizcost/db'
 import { can, isUuid, type SensitivityCategory } from '@bizcost/domain'
-import { isModuleActive, moduleById, type ModuleId, type PermissionKey } from '@bizcost/modules'
+import {
+  isModuleActive,
+  moduleById,
+  type CapabilityKey,
+  type ModuleId,
+  type PermissionKey,
+} from '@bizcost/modules'
 import { initTRPC, type AnyRouter } from '@trpc/server'
 import semver from 'semver'
 import type { z } from 'zod'
@@ -179,6 +185,32 @@ export function requirePermission(key: PermissionKey) {
     const access = accessOf(ctx)
     if (!access) throw new AppError('internal', { message: 'requirePermission outside a business' })
     if (!can(access.effective, key)) throw new AppError('forbidden')
+    return next()
+  })
+}
+
+/** The member must hold at least one of the permissions (FORBIDDEN otherwise). */
+export function requireAnyPermission(...keys: readonly PermissionKey[]) {
+  return t.middleware(({ ctx, next }) => {
+    const access = accessOf(ctx)
+    if (!access) {
+      throw new AppError('internal', { message: 'requireAnyPermission outside a business' })
+    }
+    if (!keys.some((key) => can(access.effective, key))) throw new AppError('forbidden')
+    return next()
+  })
+}
+
+/**
+ * The business must have the capability on (CAPABILITY_DISABLED otherwise): a solo business has no
+ * team or role screens, a single-location business no location screens (docs/PRODUCT.md §5). The UI
+ * hides them; this makes the API refuse them too. Use after businessProcedure.
+ */
+export function requireCapability(key: CapabilityKey) {
+  return t.middleware(({ ctx, next }) => {
+    const access = accessOf(ctx)
+    if (!access) throw new AppError('internal', { message: 'requireCapability outside a business' })
+    if (!access.capabilities[key]) throw new AppError('capability_disabled')
     return next()
   })
 }

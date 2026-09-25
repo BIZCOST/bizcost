@@ -43,6 +43,9 @@ export default defineConfig({
         process.env.DATABASE_URL ??
         'postgresql://bizcost_api:bizcost_local_dev@127.0.0.1:54322/postgres',
       APP_ORIGINS: baseURL,
+      APP_URL: baseURL,
+      // Invitation emails go to the stack's Mailpit (SMTP 127.0.0.1:54325).
+      EMAIL_TRANSPORT: 'smtp',
       NEXT_TELEMETRY_DISABLED: '1',
     },
   },

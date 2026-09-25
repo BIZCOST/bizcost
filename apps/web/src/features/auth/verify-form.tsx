@@ -13,6 +13,7 @@ import { SLOT, SlotText } from '@/components/form/slot-text'
 import { useMessage } from '@/components/form/use-message'
 import { useLocale } from '@/lib/i18n/client'
 import { authClient } from '@/lib/supabase/browser'
+import { takeReturnPath } from '@/features/invite/return-path'
 import { CodeCard } from './code-card'
 import { clearPending, savePending, usePending, type PendingCode } from './pending'
 
@@ -62,7 +63,8 @@ function VerifyCode({ pending }: { pending: PendingCode }) {
   async function verify(value: string) {
     if (await flow.verify(value)) {
       clearPending()
-      router.replace('/')
+      // Back to an invitation opened before signing in, else home.
+      router.replace(takeReturnPath())
       router.refresh()
     }
   }

@@ -1,5 +1,4 @@
 import {
-  AUTH_RECENT_SIGN_IN_SECONDS,
   DELETED_USER_DISPLAY_NAME,
   type DeleteAccountDto,
   type ProfileDto,
@@ -12,7 +11,9 @@ import { assertAuthAdmin, authUserExists, deleteAuthUser } from '../admin/auth-a
 import type { AuthUser } from '../auth'
 import type { Context } from '../context'
 import { AppError } from '../errors'
+import { revokeInvitationsSentBy } from './invitations'
 import { ensureProfile, profileColumns, toProfileDto } from './profile'
+import { assertRecentSignIn } from './reauth'
 
 // The signed-in user's own account (docs/ARCHITECTURE.md §Auth): name and language, and deleting the
 // account. Everything runs as the caller through ctx.tenantTx, under the identity-table policies.
@@ -160,10 +161,12 @@ async function leaveBusiness(ctx: Context, businessId: string, userId: string): 
         .set({ deletedAt: sql`now()` })
         .where(eq(businesses.id, businessId))
     }
-    // Co-members no longer see the person's name (D-048).
+    // The invitations the person sent stop working (first, while the caller is still a member).
+    await revokeInvitationsSentBy(tx, businessId, userId)
+    // Co-members no longer see the person's name or email (D-048).
     await tx
       .update(businessMembers)
-      .set({ status: 'removed', displayName: DELETED_USER_DISPLAY_NAME })
+      .set({ status: 'removed', displayName: DELETED_USER_DISPLAY_NAME, email: null })
       .where(and(eq(businessMembers.businessId, businessId), eq(businessMembers.id, plan.memberId)))
     return plan.kind === 'deleteBusiness'
   })
@@ -176,11 +179,13 @@ async function leaveBusiness(ctx: Context, businessId: string, userId: string): 
  *    outage is `internal`); the caller signed in or confirmed an emailed code within
  *    AUTH_RECENT_SIGN_IN_SECONDS (`reauth_required`).
  * 2. Per business, in that business's own transaction (the tenant context is one business): a
- *    business whose only member is the caller is soft-deleted (deleted_at); the caller's membership
- *    becomes `removed` and its display name 'Deleted user'. The database's owner rule still holds at
- *    every commit.
- * 3. In one transaction: the profile is anonymized (never deleted) and the auth user is deleted with
- *    the Admin API (its sessions end); a failed Admin call rolls the anonymization back.
+ *    business whose only member is the caller is soft-deleted (deleted_at); the invitations the caller
+ *    sent are revoked; the caller's membership becomes `removed`, its display name 'Deleted user' and
+ *    its email empty. The database's owner rule still holds at every commit.
+ * 3. In one transaction: the profile is anonymized (never deleted), every membership of the caller
+ *    (also those removed earlier, which RLS no longer lets the caller write) loses its email and name
+ *    (app.anonymize_my_memberships), and the auth user is deleted with the Admin API (its sessions
+ *    end); a failed Admin call rolls all of it back.
  * Each step is idempotent, so a deletion that failed half-way (e.g. someone joined a business between
  * the check and step 2) can be retried by the still signed-in user.
  */
@@ -195,12 +200,7 @@ export async function deleteAccount(ctx: Context, auth: AuthUser): Promise<Delet
   }
 
   // Once the auth user is gone (a retry after step 3 half failed), only the anonymization is left.
-  if (await authUserExists(ctx.config, userId)) {
-    const now = Math.floor(Date.now() / 1000)
-    if (auth.authenticatedAt === null || now - auth.authenticatedAt > AUTH_RECENT_SIGN_IN_SECONDS) {
-      throw new AppError('reauth_required')
-    }
-  }
+  if (await authUserExists(ctx.config, userId)) assertRecentSignIn(auth)
 
   const deletedBusinessIds: string[] = []
   for (const businessId of businessIds) {
@@ -225,6 +225,7 @@ export async function deleteAccount(ctx: Context, auth: AuthUser): Promise<Delet
           anonymizedAt: sql`now()`,
         },
       })
+    await tx.execute(sql`select app.anonymize_my_memberships(${DELETED_USER_DISPLAY_NAME})`)
     // Inside the transaction: if the Admin call fails, the profile stays as it was.
     await deleteAuthUser(ctx.config, userId)
   })

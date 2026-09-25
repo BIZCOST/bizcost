@@ -15,6 +15,7 @@ import {
   rolePermissions,
   roles,
   setupAnswers,
+  withAnonymousTx,
   withTenantTx,
   type Db,
   type Tx,
@@ -106,6 +107,33 @@ describe('withTenantTx', () => {
     const [after] = await db.execute<ContextRow>(readContext)
     expect(after?.user_id ?? '').toBe('')
     expect(after?.business_id ?? '').toBe('')
+  })
+
+  it('withAnonymousTx sets no user and no business, keeps the request id and sees no rows', async () => {
+    const requestId = newId()
+    const [inside] = await withAnonymousTx(db, { requestId }, (tx) =>
+      tx.execute<ContextRow & { user: string | null; businesses: number; members: number }>(sql`
+        select current_setting('app.user_id', true) as user_id,
+          current_setting('app.business_id', true) as business_id,
+          current_setting('app.request_id', true) as request_id,
+          pg_backend_pid() as pid,
+          app.current_user_id()::text as user,
+          (select count(*)::int from app.businesses) as businesses,
+          (select count(*)::int from app.business_members) as members`),
+    )
+    expect(inside).toMatchObject({
+      user_id: '',
+      business_id: '',
+      request_id: requestId,
+      user: null,
+      businesses: 0,
+      members: 0,
+    })
+    const [after] = await db.execute<ContextRow>(readContext)
+    expect(after?.request_id ?? '').toBe('')
+    await expect(withAnonymousTx(db, { requestId: 'nope' }, async () => 1)).rejects.toThrow(
+      'requestId must be a UUID',
+    )
   })
 
   it('sets an empty business id when the request has no active business', async () => {

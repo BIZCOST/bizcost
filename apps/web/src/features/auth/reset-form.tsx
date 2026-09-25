@@ -28,6 +28,7 @@ import { useMessage } from '@/components/form/use-message'
 import { Button } from '@/components/ui/button'
 import { authClient } from '@/lib/supabase/browser'
 import { cn } from '@/lib/utils'
+import { takeReturnPath } from '@/features/invite/return-path'
 import { CodeCard } from './code-card'
 import { clearPending, savePending, usePending, type PendingCode } from './pending'
 
@@ -90,7 +91,8 @@ function ResetSteps({ pending }: { pending: PendingCode }) {
     if (!done) return
     clearPending()
     if (passwordChanged) toast.success(t('auth.reset.done'))
-    router.replace('/')
+    // Back to an invitation opened before signing in, else home.
+    router.replace(takeReturnPath())
     router.refresh()
   }, [done, passwordChanged, router, t])
 

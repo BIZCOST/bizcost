@@ -61,3 +61,11 @@ export function formatDate(
     typeof value === 'string' ? new Date(value) : value,
   )
 }
+
+/** "a, b and c" in the locale's words (Intl.ListFormat; joined with commas where it is missing). */
+export function formatList(locale: Locale, items: readonly string[]): string {
+  if (typeof Intl.ListFormat !== 'function') return items.join(', ')
+  return new Intl.ListFormat(intlLocale(locale), { style: 'long', type: 'conjunction' }).format(
+    items,
+  )
+}

@@ -32,15 +32,15 @@ select tables_are(
   array[
     'profiles', 'businesses', 'business_capabilities', 'business_modules', 'locations',
     'roles', 'role_permissions', 'business_members', 'member_permission_overrides',
-    'member_locations', 'business_invitations', 'setup_answers', 'audit_log'
+    'member_locations', 'business_invitations', 'setup_answers', 'file_uploads', 'audit_log'
   ],
   'app contains exactly the Milestone 1 tables'
 );
 
 select is(
   (select count(*)::int from business_tables),
-  11,
-  'sanity: 11 app tables carry business_id (the checks below are not vacuous)'
+  12,
+  'sanity: 12 app tables carry business_id (the checks below are not vacuous)'
 );
 
 -- 2. Row level security ---------------------------------------------------------
@@ -308,8 +308,11 @@ select is_empty(
                                      where a.attrelid = t.relid and a.attname = 'token_hash'))
         and not (t.table_name = 'business_members'
                  and i.indkey[0] = (select a.attnum from pg_attribute a
-                                     where a.attrelid = t.relid and a.attname = 'user_id')) $$,
-  'every index on a tenant table leads with business_id (except global token_hash and per-user membership lookups)'
+                                     where a.attrelid = t.relid and a.attname = 'user_id'))
+        and not (t.table_name = 'business_invitations'
+                 and i.indkey[0] = (select a.attnum from pg_attribute a
+                                     where a.attrelid = t.relid and a.attname = 'created_by')) $$,
+  'every index on a tenant table leads with business_id (except global token_hash, per-user membership lookups and the per-user invitation limit)'
 );
 
 -- 7. Triggers ------------------------------------------------------------------------------
@@ -384,6 +387,7 @@ select is_empty(
          ('business_members', 'user_id'), ('business_members', 'kind'), ('business_members', 'display_name'),
          ('business_members', 'status'), ('business_members', 'role_id'),
          ('business_members', 'permissions_version'), ('business_members', 'pin_hash'),
+         ('business_members', 'email'),
          ('member_permission_overrides', 'member_id'), ('member_permission_overrides', 'permission_key'),
          ('member_permission_overrides', 'effect'),
          ('member_locations', 'member_id'), ('member_locations', 'location_id'),
@@ -391,7 +395,10 @@ select is_empty(
          ('business_invitations', 'expires_at'), ('business_invitations', 'status'),
          ('business_invitations', 'role_id'), ('business_invitations', 'overrides'),
          ('business_invitations', 'location_ids'), ('business_invitations', 'send_count'),
-         ('business_invitations', 'last_sent_at'),
+         ('business_invitations', 'last_sent_at'), ('business_invitations', 'locale'),
+         ('business_invitations', 'preview_count'), ('business_invitations', 'preview_window_started_at'),
+         ('file_uploads', 'path'), ('file_uploads', 'purpose'), ('file_uploads', 'content_type'),
+         ('file_uploads', 'expires_at'), ('file_uploads', 'status'),
          ('setup_answers', 'question_set_version'), ('setup_answers', 'answers')
        ) as v(tbl, col)
       where not exists (

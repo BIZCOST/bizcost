@@ -305,6 +305,15 @@ describe('APP_ERROR_CODES', () => {
     'rate_limited',
     'sole_owner',
     'reauth_required',
+    'capability_disabled',
+    'invitation_invalid',
+    'already_member',
+    'already_invited',
+    'team_in_use',
+    'locations_in_use',
+    'owner_transfer_required',
+    'default_location',
+    'file_invalid',
     'internal',
   ]
 

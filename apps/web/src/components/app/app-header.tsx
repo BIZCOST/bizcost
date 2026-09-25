@@ -2,7 +2,7 @@
 
 import { signOut, useMe } from '@bizcost/app-core'
 import type { I18nKey } from '@bizcost/i18n'
-import { HouseIcon, LogOutIcon, UserRoundIcon } from 'lucide-react'
+import { HouseIcon, LogOutIcon, SettingsIcon, UserRoundIcon } from 'lucide-react'
 import Link from 'next/link'
 import { useParams } from 'next/navigation'
 import { useState } from 'react'
@@ -27,6 +27,7 @@ import { authClient } from '@/lib/supabase/browser'
 
 function UserMenu() {
   const { t } = useTranslation()
+  const { businessId } = useParams<{ businessId?: string }>()
   const { data: me } = useMe()
   const email = useSessionEmail()
   const [signingOut, setSigningOut] = useState(false)
@@ -77,6 +78,14 @@ function UserMenu() {
             {t('nav.home')}
           </Link>
         </DropdownMenuItem>
+        {businessId ? (
+          <DropdownMenuItem asChild className="py-2">
+            <Link href={`/b/${businessId}/settings`}>
+              <SettingsIcon aria-hidden />
+              {t('nav.settings')}
+            </Link>
+          </DropdownMenuItem>
+        ) : null}
         <DropdownMenuItem asChild className="py-2">
           <Link href="/account">
             <UserRoundIcon aria-hidden />

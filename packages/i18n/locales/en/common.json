@@ -21,7 +21,9 @@
     "cancel": "Cancel",
     "save": "Save",
     "tryAgain": "Try again",
-    "signOut": "Sign out"
+    "signOut": "Sign out",
+    "close": "Close",
+    "keep": "Keep it"
   },
   "status": {
     "saving": "Saving…",
@@ -30,7 +32,11 @@
     "signingIn": "Signing in…",
     "creatingAccount": "Creating your account…",
     "signingOut": "Signing out…",
-    "deleting": "Deleting…"
+    "deleting": "Deleting…",
+    "loading": "Loading…",
+    "removing": "Removing…",
+    "cancelling": "Cancelling…",
+    "leaving": "Leaving…"
   },
   "password": {
     "show": "Show password",
@@ -41,7 +47,8 @@
     "main": "Main",
     "home": "Home",
     "account": "Account",
-    "accountMenu": "Account menu"
+    "accountMenu": "Account menu",
+    "settings": "Settings"
   },
   "home": {
     "greeting": "Hello, {{name}}",

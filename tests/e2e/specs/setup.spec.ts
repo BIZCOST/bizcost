@@ -280,13 +280,18 @@ test('a second business through the switcher, and back (Arabic)', async ({ page,
   await expect(page).toHaveURL(`/b/${first}`)
 })
 
-test('a business the user is not a member of is not found', async ({ page, context }) => {
+test('a business the user is not a member of is not open; a malformed link is not found', async ({
+  page,
+  context,
+}) => {
   const user = await createUser('outsider')
   users.push(user.id)
   await useLanguage(context, 'en')
   await signIn(page, user)
   await page.goto('/b/0199a000-0000-7000-8000-000000000000')
-  await expect(page.getByRole('heading', { level: 1 })).toHaveText('Page not found')
+  await expect(page.getByRole('heading', { level: 1 })).toHaveText(
+    "This business isn't open to you",
+  )
   await page.goto('/b/not-a-uuid')
   await expect(page.getByRole('heading', { level: 1 })).toHaveText('Page not found')
 })
