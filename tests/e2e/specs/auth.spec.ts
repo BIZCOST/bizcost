@@ -3,6 +3,7 @@ import {
   createUser,
   deleteUser,
   drawn,
+  emailsTo,
   enterCode,
   findUserId,
   nextCode,
@@ -27,6 +28,10 @@ test.beforeEach(async ({ context }) => {
   await useLanguage(context, 'en')
 })
 
+/** The note on the sign-up code screen, shown for every address (D-073). */
+const REGISTERED_NOTE =
+  'If this email is already registered, no code will be sent — sign in instead.'
+
 /** "Forgot password?" from sign-in: the reset screen asks for the code only (D-071). */
 async function startReset(page: Page, email: string): Promise<void> {
   await page.goto('/login')
@@ -43,6 +48,32 @@ async function startReset(page: Page, email: string): Promise<void> {
   await expect(page.getByLabel('New password')).toHaveCount(0)
 }
 
+/** Asks for a reset code on /forgot (the tab's next page is /reset); returns the Auth status. */
+async function forgot(page: Page, email: string): Promise<number> {
+  await page.goto('/forgot')
+  await page.getByLabel('Email', { exact: true }).fill(email)
+  const [recover] = await Promise.all([
+    page.waitForResponse((r) => r.url().includes('/auth/v1/recover')),
+    page.getByRole('button', { name: 'Send code' }).click(),
+  ])
+  await expect(page).toHaveURL('/reset')
+  return recover.status()
+}
+
+/** The seconds "Send a new code" still waits, as the code screen shows them. */
+async function resendWait(page: Page): Promise<number> {
+  const wait = page.getByText(/^You can ask for a new code in \d+ seconds\.$/).first()
+  return Number(/(\d+) seconds/.exec((await wait.textContent()) ?? '')?.[1])
+}
+
+/** Whether this tab's code screen plans an automatic resend (its pending entry, D-073). */
+async function plansRetry(page: Page): Promise<boolean> {
+  return page.evaluate(() => {
+    const entry = JSON.parse(sessionStorage.getItem('bz_pending_code') ?? '{}') as object
+    return 'retryAt' in entry
+  })
+}
+
 test('sign up with an email code and land on home', async ({ page }) => {
   const email = uniqueEmail('signup')
   await page.goto('/signup')
@@ -52,6 +83,8 @@ test('sign up with an email code and land on home', async ({ page }) => {
 
   await expect(page).toHaveURL('/verify')
   await expect(page.getByText(withValue('We sent a code to ', email))).toBeVisible()
+  // The note for a registered address is there for a new one too, so it reveals nothing.
+  await expect(page.getByText(REGISTERED_NOTE)).toBeVisible()
   users.push(await findUserId(email))
   await enterCode(page, await nextCode(email))
 
@@ -132,7 +165,38 @@ test('sign-up password rule (D-072): the checklist, and both the page and Auth r
   expect(users.at(-1)).toBeTruthy()
 })
 
-test('signing up again with a registered email looks the same', async ({ page }) => {
+test('signing up twice with a new email: no error, and the first code still works (D-073)', async ({
+  page,
+}) => {
+  const email = uniqueEmail('signup-twice')
+  const submit = async () => {
+    await page.goto('/signup')
+    await page.getByLabel('Email', { exact: true }).fill(email)
+    await page.getByRole('textbox', { name: 'Password', exact: true }).fill('A-long-password-42')
+    const [response] = await Promise.all([
+      page.waitForResponse((r) => r.url().includes('/auth/v1/signup')),
+      page.getByRole('button', { name: 'Create account' }).click(),
+    ])
+    await expect(page).toHaveURL('/verify')
+    return response.status()
+  }
+  expect(await submit()).toBe(200)
+  users.push(await findUserId(email))
+  const first = await nextCode(email)
+  // Supabase answers the second one "too soon" (a registered address gets a silent 200): the
+  // screen is the same as after the first, with the usual wait and no automatic resend.
+  expect(await submit()).toBe(429)
+  await expect(page.getByText(withValue('We sent a code to ', email))).toBeVisible()
+  await expect(page.getByRole('main').getByRole('alert')).toHaveCount(0)
+  expect(await resendWait(page)).toBeLessThanOrEqual(60)
+  expect(await plansRetry(page)).toBe(false)
+  await enterCode(page, first)
+  await expect(page).toHaveURL('/')
+})
+
+test('signing up again with a registered email looks the same, and its note says to sign in', async ({
+  page,
+}) => {
   const user = await createUser('existing')
   users.push(user.id)
   await page.goto('/signup')
@@ -141,9 +205,16 @@ test('signing up again with a registered email looks the same', async ({ page })
   await page.getByRole('button', { name: 'Create account' }).click()
   await expect(page).toHaveURL('/verify')
   await expect(page.getByText(withValue('We sent a code to ', user.email))).toBeVisible()
-  // The code screen offers sign-in and password reset instead of revealing the account.
-  await expect(page.getByRole('link', { name: 'Sign in' })).toBeVisible()
+  // The code screen explains, to every address, that a registered one gets no code (D-073).
+  await expect(page.getByText(REGISTERED_NOTE)).toBeVisible()
+  await expect(page.getByText('Already have an account?')).toHaveCount(0)
   await expect(page.getByRole('link', { name: 'Reset your password' })).toBeVisible()
+  // No email and no automatic resend: Supabase answered 200 and sent nothing.
+  await page.waitForTimeout(3_000)
+  expect(await emailsTo(user.email)).toHaveLength(0)
+  await page.getByRole('link', { name: 'sign in', exact: true }).click()
+  await expect(page).toHaveURL('/login')
+  await signIn(page, user)
 })
 
 test.describe('with an account', () => {
@@ -201,6 +272,97 @@ test.describe('with an account', () => {
     await expect(page).toHaveURL('/')
     await expect(title).toHaveText('Welcome to BizCost')
     expect(await passwordWorks(user.email, user.password)).toBe(true)
+  })
+
+  test('"Send me a code" twice: the first code still works (D-073)', async ({ page }) => {
+    const send = async () => {
+      await page.goto('/login')
+      await page.getByText('Email code').click()
+      await page.getByLabel('Email', { exact: true }).fill(user.email)
+      const [otp] = await Promise.all([
+        page.waitForResponse((r) => r.url().includes('/auth/v1/otp')),
+        page.getByRole('button', { name: 'Send me a code' }).click(),
+      ])
+      await expect(page).toHaveURL('/verify')
+      return otp.status()
+    }
+    expect(await send()).toBe(200)
+    const first = await nextCode(user.email)
+    expect(await send()).toBe(429)
+    // No automatic resend: a second email would make the first code stop working.
+    expect(await resendWait(page)).toBeLessThanOrEqual(60)
+    expect(await plansRetry(page)).toBe(false)
+    await enterCode(page, first)
+    await expect(page).toHaveURL('/')
+  })
+
+  test('"Forgot password" twice looks the same as for an unknown email, and the first code works (D-073)', async ({
+    page,
+  }) => {
+    // An unknown email: nothing is sent, and Supabase answers 200 both times.
+    const unknown = uniqueEmail('reset-unknown')
+    expect(await forgot(page, unknown)).toBe(200)
+    expect(await forgot(page, unknown)).toBe(200)
+    const unknownWait = await resendWait(page)
+    expect(await plansRetry(page)).toBe(false)
+
+    // A registered email: the second request is answered "too soon" (its first code still works).
+    expect(await forgot(page, user.email)).toBe(200)
+    const first = await nextCode(user.email, /password reset/i)
+    expect(await forgot(page, user.email)).toBe(429)
+    const registeredWait = await resendWait(page)
+    // The same screen: the usual wait (read right away, so 59 or 60 s), no automatic resend.
+    expect(registeredWait).toBeLessThanOrEqual(60)
+    expect(Math.abs(registeredWait - unknownWait)).toBeLessThanOrEqual(1)
+    expect(await plansRetry(page)).toBe(false)
+    await expect(page.getByRole('main').getByRole('alert')).toHaveCount(0)
+
+    await enterCode(page, first)
+    await expect(page.getByRole('heading', { level: 1 })).toHaveText('Your email is confirmed')
+    await page.getByRole('button', { name: 'Continue without changing' }).click()
+    await expect(page).toHaveURL('/')
+    expect(await emailsTo(user.email, /password reset/i)).toHaveLength(1)
+  })
+
+  test('reset asked for right after a sign-in code: the code still arrives (D-073)', async ({
+    page,
+  }) => {
+    // Supabase emails an address once per 60 s (sign-in codes and resets alike), so this reset is
+    // answered "too soon" and sends nothing; the screen looks as usual and sends it again once.
+    test.slow()
+    await page.goto('/login')
+    await page.getByText('Email code').click()
+    await page.getByLabel('Email', { exact: true }).fill(user.email)
+    await page.getByRole('button', { name: 'Send me a code' }).click()
+    await expect(page).toHaveURL('/verify')
+
+    expect(await forgot(page, user.email)).toBe(429)
+    await expect(
+      page.getByText(withValue('If you have an account, we sent a code to ', user.email)),
+    ).toBeVisible()
+    // Nothing on screen tells this apart from a normal send: no notice, no error, the cells ready.
+    const cells = page.getByLabel('Verification code')
+    await expect(cells).toBeEnabled()
+    await expect(page.getByRole('main').getByRole('alert')).toHaveCount(0)
+    // "Send a new code" waits for the automatic resend and the cooldown after it.
+    expect(await resendWait(page)).toBeGreaterThan(60)
+    expect(await plansRetry(page)).toBe(true)
+    // What screen readers were told about the wait (said once, when it starts).
+    const announced = page.locator('[role="status"]').filter({ hasText: 'new code in' })
+    const said = await announced.textContent()
+
+    const code = await nextCode(user.email, /password reset/i, 75_000)
+    await expect(cells).toBeEnabled()
+    await expect(page.getByText('We sent a new code.')).toHaveCount(0)
+    // The resend changed nothing to announce.
+    await expect(announced).toHaveText(said ?? '')
+    expect(await plansRetry(page)).toBe(false)
+    await enterCode(page, code)
+    await expect(page.getByRole('heading', { level: 1 })).toHaveText('Your email is confirmed')
+    await page.getByRole('button', { name: 'Continue without changing' }).click()
+    await expect(page).toHaveURL('/')
+    // Sent again once, never more.
+    expect(await emailsTo(user.email, /password reset/i)).toHaveLength(1)
   })
 
   test('reset: the code, then a new password; the old one stops working', async ({

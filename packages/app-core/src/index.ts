@@ -23,9 +23,11 @@ export {
   signUp,
   syncAuthLocale,
   type AuthOutcome,
+  type CodeRequest,
   type SignInResult,
   type SignUpInput,
 } from './auth/commands'
+export type { SentCode } from './auth/email-retry'
 export {
   AUTH_ERROR_KEYS,
   authErrorCode,

@@ -1,8 +1,10 @@
+import type { SentCode } from '@bizcost/app-core'
 import { useEffect, useState } from 'react'
 
 // The address a code was just sent to, handed from one auth page to the next (login/signup →
 // verify, forgot → reset). Kept in sessionStorage (this tab only) instead of the URL, so the email
-// never lands in history, logs or referrers, and a reload keeps the resend countdown.
+// never lands in history, logs or referrers, and a reload keeps the resend countdown and a planned
+// automatic resend.
 
 export type PendingPurpose = 'signUp' | 'signIn' | 'recovery'
 
@@ -11,6 +13,11 @@ export interface PendingCode {
   purpose: PendingPurpose
   /** When the last code was sent (epoch ms). */
   sentAt: number
+  /**
+   * The request was answered "too soon", so no code was sent yet: the code page sends it again once
+   * at this time (epoch ms, D-073). Removed once that has run.
+   */
+  retryAt?: number
   /** Shown above the code form. */
   notice?: 'confirmEmailFirst'
   /**
@@ -30,7 +37,8 @@ function isPendingCode(value: unknown): value is PendingCode {
   return (
     typeof v.email === 'string' &&
     (v.purpose === 'signUp' || v.purpose === 'signIn' || v.purpose === 'recovery') &&
-    typeof v.sentAt === 'number'
+    typeof v.sentAt === 'number' &&
+    (v.retryAt === undefined || typeof v.retryAt === 'number')
   )
 }
 
@@ -49,6 +57,18 @@ export function readPending(): PendingCode | null {
   } catch {
     return null
   }
+}
+
+/**
+ * The code this tab last asked for with `purpose`, if it went out and was not used: no automatic
+ * resend is planned for it and (a reset code) it was not accepted. A "too soon" answer to the same
+ * request is about it, so it is not sent again (D-073).
+ */
+export function sentCode(purpose: PendingPurpose): SentCode | null {
+  const pending = readPending()
+  return pending?.purpose === purpose && pending.retryAt === undefined && !pending.verified
+    ? { email: pending.email, sentAt: pending.sentAt }
+    : null
 }
 
 export function clearPending(): void {

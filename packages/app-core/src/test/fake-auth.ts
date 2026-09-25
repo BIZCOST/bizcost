@@ -61,6 +61,18 @@ export function apiError(code: string, status = 400): AuthApiError {
   return new AuthApiError(`message for ${code}`, status, code)
 }
 
+/**
+ * Supabase's "too soon" answer (one email per address per `max_frequency`) with the wait worded as
+ * the Auth server words it, or without one (the project-wide email budget).
+ */
+export function tooSoon(seconds?: number): AuthApiError {
+  const message =
+    seconds === undefined
+      ? 'Email rate limit exceeded'
+      : `For security purposes, you can only request this after ${seconds} seconds.`
+  return new AuthApiError(message, 429, 'over_email_send_rate_limit')
+}
+
 /** Makes `method` resolve with `error` once. */
 export function failOnce(calls: FakeAuth, method: Method, error: unknown): void {
   calls[method].mockResolvedValueOnce({ data: { user: null, session: null }, error })

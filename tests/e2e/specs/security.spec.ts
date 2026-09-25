@@ -150,7 +150,8 @@ test('the project-wide auth email budget in config.toml is a production value', 
   // docs/ARCHITECTURE.md: config.toml is applied to hosted projects with `supabase config push`.
   // [auth.rate_limit] email_sent is per hour for the whole project (every sign-up, code, reset and
   // email change). At 2 the third email of an hour fails with over_email_send_rate_limit, which
-  // app-core treats as success ("we sent a code") for sign-up, code sign-in and reset.
+  // app-core treats as success ("we sent a code") for code sign-in and reset, and sign-up shows as
+  // "We can't send you an email right now" (D-062 (3), D-073).
   const config = readFileSync(join(repoRoot, 'supabase', 'config.toml'), 'utf8')
   const section = /\[auth\.rate_limit\]([\s\S]*?)\n\[/.exec(config)?.[1] ?? ''
   const emailSent = Number(/^\s*email_sent\s*=\s*(\d+)/m.exec(section)?.[1])

@@ -2,12 +2,14 @@
 
 import { createCodeVerification, useFlow } from '@bizcost/app-core'
 import { AUTH_RESEND_COOLDOWN_SECONDS } from '@bizcost/contracts'
+import { InfoIcon } from 'lucide-react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { useEffect } from 'react'
 import { useTranslation } from 'react-i18next'
 import { EmailText } from '@/components/form/email-text'
 import { FormAlert } from '@/components/form/form-alert'
+import { SLOT, SlotText } from '@/components/form/slot-text'
 import { useMessage } from '@/components/form/use-message'
 import { useLocale } from '@/lib/i18n/client'
 import { authClient } from '@/lib/supabase/browser'
@@ -37,6 +39,7 @@ function VerifyCode({ pending }: { pending: PendingCode }) {
         purpose: pending.purpose === 'signUp' ? 'signUp' : 'signIn',
         locale,
         sentAt: pending.sentAt,
+        retryAt: pending.retryAt,
       }),
     [pending.email, pending.purpose],
   )
@@ -44,20 +47,24 @@ function VerifyCode({ pending }: { pending: PendingCode }) {
   const codeError =
     state.error === 'auth.errors.codeInvalid' || state.error === 'auth.validation.codeIncomplete'
 
+  // Keep the countdown and a planned automatic resend (D-073, run once) across a reload of this tab.
+  const { resendAvailableAt, retryAt } = state
+  const verified = state.status === 'verified'
+  useEffect(() => {
+    if (verified) return
+    savePending({
+      ...pending,
+      sentAt: resendAvailableAt - AUTH_RESEND_COOLDOWN_SECONDS * 1000,
+      retryAt: retryAt ?? undefined,
+    })
+  }, [pending, verified, resendAvailableAt, retryAt])
+
   async function verify(value: string) {
     if (await flow.verify(value)) {
       clearPending()
       router.replace('/')
       router.refresh()
     }
-  }
-
-  async function resend() {
-    await flow.resend()
-    const { resendAvailableAt, notice } = flow.getState()
-    // Keep the countdown across a reload of this tab.
-    if (notice === 'resent')
-      savePending({ ...pending, sentAt: resendAvailableAt - AUTH_RESEND_COOLDOWN_SECONDS * 1000 })
   }
 
   const signUp = pending.purpose === 'signUp'
@@ -75,6 +82,8 @@ function VerifyCode({ pending }: { pending: PendingCode }) {
           <FormAlert tone="info" className="mb-5">
             {t('auth.notices.confirmEmailFirst')}
           </FormAlert>
+        ) : signUp ? (
+          <RegisteredNote />
         ) : null
       }
       codeError={codeError ? message(state.error) : undefined}
@@ -84,25 +93,38 @@ function VerifyCode({ pending }: { pending: PendingCode }) {
       resent={state.notice === 'resent'}
       resendAvailableAt={state.resendAvailableAt}
       onVerify={(code) => void verify(code)}
-      onResend={() => void resend()}
+      onResend={() => void flow.resend()}
       wrongEmailHref={signUp ? '/signup' : '/login'}
       footer={
         signUp ? (
-          <div className="space-y-2">
-            <p>
-              {t('auth.verify.alreadyHaveAccount')}{' '}
-              <Link href="/login" className="tap-area font-medium text-primary hover:underline">
-                {t('auth.verify.signIn')}
-              </Link>
-            </p>
-            <p>
-              <Link href="/forgot" className="tap-area font-medium text-primary hover:underline">
-                {t('auth.verify.resetPassword')}
-              </Link>
-            </p>
-          </div>
+          <Link href="/forgot" className="tap-area font-medium text-primary hover:underline">
+            {t('auth.verify.resetPassword')}
+          </Link>
         ) : null
       }
     />
+  )
+}
+
+/**
+ * After sign-up: a registered address gets no code and the same screen (D-062), so everyone is told
+ * what to do then; shown to every sign-up, it reveals nothing.
+ */
+function RegisteredNote() {
+  const { t } = useTranslation()
+  return (
+    <p className="mb-5 flex items-start gap-2.5 rounded-lg bg-muted px-3 py-2.5 text-sm leading-relaxed text-muted-foreground">
+      <InfoIcon aria-hidden className="mt-0.5 size-4 shrink-0" />
+      <span className="min-w-0 flex-1">
+        <SlotText
+          text={t('auth.verify.registeredNote', { signIn: SLOT })}
+          value={
+            <Link href="/login" className="tap-area font-medium text-primary hover:underline">
+              {t('auth.verify.registeredSignIn')}
+            </Link>
+          }
+        />
+      </span>
+    </p>
   )
 }

@@ -55,6 +55,7 @@ function ResetSteps({ pending }: { pending: PendingCode }) {
         auth: authClient(),
         email: pending.email,
         sentAt: pending.sentAt,
+        retryAt: pending.retryAt,
         codeUsed: pending.verified,
         passwordRequired: pending.passwordRequired,
       }),
@@ -67,8 +68,9 @@ function ResetSteps({ pending }: { pending: PendingCode }) {
   }, [step, flow])
 
   // Keep this tab's entry in step: once the code is used a reload offers no password change, a new
-  // code keeps its countdown, and a required password stays required.
-  const { email, passwordRequired, resendAvailableAt } = state
+  // code keeps its countdown, a planned automatic resend (D-073) runs once, and a required password
+  // stays required.
+  const { email, passwordRequired, resendAvailableAt, retryAt } = state
   const done = step === 'done'
   const codeUsed = step !== 'code'
   useEffect(() => {
@@ -78,10 +80,11 @@ function ResetSteps({ pending }: { pending: PendingCode }) {
       purpose: 'recovery',
       sentAt: resendAvailableAt - AUTH_RESEND_COOLDOWN_SECONDS * 1000,
     }
+    if (retryAt !== null) entry.retryAt = retryAt
     if (codeUsed) entry.verified = true
     if (passwordRequired) entry.passwordRequired = true
     savePending(entry)
-  }, [done, email, codeUsed, passwordRequired, resendAvailableAt])
+  }, [done, email, codeUsed, passwordRequired, resendAvailableAt, retryAt])
 
   useEffect(() => {
     if (!done) return

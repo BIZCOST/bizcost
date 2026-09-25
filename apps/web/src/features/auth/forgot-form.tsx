@@ -19,7 +19,7 @@ import { TextField } from '@/components/form/text-field'
 import { useMessage } from '@/components/form/use-message'
 import { Button } from '@/components/ui/button'
 import { authClient } from '@/lib/supabase/browser'
-import { readPending, savePending, usePending } from './pending'
+import { readPending, savePending, sentCode, usePending } from './pending'
 
 export function ForgotForm() {
   const { t } = useTranslation()
@@ -48,7 +48,11 @@ export function ForgotForm() {
 
   const submit = form.handleSubmit(async (values) => {
     setError(null)
-    const result = await requestPasswordReset(authClient(), values)
+    // A reset code this tab asked for less than a minute ago still works: not sent again (D-073).
+    const result = await requestPasswordReset(authClient(), {
+      ...values,
+      sent: sentCode('recovery'),
+    })
     if (!result.ok) return setError(result.error)
     // A new password stays required for this address when an earlier code in this tab required it.
     const previous = readPending()
@@ -60,6 +64,8 @@ export function ForgotForm() {
       email: result.email,
       purpose: 'recovery',
       sentAt: Date.now(),
+      // "Too soon" (D-073): /reset sends the request again once.
+      retryAt: result.retryAt,
       ...(required ? { passwordRequired: true as const } : {}),
     })
     router.push('/reset')

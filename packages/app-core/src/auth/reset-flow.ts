@@ -2,6 +2,7 @@ import { createFlowStore, type Flow } from '../flow'
 import { normalizeEmail, type AuthClient } from './client'
 import { isCompleteCode, normalizeCode, resendAvailableAt } from './code'
 import { signOut } from './commands'
+import { availableAfterRetry, createRetryTimer, emailRetryAt, plannedRetryAt } from './email-retry'
 import { authErrorKey, isSilentError, passwordErrorField, type FlowError } from './errors'
 
 // The reset screen after "Forgot password" (D-071): only the emailed code first. verifyOtp(type
@@ -11,6 +12,8 @@ import { authErrorKey, isSilentError, passwordErrorField, type FlowError } from 
 // set by whoever signed up with it), a new password is required: no choice, no way back to it.
 // The new password is sent only from the flow that verified the code, and only through the session
 // that code created (the recovery code is the D-063 check); otherwise this device is signed out.
+// A code request the server answered "too soon" is sent again once, unseen, while the code step is
+// open (D-073).
 
 export type ResetField = 'code' | 'password'
 
@@ -33,13 +36,20 @@ export interface PasswordResetState {
   error: FlowError<ResetField> | null
   notice: 'resent' | null
   resendAvailableAt: number
+  /**
+   * Epoch ms of the one automatic resend after a "too soon" answer (D-073); null when none is
+   * planned or it has run. Not shown on screen.
+   */
+  retryAt: number | null
 }
 
 export type PasswordResetEvent =
   | { type: 'verify' }
   | { type: 'verified'; passwordRequired: boolean }
   | { type: 'resend' }
-  | { type: 'resent'; at: number }
+  | { type: 'resent'; at: number; retryAt: number | null }
+  | { type: 'retry' }
+  | { type: 'retried'; at: number; error: FlowError<ResetField> | null }
   | { type: 'choosePassword' }
   | { type: 'back' }
   | { type: 'skip' }
@@ -73,11 +83,12 @@ export function passwordResetReducer(
         passwordRequired,
         error: null,
         notice: null,
+        retryAt: null,
       }
     }
     case 'resend':
       return idleOn(state, 'code')
-        ? { ...state, status: 'resending', error: null, notice: null }
+        ? { ...state, status: 'resending', error: null, notice: null, retryAt: null }
         : state
     case 'resent':
       return state.status === 'resending'
@@ -85,9 +96,22 @@ export function passwordResetReducer(
             ...state,
             status: 'idle',
             notice: 'resent',
-            resendAvailableAt: resendAvailableAt(event.at),
+            resendAvailableAt: resendAvailableAt(event.at, event.retryAt),
+            retryAt: event.retryAt,
           }
         : state
+    // The automatic resend changes nothing on screen: it starts only while the code step is idle
+    // and never sets a status, a notice or a new countdown (the countdown already covers it; only a
+    // resend held back by a code check moves it).
+    case 'retry':
+      return idleOn(state, 'code') && state.retryAt !== null ? { ...state, retryAt: null } : state
+    case 'retried':
+      if (state.step !== 'code') return state
+      return {
+        ...state,
+        resendAvailableAt: availableAfterRetry(state.resendAvailableAt, event.at),
+        error: event.error && state.status === 'idle' ? event.error : state.error,
+      }
     case 'choosePassword':
       return idleOn(state, 'choose') ? { ...state, step: 'password', error: null } : state
     case 'back':
@@ -135,6 +159,11 @@ export interface PasswordResetOptions {
   codeUsed?: boolean
   /** A new password is required (carried over from an earlier code of this reset). */
   passwordRequired?: boolean
+  /**
+   * The "Forgot password" request was answered "too soon": send it again once at this time (epoch
+   * ms, from `requestPasswordReset`, D-073).
+   */
+  retryAt?: number
   now?: () => number
 }
 
@@ -161,6 +190,8 @@ export interface PasswordReset extends Flow<PasswordResetState> {
   resume(): Promise<void>
   /** 'ended' → 'code', sending a new code unless the last one is younger than the cooldown. */
   restart(): Promise<void>
+  /** Runs the planned automatic resend while the screen is shown; returns the stop function. */
+  start(): () => void
 }
 
 interface VerifiedUser {
@@ -207,8 +238,10 @@ export function createPasswordReset({
   passwordRequired = false,
   now = Date.now,
   sentAt = now(),
+  retryAt,
 }: PasswordResetOptions): PasswordReset {
   const address = normalizeEmail(email)
+  const planned = codeUsed ? null : plannedRetryAt(retryAt, now())
   const store = createFlowStore(passwordResetReducer, {
     email: address,
     step: codeUsed ? 'resuming' : 'code',
@@ -217,7 +250,13 @@ export function createPasswordReset({
     passwordChanged: false,
     error: null,
     notice: null,
-    resendAvailableAt: resendAvailableAt(sentAt),
+    resendAvailableAt: resendAvailableAt(sentAt, planned),
+    retryAt: planned,
+  })
+  const timer = createRetryTimer({
+    retryAt: () => store.getState().retryAt,
+    run: () => void retry(),
+    now,
   })
   /** The session the code created; only it may set the new password. */
   let verified: { userId: string; sessionId: string } | null = null
@@ -243,7 +282,10 @@ export function createPasswordReset({
     const { data, error } = await auth.verifyOtp({ email: address, token, type: 'recovery' })
     if (error) {
       const key = authErrorKey(error)
-      return fail({ key, field: key === 'auth.errors.codeInvalid' ? 'code' : undefined })
+      fail({ key, field: key === 'auth.errors.codeInvalid' ? 'code' : undefined })
+      // A retry that came due while the code was being checked runs now.
+      void retry()
+      return false
     }
     const userId = data.session?.user.id
     const sessionId = sessionIdOf(data.session?.access_token)
@@ -263,7 +305,23 @@ export function createPasswordReset({
       fail({ key: authErrorKey(error) })
       return
     }
-    store.dispatch({ type: 'resent', at: now() })
+    const at = now()
+    store.dispatch({ type: 'resent', at, retryAt: emailRetryAt(error, at) })
+    timer.arm()
+  }
+
+  /** The one automatic resend (D-073), handled like a resend but without anything on screen. */
+  async function retry() {
+    const state = store.getState()
+    if (!timer.started || state.retryAt === null) return
+    if (now() < state.retryAt) return timer.arm()
+    // Once the countdown is over the user can ask for a new code: the retry is dropped.
+    const due = now() < state.resendAvailableAt
+    if (!store.dispatch({ type: 'retry' }) || !due) return
+    const { error } = await auth.resetPasswordForEmail(address)
+    // A second "too soon" is not retried again.
+    const shown = error && !isSilentError(error, 'recovery') ? { key: authErrorKey(error) } : null
+    store.dispatch({ type: 'retried', at: now(), error: shown })
   }
 
   async function savePassword(password: string) {
@@ -322,5 +380,6 @@ export function createPasswordReset({
     savePassword,
     resume,
     restart,
+    start: timer.start,
   }
 }

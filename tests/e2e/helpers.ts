@@ -227,28 +227,33 @@ export async function signUpDirectly(
   return { status: response.status, code: body.error_code, reasons: body.weak_password?.reasons }
 }
 
-interface MailSummary {
+export interface MailSummary {
   ID: string
   Subject: string
 }
 
 const seen = new Set<string>()
 
-/**
- * The 6-digit code of the next unread email to `to` (Mailpit), waiting up to 15 s. Each message is
- * read once, so a second call returns the next email.
- */
-export async function nextCode(to: string, subject?: RegExp): Promise<string> {
+/** The emails to `to` in Mailpit (newest first), optionally only those whose subject matches. */
+export async function emailsTo(to: string, subject?: RegExp): Promise<MailSummary[]> {
   const { mailpitUrl } = stack()
-  const deadline = Date.now() + 15_000
+  const response = await fetch(
+    `${mailpitUrl}/api/v1/search?query=${encodeURIComponent(`to:"${to}"`)}`,
+  )
+  const { messages } = (await response.json()) as { messages: MailSummary[] }
+  return messages.filter((m) => !subject || subject.test(m.Subject))
+}
+
+/**
+ * The 6-digit code of the next unread email to `to` (Mailpit), waiting up to `timeout` ms (15 s).
+ * Each message is read once, so a second call returns the next email.
+ */
+export async function nextCode(to: string, subject?: RegExp, timeout = 15_000): Promise<string> {
+  const { mailpitUrl } = stack()
+  const deadline = Date.now() + timeout
   while (Date.now() < deadline) {
-    const response = await fetch(
-      `${mailpitUrl}/api/v1/search?query=${encodeURIComponent(`to:"${to}"`)}`,
-    )
-    const { messages } = (await response.json()) as { messages: MailSummary[] }
-    const fresh = messages
-      .filter((m) => !seen.has(m.ID) && (!subject || subject.test(m.Subject)))
-      .reverse()
+    const messages = await emailsTo(to, subject)
+    const fresh = messages.filter((m) => !seen.has(m.ID)).reverse()
     const message = fresh[0]
     if (message) {
       seen.add(message.ID)

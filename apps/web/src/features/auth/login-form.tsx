@@ -24,7 +24,7 @@ import { useMessage } from '@/components/form/use-message'
 import { Button } from '@/components/ui/button'
 import { useLocale } from '@/lib/i18n/client'
 import { authClient } from '@/lib/supabase/browser'
-import { savePending } from './pending'
+import { savePending, sentCode } from './pending'
 import { NOTICE_KEYS, type Notice } from './notices'
 
 type Method = 'password' | 'code'
@@ -88,7 +88,9 @@ export function LoginForm({ notice }: { notice?: Notice }) {
 
   const signIn = passwordForm.handleSubmit(async (values) => {
     setError(null)
-    const result = await signInWithPassword(authClient(), values)
+    // An unconfirmed email gets a new sign-up code, unless this tab sent one less than a minute ago
+    // (it still works, D-073).
+    const result = await signInWithPassword(authClient(), { ...values, sent: sentCode('signUp') })
     if (!result.ok) return setError(result.error)
     if (result.next === 'confirmEmail') {
       savePending({
@@ -96,6 +98,8 @@ export function LoginForm({ notice }: { notice?: Notice }) {
         purpose: 'signUp',
         sentAt: Date.now(),
         notice: 'confirmEmailFirst',
+        // "Too soon" (D-073): /verify sends the request again once.
+        retryAt: result.retryAt,
       })
       return router.push('/verify')
     }
@@ -105,10 +109,20 @@ export function LoginForm({ notice }: { notice?: Notice }) {
 
   const sendCode = codeForm.handleSubmit(async (values) => {
     setError(null)
-    // A new address gets an account, and its emails in the page language.
-    const result = await requestSignInCode(authClient(), { ...values, locale })
+    // A new address gets an account, and its emails in the page language. A code this tab asked for
+    // less than a minute ago still works: not sent again (D-073).
+    const result = await requestSignInCode(authClient(), {
+      ...values,
+      locale,
+      sent: sentCode('signIn'),
+    })
     if (!result.ok) return setError(result.error)
-    savePending({ email: result.email, purpose: 'signIn', sentAt: Date.now() })
+    savePending({
+      email: result.email,
+      purpose: 'signIn',
+      sentAt: Date.now(),
+      retryAt: result.retryAt,
+    })
     router.push('/verify')
   })
 

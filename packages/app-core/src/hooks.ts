@@ -18,6 +18,8 @@ function sameDeps(a: DependencyList, b: DependencyList): boolean {
  * Creates a flow and keeps it until one of `deps` (the inputs of `create`, e.g. the email) changes;
  * returns its state and the flow:
  * `const [state, flow] = useFlow(() => createCodeVerification({ auth, email, purpose }), [email])`.
+ * The flow is started (`Flow.start`) while the component is mounted, and stopped when it unmounts or
+ * is replaced.
  */
 export function useFlow<F extends Flow<unknown>>(
   create: () => F,
@@ -30,6 +32,7 @@ export function useFlow<F extends Flow<unknown>>(
     flow = create()
     setCurrent({ deps, flow })
   }
+  useEffect(() => flow.start?.(), [flow])
   return [useFlowState(flow) as FlowState<F>, flow]
 }
 

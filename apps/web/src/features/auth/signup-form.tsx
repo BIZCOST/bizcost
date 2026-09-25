@@ -22,7 +22,7 @@ import { useMessage } from '@/components/form/use-message'
 import { Button } from '@/components/ui/button'
 import { useLocale } from '@/lib/i18n/client'
 import { authClient } from '@/lib/supabase/browser'
-import { savePending } from './pending'
+import { savePending, sentCode } from './pending'
 
 export function SignupForm() {
   const { t } = useTranslation()
@@ -38,8 +38,9 @@ export function SignupForm() {
 
   const submit = form.handleSubmit(async (values) => {
     setError(null)
-    // The auth emails are written in the language the user signed up in.
-    const result = await signUp(authClient(), { ...values, locale })
+    // The auth emails are written in the language the user signed up in. Signed up again within a
+    // minute, the sign-up code this tab sent still works (D-073).
+    const result = await signUp(authClient(), { ...values, locale, sent: sentCode('signUp') })
     if (!result.ok) {
       // The Auth server refused the password (its rule, D-072): the message goes under the field.
       if (isPasswordMessage(result.error)) {

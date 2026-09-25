@@ -13,9 +13,12 @@ export function isCompleteCode(code: string): boolean {
   return code.length === AUTH_OTP_LENGTH && /^\d+$/.test(code)
 }
 
-/** When another code may be requested after one was sent at `sentAt` (epoch ms). */
-export function resendAvailableAt(sentAt: number): number {
-  return sentAt + AUTH_RESEND_COOLDOWN_SECONDS * 1000
+/**
+ * When another code may be requested after one was sent at `sentAt` (epoch ms), or, when an
+ * automatic resend is planned for `retryAt` (D-073), after that one: the countdown covers the retry.
+ */
+export function resendAvailableAt(sentAt: number, retryAt?: number | null): number {
+  return Math.max(sentAt, retryAt ?? sentAt) + AUTH_RESEND_COOLDOWN_SECONDS * 1000
 }
 
 /** Whole seconds left until `until` (epoch ms), never negative: 0 means "now". */

@@ -1,5 +1,5 @@
-import { describe, expect, it } from 'vitest'
-import { apiError, failOnce, fakeAuth } from '../test/fake-auth'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { apiError, failOnce, fakeAuth, tooSoon } from '../test/fake-auth'
 import {
   requestPasswordReset,
   requestSignInCode,
@@ -83,7 +83,6 @@ describe('signInWithPassword', () => {
   it('sends a new sign-up code when the email is not confirmed yet', async () => {
     const { auth, calls } = fakeAuth()
     failOnce(calls, 'signInWithPassword', apiError('email_not_confirmed'))
-    failOnce(calls, 'resend', apiError('over_email_send_rate_limit', 429))
     expect(await signInWithPassword(auth, { email: 'A@b.co', password: 'pw' })).toEqual({
       ok: true,
       next: 'confirmEmail',
@@ -148,5 +147,114 @@ describe('signOut and syncAuthLocale', () => {
     const { auth, calls } = fakeAuth()
     expect(await syncAuthLocale(auth, 'en')).toEqual({ ok: true })
     expect(calls.updateUser).toHaveBeenCalledWith({ data: { locale: 'en' } })
+  })
+})
+
+describe('a code request answered "too soon" (D-073)', () => {
+  const T = 1_000_000
+  beforeEach(() => {
+    vi.useFakeTimers()
+    vi.setSystemTime(T)
+  })
+  afterEach(() => vi.useRealTimers())
+
+  it('looks sent, and says when the code screen sends it again', async () => {
+    const { auth, calls } = fakeAuth()
+    failOnce(calls, 'resetPasswordForEmail', tooSoon(34))
+    expect(await requestPasswordReset(auth, { email: 'a@b.co' })).toEqual({
+      ok: true,
+      email: 'a@b.co',
+      retryAt: T + 35_000,
+    })
+    failOnce(calls, 'signInWithOtp', tooSoon())
+    expect(await requestSignInCode(auth, { email: 'a@b.co', locale: 'en' })).toEqual({
+      ok: true,
+      email: 'a@b.co',
+      retryAt: T + 61_000,
+    })
+    failOnce(calls, 'signInWithPassword', apiError('email_not_confirmed'))
+    failOnce(calls, 'resend', tooSoon(57))
+    expect(await signInWithPassword(auth, { email: 'a@b.co', password: 'pw' })).toEqual({
+      ok: true,
+      next: 'confirmEmail',
+      email: 'a@b.co',
+      retryAt: T + 58_000,
+    })
+  })
+
+  it('plans no retry for any other answer', async () => {
+    const { auth, calls } = fakeAuth()
+    failOnce(calls, 'resetPasswordForEmail', apiError('user_not_found', 404))
+    expect(await requestPasswordReset(auth, { email: 'a@b.co' })).toEqual({
+      ok: true,
+      email: 'a@b.co',
+    })
+    expect(await requestSignInCode(auth, { email: 'a@b.co', locale: 'en' })).toEqual({
+      ok: true,
+      email: 'a@b.co',
+    })
+  })
+})
+
+describe('asked again for the code this tab just sent (D-073)', () => {
+  const T = 1_000_000
+  beforeEach(() => {
+    vi.useFakeTimers()
+    vi.setSystemTime(T)
+  })
+  afterEach(() => vi.useRealTimers())
+  /** The same request, sent to the same address 4 s ago (it went out; no retry planned). */
+  const sent = { email: 'A@b.co', sentAt: T - 4_000 }
+
+  it('plans no retry: that code still works, and a second email would replace it', async () => {
+    const { auth, calls } = fakeAuth()
+    failOnce(calls, 'resetPasswordForEmail', tooSoon(55))
+    expect(await requestPasswordReset(auth, { email: 'a@b.co', sent })).toEqual({
+      ok: true,
+      email: 'a@b.co',
+    })
+    failOnce(calls, 'signInWithOtp', tooSoon(55))
+    expect(await requestSignInCode(auth, { email: 'a@b.co', locale: 'en', sent })).toEqual({
+      ok: true,
+      email: 'a@b.co',
+    })
+    failOnce(calls, 'signInWithPassword', apiError('email_not_confirmed'))
+    failOnce(calls, 'resend', tooSoon(55))
+    expect(await signInWithPassword(auth, { email: 'a@b.co', password: 'pw', sent })).toEqual({
+      ok: true,
+      next: 'confirmEmail',
+      email: 'a@b.co',
+    })
+  })
+
+  it('still retries when that code went to another address or a cooldown ago', async () => {
+    const { auth, calls } = fakeAuth()
+    for (const earlier of [
+      { email: 'other@b.co', sentAt: T - 4_000 },
+      { email: 'a@b.co', sentAt: T - 60_000 },
+    ]) {
+      failOnce(calls, 'resetPasswordForEmail', tooSoon(34))
+      expect(await requestPasswordReset(auth, { email: 'a@b.co', sent: earlier })).toEqual({
+        ok: true,
+        email: 'a@b.co',
+        retryAt: T + 35_000,
+      })
+    }
+  })
+
+  it('a second sign-up of a new address looks like the first; any other rate limit is shown', async () => {
+    const { auth, calls } = fakeAuth()
+    const input = { email: 'a@b.co', password: 'abcdef12', locale: 'en' } as const
+    failOnce(calls, 'signUp', tooSoon(55))
+    expect(await signUp(auth, { ...input, sent })).toEqual({ ok: true, email: 'a@b.co' })
+    // The same as a registered address signing up twice (a silent no-op).
+    expect(await signUp(auth, { ...input, sent })).toEqual({ ok: true, email: 'a@b.co' })
+    failOnce(calls, 'signUp', tooSoon(55))
+    expect(await signUp(auth, { ...input, sent: { ...sent, email: 'other@b.co' } })).toEqual({
+      ok: false,
+      error: 'auth.errors.emailRateLimited',
+    })
+    failOnce(calls, 'signUp', tooSoon())
+    expect(await signUp(auth, input)).toEqual({ ok: false, error: 'auth.errors.emailRateLimited' })
   })
 })

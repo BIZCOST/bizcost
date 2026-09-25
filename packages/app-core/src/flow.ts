@@ -5,6 +5,12 @@ export interface Flow<S> {
   getState(): S
   /** Calls `listener` after every state change; returns the unsubscribe function. */
   subscribe(listener: () => void): () => void
+  /**
+   * Lets the flow do timed work of its own (the one automatic resend of a code screen, D-073) until
+   * the returned function is called. `useFlow` starts it while the screen is shown, so leaving the
+   * page cancels that work. Flows without such work leave it out.
+   */
+  start?(): () => void
 }
 
 export interface FlowStore<S, E> extends Flow<S> {

@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import {
   apiError,
   failOnce,
@@ -8,6 +8,7 @@ import {
   fakeClock,
   fakeSession,
   sessionOnce,
+  tooSoon,
   type FakeAuth,
 } from '../test/fake-auth'
 import {
@@ -301,6 +302,86 @@ describe('createPasswordReset: opened again after the code was used', () => {
   })
 })
 
+describe('createPasswordReset: a request answered "too soon" is sent again once (D-073)', () => {
+  const T = 1_000_000
+  beforeEach(() => {
+    vi.useFakeTimers()
+    vi.setSystemTime(T)
+  })
+  afterEach(() => vi.useRealTimers())
+
+  it('sends the "Forgot password" request again at the handed-over time, with nothing on screen', async () => {
+    const { auth, calls } = fakeAuth()
+    // /forgot asked 26 s after a sign-in code: the server said "after 34 seconds".
+    const flow = createPasswordReset({ auth, email: 'a@b.co', retryAt: T + 35_000 })
+    const stop = flow.start()
+    expect(flow.getState()).toMatchObject({
+      step: 'code',
+      status: 'idle',
+      notice: null,
+      error: null,
+      resendAvailableAt: T + 95_000,
+    })
+    await vi.advanceTimersByTimeAsync(34_999)
+    expect(calls.resetPasswordForEmail).not.toHaveBeenCalled()
+    await vi.advanceTimersByTimeAsync(1)
+    expect(calls.resetPasswordForEmail).toHaveBeenCalledExactlyOnceWith('a@b.co')
+    expect(flow.getState()).toMatchObject({
+      step: 'code',
+      status: 'idle',
+      notice: null,
+      error: null,
+      retryAt: null,
+      resendAvailableAt: T + 95_000, // unchanged: nothing new is announced
+    })
+    await vi.advanceTimersByTimeAsync(600_000)
+    expect(calls.resetPasswordForEmail).toHaveBeenCalledTimes(1)
+    stop()
+  })
+
+  it('treats a resend answered "too soon" as sent and retries once, after the cooldown when no wait is stated', async () => {
+    const { auth, calls } = fakeAuth()
+    const flow = createPasswordReset({ auth, email: 'a@b.co', sentAt: T - 60_000 })
+    flow.start()
+    failOnce(calls, 'resetPasswordForEmail', tooSoon())
+    failOnce(calls, 'resetPasswordForEmail', tooSoon(5))
+    await flow.resend()
+    expect(flow.getState()).toMatchObject({
+      notice: 'resent',
+      error: null,
+      retryAt: T + 61_000,
+      resendAvailableAt: T + 121_000,
+    })
+    await vi.advanceTimersByTimeAsync(61_000)
+    expect(calls.resetPasswordForEmail).toHaveBeenCalledTimes(2)
+    await vi.advanceTimersByTimeAsync(600_000)
+    expect(calls.resetPasswordForEmail).toHaveBeenCalledTimes(2)
+    expect(flow.getState()).toMatchObject({ step: 'code', notice: 'resent', error: null })
+  })
+
+  it('is cancelled when the screen is left', async () => {
+    const { auth, calls } = fakeAuth()
+    const flow = createPasswordReset({ auth, email: 'a@b.co', retryAt: T + 35_000 })
+    flow.start()()
+    await vi.advanceTimersByTimeAsync(120_000)
+    expect(calls.resetPasswordForEmail).not.toHaveBeenCalled()
+  })
+
+  it('is dropped once a code is accepted, and ignored when the page opens after the code', async () => {
+    const { auth, calls } = fakeAuth()
+    const flow = createPasswordReset({ auth, email: 'a@b.co', retryAt: T + 35_000 })
+    flow.start()
+    expect(await flow.verify('123456')).toBe(true)
+    expect(flow.getState()).toMatchObject({ step: 'choose', retryAt: null })
+
+    const reopened = createPasswordReset({ auth, email: 'a@b.co', codeUsed: true, retryAt: T })
+    reopened.start()
+    expect(reopened.getState().retryAt).toBeNull()
+    await vi.advanceTimersByTimeAsync(120_000)
+    expect(calls.resetPasswordForEmail).not.toHaveBeenCalled()
+  })
+})
+
 describe('sessionIdOf', () => {
   it('reads the session id claim, and nothing from a malformed token', () => {
     expect(sessionIdOf(fakeAccessToken({ session_id: 'abc', name: 'راشد' }))).toBe('abc')
@@ -328,6 +409,7 @@ describe('passwordResetReducer', () => {
     error: null,
     notice: null,
     resendAvailableAt: 0,
+    retryAt: null,
   }
 
   it('ignores a second submit and the later steps before the code', () => {
@@ -345,6 +427,18 @@ describe('passwordResetReducer', () => {
     ] as const) {
       expect(passwordResetReducer(base, { type })).toBe(base)
     }
+  })
+
+  it('keeps the countdown after an automatic resend on time; a late one moves it (D-073)', () => {
+    const planned = { ...base, retryAt: 35_000, resendAvailableAt: 95_000 }
+    const retrying = passwordResetReducer(planned, { type: 'retry' })
+    expect(passwordResetReducer(retrying, { type: 'retried', at: 36_000, error: null })).toEqual({
+      ...planned,
+      retryAt: null,
+    })
+    expect(
+      passwordResetReducer(retrying, { type: 'retried', at: 50_000, error: null }),
+    ).toMatchObject({ resendAvailableAt: 110_000 })
   })
 
   it('keeps a finished or ended reset as it is', () => {

@@ -2,6 +2,8 @@ import type { I18nKey } from '@bizcost/i18n'
 
 // Supabase Auth errors → i18n keys, by `error.code` only (never the message text, which changes and
 // may reveal whether an account exists). Anything unknown is `errors.internal` (docs/DECISIONS.md D-039).
+// The one message read anywhere is the wait in the "too soon" answer, for its number only
+// (email-retry.ts, D-073).
 
 /** Message keys an auth flow can show. */
 export type AuthMessageKey = Extract<
@@ -87,13 +89,17 @@ export function authErrorKey(error: unknown): AuthMessageKey {
 
 /**
  * Errors that would reveal whether an email has an account, per request. Each is handled exactly like
- * success ("If you have an account, we sent a code"), so the screen never tells the two apart.
+ * success ("If you have an account, we sent a code"), so the screen never tells the two apart. After
+ * `over_email_send_rate_limit` nothing was sent, so the code screen sends the request again once
+ * (D-073).
  */
 export const SILENT_ERROR_CODES = {
   /**
    * signUp: with SMS auto-confirm on (config.toml keeps it off, D-062), Supabase answers an existing
-   * address with an error instead of a silent no-op. A rate limit is shown: a new address can only
-   * hit the project-wide email budget, which reveals nothing about accounts.
+   * address with an error instead of a silent no-op. A rate limit is shown (D-062 (3)): mostly the
+   * project-wide email budget. The per-address limit also answers a new address signed up again
+   * within a minute (a confirmed one gets the silent no-op); `signUp` hides that answer when this
+   * tab sent that sign-up code (D-073).
    */
   signUp: ['user_already_exists', 'email_exists'],
   /**

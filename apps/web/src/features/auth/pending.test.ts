@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { clearPending, readPending, savePending } from './pending'
+import { clearPending, readPending, savePending, sentCode } from './pending'
 
 function memoryStorage(): Storage {
   const items = new Map<string, string>()
@@ -39,8 +39,38 @@ describe('pending code storage', () => {
     expect(readPending()).toEqual(pending)
   })
 
+  it('keeps a planned automatic resend (D-073)', () => {
+    const pending = {
+      email: 'a@example.com',
+      purpose: 'signIn',
+      sentAt: 1,
+      retryAt: 35_001,
+    } as const
+    savePending(pending)
+    expect(readPending()).toEqual(pending)
+  })
+
+  it('hands over the code sent for a purpose only when it went out and was not used (D-073)', () => {
+    savePending({ email: 'a@example.com', purpose: 'recovery', sentAt: 5 })
+    expect(sentCode('recovery')).toEqual({ email: 'a@example.com', sentAt: 5 })
+    expect(sentCode('signIn')).toBeNull()
+    // Not sent yet (an automatic resend is planned), or already used.
+    savePending({ email: 'a@example.com', purpose: 'recovery', sentAt: 5, retryAt: 35_001 })
+    expect(sentCode('recovery')).toBeNull()
+    savePending({ email: 'a@example.com', purpose: 'recovery', sentAt: 5, verified: true })
+    expect(sentCode('recovery')).toBeNull()
+    clearPending()
+    expect(sentCode('recovery')).toBeNull()
+  })
+
   it('ignores malformed or foreign values', () => {
-    for (const raw of ['{', 'null', '"x"', '{"email":"a@b.c","purpose":"admin","sentAt":1}']) {
+    for (const raw of [
+      '{',
+      'null',
+      '"x"',
+      '{"email":"a@b.c","purpose":"admin","sentAt":1}',
+      '{"email":"a@b.c","purpose":"recovery","sentAt":1,"retryAt":"soon"}',
+    ]) {
       sessionStorage.setItem('bz_pending_code', raw)
       expect(readPending()).toBeNull()
     }
