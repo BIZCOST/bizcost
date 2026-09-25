@@ -4,11 +4,13 @@ import { signOut, useMe } from '@bizcost/app-core'
 import type { I18nKey } from '@bizcost/i18n'
 import { HouseIcon, LogOutIcon, UserRoundIcon } from 'lucide-react'
 import Link from 'next/link'
+import { useParams } from 'next/navigation'
 import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
 import { Avatar, PersonName } from '@/components/app/avatar'
-import { Logo } from '@/components/brand/logo'
+import { BusinessSwitcher } from '@/components/app/business-switcher'
+import { Logo, LogoMark } from '@/components/brand/logo'
 import { LanguageMenu } from '@/components/language-menu'
 import { Button } from '@/components/ui/button'
 import {
@@ -100,6 +102,8 @@ function UserMenu() {
 export function AppHeader() {
   const { t } = useTranslation()
   const persistLanguage = usePersistLanguage()
+  // In a business, the business switcher sits next to the logo; phones show the logo mark only.
+  const inBusiness = Boolean(useParams<{ businessId?: string }>().businessId)
   return (
     <header className="sticky top-0 z-40 border-b bg-card/90 backdrop-blur supports-backdrop-filter:bg-card/80">
       <a
@@ -108,12 +112,35 @@ export function AppHeader() {
       >
         {t('nav.skipToContent')}
       </a>
-      <div className="mx-auto flex h-16 max-w-6xl items-center justify-between gap-4 px-4 sm:px-6">
-        <Link href="/" aria-label={t('brand.logoLabel')} className="rounded-md">
-          <Logo />
-        </Link>
-        <nav aria-label={t('nav.main')} className="flex items-center gap-1 sm:gap-2">
-          <LanguageMenu persist={persistLanguage} className="px-2 sm:px-3" />
+      <div className="mx-auto flex h-16 max-w-6xl items-center justify-between gap-2 px-4 sm:gap-4 sm:px-6">
+        <div className="flex min-w-0 items-center gap-2 sm:gap-4">
+          <Link
+            href="/"
+            aria-label={t('brand.logoLabel')}
+            className="flex min-h-11 min-w-11 shrink-0 items-center justify-center rounded-md"
+          >
+            {inBusiness ? (
+              <>
+                <LogoMark className="size-7 sm:hidden" />
+                <Logo className="hidden sm:inline-flex" />
+              </>
+            ) : (
+              <Logo />
+            )}
+          </Link>
+          {inBusiness ? (
+            <>
+              <span aria-hidden className="hidden h-6 w-px bg-border sm:block" />
+              <BusinessSwitcher />
+            </>
+          ) : null}
+        </div>
+        <nav aria-label={t('nav.main')} className="flex shrink-0 items-center gap-1 sm:gap-2">
+          <LanguageMenu
+            persist={persistLanguage}
+            compact={inBusiness}
+            className="min-w-11 px-2 sm:px-3"
+          />
           <UserMenu />
         </nav>
       </div>

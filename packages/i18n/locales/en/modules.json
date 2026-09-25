@@ -1,0 +1,97 @@
+{
+  "products": {
+    "name": "Products & Services",
+    "name_projects": "Services & work items"
+  },
+  "materials": {
+    "name": "Materials",
+    "name_food": "Ingredients",
+    "name_factory": "Raw materials",
+    "desc": "Track what you buy to make or sell, and what it costs."
+  },
+  "suppliers": {
+    "name": "Suppliers"
+  },
+  "purchases": {
+    "name": "Purchases",
+    "desc": "Record what you buy, so your costs come from real prices."
+  },
+  "expenses": {
+    "name": "Expenses"
+  },
+  "running_costs": {
+    "name": "Running Costs"
+  },
+  "files": {
+    "name": "Files & receipts"
+  },
+  "cost_engine": {
+    "name": "True Cost"
+  },
+  "customers": {
+    "name": "Customers",
+    "desc": "Save each customer once and use them everywhere."
+  },
+  "sales": {
+    "name": "Sales"
+  },
+  "payments": {
+    "name": "Payments",
+    "desc": "Know who has paid and who still owes."
+  },
+  "reports": {
+    "name": "Reports"
+  },
+  "orders": {
+    "name": "Orders",
+    "desc": "Record each customer order, with delivery and payment."
+  },
+  "quotations": {
+    "name": "Quotations",
+    "desc": "Send written quotes before you start the work."
+  },
+  "invoices": {
+    "name": "Invoices",
+    "desc": "Send invoices and follow what customers owe."
+  },
+  "inventory": {
+    "name": "Stock",
+    "desc": "Know how much stock is left."
+  },
+  "usage_waste": {
+    "name": "Usage & Waste",
+    "desc": "See what's lost to waste and usage you can't explain."
+  },
+  "employees": {
+    "name": "Employees",
+    "desc": "Count what your team costs."
+  },
+  "attendance": {
+    "name": "Attendance & overtime",
+    "desc": "Track working hours and overtime."
+  },
+  "payroll": {
+    "name": "Payroll",
+    "desc": "Handle salaries, advances and deductions."
+  },
+  "equipment": {
+    "name": "Equipment & machines",
+    "desc": "Count what your machines cost per hour."
+  },
+  "vehicles": {
+    "name": "Vehicles",
+    "desc": "See what your vehicles cost."
+  },
+  "projects": {
+    "name": "Projects",
+    "desc": "See each project's costs and profit."
+  },
+  "petty_cash": {
+    "name": "Petty Cash",
+    "desc": "Track cash given to staff until it's settled."
+  },
+  "vat_center": {
+    "name": "VAT Center",
+    "desc": "Prepare and check your VAT return."
+  }
+}

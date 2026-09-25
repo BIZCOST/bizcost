@@ -81,6 +81,9 @@ describe('form schemas', () => {
 
   it('trim the display name and keep it within the API limit', () => {
     expect(profileFormSchema.parse({ displayName: '  Sara  ' })).toEqual({ displayName: 'Sara' })
+    expect(profileFormSchema.parse({ displayName: 'Sara\tAli\u0000' })).toEqual({
+      displayName: 'Sara Ali',
+    })
     expect(messages(profileFormSchema, { displayName: '   ' })).toEqual({
       displayName: 'account.profile.displayNameRequired',
     })

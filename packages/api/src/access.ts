@@ -1,5 +1,6 @@
 import type { Tx } from '@bizcost/db'
 import {
+  isTerminologyProfile,
   resolveEffective,
   resolveLocationScope,
   visibleCategories,
@@ -7,6 +8,7 @@ import {
   type LocationScope,
   type PermissionEffect,
   type SensitivityCategory,
+  type TerminologyProfile,
 } from '@bizcost/domain'
 import {
   PERMISSION_CATALOG,
@@ -28,6 +30,8 @@ export interface BusinessAccess {
   /** Modules the business has on (resolveEnabledModules: core modules need no row). */
   readonly enabledModules: ReadonlySet<string>
   readonly capabilities: Capabilities
+  /** businesses.terminology_profile ('general' for an unknown value). */
+  readonly terminologyProfile: TerminologyProfile
   readonly permissionsVersion: number
 }
 
@@ -36,6 +40,7 @@ interface AccessRow extends Record<string, unknown> {
   permissions_version: number
   template_key: string | null
   vat_registered: boolean
+  terminology_profile: string
   role_keys: string[]
   overrides: { key: string; effect: PermissionEffect }[]
   location_ids: string[]
@@ -63,6 +68,7 @@ export async function loadBusinessAccess(
       m.permissions_version,
       r.template_key,
       b.vat_registered,
+      b.terminology_profile,
       coalesce((
         select array_agg(rp.permission_key)
         from app.role_permissions rp
@@ -119,6 +125,9 @@ export async function loadBusinessAccess(
       stored: row.capabilities,
       derived: { vat_registered: row.vat_registered },
     }),
+    terminologyProfile: isTerminologyProfile(row.terminology_profile)
+      ? row.terminology_profile
+      : 'general',
     permissionsVersion: row.permissions_version,
   }
 }

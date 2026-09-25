@@ -42,9 +42,12 @@ export function useSwitchLanguage(persist?: (locale: Locale) => Promise<boolean>
 
 export function LanguageMenu({
   persist,
+  compact = false,
   className,
 }: {
   persist?: (locale: Locale) => Promise<boolean>
+  /** On phones, the icon only (the button keeps its full accessible name). */
+  compact?: boolean
   className?: string
 }) {
   const { t } = useTranslation()
@@ -59,7 +62,9 @@ export function LanguageMenu({
           disabled={pending}
         >
           <LanguagesIcon aria-hidden className="size-4" />
-          <span lang={current}>{t(`language.${current}`)}</span>
+          <span lang={current} className={compact ? 'hidden sm:inline' : undefined}>
+            {t(`language.${current}`)}
+          </span>
         </Button>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end" className="w-44">

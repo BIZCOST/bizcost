@@ -41,7 +41,9 @@ describe('toAppError', () => {
     ['40001', 'conflict'],
     ['23514', 'validation'],
     ['23503', 'validation'],
+    ['22021', 'validation'],
     ['42501', 'forbidden'],
+    ['BZ429', 'rate_limited'],
   ] as const)('maps SQLSTATE %s to %s', (state, appCode) => {
     const mapped = toAppError(dbFailure(state))
     expect(appCodeOf(mapped)).toBe(appCode)

@@ -142,13 +142,14 @@ function planned(
   }
 }
 
-// Same order as MODULE_IDS. deps/requiresCapabilities follow PRODUCT.md §5–§7 and are reviewed when
-// each module is built.
+// Same order as MODULE_IDS. deps/requiresCapabilities follow PRODUCT.md §5–§7 (Smart Setup relies on
+// them, §6.6) and are reviewed when each module is built.
 export const MODULES = [
   DASHBOARD,
   SETTINGS,
   planned('products', 'core', 2),
-  planned('materials', 'core', 2),
+  // Material cost comes only from purchases (PRODUCT.md §4.8).
+  planned('materials', 'core', 2, { deps: ['purchases'] }),
   planned('suppliers', 'core', 2),
   planned('purchases', 'core', 2),
   planned('expenses', 'core', 2),
@@ -159,9 +160,10 @@ export const MODULES = [
   planned('sales', 'core', 3),
   planned('payments', 'core', 3),
   planned('reports', 'core', 3),
-  planned('orders', 'optional', 3),
-  planned('quotations', 'optional', 3),
-  planned('invoices', 'optional', 3),
+  planned('orders', 'optional', 3, { deps: ['products', 'customers', 'payments'] }),
+  planned('quotations', 'optional', 3, { deps: ['products', 'customers'] }),
+  // No requiresCapabilities: a business that is not VAT-registered sends plain invoices (§6.6).
+  planned('invoices', 'optional', 3, { deps: ['products', 'customers', 'payments'] }),
   planned('inventory', 'optional', 4, {
     deps: ['materials'],
     requiresCapabilities: ['keeps_stock'],
@@ -178,7 +180,7 @@ export const MODULES = [
   planned('payroll', 'optional', 5, { deps: ['employees'], requiresCapabilities: ['has_team'] }),
   planned('equipment', 'optional', 5, { requiresCapabilities: ['uses_machines'] }),
   planned('vehicles', 'optional', 5),
-  planned('projects', 'optional', 5),
+  planned('projects', 'optional', 5, { deps: ['customers', 'payments'] }),
   planned('petty_cash', 'optional', 5, {
     deps: ['employees'],
     requiresCapabilities: ['has_team'],

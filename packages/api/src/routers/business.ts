@@ -1,8 +1,14 @@
-import { businessContextDto, type BusinessContextDto } from '@bizcost/contracts'
+import {
+  businessContextDto,
+  createFromSetupDto,
+  createFromSetupInput,
+  type BusinessContextDto,
+} from '@bizcost/contracts'
 import { can, SENSITIVITY_CATEGORIES } from '@bizcost/domain'
 import { buildModuleNav } from '@bizcost/modules'
 import type { BusinessAccess } from '../access'
-import { businessProcedure, router } from '../trpc'
+import { createFromSetup } from '../services/setup'
+import { authedProcedure, businessProcedure, router } from '../trpc'
 
 export function toBusinessContext(access: BusinessAccess): BusinessContextDto {
   const { effective, locationScope } = access
@@ -14,6 +20,7 @@ export function toBusinessContext(access: BusinessAccess): BusinessContextDto {
       : { all: false, ids: [...locationScope.ids].sort() },
     visibleCategories: SENSITIVITY_CATEGORIES.filter((c) => access.visibleCategories.has(c)),
     modules: [...buildModuleNav(access.enabledModules, (key) => can(effective, key))],
+    terminologyProfile: access.terminologyProfile,
     capabilities: { ...access.capabilities },
     permissionsVersion: access.permissionsVersion,
   }
@@ -29,4 +36,14 @@ export const businessRouter = router({
   context: businessProcedure
     .output(businessContextDto)
     .query(({ ctx }) => toBusinessContext(ctx.access)),
+  /**
+   * `business.createFromSetup` (authed, outside any business): Smart Setup's confirm step. The server
+   * recomputes recommend() from the answers and applies the review adjustments within their rules,
+   * then creates the business, its setup, default location and roles in one transaction
+   * (services/setup.ts). Idempotent on businessId; at most 10 businesses per user a day.
+   */
+  createFromSetup: authedProcedure
+    .input(createFromSetupInput)
+    .output(createFromSetupDto)
+    .mutation(({ ctx, input }) => createFromSetup(ctx, ctx.auth, input)),
 })

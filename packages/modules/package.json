@@ -14,11 +14,13 @@
   },
   "dependencies": {
     "@bizcost/contracts": "workspace:*",
-    "@bizcost/domain": "workspace:*"
+    "@bizcost/domain": "workspace:*",
+    "@bizcost/i18n": "workspace:*"
   },
   "devDependencies": {
     "@bizcost/config": "workspace:*",
     "eslint": "catalog:",
+    "fast-check": "catalog:",
     "typescript": "catalog:",
     "vite": "catalog:",
     "vitest": "catalog:"

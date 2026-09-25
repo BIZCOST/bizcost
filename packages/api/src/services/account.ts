@@ -230,3 +230,43 @@ export async function deleteAccount(ctx: Context, auth: AuthUser): Promise<Delet
   })
   return { deletedBusinessIds }
 }
+
+/**
+ * Remembers the business the caller opened last (profiles.last_business_id), where the app goes after
+ * the next sign-in. Only a live business where the caller is an active member: FORBIDDEN otherwise
+ * (also for a business that does not exist).
+ */
+export async function setLastBusiness(
+  ctx: Context,
+  auth: AuthUser,
+  businessId: string,
+): Promise<ProfileDto> {
+  const row = await ctx.tenantTx(null, async (tx) => {
+    const [membership] = await tx
+      .select({ id: businessMembers.id })
+      .from(businessMembers)
+      .innerJoin(
+        businesses,
+        and(eq(businesses.id, businessMembers.businessId), isNull(businesses.deletedAt)),
+      )
+      .where(
+        and(
+          eq(businessMembers.businessId, businessId),
+          eq(businessMembers.userId, auth.userId),
+          eq(businessMembers.kind, 'account'),
+          eq(businessMembers.status, 'active'),
+          isNull(businessMembers.deletedAt),
+        ),
+      )
+    if (!membership) return null
+    await ensureProfile(tx, auth)
+    const [updated] = await tx
+      .update(profiles)
+      .set({ lastBusinessId: businessId })
+      .where(and(eq(profiles.id, auth.userId), isNull(profiles.anonymizedAt)))
+      .returning(profileColumns)
+    return updated ?? null
+  })
+  if (!row) throw new AppError('forbidden')
+  return toProfileDto(row, auth.email)
+}

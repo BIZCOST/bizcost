@@ -3,10 +3,14 @@ import arAccount from '../locales/ar/account.json'
 import arAuth from '../locales/ar/auth.json'
 import arCommon from '../locales/ar/common.json'
 import arErrors from '../locales/ar/errors.json'
+import arModules from '../locales/ar/modules.json'
+import arSetup from '../locales/ar/setup.json'
 import enAccount from '../locales/en/account.json'
 import enAuth from '../locales/en/auth.json'
 import enCommon from '../locales/en/common.json'
 import enErrors from '../locales/en/errors.json'
+import enModules from '../locales/en/modules.json'
+import enSetup from '../locales/en/setup.json'
 
 // Translations: locales/<locale>/<namespace>.json. English is the source language and types every key;
 // tests fail when a key, plural form or interpolation variable is missing in either language.
@@ -16,7 +20,7 @@ import enErrors from '../locales/en/errors.json'
 // Use `useTranslation()` without a namespace and full keys (with `useTranslation('auth')`, the
 // unprefixed `errors.codeInvalid` would resolve in the errors namespace).
 
-export const NAMESPACES = ['common', 'auth', 'account', 'errors'] as const
+export const NAMESPACES = ['common', 'auth', 'account', 'errors', 'setup', 'modules'] as const
 export type Namespace = (typeof NAMESPACES)[number]
 
 /** Namespace of keys written without a prefix. */
@@ -36,12 +40,21 @@ export const en = {
   auth: enAuth,
   account: enAccount,
   errors: enErrors,
+  setup: enSetup,
+  modules: enModules,
 } as const
 export type SourceMessages = typeof en
 
 export const resources: Readonly<Record<Locale, Readonly<Record<Namespace, Messages>>>> = {
   en,
-  ar: { common: arCommon, auth: arAuth, account: arAccount, errors: arErrors },
+  ar: {
+    common: arCommon,
+    auth: arAuth,
+    account: arAccount,
+    errors: arErrors,
+    setup: arSetup,
+    modules: arModules,
+  },
 }
 
 const PLURAL_SUFFIX = /_(zero|one|two|few|many|other)$/

@@ -16,6 +16,7 @@
     "@bizcost/contracts": "workspace:*",
     "@bizcost/db": "workspace:*",
     "@bizcost/domain": "workspace:*",
+    "@bizcost/i18n": "workspace:*",
     "@bizcost/modules": "workspace:*",
     "@supabase/ssr": "catalog:",
     "@supabase/supabase-js": "catalog:",

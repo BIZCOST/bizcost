@@ -54,6 +54,7 @@ describe('businessContextDto', () => {
         quickActions: [],
       },
     ],
+    terminologyProfile: 'food',
     capabilities: { has_team: true, vat_registered: false },
     permissionsVersion: 3,
   }
@@ -76,5 +77,7 @@ describe('businessContextDto', () => {
     expect(businessContextDto.safeParse(badCategory).success).toBe(false)
     const badVersion = { ...context, permissionsVersion: 1.5 }
     expect(businessContextDto.safeParse(badVersion).success).toBe(false)
+    const badProfile = { ...context, terminologyProfile: 'retail' }
+    expect(businessContextDto.safeParse(badProfile).success).toBe(false)
   })
 })

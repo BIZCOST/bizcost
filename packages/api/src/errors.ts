@@ -64,7 +64,10 @@ const APP_CODE_OF_SQLSTATE: Readonly<Record<string, AppErrorCode>> = {
   '23502': 'validation', // not_null_violation
   '22P02': 'validation', // invalid_text_representation
   '22001': 'validation', // string_data_right_truncation
+  '22021': 'validation', // character_not_in_repertoire (U+0000 in text; the DTOs refuse it first)
+  '22P05': 'validation', // untranslatable_character
   '42501': 'forbidden', // insufficient_privilege (RLS WITH CHECK, a revoked grant)
+  BZ429: 'rate_limited', // app.create_business: too many businesses created by one user in 24 hours
 }
 
 const SQLSTATE = /^[0-9A-Z]{5}$/

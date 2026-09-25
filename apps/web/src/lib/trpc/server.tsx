@@ -6,7 +6,7 @@ import {
   createFetchHandler,
   type ApiDeps,
 } from '@bizcost/api'
-import type { MeDto } from '@bizcost/contracts'
+import type { BusinessContextDto, MeDto } from '@bizcost/contracts'
 import { createDb } from '@bizcost/db'
 import { TRPCError } from '@trpc/server'
 import { headers } from 'next/headers'
@@ -54,11 +54,13 @@ const createCaller = createCallerFactory(appRouter)
  * cookies exactly like /api/trpc. proxy.ts has already refreshed the session, and a server component
  * cannot set cookies, so refreshed cookies from this context are dropped.
  */
-export const getServerApi = cache(async () => {
-  const req = new Request('http://server.internal/api/trpc', { headers: await headers() })
+export const getServerApi = cache(async () => callerFor(await headers()))
+
+function callerFor(requestHeaders: Headers) {
+  const req = new Request('http://server.internal/api/trpc', { headers: requestHeaders })
   const ctx = createContext({ req, resHeaders: new Headers(), deps: apiDeps(), router: appRouter })
   return createCaller(ctx)
-})
+}
 
 /** `me` for a layout; null when the API does not accept the session (e.g. a deleted user). */
 export async function getMe(): Promise<MeDto | null> {
@@ -70,3 +72,22 @@ export async function getMe(): Promise<MeDto | null> {
     throw error
   }
 }
+
+/**
+ * `business.context` for a business layout, as `x-business-id` names it (docs/ARCHITECTURE.md §Active
+ * business): 'forbidden' when the caller is not an active member or there is no such business (the
+ * API answers both the same way), 'signed-out' when the API does not accept the session.
+ */
+export const getBusinessContext = cache(
+  async (businessId: string): Promise<BusinessContextDto | 'forbidden' | 'signed-out'> => {
+    const requestHeaders = new Headers(await headers())
+    requestHeaders.set('x-business-id', businessId)
+    try {
+      return await callerFor(requestHeaders).business.context()
+    } catch (error) {
+      if (error instanceof TRPCError && error.code === 'UNAUTHORIZED') return 'signed-out'
+      if (error instanceof TRPCError && error.code === 'FORBIDDEN') return 'forbidden'
+      throw error
+    }
+  },
+)

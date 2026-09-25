@@ -95,6 +95,42 @@ export async function sessionCount(userId: string): Promise<number> {
   return rows[0]?.n ?? 0
 }
 
+/** What Smart Setup saved for a business (assertions only). */
+export async function savedSetup(businessId: string): Promise<{
+  legalName: string
+  businessType: string | null
+  terminologyProfile: string
+  vatRegistered: boolean
+  defaultLocation: string | null
+  enabledModules: string[]
+} | null> {
+  return asAdmin(async (sql) => {
+    const [business] = await sql<
+      {
+        legal_name: string
+        business_type: string | null
+        terminology_profile: string
+        vat_registered: boolean
+      }[]
+    >`select legal_name, business_type, terminology_profile, vat_registered
+       from app.businesses where id = ${businessId}`
+    if (!business) return null
+    const [location] = await sql<{ name: string }[]>`
+      select name from app.locations where business_id = ${businessId} and is_default`
+    const modules = await sql<{ module_key: string }[]>`
+      select module_key from app.business_modules
+      where business_id = ${businessId} and enabled order by module_key`
+    return {
+      legalName: business.legal_name,
+      businessType: business.business_type,
+      terminologyProfile: business.terminology_profile,
+      vatRegistered: business.vat_registered,
+      defaultLocation: location?.name ?? null,
+      enabledModules: modules.map((m) => m.module_key),
+    }
+  })
+}
+
 // ---------------------------------------------------------------------------------------------------
 // The session the browser keeps in @supabase/ssr cookies ("base64-" + base64url JSON, split into
 // `.0`, `.1`… chunks when long)

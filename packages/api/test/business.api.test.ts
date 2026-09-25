@@ -168,6 +168,7 @@ interface ContextResult {
   locationScope: { all: true } | { all: false; ids: string[] }
   visibleCategories: string[]
   modules: { id: string; nav: { id: string }[]; quickActions: unknown[] }[]
+  terminologyProfile: string
   capabilities: Record<string, boolean>
   permissionsVersion: number
 }
@@ -284,6 +285,7 @@ describe('business.context', () => {
           quickActions: [],
         },
       ],
+      terminologyProfile: 'general',
       capabilities: {
         has_team: false,
         multi_location: false,

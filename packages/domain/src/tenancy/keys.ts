@@ -30,6 +30,37 @@ export function isLocale(value: unknown): value is Locale {
   return (LOCALES as readonly unknown[]).includes(value)
 }
 
+/**
+ * `businesses.business_type`: the kind of business Smart Setup recommended for (never a hard limit).
+ * Each type has one terminology profile (docs/PRODUCT.md §6.4).
+ */
+export const BUSINESS_TYPES = [
+  'food',
+  'factory',
+  'workshop',
+  'projects',
+  'maker',
+  'retail',
+  'services',
+  'other',
+] as const
+export type BusinessType = (typeof BUSINESS_TYPES)[number]
+
+/** `businesses.terminology_profile`: the wording of the UI (docs/PRODUCT.md §5, §13). */
+export const TERMINOLOGY_PROFILES = [
+  'general',
+  'food',
+  'maker',
+  'workshop',
+  'factory',
+  'projects',
+] as const
+export type TerminologyProfile = (typeof TERMINOLOGY_PROFILES)[number]
+
+export function isTerminologyProfile(value: unknown): value is TerminologyProfile {
+  return (TERMINOLOGY_PROFILES as readonly unknown[]).includes(value)
+}
+
 /** audit_log.action, written by the database audit trigger. */
 export const AUDIT_ACTIONS = ['insert', 'update', 'delete'] as const
 export type AuditAction = (typeof AUDIT_ACTIONS)[number]

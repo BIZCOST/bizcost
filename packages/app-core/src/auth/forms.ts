@@ -3,6 +3,7 @@ import {
   AUTH_PASSWORD_MAX_BYTES,
   AUTH_PASSWORD_MIN_LENGTH,
   PROFILE_DISPLAY_NAME_MAX_LENGTH,
+  withoutControlCharacters,
 } from '@bizcost/contracts'
 import { hasMessage, type I18nKey } from '@bizcost/i18n'
 import * as z from 'zod/mini'
@@ -107,6 +108,8 @@ export const emailCodesSchema = z.object({ currentCode: codeSchema, newCode: cod
 /** Account → profile: the name co-members see (the API applies the same limits). */
 export const profileFormSchema = z.object({
   displayName: z.string().check(
+    // A pasted tab or line break becomes a space (the API refuses control characters).
+    z.overwrite(withoutControlCharacters),
     z.trim(),
     z.minLength(1, { error: 'account.profile.displayNameRequired' }),
     z.maxLength(PROFILE_DISPLAY_NAME_MAX_LENGTH, {

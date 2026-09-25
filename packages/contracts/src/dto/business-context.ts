@@ -1,4 +1,4 @@
-import { SENSITIVITY_CATEGORIES } from '@bizcost/domain'
+import { SENSITIVITY_CATEGORIES, TERMINOLOGY_PROFILES } from '@bizcost/domain'
 import { z } from 'zod'
 import { zUuid } from '../primitives'
 
@@ -48,6 +48,8 @@ export const businessContextDto = z.object({
   locationScope: locationScopeDto,
   visibleCategories: z.array(z.enum(SENSITIVITY_CATEGORIES)),
   modules: z.array(enabledModuleDto),
+  /** The business's wording (businesses.terminology_profile): overlays of @bizcost/i18n. */
+  terminologyProfile: z.enum(TERMINOLOGY_PROFILES),
   /** Every capability of the registry (stored and derived) → on/off. */
   capabilities: z.record(z.string(), z.boolean()),
   permissionsVersion: z.int().nonnegative(),

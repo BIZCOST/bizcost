@@ -22,4 +22,5 @@ export {
   type Namespace,
   type SourceMessages,
 } from './resources'
+export { terminologyKey } from './terminology'
 export type { I18nKey } from './types'

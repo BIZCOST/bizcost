@@ -1,39 +1,13 @@
 'use client'
 
 import { useMe } from '@bizcost/app-core'
-import type { MembershipDto } from '@bizcost/contracts'
-import { isRoleTemplateKey } from '@bizcost/modules'
-import { ArrowRightIcon, Building2Icon, SparklesIcon, StoreIcon } from 'lucide-react'
+import { ArrowRightIcon, Building2Icon, SparklesIcon } from 'lucide-react'
 import Link from 'next/link'
 import { useTranslation } from 'react-i18next'
 import { Avatar, PersonName } from '@/components/app/avatar'
 import { isolate } from '@/components/form/use-message'
+import { Button } from '@/components/ui/button'
 import { useSessionEmail } from '@/lib/session'
-
-function roleKey(template: string | null) {
-  return isRoleTemplateKey(template) ? (`roles.${template}` as const) : 'roles.custom'
-}
-
-function BusinessList({ memberships }: { memberships: MembershipDto[] }) {
-  const { t } = useTranslation()
-  return (
-    <ul className="divide-y">
-      {memberships.map((membership) => (
-        <li key={membership.businessId} className="flex items-center gap-4 px-5 py-4 sm:px-6">
-          <span className="flex size-11 shrink-0 items-center justify-center rounded-xl bg-accent text-primary">
-            <StoreIcon aria-hidden className="size-5" />
-          </span>
-          <div className="min-w-0 flex-1">
-            <PersonName className="font-medium">{membership.legalName}</PersonName>
-            <p className="text-sm text-muted-foreground">
-              {t(roleKey(membership.roleTemplateKey))}
-            </p>
-          </div>
-        </li>
-      ))}
-    </ul>
-  )
-}
 
 function EmptyBusinesses() {
   const { t } = useTranslation()
@@ -49,6 +23,12 @@ function EmptyBusinesses() {
       <p className="mt-2 max-w-md text-sm leading-relaxed text-muted-foreground">
         {t('home.emptyBody')}
       </p>
+      <Button asChild size="lg" className="mt-6">
+        <Link href="/setup">
+          <SparklesIcon aria-hidden />
+          {t('home.setUp')}
+        </Link>
+      </Button>
     </div>
   )
 }
@@ -58,8 +38,7 @@ export function HomeView() {
   const { data: me } = useMe()
   const email = useSessionEmail()
   if (!me) return null
-  const { profile, memberships } = me
-  const active = memberships.filter((m) => m.status === 'active')
+  const { profile } = me
   // New profiles are named after the email's local part until the user sets a name: no greeting
   // by that name (docs/ARCHITECTURE.md §Auth).
   const named = profile.displayName !== '' && profile.displayName !== email?.split('@')[0]
@@ -83,7 +62,8 @@ export function HomeView() {
           <h2 id="businesses-title" className="border-b px-5 py-4 text-base font-semibold sm:px-6">
             {t('home.businessesTitle')}
           </h2>
-          {active.length ? <BusinessList memberships={active} /> : <EmptyBusinesses />}
+          {/* A user with a business never sees home: / sends them to it (app/(app)/page.tsx). */}
+          <EmptyBusinesses />
         </section>
 
         <section

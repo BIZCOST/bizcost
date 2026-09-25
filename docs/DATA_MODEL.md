@@ -21,7 +21,7 @@ Related: API, permissions engine, redaction, numbers/i18n code → ARCHITECTURE.
   - Local stack only: `supabase/seed.sql` gives it `LOGIN PASSWORD 'bizcost_local_dev'` and refuses to run anywhere else. Never run `supabase db push --include-seed` or `supabase db reset --linked`.
 - Schema source of truth: Drizzle (stable 0.45.x) in `packages/db` → `drizzle-kit generate` (prefix `supabase`) into `supabase/migrations`. Hand-written SQL (role, functions, grants, policies, triggers) goes in `--custom` migrations.
 - Migrations are applied only by Supabase CLI (`db reset` locally, `db push` from CI, manual approval for prod). Never `drizzle-kit push/migrate` on shared DBs.
-- Layout (IMPLEMENTED): `app_schema` (generated) → `api_role_and_context` (custom: role, `citext`, `app.current_user_id()`/`current_business_id()`) → `m1_tables` (generated) → `tenancy_security` (custom: helper and bootstrap functions, triggers, RLS, grants). Custom files are created with `drizzle-kit generate --custom`, so Drizzle's journal (`supabase/migrations/meta/`, ignored by the Supabase CLI) stays consistent. A later tenant table = a generated migration + a custom one that calls `app.apply_tenant_rls()` and adds the `touch_row`/`audit_row` triggers (the pgTAP catalog check fails otherwise).
+- Layout (IMPLEMENTED): `app_schema` (generated) → `api_role_and_context` (custom: role, `citext`, `app.current_user_id()`/`current_business_id()`) → `m1_tables` (generated) → `tenancy_security` (custom: helper and bootstrap functions, triggers, RLS, grants) → `business_create_limit` (custom, Step 5: the daily creation limit in `app.create_business`). Custom files are created with `drizzle-kit generate --custom`, so Drizzle's journal (`supabase/migrations/meta/`, ignored by the Supabase CLI) stays consistent. A later tenant table = a generated migration + a custom one that calls `app.apply_tenant_rls()` and adds the `touch_row`/`audit_row` triggers (the pgTAP catalog check fails otherwise).
 - Scripts: `pnpm db:reset`, `pnpm db:test` (pgTAP + `@bizcost/db` integration tests), `pnpm --filter @bizcost/db db:generate`.
 - Naming: snake_case, plural table names, FK columns `<entity>_id`. Code-defined keys (modules, capabilities, permissions, role templates) are stored as keys; their labels come from i18n.
 
@@ -104,7 +104,7 @@ Every business-owned table is declared with the `tenantTable()` helper, which ad
 | `audit_log`            | T                                        | none for `bizcost_api` (trigger only)                                |
 
 - Co-members' names come from `business_members.display_name` (NOT NULL for every kind; the API keeps it in sync with the profile for account members). Profiles stay own-row only.
-- Bootstrap functions (SECURITY DEFINER): `app.create_business(id, legal_name, default_locale, owner_display_name, owner_role_id, member_id)` creates the business, its `owner` role and the caller's active membership; `app.accept_invitation(token, member_id)` (§4 business_invitations).
+- Bootstrap functions (SECURITY DEFINER): `app.create_business(id, legal_name, default_locale, owner_display_name, owner_role_id, member_id)` creates the business, its `owner` role and the caller's active membership. A user creates at most 10 businesses in 24 hours (counted from `businesses.created_by`/`created_at`, soft-deleted ones included; a transaction-level advisory lock per user makes concurrent creations count each other; over the limit SQLSTATE `BZ429`, which the API answers with `rate_limited`, D-076); `app.accept_invitation(token, member_id)` (§4 business_invitations).
 - RLS = isolation between businesses ONLY. Roles, permissions, module gates and sensitive-field redaction are enforced in TypeScript (ARCHITECTURE.md §Permissions, modules & capabilities). Never add per-permission RLS policies.
 
 ---
@@ -143,7 +143,7 @@ Standard columns from §1.2 are not repeated. `profiles` and `businesses` are no
 
 ### profiles
 
-- `id uuid` PK = auth user id (no FK) · `display_name text` · `locale text` (`en` | `ar`, kept in sync with auth `user_metadata.locale` for bilingual emails) · `last_business_id uuid NULL` (post-login routing) · `anonymized_at timestamptz NULL` · `created_at`, `updated_at`.
+- `id uuid` PK = auth user id (no FK) · `display_name text` · `locale text` (`en` | `ar`, kept in sync with auth `user_metadata.locale` for bilingual emails) · `last_business_id uuid NULL` (post-login routing: set by Smart Setup and `account.setLastBusiness`, only to a live business where the user is an active member; `/` ignores it once that is no longer true, D-077) · `anonymized_at timestamptz NULL` · `created_at`, `updated_at`.
 - Created by upsert in the `me` API procedure, not by a trigger on `auth.users`.
 - On account deletion the row is anonymized (`anonymized_at`), never hard-deleted. Flow and sole-owner guard: ARCHITECTURE.md §Auth.
 
@@ -151,21 +151,21 @@ Standard columns from §1.2 are not repeated. `profiles` and `businesses` are no
 
 Tenant root: `businesses.id` is the `business_id` used everywhere. Has `created_*`, `updated_*`, `deleted_at`, `version`.
 
-| Column                | Type / default        | Notes                                                                           |
-| --------------------- | --------------------- | ------------------------------------------------------------------------------- |
-| `legal_name`          | `text NOT NULL`       |                                                                                 |
-| `legal_name_ar`       | `text NULL`           | Arabic legal name (tax invoices)                                                |
-| `business_type`       | `text`                | recommended-setup key; never a hard limit                                       |
-| `terminology_profile` | `text`                | `general` / `food` / `maker` / `workshop` / `factory` / `projects` (UI wording) |
-| `country`             | `char(2)` `'AE'`      |                                                                                 |
-| `currency`            | `char(3)` `'AED'`     | ISO-4217                                                                        |
-| `vat_registered`      | `boolean`             |                                                                                 |
-| `trn`                 | `text NULL`           | CHECK exactly 15 digits (`^[0-9]{15}$`)                                         |
-| `timezone`            | `text` `'Asia/Dubai'` |                                                                                 |
-| `default_locale`      | `text`                |                                                                                 |
-| `plan`                | `text`                | placeholder only; no billing in M1                                              |
-| `setup_completed_at`  | `timestamptz NULL`    | Smart Setup finished                                                            |
-| `logo_path`           | `text NULL`           | Storage path                                                                    |
+| Column                | Type / default        | Notes                                                                                                                                       |
+| --------------------- | --------------------- | ------------------------------------------------------------------------------------------------------------------------------------------- |
+| `legal_name`          | `text NOT NULL`       |                                                                                                                                             |
+| `legal_name_ar`       | `text NULL`           | Arabic legal name (tax invoices)                                                                                                            |
+| `business_type`       | `text`                | `food` / `factory` / `workshop` / `projects` / `maker` / `retail` / `services` / `other` (Smart Setup, PRODUCT.md §6.4); never a hard limit |
+| `terminology_profile` | `text`                | `general` / `food` / `maker` / `workshop` / `factory` / `projects` (UI wording)                                                             |
+| `country`             | `char(2)` `'AE'`      |                                                                                                                                             |
+| `currency`            | `char(3)` `'AED'`     | ISO-4217                                                                                                                                    |
+| `vat_registered`      | `boolean`             |                                                                                                                                             |
+| `trn`                 | `text NULL`           | CHECK exactly 15 digits (`^[0-9]{15}$`)                                                                                                     |
+| `timezone`            | `text` `'Asia/Dubai'` |                                                                                                                                             |
+| `default_locale`      | `text`                |                                                                                                                                             |
+| `plan`                | `text`                | placeholder only; no billing in M1                                                                                                          |
+| `setup_completed_at`  | `timestamptz NULL`    | Smart Setup finished                                                                                                                        |
+| `logo_path`           | `text NULL`           | Storage path                                                                                                                                |
 
 - Invariant: at least one active Owner at all times. Ownership transfer is an explicit action. Enforced by the DEFERRABLE INITIALLY DEFERRED constraint trigger `app.enforce_active_owner()` on `business_members`, on `roles` (`template_key`/`deleted_at` changes) and on `businesses` (restore): at commit, a live business needs an active, non-deleted `account` member whose role has `template_key = 'owner'`. Soft-deleted businesses are exempt. If two transactions remove the last two owners, one commit fails with 23514 (40001 in REPEATABLE READ/SERIALIZABLE; the API retries 40001).
 - CHECKs: `trn` (above), `default_locale in ('en','ar')`.
@@ -175,7 +175,7 @@ Tenant root: `businesses.id` is the `business_id` used everywhere. Has `created_
 ### business_capabilities
 
 - `key text` from the code capability registry (`packages/modules`). Examples: team vs solo, multi-location, `vat_registered`, keeps stock, uses machines, sells via POS, jobs & tasks. Final keys live in the registry; user meaning in PRODUCT.md.
-- `enabled boolean` · `value jsonb NULL` (only for non-boolean capabilities) · `source text` (`setup` | `user`).
+- `enabled boolean` · `value jsonb NULL` (only for non-boolean capabilities) · `source text` (`setup` | `user`). Smart Setup writes one row per stored capability; `user` where the review changed the recommended value.
 - `UNIQUE (business_id, key)`.
 - Capabilities hide fields/sections/pickers inside screens. Changing one never migrates data.
 - Single source of truth: a capability that mirrors a business column is read from that column, not stored twice. `vat_registered` lives only in `businesses` (CHECK `key <> 'vat_registered'`).
@@ -241,7 +241,7 @@ Tenant root: `businesses.id` is the `business_id` used everywhere. Has `created_
 
 ### setup_answers
 
-- `question_set_version` · `answers jsonb`.
+- `question_set_version` · `answers jsonb` (the normalized answers, e.g. PRODUCT.md §6.11) · `request_hash` (SHA-256 of the canonical `createFromSetup` payload: a retry with the same business id and payload returns the business, another payload is CONFLICT, D-076). One row per business.
 - Raw record of what the user answered. On confirmation the derived state is written to its own tables (`businesses.business_type`, `terminology_profile`, `business_capabilities`, `business_modules`, default location, roles). Runtime code reads those tables, not `setup_answers`.
 
 ### audit_log

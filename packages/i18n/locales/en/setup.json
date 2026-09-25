@@ -1,0 +1,445 @@
+{
+  "title": "Smart Setup",
+  "wizard": {
+    "progress": "Question {{n}} of {{m}}",
+    "next": "Next",
+    "back": "Back",
+    "exit": "Exit setup",
+    "chooseOne": "Choose one.",
+    "chooseAtLeastOne": "Choose at least one.",
+    "exclusive": "Choosing this clears your other choices.",
+    "sideName": "Name",
+    "sideReview": "Review",
+    "intro": "A few quick questions, so BizCost shows only what your business uses.",
+    "answered": "Answered"
+  },
+  "name": {
+    "title": "What's your business called?",
+    "hint": "The name your customers know, like your shop or Instagram name, or your own name. You can change it later.",
+    "placeholder": "e.g. Sara's Sweets",
+    "required": "Enter your business name.",
+    "tooLong": "Use 100 characters or fewer."
+  },
+  "q": {
+    "what_you_do": {
+      "title": "What does your business do?",
+      "short": "Your work",
+      "hint": "Choose all that apply.",
+      "opt": {
+        "sell_products": {
+          "label": "I sell products I buy ready-made",
+          "hint": "Shop, grocery, online store, trading"
+        },
+        "make_products": {
+          "label": "I make products (not food)",
+          "hint": "Furniture, metal work, 3D printing, handmade items, factory goods"
+        },
+        "food_drinks": {
+          "label": "I make food or drinks",
+          "hint": "Café, restaurant, bakery, cakes and sweets, home kitchen"
+        },
+        "services": {
+          "label": "I offer services",
+          "hint": "Design, marketing, cleaning, salon, repairs"
+        },
+        "projects": {
+          "label": "I do projects for clients",
+          "hint": "Big jobs in stages, with workers and materials: fit-out, contracting, events"
+        },
+        "other": {
+          "label": "Something else"
+        }
+      }
+    },
+    "how_you_make": {
+      "title": "How are your products made?",
+      "short": "How you make",
+      "hint": "Choose all that apply.",
+      "opt": {
+        "catalog": {
+          "label": "The same items again and again",
+          "hint": "A set list of products or designs"
+        },
+        "custom_jobs": {
+          "label": "Made to order for each customer",
+          "hint": "To the customer's size, drawing or file, e.g. furniture, steel gates, signs"
+        },
+        "batches": {
+          "label": "In large quantities",
+          "hint": "A factory or production line"
+        }
+      }
+    },
+    "workplace": {
+      "title": "Where do you mainly work?",
+      "short": "Workplace",
+      "opt": {
+        "home": {
+          "label": "From home"
+        },
+        "shop": {
+          "label": "A shop, café, restaurant or showroom"
+        },
+        "office": {
+          "label": "An office"
+        },
+        "workshop": {
+          "label": "A workshop"
+        },
+        "factory": {
+          "label": "A factory"
+        },
+        "kitchen": {
+          "label": "A commercial kitchen",
+          "hint": "A central or cloud kitchen, not at home"
+        },
+        "customer_sites": {
+          "label": "At my customers' places",
+          "hint": "Their sites, homes or offices"
+        }
+      }
+    },
+    "branches": {
+      "title": "Does your business have more than one branch?",
+      "short": "Branches",
+      "hint": "Count your own shops, offices, workshops or stores, not your customers' places.",
+      "opt": {
+        "true": {
+          "label": "Yes, more than one"
+        },
+        "false": {
+          "label": "No, just one"
+        }
+      }
+    },
+    "team": {
+      "title": "Does anyone work with you?",
+      "short": "Team",
+      "opt": {
+        "alone": {
+          "label": "No, just me",
+          "hint": "Even if family helps now and then without pay, or a freelancer does a job for me"
+        },
+        "team": {
+          "label": "Yes, one person or more",
+          "hint": "Employees, workers, partners or paid family members"
+        }
+      }
+    },
+    "team_tracking": {
+      "title": "What do you want to track for your team?",
+      "short": "Your team",
+      "hint": "Choose all that apply.",
+      "opt": {
+        "hours": {
+          "label": "Working hours and overtime",
+          "hint": "Also used to count labour in your costs"
+        },
+        "salaries": {
+          "label": "Paying salaries, with advances and deductions"
+        },
+        "staff_cash": {
+          "label": "Cash given to staff for purchases",
+          "hint": "Settled later with receipts"
+        },
+        "cost_only": {
+          "label": "Just what my team costs, for now"
+        }
+      }
+    },
+    "work_setup": {
+      "title": "Which of these apply to your work?",
+      "short": "Your setup",
+      "hint": "Choose all that apply.",
+      "hint_included": "The materials you buy to make or sell are already covered, so they aren't listed here. Choose all that apply.",
+      "opt": {
+        "materials": {
+          "label": "I use materials or supplies",
+          "hint": "Paint, parts, salon products, building materials"
+        },
+        "stock": {
+          "label": "I keep stock and count what's left",
+          "hint": "Raw materials or goods on shelves that get restocked. Skip it if you buy what you need for each order."
+        },
+        "machines": {
+          "label": "I want to count machine time in my costs",
+          "hint": "3D printers, CNC, laser cutters, saws, welding, production lines"
+        },
+        "vehicles": {
+          "label": "I have vehicles for the business",
+          "hint": "Cars, vans, motorbikes or a staff bus used mainly for work. Not a personal car."
+        },
+        "none": {
+          "label": "None of these"
+        }
+      }
+    },
+    "sales_channels": {
+      "title": "How do customers order and pay?",
+      "short": "How you sell",
+      "hint": "Choose all that apply.",
+      "opt": {
+        "walk_in": {
+          "label": "They buy in person at my shop"
+        },
+        "messages": {
+          "label": "They order by WhatsApp, Instagram or phone",
+          "hint": "Then I deliver or they pick it up"
+        },
+        "online": {
+          "label": "Through my website, marketplaces or delivery apps",
+          "hint": "Like Amazon, Noon, Talabat or Deliveroo"
+        },
+        "quotes": {
+          "label": "I send a written quote before I start",
+          "hint": "For bigger jobs, custom work or events"
+        },
+        "invoice_later": {
+          "label": "I invoice them and they pay later",
+          "hint": "Companies, purchase orders (LPO), wholesale or monthly accounts"
+        }
+      }
+    },
+    "pos": {
+      "title": "Do you have a cashier system (POS)?",
+      "short": "Cashier (POS)",
+      "hint": "If you have one, keep using it. You'll be able to import its daily sales from a file.",
+      "opt": {
+        "true": {
+          "label": "Yes"
+        },
+        "false": {
+          "label": "No"
+        }
+      }
+    },
+    "vat": {
+      "title": "Is your business registered for VAT?",
+      "short": "VAT",
+      "hint": "Choose Yes only if it has a tax registration number (TRN). You can change this later.",
+      "opt": {
+        "yes": {
+          "label": "Yes, registered",
+          "hint": "It has a tax registration number (TRN)"
+        },
+        "no": {
+          "label": "No"
+        },
+        "not_sure": {
+          "label": "Not sure"
+        }
+      }
+    }
+  },
+  "review": {
+    "title": "Here's your BizCost",
+    "subtitle": "Built from your answers. Turn off anything you don't need.",
+    "banner": "BizCost opens in stages. The sections below are saved with your setup, and each one will appear by itself when it's ready.",
+    "soon": "Soon",
+    "groups": {
+      "chosen": "Chosen for your business",
+      "basics": "Basics for every business",
+      "about": "About your business",
+      "more": "More sections you can add"
+    },
+    "show": "Show",
+    "hide": "Hide",
+    "alsoOn": "Also turned on:",
+    "alsoOff": "Also turned off:",
+    "teamNote": "Your team sees only what you allow. Costs and profit stay hidden from them unless you give access.",
+    "vatNotSure": "You chose Not sure, so VAT options are off for now. Turn them on once you have a TRN.",
+    "needsVat": "Needs VAT registration. Turn on VAT under About your business first.",
+    "confirm": "Set up my BizCost",
+    "confirming": "Setting up…",
+    "change": "Change my answers",
+    "rateLimited": "You have set up the most businesses allowed for today. Try again tomorrow.",
+    "alreadyCreated": "{{businessName}} was already created from this setup with your earlier answers. What you changed after that was not saved.",
+    "openCreated": "Open this business",
+    "createAnother": "Create a new business with these answers"
+  },
+  "ready": {
+    "title": "Your BizCost is ready",
+    "body": "{{businessName}} is set up. Each section will appear here as soon as it's ready.",
+    "go": "Let's go"
+  },
+  "cap": {
+    "has_team": {
+      "topic": "Team",
+      "on": "Others work with you",
+      "off": "Just you, no team"
+    },
+    "multi_location": {
+      "topic": "Branches",
+      "on": "More than one branch",
+      "off": "One branch"
+    },
+    "keeps_stock": {
+      "topic": "Stock",
+      "on": "You keep stock and count it",
+      "off": "No stock to track"
+    },
+    "uses_machines": {
+      "topic": "Machine time",
+      "on": "Machine time counts in your costs",
+      "off": "Machine time isn't counted"
+    },
+    "sells_via_pos": {
+      "topic": "Cashier (POS)",
+      "on": "Your sales come from your POS",
+      "off": "No POS"
+    },
+    "vat_registered": {
+      "topic": "VAT",
+      "on": "Registered for VAT",
+      "off": "Not registered for VAT"
+    },
+    "jobs_and_tasks": {
+      "on": "Cost and profit for each job",
+      "on_maker": "Cost and profit for each order"
+    }
+  },
+  "jobs": {
+    "name": "Cost and profit of each job",
+    "name_maker": "Cost and profit of each order",
+    "desc": "See what each job costs you and what you earn from it.",
+    "desc_maker": "See what each order costs you and what you earn from it.",
+    "reason": {
+      "custom_jobs": "Each job is made to the customer's request, so see what each one costs you and what you earn.",
+      "custom_jobs_maker": "Each order is made to the customer's request, so see what each order costs you and what you earn.",
+      "services": "Each job is different, so see what each one costs you and what you earn.",
+      "services_maker": "Each order is different, so see what each one costs you and what you earn."
+    }
+  },
+  "reason": {
+    "always": "Always on.",
+    "products": {
+      "projects": "List the services and work items you put in your quotes, and what each really costs.",
+      "services": "List the services you offer and what each one really costs.",
+      "custom": "Save what you price often, with its usual unit, to price new orders faster.",
+      "default": "List what you sell and see what each one really costs."
+    },
+    "materials": {
+      "food": "Track your ingredients and packaging, and what they cost.",
+      "make": "Track the materials that go into your products, and what they cost.",
+      "resell": "The goods you sell cost what you pay to buy them.",
+      "uses": "Count the materials and supplies you use in your costs."
+    },
+    "suppliers": {
+      "no_purchases": "Save who you pay once, like software, printing or freelancers, and reuse them in expenses.",
+      "projects": "Save each supplier and subcontractor once, and reuse them in purchases and expenses.",
+      "default": "Save the shops and suppliers you buy from once, and reuse them."
+    },
+    "purchases": {
+      "default": "What you pay when you buy sets your real costs."
+    },
+    "expenses": {
+      "default": "Record every amount spent on the business, with or without a receipt."
+    },
+    "running_costs": {
+      "home": "Count what working from home costs, like electricity, gas, internet and subscriptions.",
+      "default": "Count what you pay regularly to run your business, like rent, electricity and your licence."
+    },
+    "files": {
+      "default": "Keep receipts and documents with your records."
+    },
+    "cost_engine": {
+      "jobs": "See the true cost and profit of each job.",
+      "jobs_maker": "See the true cost and profit of each order.",
+      "solo": "See the true cost of your work, including your own time.",
+      "default": "See the true cost of everything you sell or do."
+    },
+    "customers": {
+      "default": "Save each customer once and use them everywhere."
+    },
+    "sales": {
+      "pos_apps": "Import sales from your POS and delivery apps, with their fees, to see your real profit.",
+      "pos": "Import your POS sales to see your real profit.",
+      "apps": "Bring in sales from your online store or delivery apps, with their fees.",
+      "with_orders": "Add the sales you don't record as orders.",
+      "invoices": "Add any sales that don't come from your invoices.",
+      "default": "Add your sales to see your real profit."
+    },
+    "payments": {
+      "projects": "Track deposits, stage payments and what each client still owes.",
+      "deposits": "Track deposits and what each customer still owes.",
+      "orders": "Know who paid, who paid a deposit and who still owes.",
+      "default": "Know who has paid and who still owes."
+    },
+    "reports": {
+      "projects": "See your real profit by project, month and more.",
+      "default": "See your real profit by product, month and more."
+    },
+    "orders": {
+      "invoice_later": "Follow each order until it's delivered and paid.",
+      "custom_jobs": "Keep each customer's order in one place, from deposit to delivery.",
+      "messages": "Keep WhatsApp, Instagram and phone orders in one place, with delivery and payment.",
+      "shop_no_pos": "There's no POS in your shop, so record each sale here. If adding daily totals is easier, turn this off."
+    },
+    "quotations": {
+      "projects": "Give each project a written price before you start.",
+      "quotes": "Prepare written quotes for your customers before you start."
+    },
+    "invoices": {
+      "projects": "Send invoices, including stage invoices for each project.",
+      "vat": "Your business is registered for VAT, so send tax invoices to your customers.",
+      "quotes": "Turn accepted quotes into invoices and get paid.",
+      "default": "Send invoices to your customers and follow what they owe."
+    },
+    "inventory": {
+      "default": "See how much is left in stock."
+    },
+    "usage_waste": {
+      "make": "See how much material goes to offcuts, failed pieces and waste, and what it costs.",
+      "resell": "See what you lose to expired or damaged goods, and gaps you can't explain.",
+      "default": "Compare expected usage from your sales with actual usage, and see where the difference goes."
+    },
+    "employees": {
+      "default": "Others work with you, so their cost is part of your true cost."
+    },
+    "attendance": {
+      "default": "Track working hours and overtime."
+    },
+    "payroll": {
+      "default": "Handle salaries, advances and deductions."
+    },
+    "equipment": {
+      "default": "Count what each machine costs per hour, including power and upkeep."
+    },
+    "vehicles": {
+      "default": "See what your vehicles cost, like fuel and upkeep."
+    },
+    "projects": {
+      "default": "See each project's costs (materials, labour, extra work) and its profit."
+    },
+    "petty_cash": {
+      "default": "Track cash given to staff until it's settled with receipts or returned."
+    },
+    "vat_center": {
+      "default": "Prepare and check your VAT return, kept apart from your profit."
+    }
+  },
+  "note": {
+    "orders": {
+      "outside_pos": "Turn this on if some orders don't go through your POS."
+    },
+    "invoices": {
+      "pos_off": "Your POS prints your receipts. Turn this on if you also need to send tax invoices, for example to companies."
+    }
+  },
+  "location": {
+    "home": "Home",
+    "home_main": "Main branch",
+    "shop": "Shop",
+    "shop_main": "Main shop",
+    "office": "Office",
+    "office_main": "Head office",
+    "workshop": "Workshop",
+    "workshop_main": "Main workshop",
+    "factory": "Factory",
+    "factory_main": "Main factory",
+    "kitchen": "Kitchen",
+    "kitchen_main": "Main kitchen",
+    "customer_sites": "Main base",
+    "customer_sites_main": "Main base"
+  }
+}

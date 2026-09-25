@@ -16,6 +16,7 @@
     "@bizcost/app-core": "workspace:*",
     "@bizcost/contracts": "workspace:*",
     "@bizcost/db": "workspace:*",
+    "@bizcost/domain": "workspace:*",
     "@bizcost/i18n": "workspace:*",
     "@bizcost/modules": "workspace:*",
     "@bizcost/tokens": "workspace:*",

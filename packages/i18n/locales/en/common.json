@@ -50,8 +50,14 @@
     "addName": "Add your name in your account, so your team knows who you are.",
     "businessesTitle": "Your businesses",
     "emptyTitle": "No business yet",
-    "emptyBody": "Soon you can set up your business here in a few simple steps with Smart Setup.",
-    "manageAccount": "Manage your account"
+    "emptyBody": "Answer a few simple questions, and BizCost sets itself up to fit your business.",
+    "manageAccount": "Manage your account",
+    "setUp": "Set up my business"
+  },
+  "business": {
+    "switch": "Switch business",
+    "create": "Create another business",
+    "sectionsNote": "Your sections will appear here as soon as they are ready."
   },
   "roles": {
     "owner": "Owner",

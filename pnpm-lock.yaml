@@ -186,6 +186,9 @@ importers:
       '@bizcost/db':
         specifier: workspace:*
         version: link:../../packages/db
+      '@bizcost/domain':
+        specifier: workspace:*
+        version: link:../../packages/domain
       '@bizcost/i18n':
         specifier: workspace:*
         version: link:../../packages/i18n
@@ -304,6 +307,9 @@ importers:
       '@bizcost/domain':
         specifier: workspace:*
         version: link:../domain
+      '@bizcost/i18n':
+        specifier: workspace:*
+        version: link:../i18n
       '@bizcost/modules':
         specifier: workspace:*
         version: link:../modules
@@ -566,6 +572,9 @@ importers:
       '@bizcost/domain':
         specifier: workspace:*
         version: link:../domain
+      '@bizcost/i18n':
+        specifier: workspace:*
+        version: link:../i18n
     devDependencies:
       '@bizcost/config':
         specifier: workspace:*
@@ -573,6 +582,9 @@ importers:
       eslint:
         specifier: 'catalog:'
         version: 10.11.0(jiti@2.7.0)
+      fast-check:
+        specifier: 'catalog:'
+        version: 4.10.2
       typescript:
         specifier: 'catalog:'
         version: 6.0.3
