@@ -1,6 +1,7 @@
 import { expect, test, type Browser } from '@playwright/test'
 import {
   ageSignIn,
+  createBusiness,
   createUser,
   deleteUser,
   enterCode,
@@ -14,6 +15,7 @@ import {
   uniqueEmail,
   useLanguage,
   withValue,
+  WORKSHOP_ANSWERS,
   type TestUser,
 } from '../helpers'
 
@@ -152,4 +154,20 @@ test('sign out everywhere ends the sessions on other devices too', async ({ page
   } finally {
     await other.close()
   }
+})
+
+test('the account menu offers Settings of the last business, also from the account page', async ({
+  page,
+}) => {
+  const businessId = await createBusiness(page, 'Menu Test Workshop', WORKSHOP_ANSWERS)
+  await page.goto('/account')
+  await page.getByRole('button', { name: 'Account menu' }).click()
+  await page.getByRole('menuitem', { name: 'Settings' }).click()
+  await expect(page).toHaveURL(`/b/${businessId}/settings`)
+})
+
+test('without a business, the account menu has no Settings', async ({ page }) => {
+  await page.getByRole('button', { name: 'Account menu' }).click()
+  await expect(page.getByRole('menuitem', { name: 'Account' })).toBeVisible()
+  await expect(page.getByRole('menuitem', { name: 'Settings' })).toHaveCount(0)
 })

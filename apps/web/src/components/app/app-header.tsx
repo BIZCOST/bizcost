@@ -22,6 +22,7 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
 import { usePersistLanguage } from '@/features/account/use-persist-language'
+import { landingBusinessId } from '@/features/business/memberships'
 import { useSessionEmail } from '@/lib/session'
 import { authClient } from '@/lib/supabase/browser'
 
@@ -32,6 +33,8 @@ function UserMenu() {
   const email = useSessionEmail()
   const [signingOut, setSigningOut] = useState(false)
   const name = me?.profile.displayName ?? ''
+  // Outside a business (e.g. /account), Settings opens the business home would open.
+  const settingsBusinessId = businessId ?? (me ? landingBusinessId(me) : null)
 
   async function handleSignOut() {
     setSigningOut(true)
@@ -78,9 +81,9 @@ function UserMenu() {
             {t('nav.home')}
           </Link>
         </DropdownMenuItem>
-        {businessId ? (
+        {settingsBusinessId ? (
           <DropdownMenuItem asChild className="py-2">
-            <Link href={`/b/${businessId}/settings`}>
+            <Link href={`/b/${settingsBusinessId}/settings`}>
               <SettingsIcon aria-hidden />
               {t('nav.settings')}
             </Link>
