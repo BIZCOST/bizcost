@@ -1,16 +1,22 @@
 'use client'
 
-import { signUp, signUpSchema, type AuthMessageKey, type SignUpForm } from '@bizcost/app-core'
-import { AUTH_PASSWORD_MIN_LENGTH } from '@bizcost/contracts'
+import {
+  isPasswordMessage,
+  signUp,
+  signUpSchema,
+  type AuthMessageKey,
+  type SignUpForm,
+} from '@bizcost/app-core'
 import { zodResolver } from '@hookform/resolvers/zod'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { useState } from 'react'
-import { useForm } from 'react-hook-form'
+import { useForm, useWatch } from 'react-hook-form'
 import { useTranslation } from 'react-i18next'
 import { AuthCard } from '@/components/auth/auth-shell'
 import { FormAlert } from '@/components/form/form-alert'
 import { PasswordInput } from '@/components/form/password-input'
+import { PasswordRules } from '@/components/form/password-rules'
 import { TextField } from '@/components/form/text-field'
 import { useMessage } from '@/components/form/use-message'
 import { Button } from '@/components/ui/button'
@@ -28,12 +34,19 @@ export function SignupForm() {
     resolver: zodResolver(signUpSchema),
     defaultValues: { email: '', password: '' },
   })
+  const password = useWatch({ control: form.control, name: 'password' })
 
   const submit = form.handleSubmit(async (values) => {
     setError(null)
     // The auth emails are written in the language the user signed up in.
     const result = await signUp(authClient(), { ...values, locale })
-    if (!result.ok) return setError(result.error)
+    if (!result.ok) {
+      // The Auth server refused the password (its rule, D-072): the message goes under the field.
+      if (isPasswordMessage(result.error)) {
+        return form.setError('password', { message: result.error }, { shouldFocus: true })
+      }
+      return setError(result.error)
+    }
     savePending({ email: result.email, purpose: 'signUp', sentAt: Date.now() })
     router.push('/verify')
   })
@@ -71,7 +84,7 @@ export function SignupForm() {
         />
         <TextField
           label={t('auth.fields.password')}
-          description={t('auth.fields.passwordHint', { count: AUTH_PASSWORD_MIN_LENGTH })}
+          hint={(id) => <PasswordRules id={id} password={password} />}
           error={message(form.formState.errors.password?.message)}
           render={(a11y) => (
             <PasswordInput autoComplete="new-password" {...a11y} {...form.register('password')} />

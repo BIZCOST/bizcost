@@ -34,8 +34,25 @@ export const AUTH_ERROR_KEYS = {
   no_authorization: 'errors.unauthorized',
 } as const satisfies Record<string, AuthMessageKey>
 
-/** `weak_password` reason: the password appears in a known data leak (leaked-password protection). */
-const PWNED = 'pwned'
+/**
+ * `weak_password` reasons, in the order the Auth server checks them: shorter than
+ * `minimum_password_length`, missing a `password_requirements` character set (here an ASCII letter or
+ * digit, D-072), or found in a known data leak (leaked-password protection; checked only when the
+ * others pass). The first reason picks the message: the same keys the new-password schema uses.
+ */
+const WEAK_PASSWORD_REASON_KEYS = {
+  length: 'auth.validation.passwordTooShort',
+  characters: 'auth.validation.passwordNeedsMix',
+  pwned: 'auth.errors.passwordLeaked',
+} as const satisfies Record<string, AuthMessageKey>
+
+function weakPasswordKey(reasons: unknown): AuthMessageKey {
+  const list: unknown[] = Array.isArray(reasons) ? reasons : []
+  for (const [reason, key] of Object.entries(WEAK_PASSWORD_REASON_KEYS)) {
+    if (list.includes(reason)) return key
+  }
+  return AUTH_ERROR_KEYS.weak_password
+}
 
 interface ErrorLike {
   code?: unknown
@@ -57,9 +74,7 @@ export function authErrorCode(error: unknown): string | undefined {
 export function authErrorKey(error: unknown): AuthMessageKey {
   if (!isErrorLike(error)) return 'errors.internal'
   const code = authErrorCode(error)
-  if (code === 'weak_password' && Array.isArray(error.reasons) && error.reasons.includes(PWNED)) {
-    return 'auth.errors.passwordLeaked'
-  }
+  if (code === 'weak_password') return weakPasswordKey(error.reasons)
   if (code && Object.hasOwn(AUTH_ERROR_KEYS, code)) {
     return AUTH_ERROR_KEYS[code as keyof typeof AUTH_ERROR_KEYS]
   }
@@ -111,12 +126,22 @@ export interface FlowError<F extends string> {
   field?: F
 }
 
-/** Password messages go under the password field; everything else is for the whole form. */
+const PASSWORD_MESSAGES: ReadonlySet<AuthMessageKey> = new Set<AuthMessageKey>([
+  ...Object.values(WEAK_PASSWORD_REASON_KEYS),
+  'auth.errors.weakPassword',
+  'auth.errors.samePassword',
+  'auth.validation.passwordTooLong',
+])
+
+/** A message about the new password the user chose (it belongs under the password field). */
+export function isPasswordMessage(key: AuthMessageKey): boolean {
+  return PASSWORD_MESSAGES.has(key)
+}
+
+/**
+ * Password messages go under the password field; everything else is for the whole form. On forms
+ * whose only other input is a code, a `validation_failed` answer is about the password too.
+ */
 export function passwordErrorField<F extends string>(key: AuthMessageKey, field: F): F | undefined {
-  return key === 'auth.errors.weakPassword' ||
-    key === 'auth.errors.passwordLeaked' ||
-    key === 'auth.errors.samePassword' ||
-    key === 'errors.validation'
-    ? field
-    : undefined
+  return isPasswordMessage(key) || key === 'errors.validation' ? field : undefined
 }

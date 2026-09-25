@@ -1,14 +1,18 @@
 'use client'
 
 import { useId, type ComponentProps, type ReactNode } from 'react'
-import { Field, FieldDescription, FieldError, FieldLabel } from '@/components/ui/field'
+import { Field, FieldError, FieldLabel } from '@/components/ui/field'
 import { Input } from '@/components/ui/input'
 
 export interface TextFieldProps extends Omit<ComponentProps<typeof Input>, 'id'> {
   label: ReactNode
   /** Translated error text; marks the input invalid. */
   error?: string
-  description?: ReactNode
+  /**
+   * Help under the input, kept when there is an error (e.g. a new password's rules). It receives the
+   * id to put on the text that describes the input.
+   */
+  hint?: (descriptionId: string) => ReactNode
   /** Right of the label (e.g. a "Forgot password?" link). */
   labelAction?: ReactNode
   /** Replaces the input (e.g. an input with a button inside); receives the accessibility props. */
@@ -23,13 +27,13 @@ export interface TextFieldProps extends Omit<ComponentProps<typeof Input>, 'id'>
 export function TextField({
   label,
   error,
-  description,
+  hint,
   labelAction,
   render,
   ...inputProps
 }: TextFieldProps) {
   const id = useId()
-  const descriptionId = description ? `${id}-description` : undefined
+  const descriptionId = hint ? `${id}-description` : undefined
   const errorId = error ? `${id}-error` : undefined
   const describedBy = [errorId, descriptionId].filter(Boolean).join(' ') || undefined
   const a11y = { id, 'aria-invalid': Boolean(error), 'aria-describedby': describedBy }
@@ -40,9 +44,7 @@ export function TextField({
         {labelAction}
       </div>
       {render ? render(a11y) : <Input {...inputProps} {...a11y} />}
-      {description && !error ? (
-        <FieldDescription id={descriptionId}>{description}</FieldDescription>
-      ) : null}
+      {hint && descriptionId ? hint(descriptionId) : null}
       {error ? <FieldError id={errorId}>{error}</FieldError> : null}
     </Field>
   )

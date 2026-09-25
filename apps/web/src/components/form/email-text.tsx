@@ -3,9 +3,7 @@
 import type { I18nKey } from '@bizcost/i18n'
 import type { ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
-
-/** Marks where the address goes in the translated sentence (never part of a message). */
-const SLOT = '\u0000'
+import { SLOT } from './slot-text'
 
 /** Punctuation right after the address stays on its line (e.g. the sentence's full stop). */
 const TRAILING_PUNCTUATION = /^[.,،؛;:!?)]*/

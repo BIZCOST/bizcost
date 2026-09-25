@@ -9,19 +9,20 @@ import {
   type ResetPasswordForm,
   type ResetStep,
 } from '@bizcost/app-core'
-import { AUTH_PASSWORD_MIN_LENGTH, AUTH_RESEND_COOLDOWN_SECONDS } from '@bizcost/contracts'
+import { AUTH_RESEND_COOLDOWN_SECONDS } from '@bizcost/contracts'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { ArrowLeftIcon, CircleCheckIcon, KeyRoundIcon, ShieldCheckIcon } from 'lucide-react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { useEffect, useRef, useState, type ReactNode } from 'react'
-import { useForm } from 'react-hook-form'
+import { useForm, useWatch } from 'react-hook-form'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
 import { AuthCard } from '@/components/auth/auth-shell'
 import { EmailText } from '@/components/form/email-text'
 import { FormAlert } from '@/components/form/form-alert'
 import { PasswordInput } from '@/components/form/password-input'
+import { PasswordRules } from '@/components/form/password-rules'
 import { TextField } from '@/components/form/text-field'
 import { useMessage } from '@/components/form/use-message'
 import { Button } from '@/components/ui/button'
@@ -222,6 +223,7 @@ function NewPassword({
     resolver: zodResolver(resetPasswordSchema),
     defaultValues: { password: '', confirmPassword: '' },
   })
+  const password = useWatch({ control: form.control, name: 'password' })
   const titleRef = useFocusedTitle()
   const required = state.passwordRequired
   const errors = form.formState.errors
@@ -246,7 +248,7 @@ function NewPassword({
         <input type="email" autoComplete="username" value={email} readOnly hidden />
         <TextField
           label={t('auth.fields.newPassword')}
-          description={t('auth.fields.passwordHint', { count: AUTH_PASSWORD_MIN_LENGTH })}
+          hint={(id) => <PasswordRules id={id} password={password} />}
           error={message(errors.password?.message) ?? passwordError}
           render={(a11y) => (
             <PasswordInput

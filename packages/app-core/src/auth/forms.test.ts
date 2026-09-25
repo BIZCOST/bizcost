@@ -15,16 +15,21 @@ import {
   codeFormSchema,
   emailCodesSchema,
   formMessage,
+  newPasswordSchema,
+  passwordChecks,
   profileFormSchema,
   resetPasswordSchema,
   signInSchema,
   signUpSchema,
 } from './forms'
 
+/** The message shown per field: the first issue, as the form resolver picks it. */
 function messages(schema: z.ZodMiniType, value: unknown): Record<string, string> {
   const result = schema.safeParse(value)
   if (result.success) return {}
-  return Object.fromEntries(result.error.issues.map((i) => [i.path.join('.'), i.message]))
+  const out: Record<string, string> = {}
+  for (const issue of result.error.issues) out[issue.path.join('.')] ??= issue.message
+  return out
 }
 
 describe('form schemas', () => {
@@ -49,10 +54,16 @@ describe('form schemas', () => {
     })
   })
 
+  it('only require the password to sign in (older passwords keep working)', () => {
+    for (const password of ['x', 'abcdefgh', '12345678', 'كلمة-مرور']) {
+      expect(messages(signInSchema, { email: 'a@b.co', password })).toEqual({})
+    }
+  })
+
   it('limit new passwords to 72 UTF-8 bytes (bcrypt)', () => {
-    const ok = { email: 'a@b.co', password: 'a'.repeat(72) }
+    const ok = { email: 'a@b.co', password: `${'a'.repeat(71)}1` }
     expect(signUpSchema.safeParse(ok).success).toBe(true)
-    expect(messages(signUpSchema, { ...ok, password: 'ب'.repeat(37) })).toEqual({
+    expect(messages(signUpSchema, { ...ok, password: `${'ب'.repeat(36)}a1` })).toEqual({
       password: 'auth.validation.passwordTooLong',
     })
   })
@@ -85,6 +96,7 @@ describe('form schemas', () => {
 
   it('require the new password twice', () => {
     const value = { password: 'long-enough-1', confirmPassword: 'long-enough-2' }
+    expect(messages(resetPasswordSchema, { ...value, confirmPassword: value.password })).toEqual({})
     expect(messages(resetPasswordSchema, value)).toEqual({
       confirmPassword: 'auth.validation.passwordsDontMatch',
     })
@@ -101,6 +113,7 @@ describe('form schemas', () => {
       'auth.validation.passwordRequired',
       'auth.validation.passwordTooShort',
       'auth.validation.passwordTooLong',
+      'auth.validation.passwordNeedsMix',
       'auth.validation.passwordsDontMatch',
       'auth.validation.codeIncomplete',
       'account.email.sameEmail',
@@ -110,6 +123,73 @@ describe('form schemas', () => {
     for (const locale of LOCALES) {
       for (const key of keys) expect(hasMessage(locale, key), `${locale} ${key}`).toBe(true)
     }
+  })
+})
+
+describe('new password rule (D-072, the Auth server letters_digits rule)', () => {
+  const error = (password: string) => messages(newPasswordSchema, password)['']
+
+  it(`accepts ${AUTH_PASSWORD_MIN_LENGTH} characters with an ASCII letter and an ASCII digit`, () => {
+    expect(AUTH_PASSWORD_MIN_LENGTH).toBe(8)
+    expect(error('abcdef12')).toBeUndefined()
+    expect(error('1234567a')).toBeUndefined()
+    expect(error('ABCDEF12')).toBeUndefined() // uppercase letters count
+    expect(error('Ab1-كلمة')).toBeUndefined() // other characters may be added
+  })
+
+  it('refuses 7 characters', () => {
+    expect(error('abcde12')).toBe('auth.validation.passwordTooShort')
+  })
+
+  it('counts characters, not UTF-16 units or bytes, the same way as the checklist', () => {
+    // 8 UTF-16 units and 14 bytes, but 5 characters: the checklist and the submit both refuse it.
+    expect(error('a1😀😀😀')).toBe('auth.validation.passwordTooShort')
+    expect(passwordChecks('a1😀😀😀').length).toBe(false)
+    expect(error('a1😀😀😀😀😀😀')).toBeUndefined()
+    // 7 characters in 11 bytes: the Auth server (it counts bytes) would take it, this rule does not.
+    expect(error('ab1كلمة')).toBe('auth.validation.passwordTooShort')
+    expect(passwordChecks('ab1كلمة').length).toBe(false)
+  })
+
+  it('refuses letters only or digits only', () => {
+    expect(error('abcdefgh')).toBe('auth.validation.passwordNeedsMix')
+    expect(error('ABCDEFGH')).toBe('auth.validation.passwordNeedsMix')
+    expect(error('12345678')).toBe('auth.validation.passwordNeedsMix')
+  })
+
+  it('does not count Arabic-Indic digits or Arabic letters', () => {
+    expect(error('٠١٢٣٤٥٦٧')).toBe('auth.validation.passwordNeedsMix')
+    expect(error('abcdefg٣')).toBe('auth.validation.passwordNeedsMix')
+    expect(error('abcdefg۳')).toBe('auth.validation.passwordNeedsMix')
+    expect(error('كلمةمرور12')).toBe('auth.validation.passwordNeedsMix')
+  })
+
+  it('never changes the password (no digit or case normalization)', () => {
+    expect(newPasswordSchema.parse('Abc-١٢٣-45')).toBe('Abc-١٢٣-45')
+    expect(signUpSchema.parse({ email: 'a@b.co', password: ' AbCd123 ' }).password).toBe(
+      ' AbCd123 ',
+    )
+  })
+
+  it('applies to every new-password form', () => {
+    const weak = 'abcdefgh'
+    expect(messages(signUpSchema, { email: 'a@b.co', password: weak })).toEqual({
+      password: 'auth.validation.passwordNeedsMix',
+    })
+    expect(messages(resetPasswordSchema, { password: weak, confirmPassword: weak })).toEqual({
+      password: 'auth.validation.passwordNeedsMix',
+    })
+    expect(
+      messages(changePasswordSchema, { code: '123456', password: weak, confirmPassword: weak }),
+    ).toEqual({ password: 'auth.validation.passwordNeedsMix' })
+  })
+
+  it('reports each rule for the live checklist', () => {
+    expect(passwordChecks('')).toEqual({ length: false, letter: false, digit: false })
+    expect(passwordChecks('abc')).toEqual({ length: false, letter: true, digit: false })
+    expect(passwordChecks('abcdefgh')).toEqual({ length: true, letter: true, digit: false })
+    expect(passwordChecks('Z9')).toEqual({ length: false, letter: true, digit: true })
+    expect(passwordChecks('كلمة١٢٣٤٥٦')).toEqual({ length: true, letter: false, digit: false })
   })
 })
 
@@ -156,5 +236,7 @@ describe('auth limits', () => {
     expect(setting('auth.email', 'otp_length')).toBe(String(AUTH_OTP_LENGTH))
     expect(setting('auth.email', 'max_frequency')).toBe(`${AUTH_RESEND_COOLDOWN_SECONDS}s`)
     expect(setting('auth', 'minimum_password_length')).toBe(String(AUTH_PASSWORD_MIN_LENGTH))
+    // An ASCII letter and an ASCII digit: what newPasswordSchema and passwordChecks require.
+    expect(setting('auth', 'password_requirements')).toBe('letters_digits')
   })
 })

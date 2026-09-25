@@ -44,8 +44,8 @@ describe('createI18n', () => {
     expect(i18n.t('auth.verify.resendIn', { count: 1 })).toBe(
       'You can ask for a new code in 1 second.',
     )
-    expect(i18n.t('auth.validation.passwordTooShort', { count: 10 })).toBe(
-      'Use at least 10 characters.',
+    expect(i18n.t('auth.validation.passwordTooShort', { count: 8 })).toBe(
+      'Use at least 8 characters.',
     )
   })
 

@@ -2,12 +2,14 @@ import { expect, test, type Page } from '@playwright/test'
 import {
   createUser,
   deleteUser,
+  drawn,
   enterCode,
   findUserId,
   nextCode,
   passwordWorks,
   sessionCount,
   signIn,
+  signUpDirectly,
   uniqueEmail,
   useLanguage,
   withValue,
@@ -58,6 +60,76 @@ test('sign up with an email code and land on home', async ({ page }) => {
   await expect(page.getByRole('heading', { level: 1 })).toHaveText('Welcome to BizCost')
   await expect(page.getByText('Add your name in your account')).toBeVisible()
   await expect(page.getByText('No business yet')).toBeVisible()
+})
+
+test('sign-up password rule (D-072): the checklist, and both the page and Auth refuse a weak one', async ({
+  page,
+}) => {
+  const email = uniqueEmail('rule')
+  let signUpRequests = 0
+  page.on('request', (request) => {
+    if (request.url().includes('/auth/v1/signup')) signUpRequests += 1
+  })
+  await page.setViewportSize({ width: 375, height: 812 }) // a phone: the error wraps
+  await page.goto('/signup')
+  const password = page.getByRole('textbox', { name: 'Password', exact: true })
+  await expect(password).toHaveAccessibleDescription('At least 8 characters, a mix of (a-z, 0-9)')
+  const rule = (name: string) => page.locator(`li[data-rule="${name}"]`)
+  const announcement = page.getByRole('main').getByRole('status')
+  await expect(rule('length')).toHaveText('8+ characters not yet')
+  await expect(rule('letter')).toHaveText('Letter a-z not yet')
+  await expect(rule('digit')).toHaveText('Number 0-9 not yet')
+
+  // Letters only: two of three rules met, and the page does not send it.
+  await page.getByLabel('Email', { exact: true }).fill(email)
+  await password.fill('abcdefgh')
+  await expect(rule('length')).toHaveAttribute('data-met', 'true')
+  await expect(rule('letter')).toHaveAttribute('data-met', 'true')
+  await expect(rule('digit')).toHaveAttribute('data-met', 'false')
+  await expect(announcement).toHaveText('') // screen readers hear only a change of the whole rule
+  await page.getByRole('button', { name: 'Create account' }).click()
+  // "(a-z, 0-9)" stays whole on one line: a no-break space and a word joiner after each hyphen.
+  const error = page
+    .getByRole('alert')
+    .filter({ hasText: 'Add at least one letter and one number' })
+  await expect(error).toHaveText(
+    'Add at least one letter and one number (a-\u2060z,\u00a00-\u20609).',
+  )
+  expect(await error.evaluate(drawn, '(a-\u2060z,\u00a00-\u20609)')).toEqual({
+    text: '(a-z,\u00a00-9)',
+    lines: 1,
+  })
+  await expect(password).toBeFocused()
+  await expect(page).toHaveURL('/signup')
+  expect(signUpRequests).toBe(0)
+
+  // The Auth server enforces the same rule on its own (supabase/config.toml).
+  expect(await signUpDirectly(email, 'abcdefgh')).toMatchObject({
+    status: 422,
+    code: 'weak_password',
+    reasons: ['characters'],
+  })
+  expect(await signUpDirectly(email, 'abcde12')).toMatchObject({
+    status: 422,
+    code: 'weak_password',
+    reasons: ['length'],
+  })
+  // Arabic-Indic digits and Arabic letters count for neither.
+  expect(await signUpDirectly(email, 'abcdefg٣')).toMatchObject({ reasons: ['characters'] })
+  expect(await signUpDirectly(email, 'كلمةمرور12')).toMatchObject({ reasons: ['characters'] })
+  expect(await findUserId(email)).toBeNull()
+
+  // A letter and a digit: every rule met, announced once, and the account is created.
+  await password.fill('abcdef12')
+  for (const name of ['length', 'letter', 'digit']) {
+    await expect(rule(name)).toHaveAttribute('data-met', 'true')
+  }
+  await expect(announcement).toHaveText('Your password meets all the rules.')
+  await page.getByRole('button', { name: 'Create account' }).click()
+  await expect(page).toHaveURL('/verify')
+  await expect(page.getByText(withValue('We sent a code to ', email))).toBeVisible()
+  users.push(await findUserId(email))
+  expect(users.at(-1)).toBeTruthy()
 })
 
 test('signing up again with a registered email looks the same', async ({ page }) => {

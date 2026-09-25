@@ -7,8 +7,12 @@ export const AUTH_OTP_LENGTH = 6
 /** Seconds before another code can be sent to the same address (`[auth.email] max_frequency`). */
 export const AUTH_RESEND_COOLDOWN_SECONDS = 60
 
-/** Shortest accepted password (`[auth] minimum_password_length`). */
-export const AUTH_PASSWORD_MIN_LENGTH = 10
+/**
+ * Shortest accepted new password (`[auth] minimum_password_length`). The app counts characters (code
+ * points); the Auth server counts UTF-8 bytes, so the app is the stricter one. A new password also
+ * needs an ASCII letter and an ASCII digit (`[auth] password_requirements = "letters_digits"`, D-072).
+ */
+export const AUTH_PASSWORD_MIN_LENGTH = 8
 
 /** Longest accepted password in UTF-8 bytes: Supabase Auth hashes with bcrypt, which reads 72. */
 export const AUTH_PASSWORD_MAX_BYTES = 72

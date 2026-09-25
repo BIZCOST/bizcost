@@ -206,6 +206,27 @@ export async function passwordWorks(email: string, password: string): Promise<bo
   return response.ok
 }
 
+/**
+ * A sign-up request straight to the Auth server (no client checks): its status, error code and
+ * `weak_password` reasons. An accepted address gets an account; delete it with `findUserId`.
+ */
+export async function signUpDirectly(
+  email: string,
+  password: string,
+): Promise<{ status: number; code?: string; reasons?: string[] }> {
+  const { apiUrl, publishableKey } = stack()
+  const response = await fetch(`${apiUrl}/auth/v1/signup`, {
+    method: 'POST',
+    headers: { apikey: publishableKey, 'content-type': 'application/json' },
+    body: JSON.stringify({ email, password, data: { locale: 'en' } }),
+  })
+  const body = (await response.json()) as {
+    error_code?: string
+    weak_password?: { reasons?: string[] }
+  }
+  return { status: response.status, code: body.error_code, reasons: body.weak_password?.reasons }
+}
+
 interface MailSummary {
   ID: string
   Subject: string
@@ -277,4 +298,32 @@ export function withValue(before: string, value: string, after = ''): RegExp {
   return new RegExp(
     `${escapeRegExp(before)}\\u2068?${escapeRegExp(value)}\\u2069?${escapeRegExp(after)}`,
   )
+}
+
+/**
+ * How `part` (in the element's first text node) is drawn: its visible characters sorted left to
+ * right, and on how many lines. `text` is `part` (without the characters that draw nothing) only
+ * when it reads left to right with unmirrored brackets. Runs in the page:
+ * `locator.evaluate(drawn, part)`.
+ */
+export function drawn(element: Element, part: string): { text: string; lines: number } {
+  const node = element.firstChild!
+  const start = (node.textContent ?? '').indexOf(part)
+  if (start < 0) return { text: '', lines: 0 }
+  const glyphs = [...part]
+    .map((char, i) => {
+      const range = document.createRange()
+      range.setStart(node, start + i)
+      range.setEnd(node, start + i + 1)
+      const box = range.getBoundingClientRect()
+      return { char, left: box.left, top: Math.round(box.top), width: box.width }
+    })
+    .filter(({ width }) => width > 0) // isolate marks and word joiners
+  return {
+    text: glyphs
+      .sort((a, b) => a.left - b.left)
+      .map(({ char }) => char)
+      .join(''),
+    lines: new Set(glyphs.map(({ top }) => top)).size,
+  }
 }

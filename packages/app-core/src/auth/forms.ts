@@ -21,17 +21,59 @@ export const emailSchema = z.pipe(
   z.email({ error: 'auth.validation.emailInvalid' }),
 )
 
-/** The password typed to sign in: only required (the server checks it). */
+/**
+ * The password typed to sign in: only required (the server checks it). Passwords chosen under an
+ * older rule still sign in, so the new-password rules do not apply here.
+ */
 export const passwordSchema = z
   .string()
   .check(z.minLength(1, { error: 'auth.validation.passwordRequired' }))
 
-/** A new password: Supabase's minimum length and bcrypt's 72-byte limit. */
+// Supabase's `letters_digits` (D-072): ASCII only. Arabic letters and Arabic-Indic digits do not
+// count, and a password is never normalized (it must reach the server exactly as typed).
+const ASCII_LETTER = /[A-Za-z]/
+const ASCII_DIGIT = /[0-9]/
+
+export interface PasswordChecks {
+  /** At least AUTH_PASSWORD_MIN_LENGTH characters (code points: an emoji counts once). */
+  length: boolean
+  /** An ASCII letter (a-z or A-Z). */
+  letter: boolean
+  /** An ASCII digit (0-9). */
+  digit: boolean
+}
+
+/**
+ * Which new-password rules `password` meets: the live checklist under the field, and the schema
+ * below, so the two never disagree. The Auth server counts `minimum_password_length` in UTF-8 bytes,
+ * so for Arabic letters or emoji this 8-character check is the stricter one (D-072).
+ */
+export function passwordChecks(password: string): PasswordChecks {
+  return {
+    length: [...password].length >= AUTH_PASSWORD_MIN_LENGTH,
+    letter: ASCII_LETTER.test(password),
+    digit: ASCII_DIGIT.test(password),
+  }
+}
+
+/**
+ * A new password: the rule the Auth server enforces (`[auth] minimum_password_length` and
+ * `password_requirements`) and bcrypt's 72-byte limit.
+ */
 export const newPasswordSchema = z.string().check(
-  z.minLength(AUTH_PASSWORD_MIN_LENGTH, { error: 'auth.validation.passwordTooShort' }),
+  z.refine((value: string) => passwordChecks(value).length, {
+    error: 'auth.validation.passwordTooShort',
+  }),
   z.refine((value: string) => utf8.encode(value).length <= AUTH_PASSWORD_MAX_BYTES, {
     error: 'auth.validation.passwordTooLong',
   }),
+  z.refine(
+    (value: string) => {
+      const checks = passwordChecks(value)
+      return checks.letter && checks.digit
+    },
+    { error: 'auth.validation.passwordNeedsMix' },
+  ),
 )
 
 /** An email code: Arabic-Indic digits and pasted text are normalized first. */

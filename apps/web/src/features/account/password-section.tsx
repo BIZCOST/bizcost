@@ -8,17 +8,17 @@ import {
   type PasswordChange,
   type PasswordChangeState,
 } from '@bizcost/app-core'
-import { AUTH_PASSWORD_MIN_LENGTH } from '@bizcost/contracts'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { KeyRoundIcon } from 'lucide-react'
 import { useEffect } from 'react'
-import { Controller, useForm } from 'react-hook-form'
+import { Controller, useForm, useWatch } from 'react-hook-form'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
 import { CodeInput } from '@/components/form/code-input'
 import { EmailText } from '@/components/form/email-text'
 import { FormAlert } from '@/components/form/form-alert'
 import { PasswordInput } from '@/components/form/password-input'
+import { PasswordRules } from '@/components/form/password-rules'
 import { ResendCode } from '@/components/form/resend-code'
 import { TextField } from '@/components/form/text-field'
 import { useMessage } from '@/components/form/use-message'
@@ -75,6 +75,7 @@ function PasswordCodeForm({ flow, state }: { flow: PasswordChange; state: Passwo
     resolver: zodResolver(changePasswordSchema),
     defaultValues: { code: '', password: '', confirmPassword: '' },
   })
+  const password = useWatch({ control: form.control, name: 'password' })
   const busy = state.status !== 'idle'
   const errors = form.formState.errors
   const flowError = (field: 'code' | 'password') =>
@@ -117,7 +118,7 @@ function PasswordCodeForm({ flow, state }: { flow: PasswordChange; state: Passwo
       )}
       <TextField
         label={t('auth.fields.newPassword')}
-        description={t('auth.fields.passwordHint', { count: AUTH_PASSWORD_MIN_LENGTH })}
+        hint={(id) => <PasswordRules id={id} password={password} />}
         error={message(errors.password?.message) ?? flowError('password')}
         render={(a11y) => (
           <PasswordInput autoComplete="new-password" {...a11y} {...form.register('password')} />

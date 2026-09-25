@@ -8,7 +8,7 @@ import {
   signUp,
   syncAuthLocale,
 } from './commands'
-import { AuthRetryableFetchError } from '@supabase/supabase-js'
+import { AuthRetryableFetchError, AuthWeakPasswordError } from '@supabase/supabase-js'
 
 describe('signUp', () => {
   it('sends the locale as user metadata and normalizes the email', async () => {
@@ -29,8 +29,8 @@ describe('signUp', () => {
   it('answers an existing address exactly like a new one', async () => {
     const { auth, calls } = fakeAuth()
     failOnce(calls, 'signUp', apiError('user_already_exists', 422))
-    const existing = await signUp(auth, { email: 'a@b.co', password: 'x'.repeat(10), locale: 'en' })
-    const fresh = await signUp(auth, { email: 'a@b.co', password: 'x'.repeat(10), locale: 'en' })
+    const existing = await signUp(auth, { email: 'a@b.co', password: 'abcdef12', locale: 'en' })
+    const fresh = await signUp(auth, { email: 'a@b.co', password: 'abcdef12', locale: 'en' })
     expect(existing).toEqual(fresh)
   })
 
@@ -43,12 +43,22 @@ describe('signUp', () => {
     })
   })
 
+  it("shows the Auth server's password rule as the matching field message", async () => {
+    const { auth, calls } = fakeAuth()
+    failOnce(calls, 'signUp', new AuthWeakPasswordError('weak', 422, ['characters']))
+    expect(await signUp(auth, { email: 'a@b.co', password: 'abcdefgh', locale: 'en' })).toEqual({
+      ok: false,
+      error: 'auth.validation.passwordNeedsMix',
+    })
+  })
+
   it('says when no email can be sent right now instead of pretending one was sent', async () => {
     const { auth, calls } = fakeAuth()
     failOnce(calls, 'signUp', apiError('over_email_send_rate_limit', 429))
-    expect(await signUp(auth, { email: 'a@b.co', password: 'x'.repeat(10), locale: 'en' })).toEqual(
-      { ok: false, error: 'auth.errors.emailRateLimited' },
-    )
+    expect(await signUp(auth, { email: 'a@b.co', password: 'abcdef12', locale: 'en' })).toEqual({
+      ok: false,
+      error: 'auth.errors.emailRateLimited',
+    })
   })
 })
 

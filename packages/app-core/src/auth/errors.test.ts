@@ -6,7 +6,14 @@ import {
 } from '@supabase/supabase-js'
 import { describe, expect, it } from 'vitest'
 import { apiError } from '../test/fake-auth'
-import { AUTH_ERROR_KEYS, authErrorKey, isSilentError, SILENT_ERROR_CODES } from './errors'
+import {
+  AUTH_ERROR_KEYS,
+  authErrorKey,
+  isPasswordMessage,
+  isSilentError,
+  passwordErrorField,
+  SILENT_ERROR_CODES,
+} from './errors'
 
 describe('authErrorKey', () => {
   it('maps Supabase error codes to i18n keys', () => {
@@ -23,13 +30,38 @@ describe('authErrorKey', () => {
     expect(authErrorKey(error)).toBe('auth.errors.invalidCredentials')
   })
 
-  it('tells a leaked password from a weak one', () => {
-    expect(authErrorKey(new AuthWeakPasswordError('weak', 422, ['length']))).toBe(
+  it('maps weak_password reasons to the password rule messages', () => {
+    type Reasons = ConstructorParameters<typeof AuthWeakPasswordError>[2]
+    const weak = (reasons: Reasons) => authErrorKey(new AuthWeakPasswordError('weak', 422, reasons))
+    expect(weak(['length'])).toBe('auth.validation.passwordTooShort')
+    expect(weak(['characters'])).toBe('auth.validation.passwordNeedsMix')
+    expect(weak(['length', 'characters'])).toBe('auth.validation.passwordTooShort')
+    expect(weak(['pwned'])).toBe('auth.errors.passwordLeaked')
+    expect(weak([])).toBe('auth.errors.weakPassword')
+    // As the server sends it (`weak_password.reasons`, read by supabase-js), and without reasons.
+    const fromServer = Object.assign(apiError('weak_password', 422), { reasons: ['characters'] })
+    expect(authErrorKey(fromServer)).toBe('auth.validation.passwordNeedsMix')
+    const unknown = Object.assign(apiError('weak_password', 422), { reasons: ['something_new'] })
+    expect(authErrorKey(unknown)).toBe('auth.errors.weakPassword')
+    expect(authErrorKey(apiError('weak_password', 422))).toBe('auth.errors.weakPassword')
+  })
+
+  it('puts password messages under the password field', () => {
+    for (const key of [
+      'auth.validation.passwordTooShort',
+      'auth.validation.passwordNeedsMix',
+      'auth.validation.passwordTooLong',
       'auth.errors.weakPassword',
-    )
-    expect(authErrorKey(new AuthWeakPasswordError('weak', 422, ['pwned']))).toBe(
       'auth.errors.passwordLeaked',
-    )
+      'auth.errors.samePassword',
+    ] as const) {
+      expect(isPasswordMessage(key), key).toBe(true)
+      expect(passwordErrorField(key, 'password'), key).toBe('password')
+    }
+    expect(isPasswordMessage('errors.validation')).toBe(false)
+    expect(passwordErrorField('errors.validation', 'password')).toBe('password')
+    expect(isPasswordMessage('auth.errors.codeInvalid')).toBe(false)
+    expect(passwordErrorField('auth.errors.codeInvalid', 'password')).toBeUndefined()
   })
 
   it('maps network, missing-session and unknown errors', () => {
@@ -47,6 +79,8 @@ describe('authErrorKey', () => {
     const keys = [
       ...Object.values(AUTH_ERROR_KEYS),
       'auth.errors.passwordLeaked',
+      'auth.validation.passwordTooShort',
+      'auth.validation.passwordNeedsMix',
       'errors.network',
       'errors.internal',
     ]
