@@ -37,6 +37,8 @@ export interface Context {
   readonly email: EmailSender
   /** Per-request memo for work shared by the calls of a batch (e.g. loading business access). */
   readonly memo: Map<string, Promise<unknown>>
+  /** Reports an unexpected failure the request goes on without (e.g. logos Storage did not sign). */
+  readonly reportError: (error: unknown) => void
 }
 
 export interface CreateContextOptions {
@@ -75,6 +77,7 @@ export function createContext({ req, resHeaders, deps, router }: CreateContextOp
     anonymousTx,
     email: deps.emailSender ?? emailSenderFor(deps.config.email),
     memo: new Map(),
+    reportError: (error) => deps.reportError?.(error, { requestId }),
   }
 }
 

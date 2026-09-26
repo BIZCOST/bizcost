@@ -1,18 +1,22 @@
 'use client'
 
+import { businessDisplayName } from '@bizcost/domain'
 import { MailIcon } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { EmailText } from '@/components/form/email-text'
 import { isolate } from '@/components/form/use-message'
+import { useLocale } from '@/lib/i18n/client'
 import { invitationHint, type InvitationHint } from './return-path'
 
 /**
  * On the sign in and sign up pages, when this tab came from an invitation: which business it is for
- * and which (masked) email to use, so the visitor does not sign up with another address.
+ * (named for the page's language, D-097) and which (masked) email to use, so the visitor does not
+ * sign up with another address.
  */
 export function InvitationBanner() {
   const { t } = useTranslation()
+  const { locale } = useLocale()
   // Read after the first render: sessionStorage exists only in the browser.
   const [hint, setHint] = useState<InvitationHint | null>(null)
   useEffect(() => setHint(invitationHint()), [])
@@ -25,7 +29,14 @@ export function InvitationBanner() {
       <MailIcon aria-hidden className="mt-0.5 size-4 shrink-0 text-primary" />
       <div className="min-w-0">
         <p className="font-medium">
-          {t('auth.invite.bannerTitle', { businessName: isolate(hint.businessName) })}
+          {t('auth.invite.bannerTitle', {
+            businessName: isolate(
+              businessDisplayName(
+                { legalName: hint.businessName, legalNameAr: hint.businessNameAr },
+                locale,
+              ),
+            ),
+          })}
         </p>
         <p className="text-muted-foreground">
           <EmailText i18nKey="auth.invite.bannerEmail" email={hint.maskedEmail} />

@@ -145,6 +145,8 @@ export type InvitationTokenInput = z.input<typeof invitationTokenInput>
  */
 export const invitationPreviewDto = z.object({
   businessName: z.string(),
+  /** The business's Arabic legal name; the Arabic page shows it instead (businessDisplayName). */
+  businessNameAr: z.string().nullable(),
   /** The inviter's name in that business; null when it is not known any more. */
   inviterName: z.string().nullable(),
   roleName: z.string().nullable(),

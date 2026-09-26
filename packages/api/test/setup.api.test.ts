@@ -240,7 +240,14 @@ describe('business.createFromSetup', () => {
     const me = await query<MeDto>(handler, 'me', { token })
     expect(me.data?.profile.lastBusinessId).toBe(id)
     expect(me.data?.memberships).toEqual([
-      { businessId: id, legalName: 'Oak & Iron', roleTemplateKey: 'owner', status: 'active' },
+      {
+        businessId: id,
+        legalName: 'Oak & Iron',
+        legalNameAr: null,
+        logoUrl: null,
+        roleTemplateKey: 'owner',
+        status: 'active',
+      },
     ])
 
     const context = await query<{

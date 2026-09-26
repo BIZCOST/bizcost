@@ -50,6 +50,7 @@ export {
   LOGO_CONTENT_TYPES,
   LOGO_MAX_BYTES,
   LOGO_URL_TTL_SECONDS,
+  MEMBERSHIP_LOGOS_MAX,
   type LogoContentType,
 } from './business'
 export { CONTROL_CHARACTER, withoutControlCharacters } from './text'

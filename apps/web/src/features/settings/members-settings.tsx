@@ -1,6 +1,6 @@
 'use client'
 
-import { useMe, useTRPC } from '@bizcost/app-core'
+import { useTRPC } from '@bizcost/app-core'
 import type { MemberDto } from '@bizcost/contracts'
 import { OWNER_TEMPLATE_KEY } from '@bizcost/domain'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
@@ -26,6 +26,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
+import { useBusinessName } from '@/features/business/use-business-name'
 import { useBusinessContext } from '@/lib/trpc/client'
 import { InvitationsCard, InviteDialog } from './invitations'
 import {
@@ -170,7 +171,6 @@ export function MembersSettings({ businessId }: { businessId: string }) {
   const { t } = useTranslation()
   const trpc = useTRPC()
   const queryClient = useQueryClient()
-  const { data: me } = useMe()
   const { data: context } = useBusinessContext()
   // Only once the section is open to this member (a typed link to it otherwise shows "not open to you").
   const visible = context ? isSectionVisible(context, 'members') : false
@@ -178,7 +178,7 @@ export function MembersSettings({ businessId }: { businessId: string }) {
   const roles = useQuery({ ...trpc.role.list.queryOptions(), enabled: visible })
   const [inviting, setInviting] = useState(false)
   const [action, setAction] = useState<Action | null>(null)
-  const businessName = me?.memberships.find((m) => m.businessId === businessId)?.legalName ?? ''
+  const businessName = useBusinessName(businessId)
   if (!context) return null
   const canManage = can(context, 'settings.members.manage')
   const isOwner = context.roleTemplateKey === OWNER_TEMPLATE_KEY

@@ -134,6 +134,28 @@ test('logo: upload with a preview, replace, refuse other types, remove', async (
     .poll(() => logo.evaluate((img: HTMLImageElement) => img.complete && img.naturalWidth))
     .toBe(48)
 
+  // A saved logo whose link no longer works (it expired while the page stayed open): the profile is
+  // fetched again and the logo shows.
+  let profiles = 0
+  const countProfiles = (request: { url: () => string }) => {
+    const procedures = new URL(request.url()).pathname.split('/').at(-1)!.split(',')
+    if (procedures.includes('business.profile')) profiles++
+  }
+  page.on('request', countProfiles)
+  const signed = '**/storage/v1/object/sign/business-files/**'
+  await page.route(signed, (route) =>
+    profiles >= 2
+      ? route.continue()
+      : route.fulfill({ status: 400, body: '{"error":"InvalidJWT"}' }),
+  )
+  await page.reload()
+  await expect.poll(() => profiles).toBeGreaterThanOrEqual(2)
+  await expect
+    .poll(() => logo.evaluate((img: HTMLImageElement) => img.complete && img.naturalWidth))
+    .toBe(48)
+  await page.unroute(signed)
+  page.off('request', countProfiles)
+
   // Checked before anything is uploaded.
   await input.setInputFiles({
     name: 'logo.gif',

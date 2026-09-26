@@ -1,6 +1,7 @@
 'use client'
 
 import { apiErrorCode, apiErrorKey, signOut, useTRPC } from '@bizcost/app-core'
+import { businessDisplayName } from '@bizcost/domain'
 import { formatDate } from '@bizcost/i18n'
 import { useMutation, useQuery } from '@tanstack/react-query'
 import {
@@ -26,9 +27,10 @@ import { authClient } from '@/lib/supabase/browser'
 import { rememberInvitation } from './return-path'
 
 // The invitation link (ROADMAP.md Step 6): `/invite/<token>`, open signed in or not. It shows only
-// what invitation.preview returns (business, inviter, role, the invited email masked, expiry). Signed
-// out, the visitor creates an account or signs in with the invited email and comes back here (the way
-// back, the business name and the masked email are kept in this tab, never in a URL, and shown on the
+// what invitation.preview returns (business, inviter, role, the invited email masked, expiry); the
+// business is named for the page's language (its Arabic name in Arabic, D-097). Signed out, the
+// visitor creates an account or signs in with the invited email and comes back here (the way back,
+// the business's names and the masked email are kept in this tab, never in a URL, and shown on the
 // sign in and sign up pages); signed in with that email, they join; signed in with another one, they
 // are told to switch accounts. Any problem with the link reads the same.
 
@@ -103,7 +105,11 @@ export function InviteView({ token, email }: { token: string; email: string | nu
   }
 
   const invitation = preview.data
-  const business = isolate(invitation.businessName)
+  const businessName = businessDisplayName(
+    { legalName: invitation.businessName, legalNameAr: invitation.businessNameAr },
+    locale,
+  )
+  const business = isolate(businessName)
   const roleKey = roleNameKey(invitation.roleTemplateKey)
   const role = roleKey ? t(roleKey) : (invitation.roleName ?? '')
   const signedIn = email !== null && invitation.emailMatches !== null
@@ -154,6 +160,7 @@ export function InviteView({ token, email }: { token: string; email: string | nu
   function continueTo(path: '/signup' | '/login') {
     rememberInvitation(token, {
       businessName: invitation.businessName,
+      businessNameAr: invitation.businessNameAr,
       maskedEmail: invitation.maskedEmail,
     })
     router.push(path)
@@ -174,7 +181,7 @@ export function InviteView({ token, email }: { token: string; email: string | nu
             <StoreIcon aria-hidden className="size-5" />
           </span>
           <span dir="auto" className="min-w-0 truncate text-start font-semibold">
-            {invitation.businessName}
+            {businessName}
           </span>
         </div>
         <dl className="divide-y rounded-xl border">

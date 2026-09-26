@@ -351,7 +351,7 @@ export function BusinessProfileSettings({ businessId }: { businessId: string }) 
         <LoadError error={profile.error} onRetry={() => void profile.refetch()} />
       ) : (
         <>
-          <LogoSection profile={profile.data} canEdit={canEdit} />
+          <LogoSection profile={profile.data} profileAt={profile.dataUpdatedAt} canEdit={canEdit} />
           <DetailsForm
             key={profile.data.version}
             profile={profile.data}

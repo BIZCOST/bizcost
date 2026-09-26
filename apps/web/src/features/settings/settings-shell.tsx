@@ -1,6 +1,5 @@
 'use client'
 
-import { useMe } from '@bizcost/app-core'
 import { OWNER_TEMPLATE_KEY } from '@bizcost/domain'
 import {
   ArrowLeftIcon,
@@ -17,6 +16,7 @@ import { useTranslation } from 'react-i18next'
 import { PageContainer } from '@/components/shell/page-container'
 import { StatePanel } from '@/components/states/state-panel'
 import { Button } from '@/components/ui/button'
+import { useBusinessName } from '@/features/business/use-business-name'
 import { useBusinessContext } from '@/lib/trpc/client'
 import { cn } from '@/lib/utils'
 import { LeaveBusinessDialog } from './member-dialogs'
@@ -34,12 +34,6 @@ import {
 // Settings of one business (ROADMAP.md Step 6), inside the app shell (Step 7, D-089): the home lists
 // the sections this member may open; a section page has the list beside it from 1280px (beside the
 // app's sidebar), and a "Settings" link back to the list on smaller screens.
-
-/** The business name as `me` lists it (the header's switcher shows the same). */
-function useBusinessName(businessId: string): string {
-  const { data: me } = useMe()
-  return me?.memberships.find((m) => m.businessId === businessId)?.legalName ?? ''
-}
 
 function AccountLink({ className }: { className?: string }) {
   const { t } = useTranslation()

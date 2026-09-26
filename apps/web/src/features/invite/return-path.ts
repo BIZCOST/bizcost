@@ -1,8 +1,9 @@
 // An invitation opened while signed out (ROADMAP.md Step 6): the visitor signs in or creates an
 // account first, then comes back to the invitation to accept it. The way back is kept in this tab's
 // sessionStorage, never in a URL, and only an invitation path is ever followed. Beside it, what the sign
-// in and sign up pages show about the invitation: the business name and the invited email, masked as
-// the invitation page shows it (r•••@example.com).
+// in and sign up pages show about the invitation: the business's names (the page shows the one for
+// its language, D-097) and the invited email, masked as the invitation page shows it
+// (r•••@example.com).
 
 const KEY = 'bz_after_sign_in'
 const HINT_KEY = 'bz_invitation_hint'
@@ -17,6 +18,8 @@ export function isInvitePath(value: unknown): value is string {
 /** What the sign in and sign up pages say about a remembered invitation. */
 export interface InvitationHint {
   readonly businessName: string
+  /** The business's Arabic name, when it has one. */
+  readonly businessNameAr?: string | null
   readonly maskedEmail: string
 }
 
@@ -26,6 +29,9 @@ function isHint(value: unknown): value is InvitationHint {
     value !== null &&
     'businessName' in value &&
     typeof value.businessName === 'string' &&
+    (!('businessNameAr' in value) ||
+      value.businessNameAr === null ||
+      typeof value.businessNameAr === 'string') &&
     'maskedEmail' in value &&
     typeof value.maskedEmail === 'string'
   )

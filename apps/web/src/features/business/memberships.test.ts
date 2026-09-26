@@ -7,7 +7,14 @@ const B = '0199a000-0000-7000-8000-00000000000b'
 const C = '0199a000-0000-7000-8000-00000000000c'
 
 function membership(businessId: string, status: MembershipDto['status'] = 'active') {
-  return { businessId, legalName: businessId.slice(-1), roleTemplateKey: 'owner', status }
+  return {
+    businessId,
+    legalName: businessId.slice(-1),
+    legalNameAr: null,
+    logoUrl: null,
+    roleTemplateKey: 'owner',
+    status,
+  }
 }
 
 function me(lastBusinessId: string | null, memberships: MembershipDto[]): MeDto {

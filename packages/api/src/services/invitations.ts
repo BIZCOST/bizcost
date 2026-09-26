@@ -20,7 +20,14 @@ import {
   roles,
   type Tx,
 } from '@bizcost/db'
-import { can, isLocale, newId, OWNER_TEMPLATE_KEY, type Locale } from '@bizcost/domain'
+import {
+  businessDisplayName,
+  can,
+  isLocale,
+  newId,
+  OWNER_TEMPLATE_KEY,
+  type Locale,
+} from '@bizcost/domain'
 import { createI18n, type I18nKey } from '@bizcost/i18n'
 import { isRoleTemplateKey } from '@bizcost/modules'
 import { and, desc, eq, inArray, isNull, sql } from 'drizzle-orm'
@@ -207,7 +214,10 @@ async function assertInvitableRole(
   return role
 }
 
-/** The invitation email for a new token (built inside the transaction, sent after it commits). */
+/**
+ * The invitation email for a new token (built inside the transaction, sent after it commits). The
+ * business is named as the email's language shows it: its Arabic name in Arabic when it has one (D-097).
+ */
 async function invitationMessage(
   tx: Tx,
   ctx: BusinessCtx,
@@ -215,7 +225,7 @@ async function invitationMessage(
   token: string,
 ): Promise<EmailMessage> {
   const [business] = await tx
-    .select({ legalName: businesses.legalName })
+    .select({ legalName: businesses.legalName, legalNameAr: businesses.legalNameAr })
     .from(businesses)
     .where(eq(businesses.id, ctx.businessId))
   const [inviter] = await tx
@@ -236,7 +246,7 @@ async function invitationMessage(
   return invitationEmail({
     locale: invitation.locale,
     to: invitation.email,
-    businessName: business?.legalName ?? '',
+    businessName: business ? businessDisplayName(business, invitation.locale) : '',
     inviterName: inviter?.displayName ?? null,
     roleLabel,
     link,
@@ -536,6 +546,7 @@ export async function revokeInvitationsBeyondSenders(tx: Tx, businessId: string)
 
 interface PreviewRow extends Record<string, unknown> {
   business_name: string
+  business_name_ar: string | null
   inviter_name: string | null
   role_name: string | null
   role_template_key: string | null
@@ -546,9 +557,10 @@ interface PreviewRow extends Record<string, unknown> {
 }
 
 /**
- * `invitation.preview` (public): what the invitation page shows, signed in or not. A token of the wrong
- * shape, unknown, used, revoked or of a deleted business is INVITATION_INVALID (one answer); an
- * expired one is shown as expired. At most 30 previews per invitation per hour (RATE_LIMITED).
+ * `invitation.preview` (public): what the invitation page shows, signed in or not, with both names of
+ * the business (the page shows the one for its language, D-097). A token of the wrong shape, unknown,
+ * used, revoked or of a deleted business is INVITATION_INVALID (one answer); an expired one is shown
+ * as expired. At most 30 previews per invitation per hour (RATE_LIMITED).
  */
 export async function previewInvitation(
   ctx: Context,
@@ -564,6 +576,7 @@ export async function previewInvitation(
   if (!row) throw new AppError('invitation_invalid')
   return {
     businessName: row.business_name,
+    businessNameAr: row.business_name_ar,
     inviterName: row.inviter_name,
     roleName: row.role_name,
     roleTemplateKey: row.role_template_key,

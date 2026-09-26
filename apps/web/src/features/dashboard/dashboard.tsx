@@ -2,6 +2,7 @@
 
 import { useMe, useTRPC } from '@bizcost/app-core'
 import type { BusinessContextDto, DashboardChecklistDto } from '@bizcost/contracts'
+import { businessDisplayName } from '@bizcost/domain'
 import {
   businessSummaryKeys,
   checklistItemIds,
@@ -13,6 +14,7 @@ import { InfoIcon } from 'lucide-react'
 import { useParams, usePathname, useRouter } from 'next/navigation'
 import { createContext, useContext, useEffect, useRef, type ReactNode, type Ref } from 'react'
 import { useTranslation } from 'react-i18next'
+import { BusinessLogo } from '@/components/app/business-logo'
 import { LogoMark } from '@/components/brand/logo'
 import { ModuleGate } from '@/components/shell/module-gate'
 import { moduleAccess, shellNav, wayBack } from '@/components/shell/nav'
@@ -20,7 +22,7 @@ import { PageContainer } from '@/components/shell/page-container'
 import { LoadError } from '@/components/states/query-state'
 import { can } from '@/features/settings/sections'
 import { STATEMENT_ICONS } from '@/features/setup/icons'
-import { useTerminology } from '@/lib/i18n/client'
+import { useLocale, useTerminology } from '@/lib/i18n/client'
 import { useBusinessContext } from '@/lib/trpc/client'
 import { cn } from '@/lib/utils'
 import { AllSet, Checklist, ChecklistSkeleton } from './checklist'
@@ -28,9 +30,9 @@ import { progressOf } from './checklist-steps'
 import { useAllSetHidden } from './hidden-all-set'
 
 // The Dashboard in M1 (ROADMAP.md Step 7, docs/PRODUCT.md §9–10): a welcome with the business's name
-// and the member's role, the getting-started checklist from real data (only the steps the member can
-// act on), and what the setup says about the business (§6.8). No cards for sections that are not
-// released yet: they arrive with their modules.
+// (its Arabic name in Arabic, D-097), its logo and the member's role, the getting-started checklist
+// from real data (only the steps the member can act on), and what the setup says about the business
+// (§6.8). No cards for sections that are not released yet: they arrive with their modules.
 
 /** What the server knows for the Dashboard's first render (its layout loads it, D-090, D-091). */
 interface DashboardServerData {
@@ -65,7 +67,16 @@ function roleKey(template: string | null) {
   return isRoleTemplateKey(template) ? (`roles.${template}` as const) : 'roles.custom'
 }
 
-function Welcome({ name, role }: { name: string; role: string }) {
+function Welcome({
+  name,
+  role,
+  logoUrl,
+}: {
+  name: string
+  role: string
+  /** The business's logo (signed URL); without one the welcome has no picture. */
+  logoUrl: string | null
+}) {
   const { t } = useTranslation()
   return (
     <section
@@ -76,16 +87,28 @@ function Welcome({ name, role }: { name: string; role: string }) {
         inverse
         className="absolute -end-4 -bottom-6 -z-10 size-36 opacity-15 sm:end-6 sm:size-44"
       />
-      <p className="text-sm font-medium text-white/80">{t('home.welcome')}</p>
-      {/* At the page's start side in both languages, the whole name on as many lines as it needs;
-          the name keeps its own direction. */}
-      <h1
-        id="business-title"
-        className="mt-1 text-2xl font-semibold tracking-tight text-balance break-words text-start sm:text-3xl"
-      >
-        <span dir="auto">{name}</span>
-      </h1>
-      <p className="mt-1.5 text-sm text-white/80">{role}</p>
+      <div className="flex items-center gap-4 sm:gap-5">
+        {logoUrl ? (
+          <BusinessLogo
+            url={logoUrl}
+            name={name}
+            className="size-14 rounded-xl bg-white p-1 text-primary shadow-sm ring-0 sm:size-16"
+            iconClassName="size-6"
+          />
+        ) : null}
+        <div className="min-w-0 flex-1">
+          <p className="text-sm font-medium text-white/80">{t('home.welcome')}</p>
+          {/* At the page's start side in both languages, the whole name on as many lines as it
+              needs; the name keeps its own direction. */}
+          <h1
+            id="business-title"
+            className="mt-1 text-2xl font-semibold tracking-tight text-balance break-words text-start sm:text-3xl"
+          >
+            <span dir="auto">{name}</span>
+          </h1>
+          <p className="mt-1.5 text-sm text-white/80">{role}</p>
+        </div>
+      </div>
     </section>
   )
 }
@@ -162,6 +185,7 @@ function AboutBusiness({
 
 function DashboardView({ businessId }: { businessId: string }) {
   const { t } = useTranslation()
+  const { locale } = useLocale()
   const server = useContext(ServerData)
   const trpc = useTRPC()
   const { data: me } = useMe()
@@ -194,7 +218,11 @@ function DashboardView({ businessId }: { businessId: string }) {
   return (
     <PageContainer>
       <div className="space-y-6">
-        <Welcome name={membership.legalName} role={t(roleKey(membership.roleTemplateKey))} />
+        <Welcome
+          name={businessDisplayName(membership, locale)}
+          role={t(roleKey(membership.roleTemplateKey))}
+          logoUrl={membership.logoUrl}
+        />
         {top === 'allSet' ? (
           <AllSet
             onHide={() => {

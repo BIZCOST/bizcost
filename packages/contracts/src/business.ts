@@ -23,5 +23,15 @@ export const LOGO_MAX_BYTES = 2 * 1024 * 1024
 export const LOGO_CONTENT_TYPES = ['image/png', 'image/jpeg', 'image/webp'] as const
 export type LogoContentType = (typeof LOGO_CONTENT_TYPES)[number]
 
-/** A signed logo URL in the business profile works for this many seconds. */
+/**
+ * A signed logo URL (the business profile, `me`) is signed for this many seconds. The API hands the
+ * same URL out again while at least half of that is left (D-097), so a URL received works for at
+ * least half of it.
+ */
 export const LOGO_URL_TTL_SECONDS = 600
+
+/**
+ * `me` signs at most this many logos, in one Storage request: the business opened last, then the
+ * oldest memberships. The others show the store mark.
+ */
+export const MEMBERSHIP_LOGOS_MAX = 50

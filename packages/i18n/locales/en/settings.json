@@ -24,7 +24,7 @@
     "legalName": "Business name",
     "legalNameHint": "As on your trade licence.",
     "legalNameAr": "Business name in Arabic",
-    "legalNameArHint": "Optional. Your legal name in Arabic, as on your trade licence.",
+    "legalNameArHint": "Optional. Your legal name in Arabic, as on your trade licence. BizCost shows it when you use the app in Arabic.",
     "nameRequired": "Enter your business name.",
     "nameTooLong_one": "Use {{count}} character or fewer.",
     "nameTooLong_other": "Use {{count}} characters or fewer.",
@@ -35,7 +35,7 @@
     "logo": {
       "title": "Logo",
       "description": "Your logo, for your business in BizCost.",
-      "rules": "PNG, JPG or WebP, up to 2 MB.",
+      "rules": "PNG, JPG or WebP, up to 2 MB. A square logo on a light background works best.",
       "upload": "Upload logo",
       "replace": "Change logo",
       "uploading": "Uploading…",

@@ -58,7 +58,7 @@ export function handlerFor(
   db: Db,
   router?: AnyRouter,
   config: Partial<ApiConfig> = {},
-  extra: Pick<ApiDeps, 'emailSender'> = {},
+  extra: Pick<ApiDeps, 'emailSender' | 'reportError'> = {},
 ) {
   return createFetchHandler({ db, config: { ...testConfig, ...config }, ...extra }, { router })
 }

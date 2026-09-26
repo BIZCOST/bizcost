@@ -30,7 +30,11 @@ describe('the way back to an invitation after signing in', () => {
   })
 
   it('keeps what the sign in pages show about the invitation until the way back is taken', () => {
-    const hint = { businessName: 'Al Noor', maskedEmail: 'r•••@example.com' }
+    const hint = {
+      businessName: 'Al Noor',
+      businessNameAr: 'النور',
+      maskedEmail: 'r•••@example.com',
+    }
     rememberInvitation(TOKEN, hint)
     expect(invitationHint()).toEqual(hint)
     expect(invitationHint()).toEqual(hint)

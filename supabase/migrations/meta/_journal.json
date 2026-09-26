@@ -64,6 +64,13 @@
       "when": 1790365549262,
       "tag": "20260925194549_settings_hardening",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1790460793595,
+      "tag": "20260926221313_business_name_ar_preview",
+      "breakpoints": true
     }
   ]
 }

@@ -13,6 +13,7 @@ import { ImageUpIcon, Loader2Icon, StoreIcon, Trash2Icon } from 'lucide-react'
 import { useEffect, useId, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
+import { useSignedUrlFailure } from '@/components/app/business-logo'
 import { FormAlert } from '@/components/form/form-alert'
 import {
   AlertDialog,
@@ -32,7 +33,8 @@ import { useProfileSaved } from './profile-data'
 // The business logo (ROADMAP.md Step 6): a PNG, JPEG or WebP of up to 2 MB, uploaded straight to the
 // private bucket with a signed URL the API issues (business.logoUploadUrl), then checked and saved by
 // the API (business.setLogo). The picture shows at once from the chosen file; the saved logo comes back
-// as a short-lived signed URL with the profile.
+// as a short-lived signed URL with the profile. A saved logo that fails to load (its URL expired while
+// the page stayed open) refetches the profile, which brings a new URL (useSignedUrlFailure).
 
 function isLogoType(type: string): type is LogoContentType {
   return (LOGO_CONTENT_TYPES as readonly string[]).includes(type)
@@ -47,9 +49,12 @@ function uploadErrorKey(status: number): I18nKey {
 
 export function LogoSection({
   profile,
+  profileAt,
   canEdit,
 }: {
   profile: BusinessProfileDto
+  /** When `profile` was fetched (dataUpdatedAt): a logo that failed is tried again after a refetch. */
+  profileAt: number
   canEdit: boolean
 }) {
   const { t } = useTranslation()
@@ -64,6 +69,11 @@ export function LogoSection({
   const [error, setError] = useState<I18nKey | null>(null)
   const [preview, setPreview] = useState<string | null>(null)
   const [confirmOpen, setConfirmOpen] = useState(false)
+  const savedLogo = useSignedUrlFailure(
+    profile.logoUrl,
+    trpc.business.profile.queryKey(),
+    profileAt,
+  )
 
   // The chosen file's picture is shown until the saved logo replaces it; its URL is freed after.
   useEffect(() => {
@@ -113,7 +123,9 @@ export function LogoSection({
     }
   }
 
-  const shown = preview ?? profile.logoUrl
+  // The saved logo's URL failed: the store mark (without "No logo") until the profile brings a new one.
+  const broken = !preview && savedLogo.failed
+  const shown = preview ?? (broken ? null : profile.logoUrl)
 
   return (
     <Section
@@ -129,11 +141,12 @@ export function LogoSection({
               alt={t('settings.business.logo.alt')}
               className="size-full object-contain p-2"
               data-testid="business-logo"
+              onError={preview ? undefined : savedLogo.onError}
             />
           ) : (
             <span className="flex flex-col items-center gap-1 text-muted-foreground">
               <StoreIcon aria-hidden className="size-7" />
-              <span className="text-xs">{t('settings.business.logo.none')}</span>
+              {broken ? null : <span className="text-xs">{t('settings.business.logo.none')}</span>}
             </span>
           )}
           {busy === 'uploading' ? (

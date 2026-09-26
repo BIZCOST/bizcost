@@ -13,7 +13,10 @@ export const businessProfileDto = z.object({
   legalName: z.string(),
   /** Arabic legal name (tax invoices); null when not given. */
   legalNameAr: z.string().nullable(),
-  /** A signed download URL of the logo, valid for LOGO_URL_TTL_SECONDS; null without a logo. */
+  /**
+   * A signed download URL of the logo, valid for at least half of LOGO_URL_TTL_SECONDS (a preview
+   * that fails to load refetches the profile); null without a logo.
+   */
   logoUrl: z.string().nullable(),
   /** ISO-4217 (AED in M1, read-only). */
   currency: z.string(),

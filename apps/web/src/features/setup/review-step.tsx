@@ -1,6 +1,7 @@
 'use client'
 
 import { apiErrorCode, apiErrorKey, useTRPC } from '@bizcost/app-core'
+import { businessDisplayName } from '@bizcost/domain'
 import type { I18nKey } from '@bizcost/i18n'
 import {
   applyAdjustments,
@@ -279,7 +280,7 @@ export function ReviewStep({
           (m) => m.businessId === businessId && m.status === 'active',
         )
         if (earlier) {
-          setCreated({ businessId, name: earlier.legalName })
+          setCreated({ businessId, name: businessDisplayName(earlier, locale) })
           setSubmitting(false)
           return
         }

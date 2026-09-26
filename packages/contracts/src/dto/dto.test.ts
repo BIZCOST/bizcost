@@ -16,8 +16,22 @@ describe('meDto', () => {
   const me = {
     profile: { id: newId(), displayName: 'Rashed', locale: 'ar', lastBusinessId: null },
     memberships: [
-      { businessId: newId(), legalName: 'Bakery', roleTemplateKey: 'owner', status: 'active' },
-      { businessId: newId(), legalName: 'Shop', roleTemplateKey: null, status: 'active' },
+      {
+        businessId: newId(),
+        legalName: 'Bakery',
+        legalNameAr: 'مخبز',
+        logoUrl: 'https://db.bizcost.ae/storage/v1/object/sign/business-files/b/logo/l.png?token=t',
+        roleTemplateKey: 'owner',
+        status: 'active',
+      },
+      {
+        businessId: newId(),
+        legalName: 'Shop',
+        legalNameAr: null,
+        logoUrl: null,
+        roleTemplateKey: null,
+        status: 'active',
+      },
     ],
   }
 

@@ -16,16 +16,37 @@ export function assertSecretKey(config: ApiConfig, purpose: string): string {
   return config.supabaseSecretKey
 }
 
-const clients = new WeakMap<ApiConfig, SupabaseClient>()
+/** fetch that gives up (the request fails with a TimeoutError) after `timeoutMs`. */
+function fetchWithin(timeoutMs: number): typeof fetch {
+  return (input, init) => {
+    const timeout = AbortSignal.timeout(timeoutMs)
+    return fetch(input, {
+      ...init,
+      signal: init?.signal ? AbortSignal.any([init.signal, timeout]) : timeout,
+    })
+  }
+}
 
-export function adminClient(config: ApiConfig, purpose: string): SupabaseClient {
+const clients = new WeakMap<ApiConfig, Map<number, SupabaseClient>>()
+
+/**
+ * The admin client of this configuration. With `timeoutMs`, each of its requests gives up after that
+ * long (a client of its own per timeout); without it, a request waits as long as fetch does.
+ */
+export function adminClient(config: ApiConfig, purpose: string, timeoutMs = 0): SupabaseClient {
   const secretKey = assertSecretKey(config, purpose)
-  let client = clients.get(config)
+  let byTimeout = clients.get(config)
+  if (!byTimeout) {
+    byTimeout = new Map()
+    clients.set(config, byTimeout)
+  }
+  let client = byTimeout.get(timeoutMs)
   if (!client) {
     client = createClient(config.supabaseUrl, secretKey, {
       auth: { persistSession: false, autoRefreshToken: false, detectSessionInUrl: false },
+      ...(timeoutMs > 0 ? { global: { fetch: fetchWithin(timeoutMs) } } : {}),
     })
-    clients.set(config, client)
+    byTimeout.set(timeoutMs, client)
   }
   return client
 }

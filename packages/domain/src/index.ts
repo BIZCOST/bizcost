@@ -1,6 +1,7 @@
 export { isUuid, newId } from './ids/id'
 export { normalizeDigits } from './numbers/digits'
 export { parseTrn, TRN_LENGTH, type TrnError, type TrnResult } from './business/trn'
+export { businessDisplayName, type BusinessNames } from './business/display-name'
 export {
   AUDIT_ACTIONS,
   BUSINESS_TYPES,

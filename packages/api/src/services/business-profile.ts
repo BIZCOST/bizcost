@@ -2,6 +2,7 @@ import {
   LOGO_CONTENT_TYPES,
   LOGO_MAX_BYTES,
   LOGO_URL_TTL_SECONDS,
+  MEMBERSHIP_LOGOS_MAX,
   type BusinessProfileDto,
   type LogoContentType,
   type LogoUploadUrlDto,
@@ -19,6 +20,7 @@ import {
   downloadObject,
   removeObjects,
   signedDownloadUrl,
+  signedDownloadUrls,
 } from '../admin/storage-admin'
 import type { BusinessCtx } from '../business-context'
 import type { ApiConfig } from '../deps'
@@ -31,8 +33,9 @@ import { applySwitch, readBusinessState } from './customize'
 // 10 an hour per business, counted in the database), checks the uploaded object (its place, size,
 // stored type and first bytes) before it saves the path, and returns a short-lived signed download URL
 // with the profile. Storage accepts a file only at a path still open in app.file_uploads, so an upload
-// URL cannot write again once its file was saved, refused or removed. Only this service (and the
-// account service) may use the secret-key admin client (lint).
+// URL cannot write again once its file was saved, refused or removed. `me` gets the logos of the
+// caller's businesses from here too (membershipLogoUrls, D-097). Only this service (and the account
+// service) may use the secret-key admin client (lint).
 
 const profileColumns = {
   id: businesses.id,
@@ -188,6 +191,55 @@ const EXTENSION_OF: Readonly<Record<LogoContentType, string>> = {
 function logoPathPattern(businessId: string): RegExp {
   return new RegExp(
     `^${businessId}/logo/[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}\\.(png|jpg|webp)$`,
+  )
+}
+
+/** A business's saved logo, for `me`. */
+export interface MembershipLogo {
+  readonly businessId: string
+  readonly logoPath: string
+}
+
+/** After Storage failed to sign logos for `me`, `me` does not ask it again for this long. */
+export const LOGO_SIGNING_PAUSE_MS = 30_000
+const signingPausedUntil = new WeakMap<ApiConfig, number>()
+
+/**
+ * Signed logo URLs for the businesses `me` lists (D-097), by business id. The caller passes active
+ * memberships only (in the order to keep); at most MEMBERSHIP_LOGOS_MAX are signed, in one Storage
+ * request, and only a path under the business's own logo folder is ever signed.
+ *
+ * Never fails: when Storage fails or does not answer within SIGNING_TIMEOUT_MS, the failure is
+ * reported and there are no logos; for LOGO_SIGNING_PAUSE_MS after that, Storage is not asked (and
+ * nothing is reported), so an outage costs one wait and one report per pause, not one per `me`.
+ */
+export async function membershipLogoUrls(
+  config: ApiConfig,
+  logos: readonly MembershipLogo[],
+  reportError: (error: unknown) => void,
+): Promise<Map<string, string>> {
+  const own = logos
+    .filter((logo) => logoPathPattern(logo.businessId).test(logo.logoPath))
+    .slice(0, MEMBERSHIP_LOGOS_MAX)
+  if (own.length === 0) return new Map()
+  if (Date.now() < (signingPausedUntil.get(config) ?? 0)) return new Map()
+  let urls: Map<string, string>
+  try {
+    urls = await signedDownloadUrls(
+      config,
+      own.map((logo) => logo.logoPath),
+      LOGO_URL_TTL_SECONDS,
+    )
+  } catch (error) {
+    signingPausedUntil.set(config, Date.now() + LOGO_SIGNING_PAUSE_MS)
+    reportError(error)
+    return new Map()
+  }
+  return new Map(
+    own.flatMap((logo) => {
+      const url = urls.get(logo.logoPath)
+      return url ? [[logo.businessId, url] as const] : []
+    }),
   )
 }
 

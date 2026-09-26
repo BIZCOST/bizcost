@@ -327,7 +327,14 @@ describe('me', () => {
       token: session.access_token,
     })
     expect(result.data?.memberships).toEqual([
-      { businessId, legalName: 'Session Bakery', roleTemplateKey: 'owner', status: 'active' },
+      {
+        businessId,
+        legalName: 'Session Bakery',
+        legalNameAr: null,
+        logoUrl: null,
+        roleTemplateKey: 'owner',
+        status: 'active',
+      },
     ])
   })
 })

@@ -1,7 +1,7 @@
 # BizCost: Product
 
 Purpose: what BizCost is, who it is for, and the product rules every screen and feature must follow.
-Last updated: 2026-09-26
+Last updated: 2026-09-27
 
 > **Status:** M1 in progress: auth, account, businesses and Smart Setup, settings, and the app shell with the Dashboard checklist are built (Steps 1–3, 5–7); no data module yet. **DECIDED** = confirmed by the owner. **PLANNED** = intended but not built. Phases and step status: ROADMAP.md. Decision history: DECISIONS.md. Technical design: ARCHITECTURE.md. Tables and entities: DATA_MODEL.md.
 
@@ -446,7 +446,7 @@ The VAT not-sure note shows while the answer was "Not sure" and VAT is still off
 ### 6.8 Ready screen and business home
 
 - Ready (keys `setup.ready.*`): title "Your BizCost is ready" / «BizCost جاهز لك»; body "{businessName} is set up. Each section will appear here as soon as it's ready." / «تم إعداد {businessName}. سيظهر كل قسم هنا فور جاهزيته.»; button "Let's go" / «لنبدأ» → `/b/[businessId]`.
-- Business home summary ("About your business" on the Dashboard, Step 7; the welcome above it names the business and the member's role): the statements of 6.7 from the saved capabilities. Team and VAT always; branches, stock, machine time, POS and cost per job only when on (a home business is never asked about branches, so "One branch" would read oddly). Cost per job (`setup.cap.jobs_and_tasks.on`): "Cost and profit for each job" / «تكلفة وربح كل أمر عمل على حدة» (maker: "order" / «طلب»).
+- Business home summary ("About your business" on the Dashboard, Step 7; the welcome above it names the business (its Arabic name in Arabic when it has one, D-097), shows its logo when it has one, and the member's role): the statements of 6.7 from the saved capabilities. Team and VAT always; branches, stock, machine time, POS and cost per job only when on (a home business is never asked about branches, so "One branch" would read oddly). Cost per job (`setup.cap.jobs_and_tasks.on`): "Cost and profit for each job" / «تكلفة وربح كل أمر عمل على حدة» (maker: "order" / «طلب»).
 
 ### 6.9 Module names, overlays and descriptions
 
@@ -652,6 +652,7 @@ The design must handle all four without hacks. Use them to test the setup recomm
 
 - English + Arabic from day one, with LTR and RTL. Labels, validation and system messages are all translated. English is kept simple.
 - **Arabic tone (DECIDED, D-067):** simple, friendly Modern Standard Arabic (فصحى مبسطة). Short sentences, no accounting jargon, gender-neutral where possible ("أدخل" is fine as the usual imperative), and the terms in the table below (e.g. the brand line "اعرف تكلفتك الحقيقية. وطوّر أعمالك."). English is plain and short. Latin digits by default; Arabic-Indic digits are accepted when typing. TRNs, codes, emails and numbers display left-to-right. OPEN: the owner's Smart Setup example uses Gulf wording ("شو طبيعة شغلك؟"); confirm the wording of the Smart Setup questions before Step 5.
+- **Business names (DECIDED, D-097):** the Arabic app names a business by its Arabic legal name when it has one (Settings → Business profile), everywhere it names the business: the switcher, the sidebar, the Dashboard, page titles, Smart Setup's "ready" screen, the invitation page and the invitation email in Arabic. Otherwise, and always in English, it uses the legal name. The logo shows beside the name in the switcher and on the Dashboard, in a white square; without one, the switcher shows a store mark. Settings says a square logo on a light background works best.
 - **Default language (DECIDED, D-067):** a new visitor gets Arabic or English from the browser's language (Arabic when it is neither). The choice is remembered on the device; once signed in, the language saved in the account wins, and it is also the language of the emails we send. Implementation: ARCHITECTURE.md (i18n & RTL).
 
 | English (UI)          | Arabic (UI)           | Meaning / note                                                 |
@@ -684,3 +685,4 @@ The design must handle all four without hacks. Use them to test the setup recomm
 | Smart Setup           | الإعداد الذكي         |                                                                |
 | Customize BizCost     | تخصيص BizCost         | Settings screen for modules and capabilities                   |
 | Your BizCost is ready | BizCost جاهز لك       | Final line of Smart Setup                                      |
+| Dashboard             | الرئيسية              | The business home in the nav and tabs (D-098)                  |

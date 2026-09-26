@@ -1,7 +1,9 @@
 'use client'
 
 import { useMe } from '@bizcost/app-core'
+import { businessDisplayName } from '@bizcost/domain'
 import { activeMemberships } from '@/features/business/memberships'
+import { useLocale } from '@/lib/i18n/client'
 import { ReadyStep } from './ready-step'
 import { SetupWizard } from './wizard'
 
@@ -11,8 +13,11 @@ import { SetupWizard } from './wizard'
  */
 export function SetupView({ done }: { done: string | null }) {
   const { data: me } = useMe()
+  const { locale } = useLocale()
   if (!me) return null
   const created = done ? activeMemberships(me).find((m) => m.businessId === done) : undefined
-  if (created) return <ReadyStep businessId={created.businessId} name={created.legalName} />
+  if (created) {
+    return <ReadyStep businessId={created.businessId} name={businessDisplayName(created, locale)} />
+  }
   return <SetupWizard userId={me.profile.id} />
 }

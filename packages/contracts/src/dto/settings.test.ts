@@ -130,6 +130,7 @@ describe('team inputs', () => {
     expect(memberDto.safeParse({ ...member, joinedAt: 'yesterday' }).success).toBe(false)
     const preview = {
       businessName: 'Nour',
+      businessNameAr: 'نور',
       inviterName: null,
       roleName: 'Employee',
       roleTemplateKey: 'employee',
