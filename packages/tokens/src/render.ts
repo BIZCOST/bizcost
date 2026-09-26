@@ -31,7 +31,11 @@ function fontFamily(fonts: Tokens['fonts'], script: Script): string {
   return `var(${fonts[script].cssVariable}, '${fonts[script].family}')`
 }
 
-/** Arabic pages put the Arabic family first; other glyphs fall back to the second family. */
+/**
+ * Arabic pages put the Arabic family first; other glyphs fall back to the second family. The first
+ * family's variable must hold the family alone (the web's Latin face has no metric fallback), or the
+ * fallback would draw the other script before the second family is tried.
+ */
 function fontStack(fonts: Tokens['fonts'], first: Script): string {
   const order: Script[] = first === 'latin' ? ['latin', 'arabic'] : ['arabic', 'latin']
   return [...order.map((script) => `var(--font-${script})`), ...fonts.fallback].join(', ')

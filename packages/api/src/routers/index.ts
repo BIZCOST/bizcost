@@ -1,6 +1,7 @@
 import { router } from '../trpc'
 import { accountRouter } from './account'
 import { businessRouter } from './business'
+import { dashboardRouter } from './dashboard'
 import { health } from './health'
 import { invitationRouter } from './invitation'
 import { locationRouter } from './location'
@@ -8,12 +9,13 @@ import { me } from './me'
 import { memberRouter } from './member'
 import { roleRouter } from './role'
 
-/** The API of Steps 2–6. Routers of each module arrive with the module (no placeholders). */
+/** The API of Steps 2–7. Routers of each module arrive with the module (no placeholders). */
 export const appRouter = router({
   health,
   me,
   account: accountRouter,
   business: businessRouter,
+  dashboard: dashboardRouter,
   location: locationRouter,
   member: memberRouter,
   invitation: invitationRouter,

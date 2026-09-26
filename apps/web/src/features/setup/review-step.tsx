@@ -1,7 +1,7 @@
 'use client'
 
 import { apiErrorCode, apiErrorKey, useTRPC } from '@bizcost/app-core'
-import { terminologyKey, type I18nKey } from '@bizcost/i18n'
+import type { I18nKey } from '@bizcost/i18n'
 import {
   applyAdjustments,
   buildSetupReview,
@@ -29,7 +29,7 @@ import { FormAlert } from '@/components/form/form-alert'
 import { isolate } from '@/components/form/use-message'
 import { Button } from '@/components/ui/button'
 import { Switch } from '@/components/ui/switch'
-import { useLocale } from '@/lib/i18n/client'
+import { useLocale, useTerminology } from '@/lib/i18n/client'
 import { cn } from '@/lib/utils'
 import { clearDraft, type SetupDraft } from './draft'
 import { nameError } from './flow'
@@ -71,6 +71,7 @@ export function ReviewStep({
   onNewBusinessId: () => string
 }) {
   const { t } = useTranslation()
+  const term = useTerminology()
   const { locale } = useLocale()
   const trpc = useTRPC()
   const queryClient = useQueryClient()
@@ -102,8 +103,7 @@ export function ReviewStep({
     state,
     ...(layout ? { layout } : {}),
   })
-  const profile = rec.terminologyProfile
-  const tt = (key: I18nKey) => t(terminologyKey(key, profile))
+  const tt = (key: I18nKey) => term(key, rec.terminologyProfile)
   const nameOf = (item: SetupItem) => tt(setupItemNameKey(item))
 
   function toggle(item: SetupItem, on: boolean) {

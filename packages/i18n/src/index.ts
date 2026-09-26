@@ -1,5 +1,5 @@
 export { isLocale, LOCALES, type Locale } from '@bizcost/domain'
-export { createI18n, type CreateI18nOptions, type I18n } from './create'
+export { createI18n, type CreateI18nOptions } from './create'
 export {
   currencyDigits,
   formatCurrency,
@@ -8,6 +8,13 @@ export {
   formatList,
   formatNumber,
 } from './format'
+export {
+  addMessages,
+  createI18nInstance,
+  hasKey,
+  type CreateI18nInstanceOptions,
+  type I18n,
+} from './instance'
 export {
   DEFAULT_LOCALE,
   dir,
@@ -22,11 +29,17 @@ export {
 export {
   DEFAULT_NAMESPACE,
   FALLBACK_LOCALE,
-  hasMessage,
+  isNamespace,
   NAMESPACES,
-  resources,
+  type MessageBundle,
   type Messages,
   type Namespace,
+} from './namespaces'
+export {
+  hasMessage,
+  pickMessages,
+  resources,
+  type MessageSpec,
   type SourceMessages,
 } from './resources'
 export { terminologyKey } from './terminology'

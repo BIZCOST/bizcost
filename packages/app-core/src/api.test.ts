@@ -82,3 +82,18 @@ describe('access changes', () => {
     expect(calls).toBe(2)
   })
 })
+
+describe('mutation success', () => {
+  it('calls onMutationSuccess with the key after each successful mutation only', async () => {
+    const keys: unknown[] = []
+    const client = createQueryClient({ onMutationSuccess: (key) => keys.push(key) })
+    const build = (fn: () => Promise<unknown>) =>
+      client.getMutationCache().build(client, { mutationKey: [['a', 'b']], mutationFn: fn })
+    await build(() => Promise.resolve('ok')).execute(undefined)
+    await build(() => Promise.reject(serverError('validation')))
+      .execute(undefined)
+      .catch(() => {})
+    await client.fetchQuery({ queryKey: ['q'], queryFn: () => Promise.resolve(1) })
+    expect(keys).toEqual([[['a', 'b']]])
+  })
+})

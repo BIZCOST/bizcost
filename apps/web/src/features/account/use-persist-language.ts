@@ -1,10 +1,11 @@
 'use client'
 
 import { apiErrorKey, syncAuthLocale, useTRPC } from '@bizcost/app-core'
-import { createI18n, type I18nKey, type Locale } from '@bizcost/i18n'
+import type { I18nKey, Locale } from '@bizcost/i18n'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
+import { toastAfterLanguageSwitch } from '@/lib/i18n/client'
 import { authClient } from '@/lib/supabase/browser'
 
 /**
@@ -26,7 +27,8 @@ export function usePersistLanguage() {
     }
     // Emails keep the old language if this fails; the next change retries it.
     await syncAuthLocale(authClient(), locale)
-    toast.success(createI18n({ locale }).t('account.language.saved'))
+    // Said in the new language, once the page has switched to it (the page holds one language).
+    toastAfterLanguageSwitch('common.language.saved')
     return true
   }
 }

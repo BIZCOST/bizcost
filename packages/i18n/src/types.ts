@@ -1,4 +1,5 @@
-import type { NAMESPACES, Namespace, SourceMessages } from './resources'
+import type { NAMESPACES, Namespace } from './namespaces'
+import type { SourceMessages } from './resources'
 
 // Typed translation keys. Importing @bizcost/i18n adds this augmentation to the program, so
 // `t('auth.login.title')` (i18next / react-i18next) is checked against the English messages.

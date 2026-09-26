@@ -1,6 +1,6 @@
 'use client'
 
-import { apiErrorCode, useMe } from '@bizcost/app-core'
+import { useMe } from '@bizcost/app-core'
 import { OWNER_TEMPLATE_KEY } from '@bizcost/domain'
 import {
   ArrowLeftIcon,
@@ -14,9 +14,9 @@ import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import { useState, type ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
-import { PersonName } from '@/components/app/avatar'
+import { PageContainer } from '@/components/shell/page-container'
+import { StatePanel } from '@/components/states/state-panel'
 import { Button } from '@/components/ui/button'
-import { NoLongerMember } from '@/features/business/no-longer-member'
 import { useBusinessContext } from '@/lib/trpc/client'
 import { cn } from '@/lib/utils'
 import { LeaveBusinessDialog } from './member-dialogs'
@@ -31,9 +31,9 @@ import {
   type SettingsSection,
 } from './sections'
 
-// Settings of one business (ROADMAP.md Step 6), with their own layout until the app shell (Step 7):
-// the home lists the sections this member may open; a section page has the list beside it from 1024px,
-// and a "Settings" link back to the list on smaller screens.
+// Settings of one business (ROADMAP.md Step 6), inside the app shell (Step 7, D-089): the home lists
+// the sections this member may open; a section page has the list beside it from 1280px (beside the
+// app's sidebar), and a "Settings" link back to the list on smaller screens.
 
 /** The business name as `me` lists it (the header's switcher shows the same). */
 function useBusinessName(businessId: string): string {
@@ -67,15 +67,14 @@ function SideNav({
   current: SettingsSection
 }) {
   const { t } = useTranslation()
-  const name = useBusinessName(businessId)
+  // The business's name is beside it, in the sidebar's switcher.
   return (
     <nav aria-label={t('settings.title')} className="sticky top-24">
       <Link
         href={sectionPath(businessId)}
-        className="mb-3 block rounded-lg px-3 py-1.5 hover:bg-card"
+        className="mb-3 flex min-h-11 items-center rounded-lg px-3 text-lg font-semibold tracking-tight hover:bg-card"
       >
-        <span className="block text-lg font-semibold tracking-tight">{t('settings.title')}</span>
-        <PersonName className="text-sm text-muted-foreground">{name}</PersonName>
+        {t('settings.title')}
       </Link>
       <ul className="space-y-0.5">
         {sections.map((section) => {
@@ -88,15 +87,13 @@ function SideNav({
                 aria-current={active ? 'page' : undefined}
                 className={cn(
                   'flex min-h-11 items-center gap-3 rounded-lg px-3 py-2 text-sm transition-colors',
+                  // Marked like the app's sidebar.
                   active
-                    ? 'bg-card font-medium text-foreground shadow-sm ring-1 ring-foreground/[0.06]'
+                    ? 'bg-accent font-medium text-primary'
                     : 'text-muted-foreground hover:bg-card hover:text-foreground',
                 )}
               >
-                <Icon
-                  aria-hidden
-                  className={cn('size-4 shrink-0', active ? 'text-primary' : undefined)}
-                />
+                <Icon aria-hidden className="size-4 shrink-0" />
                 {t(SECTION_TITLES[section])}
               </Link>
             </li>
@@ -121,26 +118,24 @@ export function SettingsShell({
   const pathname = usePathname()
   const context = useBusinessContext()
   const section = sectionOfPath(pathname)
-  if (context.error && apiErrorCode(context.error) === 'forbidden') return <NoLongerMember />
+  // A member who lost access: the business shell says so instead.
   if (!context.data) return null
 
-  if (!section) {
-    return <div className="mx-auto max-w-6xl px-4 py-6 sm:px-6 sm:py-10 lg:py-12">{children}</div>
-  }
+  if (!section) return <PageContainer>{children}</PageContainer>
   return (
-    <div className="mx-auto max-w-6xl px-4 pt-3 pb-10 sm:px-6 sm:pt-6 lg:py-12">
-      <div className="lg:grid lg:grid-cols-[15rem_minmax(0,1fr)] lg:gap-10 xl:gap-12">
-        <aside className="hidden lg:block">
+    <PageContainer>
+      <div className="xl:grid xl:grid-cols-[14rem_minmax(0,1fr)] xl:gap-10">
+        <div className="hidden xl:block">
           <SideNav
             businessId={businessId}
             sections={visibleSections(context.data)}
             current={section}
           />
-        </aside>
+        </div>
         <div className="min-w-0">
           <Link
             href={sectionPath(businessId)}
-            className="-ms-2 mb-2 inline-flex min-h-11 items-center gap-1.5 rounded-lg px-2 text-sm font-medium text-primary hover:underline lg:hidden"
+            className="-ms-2 -mt-2 mb-2 inline-flex min-h-11 items-center gap-1.5 rounded-lg px-2 text-sm font-medium text-primary hover:underline xl:hidden"
           >
             <ArrowLeftIcon aria-hidden className="size-4 rtl:rotate-180" />
             {t('settings.title')}
@@ -148,7 +143,7 @@ export function SettingsShell({
           {children}
         </div>
       </div>
-    </div>
+    </PageContainer>
   )
 }
 
@@ -198,15 +193,6 @@ export function SettingsHome({ businessId }: { businessId: string }) {
   const isOwner = context.roleTemplateKey === OWNER_TEMPLATE_KEY
   return (
     <>
-      <Link
-        href={`/b/${businessId}`}
-        className="-ms-2 mb-3 inline-flex min-h-11 max-w-full items-center gap-1.5 rounded-lg px-2 text-sm font-medium text-primary hover:underline"
-      >
-        <ArrowLeftIcon aria-hidden className="size-4 shrink-0 rtl:rotate-180" />
-        <span dir="auto" className="truncate">
-          {name}
-        </span>
-      </Link>
       <header className="mb-6 sm:mb-8">
         <h1 className="text-2xl font-semibold tracking-tight sm:text-3xl">{t('settings.title')}</h1>
         {sections.length > 0 ? (
@@ -216,7 +202,7 @@ export function SettingsHome({ businessId }: { businessId: string }) {
       {sections.length > 0 ? (
         <ul
           aria-label={t('settings.businessSections')}
-          className="divide-y overflow-hidden rounded-2xl bg-card shadow-sm ring-1 ring-foreground/[0.06] sm:grid sm:grid-cols-2 sm:gap-4 sm:divide-y-0 sm:overflow-visible sm:rounded-none sm:bg-transparent sm:shadow-none sm:ring-0 lg:grid-cols-3"
+          className="divide-y overflow-hidden rounded-2xl bg-card shadow-sm ring-1 ring-foreground/[0.06] sm:grid sm:grid-cols-2 sm:gap-4 sm:divide-y-0 sm:overflow-visible sm:rounded-none sm:bg-transparent sm:shadow-none sm:ring-0 xl:grid-cols-3"
         >
           {sections.map((section) => (
             <SectionCard
@@ -236,7 +222,7 @@ export function SettingsHome({ businessId }: { businessId: string }) {
       <h2 className="mt-8 mb-3 text-sm font-medium text-muted-foreground">
         {t('settings.account.group')}
       </h2>
-      <ul className="overflow-hidden rounded-2xl bg-card shadow-sm ring-1 ring-foreground/[0.06] sm:grid sm:grid-cols-2 sm:gap-4 sm:overflow-visible sm:rounded-none sm:bg-transparent sm:shadow-none sm:ring-0 lg:grid-cols-3">
+      <ul className="overflow-hidden rounded-2xl bg-card shadow-sm ring-1 ring-foreground/[0.06] sm:grid sm:grid-cols-2 sm:gap-4 sm:overflow-visible sm:rounded-none sm:bg-transparent sm:shadow-none sm:ring-0 xl:grid-cols-3">
         <SectionCard
           href="/account"
           icon={UserRoundIcon}
@@ -272,22 +258,23 @@ export function SettingsHome({ businessId }: { businessId: string }) {
   )
 }
 
-/** A section this member may not open (no permission, or the business doesn't use it). */
+/**
+ * A section this member may not open (403: no permission, or the business doesn't use it). Nothing of
+ * the section is loaded; the API refuses it too.
+ */
 function NoAccess({ businessId }: { businessId: string }) {
   const { t } = useTranslation()
   return (
-    <div className="rounded-2xl bg-card px-6 py-12 text-center shadow-sm ring-1 ring-foreground/[0.06]">
-      <span className="mx-auto flex size-12 items-center justify-center rounded-2xl bg-muted text-muted-foreground">
-        <LockKeyholeIcon aria-hidden className="size-5" />
-      </span>
-      <h1 className="mt-4 text-lg font-semibold">{t('settings.noAccess.title')}</h1>
-      <p className="mx-auto mt-2 max-w-md text-sm leading-relaxed text-muted-foreground">
-        {t('settings.noAccess.body')}
-      </p>
-      <Button asChild variant="outline" className="mt-6">
+    <StatePanel
+      icon={LockKeyholeIcon}
+      title={t('settings.noAccess.title')}
+      body={t('settings.noAccess.body')}
+      documentTitle={`${t('settings.noAccess.title')} · ${t('appName')}`}
+    >
+      <Button asChild variant="outline" size="lg">
         <Link href={sectionPath(businessId)}>{t('settings.noAccess.back')}</Link>
       </Button>
-    </div>
+    </StatePanel>
   )
 }
 

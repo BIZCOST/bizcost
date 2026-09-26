@@ -1,4 +1,4 @@
-import { createI18n, terminologyKey } from '@bizcost/i18n'
+import { createI18n, hasMessage, terminologyKey } from '@bizcost/i18n'
 import { describe, expect, it } from 'vitest'
 import { STORED_CAPABILITY_KEYS, type StoredCapabilityKey } from '../capabilities'
 import { MODULES, type ModuleId } from '../manifests'
@@ -335,7 +335,9 @@ describe('recommend(): personas (PRODUCT.md §6.11)', () => {
         location: ['workshop', 'Factory', 'المصنع'],
       },
     )
-    const materials = terminologyKey('modules.materials.name', rec.terminologyProfile)
+    const materials = terminologyKey('modules.materials.name', rec.terminologyProfile, (key) =>
+      hasMessage('en', key),
+    )
     expect(en.t(materials)).toBe('Raw materials')
     expect(ar.t(materials)).toBe('المواد الخام')
   })

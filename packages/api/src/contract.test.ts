@@ -8,7 +8,7 @@ import { authedProcedure, businessProcedure, publicProcedure, router } from './t
 const costly = z.object({ name: z.string(), cost: sensitive(zDecimal, 'cost') })
 
 describe('appRouter contract', () => {
-  it('serves exactly the Step 2–6 procedures', () => {
+  it('serves exactly the Step 2–7 procedures', () => {
     expect(Object.keys(appRouter._def.procedures).sort()).toEqual([
       'account.delete',
       'account.setLastBusiness',
@@ -23,6 +23,7 @@ describe('appRouter contract', () => {
       'business.setDefaultLocale',
       'business.setLogo',
       'business.updateProfile',
+      'dashboard.checklist',
       'health',
       'invitation.accept',
       'invitation.create',

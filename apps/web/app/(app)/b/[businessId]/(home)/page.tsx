@@ -1,5 +1,5 @@
 import type { Metadata } from 'next'
-import { BusinessHome } from '@/features/business/business-home'
+import { Dashboard } from '@/features/dashboard/dashboard'
 import { getMe } from '@/lib/trpc/server'
 
 export async function generateMetadata({
@@ -12,11 +12,7 @@ export async function generateMetadata({
   return membership ? { title: membership.legalName } : {}
 }
 
-export default async function BusinessPage({
-  params,
-}: {
-  params: Promise<{ businessId: string }>
-}) {
-  const { businessId } = await params
-  return <BusinessHome businessId={businessId} />
+/** The business home: the Dashboard (ROADMAP.md Step 7); its data comes from the layout. */
+export default function BusinessPage() {
+  return <Dashboard />
 }

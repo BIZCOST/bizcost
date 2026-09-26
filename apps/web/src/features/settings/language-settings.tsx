@@ -14,7 +14,7 @@ import { useLocale } from '@/lib/i18n/client'
 import { useBusinessContext } from '@/lib/trpc/client'
 import { cn } from '@/lib/utils'
 import { useProfile, useProfileSaved } from './profile-data'
-import { LoadError, SectionSkeleton } from './query-state'
+import { LoadError, SectionSkeleton } from '@/components/states/query-state'
 import { can, isSectionVisible } from './sections'
 import { SectionPage } from './settings-shell'
 

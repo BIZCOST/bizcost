@@ -12,8 +12,7 @@
   },
   "language": {
     "title": "Language",
-    "description": "The language of BizCost and of the emails we send you.",
-    "saved": "Language changed."
+    "description": "The language of BizCost and of the emails we send you."
   },
   "email": {
     "title": "Email",

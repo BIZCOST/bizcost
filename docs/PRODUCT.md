@@ -1,9 +1,9 @@
 # BizCost: Product
 
 Purpose: what BizCost is, who it is for, and the product rules every screen and feature must follow.
-Last updated: 2026-09-25
+Last updated: 2026-09-26
 
-> **Status:** M1 in progress: auth, account, businesses and Smart Setup are built (Steps 1–3 and 5); no data module yet. **DECIDED** = confirmed by the owner. **PLANNED** = intended but not built. Phases and step status: ROADMAP.md. Decision history: DECISIONS.md. Technical design: ARCHITECTURE.md. Tables and entities: DATA_MODEL.md.
+> **Status:** M1 in progress: auth, account, businesses and Smart Setup, settings, and the app shell with the Dashboard checklist are built (Steps 1–3, 5–7); no data module yet. **DECIDED** = confirmed by the owner. **PLANNED** = intended but not built. Phases and step status: ROADMAP.md. Decision history: DECISIONS.md. Technical design: ARCHITECTURE.md. Tables and entities: DATA_MODEL.md.
 
 ## 1. Purpose & positioning
 
@@ -446,7 +446,7 @@ The VAT not-sure note shows while the answer was "Not sure" and VAT is still off
 ### 6.8 Ready screen and business home
 
 - Ready (keys `setup.ready.*`): title "Your BizCost is ready" / «BizCost جاهز لك»; body "{businessName} is set up. Each section will appear here as soon as it's ready." / «تم إعداد {businessName}. سيظهر كل قسم هنا فور جاهزيته.»; button "Let's go" / «لنبدأ» → `/b/[businessId]`.
-- Business home summary (welcome card): the statements of 6.7 from the saved capabilities. Team and VAT always; branches, stock, machine time, POS and cost per job only when on (a home business is never asked about branches, so "One branch" would read oddly). Cost per job (`setup.cap.jobs_and_tasks.on`): "Cost and profit for each job" / «تكلفة وربح كل أمر عمل على حدة» (maker: "order" / «طلب»).
+- Business home summary ("About your business" on the Dashboard, Step 7; the welcome above it names the business and the member's role): the statements of 6.7 from the saved capabilities. Team and VAT always; branches, stock, machine time, POS and cost per job only when on (a home business is never asked about branches, so "One branch" would read oddly). Cost per job (`setup.cap.jobs_and_tasks.on`): "Cost and profit for each job" / «تكلفة وربح كل أمر عمل على حدة» (maker: "order" / «طلب»).
 
 ### 6.9 Module names, overlays and descriptions
 
@@ -542,7 +542,7 @@ Parked for later phases: a retail wording profile ("Goods / البضاعة") tog
 
 ## 7. Module catalog
 
-Nothing is released yet. The Phase column follows ROADMAP.md, which is authoritative ("tentative" = not in the owner's roadmap yet). How a module is declared: ARCHITECTURE.md §Modules.
+Only Dashboard and Settings are released (M1). The Phase column follows ROADMAP.md, which is authoritative ("tentative" = not in the owner's roadmap yet). How a module is declared: ARCHITECTURE.md §Modules.
 
 | Module                             | Kind       | What it does                                                                             | Phase             |
 | ---------------------------------- | ---------- | ---------------------------------------------------------------------------------------- | ----------------- |
@@ -618,6 +618,13 @@ Nothing is released yet. The Phase column follows ROADMAP.md, which is authorita
 ## 10. First-time experience
 
 - **M1 (DECIDED):** Home/Dashboard shows a real setup checklist built from real data: complete the business profile, add a TRN, invite a member, add a location. An item appears only if it fits the business's capabilities (e.g. no "Invite member" for a solo business).
+- **As built (Step 7, D-090, D-093; final for M1):** "Finish setting up" lists only the steps the member can do, with "n of m done":
+  - **Complete your business profile** (members who may edit the business profile): done with the business name in Arabic (or a name already written in Arabic) and a logo; the step says which is missing.
+  - **Add your TRN** (the same members, only for a VAT-registered business): done once the TRN is saved.
+  - **Invite your first team member** (members who may manage the team, only for a business with a team): done once someone else has joined or an invitation is waiting. Only for the member who started the business: whoever joined later joined a team that had already started.
+  - **Add your second branch** (members who may manage branches, only for a business with branches): done with a second branch. Not for a member who joined after the second branch was added.
+  - A step that is undone again (the others left, a branch was removed) shows again, open, to everyone who can do it.
+  - Each open step opens its settings section. When all are done, a small "You're all set" takes the list's place; each member can hide it for that business (remembered in the browser). A member who can do none of the steps (e.g. an Employee) sees the welcome and "About your business" only. A member whose role does not include the Dashboard opens the business on their first section (Settings in M1).
 - **When costing modules ship (PLANNED, Phase 2–3):** a checklist titled "Let's calculate your first real profit": add what you sell → add what you use to make it → add purchase prices → add regular business costs → add or import sales → see My Real Profit.
 
 ## 11. Invoicing (UAE) (requirement DECIDED; build PLANNED)

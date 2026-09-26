@@ -34,7 +34,7 @@ import {
   RemoveMemberDialog,
   TransferOwnershipDialog,
 } from './member-dialogs'
-import { LoadError, SectionSkeleton } from './query-state'
+import { LoadError, SectionSkeleton } from '@/components/states/query-state'
 import { canGrantRole } from './role-labels'
 import { useRoleName } from './role-picker'
 import { can, isSectionVisible } from './sections'

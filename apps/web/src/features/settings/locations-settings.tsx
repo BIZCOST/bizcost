@@ -54,7 +54,7 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
 import { useBusinessContext } from '@/lib/trpc/client'
-import { LoadError, SectionSkeleton } from './query-state'
+import { LoadError, SectionSkeleton } from '@/components/states/query-state'
 import { isSectionVisible } from './sections'
 import { SectionPage } from './settings-shell'
 

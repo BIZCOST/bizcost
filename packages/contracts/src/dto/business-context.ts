@@ -17,20 +17,27 @@ export const locationScopeDto = z.discriminatedUnion('all', [
 export type LocationScopeDto = z.infer<typeof locationScopeDto>
 
 /**
- * A navigation entry of a module manifest. `path` is relative to the business root
- * ('' = business home; the web app prefixes /b/[businessId]/). `icon` is a lucide icon name.
+ * Where a navigation entry goes: `main` with the business's sections, in manifest order; `system`
+ * after them (Settings: the sidebar's foot, the last tab), so new sections come before it.
  */
-export const navEntryDto = z.object({
+export const NAV_GROUPS = ['main', 'system'] as const
+export type NavGroup = (typeof NAV_GROUPS)[number]
+
+/** A "+" action of a module manifest. `path` and `icon` as for a navigation entry. */
+export const quickActionDto = z.object({
   id: z.string(),
   labelKey: z.string(),
   path: z.string(),
   icon: z.string(),
 })
-export type NavEntryDto = z.infer<typeof navEntryDto>
-
-/** A "+" action of a module manifest; same shape as a navigation entry. */
-export const quickActionDto = navEntryDto
 export type QuickActionDto = z.infer<typeof quickActionDto>
+
+/**
+ * A navigation entry of a module manifest. `path` is relative to the business root
+ * ('' = business home; the web app prefixes /b/[businessId]/). `icon` is a lucide icon name.
+ */
+export const navEntryDto = quickActionDto.extend({ group: z.enum(NAV_GROUPS) })
+export type NavEntryDto = z.infer<typeof navEntryDto>
 
 /** A module that is released and enabled for the business, with the entries this member may use. */
 export const enabledModuleDto = z.object({

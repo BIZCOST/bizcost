@@ -252,7 +252,10 @@ test('a second business through the switcher, and back (Arabic)', async ({ page,
   expect(second).not.toBe(first)
   await expect(page.getByRole('heading', { level: 1 })).toHaveText('استوديو التصميم')
   await expect(
-    page.getByRole('listitem').filter({ hasText: 'عملك مسجّل في ضريبة القيمة المضافة' }),
+    // In "About your business" (the checklist's TRN step says the same).
+    page
+      .locator('[data-statement="vat_registered"]')
+      .filter({ hasText: 'عملك مسجّل في ضريبة القيمة المضافة' }),
   ).toBeVisible()
   expect(await savedSetup(second)).toMatchObject({
     businessType: 'services',

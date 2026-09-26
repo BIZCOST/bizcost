@@ -5,7 +5,7 @@ import {
   PROFILE_DISPLAY_NAME_MAX_LENGTH,
   withoutControlCharacters,
 } from '@bizcost/contracts'
-import { hasMessage, type I18nKey } from '@bizcost/i18n'
+import type { I18nKey } from '@bizcost/i18n'
 import * as z from 'zod/mini'
 import { normalizeCode } from './code'
 
@@ -142,11 +142,16 @@ export interface FormMessage {
 
 /**
  * A field error message (an i18n key from these schemas, or a flow's FlowError key) as the key and
- * values to pass to `t`. Anything that is not a known key becomes `errors.validation`.
+ * values to pass to `t`. Anything that is not a known key becomes `errors.validation`. `has` says
+ * whether a key has a message, e.g. `(k) => hasKey(i18n, k)` with the page's i18n instance (the
+ * browser holds only the page's messages, so this package never imports them).
  */
-export function formMessage(message: string | null | undefined): FormMessage | undefined {
+export function formMessage(
+  message: string | null | undefined,
+  has: (key: string) => boolean,
+): FormMessage | undefined {
   if (!message) return undefined
-  const key = (hasMessage('en', message) ? message : 'errors.validation') as I18nKey
+  const key = (has(message) ? message : 'errors.validation') as I18nKey
   const values = MESSAGE_VALUES[key]
   return values ? { key, values } : { key }
 }

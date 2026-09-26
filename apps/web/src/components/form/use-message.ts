@@ -1,7 +1,7 @@
 'use client'
 
 import { formMessage } from '@bizcost/app-core'
-import type { I18nKey } from '@bizcost/i18n'
+import { hasKey, type I18nKey } from '@bizcost/i18n'
 import { useTranslation } from 'react-i18next'
 
 /**
@@ -9,9 +9,9 @@ import { useTranslation } from 'react-i18next'
  * error key) into text; limits such as the minimum password length are filled in.
  */
 export function useMessage() {
-  const { t } = useTranslation()
+  const { t, i18n } = useTranslation()
   return (message: string | null | undefined, values?: Record<string, unknown>) => {
-    const resolved = formMessage(message)
+    const resolved = formMessage(message, (key) => hasKey(i18n, key))
     if (!resolved) return undefined
     return t(resolved.key as I18nKey, { ...resolved.values, ...values }) as string
   }

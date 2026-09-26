@@ -6,7 +6,7 @@ import {
   resolveCapabilities,
   STORED_CAPABILITY_KEYS,
 } from './capabilities'
-import { MODULES } from './manifests'
+import { MODULES, type ModuleManifest } from './manifests'
 import {
   isCatalogPermissionKey,
   keysMissingNeeds,
@@ -159,12 +159,28 @@ describe('buildModuleNav', () => {
     expect(nav).toEqual([
       {
         id: 'dashboard',
-        nav: [{ id: 'dashboard', labelKey: 'nav.dashboard', path: '', icon: 'layout-dashboard' }],
+        nav: [
+          {
+            id: 'dashboard',
+            labelKey: 'nav.dashboard',
+            path: '',
+            icon: 'layout-dashboard',
+            group: 'main',
+          },
+        ],
         quickActions: [],
       },
       {
         id: 'settings',
-        nav: [{ id: 'settings', labelKey: 'nav.settings', path: 'settings', icon: 'settings' }],
+        nav: [
+          {
+            id: 'settings',
+            labelKey: 'nav.settings',
+            path: 'settings',
+            icon: 'settings',
+            group: 'system',
+          },
+        ],
         quickActions: [],
       },
     ])
@@ -181,6 +197,44 @@ describe('buildModuleNav', () => {
   it('gives the owner every entry', () => {
     const nav = buildModuleNav(NONE, canFor(OWNER_TEMPLATE_KEY))
     expect(nav.flatMap((m) => m.nav.map((e) => e.id))).toEqual(['dashboard', 'settings'])
+  })
+
+  it('adds a module once it is released, only for businesses that turned it on', () => {
+    const released: ModuleManifest = {
+      ...moduleById('orders')!,
+      availability: 'released',
+      nav: [
+        {
+          id: 'orders',
+          labelKey: 'nav.orders',
+          path: 'orders',
+          icon: 'shopping-bag',
+          group: 'main',
+          permission: 'orders.view',
+        },
+      ],
+      quickActions: [
+        { id: 'orders.new', labelKey: 'nav.newOrder', path: 'orders/new', icon: 'plus' },
+      ],
+    }
+    const registry = MODULES.map((m) => (m.id === 'orders' ? released : m))
+    const ids = (enabled: Set<string>, can: (key: string) => boolean) =>
+      buildModuleNav(enabled, can, registry).map((m) => [m.id, m.nav.length, m.quickActions.length])
+    expect(ids(new Set(['orders']), everybody)).toEqual([
+      ['dashboard', 1, 0],
+      ['settings', 1, 0],
+      ['orders', 1, 1],
+    ])
+    expect(ids(NONE, everybody)).toEqual([
+      ['dashboard', 1, 0],
+      ['settings', 1, 0],
+    ])
+    // Without the permission the module stays listed, with no entries (the shell hides it).
+    expect(ids(new Set(['orders']), (key) => key !== 'orders.view')).toContainEqual([
+      'orders',
+      0,
+      1,
+    ])
   })
 })
 

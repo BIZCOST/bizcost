@@ -26,7 +26,7 @@ import { useBusinessContext } from '@/lib/trpc/client'
 import { LogoSection } from './logo-section'
 import { useModuleNames } from './module-names'
 import { useProfile, useProfileSaved } from './profile-data'
-import { LoadError, SectionSkeleton } from './query-state'
+import { LoadError, SectionSkeleton } from '@/components/states/query-state'
 import { can, isSectionVisible } from './sections'
 import { SectionPage } from './settings-shell'
 

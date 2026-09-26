@@ -23,6 +23,8 @@ import {
   signUpSchema,
 } from './forms'
 
+const english = (key: string) => hasMessage('en', key)
+
 /** The message shown per field: the first issue, as the form resolver picks it. */
 function messages(schema: z.ZodMiniType, value: unknown): Record<string, string> {
   const result = schema.safeParse(value)
@@ -91,7 +93,7 @@ describe('form schemas', () => {
     expect(messages(profileFormSchema, { displayName: tooLong })).toEqual({
       displayName: 'account.profile.displayNameTooLong',
     })
-    expect(formMessage('account.profile.displayNameTooLong')).toEqual({
+    expect(formMessage('account.profile.displayNameTooLong', english)).toEqual({
       key: 'account.profile.displayNameTooLong',
       values: { count: PROFILE_DISPLAY_NAME_MAX_LENGTH },
     })
@@ -198,15 +200,15 @@ describe('new password rule (D-072, the Auth server letters_digits rule)', () =>
 
 describe('formMessage', () => {
   it('adds the values a message needs and falls back for unknown text', () => {
-    expect(formMessage('auth.validation.passwordTooShort')).toEqual({
+    expect(formMessage('auth.validation.passwordTooShort', english)).toEqual({
       key: 'auth.validation.passwordTooShort',
       values: { count: AUTH_PASSWORD_MIN_LENGTH },
     })
-    expect(formMessage('auth.validation.emailInvalid')).toEqual({
+    expect(formMessage('auth.validation.emailInvalid', english)).toEqual({
       key: 'auth.validation.emailInvalid',
     })
-    expect(formMessage('Invalid input')).toEqual({ key: 'errors.validation' })
-    expect(formMessage(undefined)).toBeUndefined()
+    expect(formMessage('Invalid input', english)).toEqual({ key: 'errors.validation' })
+    expect(formMessage(undefined, english)).toBeUndefined()
   })
 })
 

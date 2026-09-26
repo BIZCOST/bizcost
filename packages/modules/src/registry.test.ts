@@ -7,6 +7,7 @@ import {
   sensitivityPermissionKey,
   type SensitivityCategory,
 } from '@bizcost/domain'
+import { hasMessage, LOCALES } from '@bizcost/i18n'
 import { describe, expect, expectTypeOf, it } from 'vitest'
 import { CAPABILITIES, CAPABILITY_KEYS, isCapabilityKey } from './capabilities'
 import {
@@ -119,6 +120,12 @@ describe('module manifests', () => {
         expect(ids.has(entry.id), `duplicate nav id ${entry.id}`).toBe(false)
         ids.add(entry.id)
         expect(entry.labelKey).toMatch(/^nav\.[a-z][a-z0-9_.]*$/)
+        // Shipped with the module: the label in both languages (a common `nav.*` key).
+        if (m.availability === 'released') {
+          for (const locale of LOCALES) {
+            expect(hasMessage(locale, `common.${entry.labelKey}`), entry.labelKey).toBe(true)
+          }
+        }
         expect(entry.icon).toMatch(/^[a-z0-9]+(?:-[a-z0-9]+)*$/)
         expect(entry.path).toMatch(/^(?:[a-z0-9-]+(?:\/[a-z0-9-]+)*)?$/)
         if (entry.permission !== undefined) {
@@ -133,6 +140,14 @@ describe('module manifests', () => {
       for (const c of m.sensitiveFields)
         expect(c in SENSITIVITY_REQUIRES, `${m.id}: ${c}`).toBe(true)
     }
+  })
+
+  it('put Settings after the sections (group system), and every other entry in main', () => {
+    const groups = MODULES.flatMap((m) => m.nav.map((entry) => [entry.id, entry.group]))
+    expect(groups).toEqual([
+      ['dashboard', 'main'],
+      ['settings', 'system'],
+    ])
   })
 
   it('keep the always-enabled modules released and core', () => {

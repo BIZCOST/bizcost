@@ -14,7 +14,8 @@
     "label": "Language",
     "change": "Change language",
     "en": "English",
-    "ar": "العربية"
+    "ar": "العربية",
+    "saved": "Language changed."
   },
   "actions": {
     "back": "Back",
@@ -48,7 +49,11 @@
     "home": "Home",
     "account": "Account",
     "accountMenu": "Account menu",
-    "settings": "Settings"
+    "settings": "Settings",
+    "dashboard": "Dashboard",
+    "more": "More",
+    "moreTitle": "More sections",
+    "quickAdd": "Add new"
   },
   "home": {
     "greeting": "Hello, {{name}}",
@@ -64,7 +69,11 @@
   "business": {
     "switch": "Switch business",
     "create": "Create another business",
-    "sectionsNote": "Your sections will appear here as soon as they are ready."
+    "sectionsNote": "Your sections will appear here as soon as they are ready.",
+    "lost": {
+      "title": "This business isn't open to you",
+      "body": "You're not a member of it any more, or it was removed. Ask its owner if you need access."
+    }
   },
   "roles": {
     "owner": "Owner",
@@ -80,6 +89,19 @@
     "title": "Page not found",
     "body": "This page doesn't exist or was moved.",
     "home": "Go to home"
+  },
+  "states": {
+    "forbidden": {
+      "title": "This page isn't open to you",
+      "body": "Your role doesn't include it. Ask the owner if you need it."
+    },
+    "moduleOff": {
+      "title": "This section is turned off",
+      "body": "This business doesn't use it right now. Nothing was deleted.",
+      "ask": "Ask the owner if you need it.",
+      "turnOn": "Open Customize BizCost"
+    },
+    "goTo": "Go to {{section}}"
   },
   "errorPage": {
     "title": "Something went wrong"

@@ -83,6 +83,36 @@ describe('shared UI packages', () => {
   })
 })
 
+describe('translations in the web app (D-092)', () => {
+  const code = `import { pickMessages, hasMessage, resources, createI18n, formatDate } from '@bizcost/i18n'
+export { pickMessages, hasMessage, resources, createI18n, formatDate }
+`
+
+  it('keeps every translation out of browser code', async () => {
+    expect(await restrictedImports('apps/web/src/features/probe.tsx', code)).toBe(4)
+    expect(await restrictedImports('apps/web/app/(app)/probe/page.tsx', code)).toBe(4)
+  })
+
+  it('lets the server files that pick messages, and tests, use them', async () => {
+    for (const file of [
+      'apps/web/src/lib/i18n/server.ts',
+      'apps/web/src/lib/i18n/messages.tsx',
+      'apps/web/app/layout.tsx',
+      'apps/web/src/features/probe.test.ts',
+    ]) {
+      expect(await restrictedImports(file, code), file).toBe(0)
+    }
+  })
+
+  it('still keeps server packages out of web files', async () => {
+    const api = `import { appRouter } from '@bizcost/api'
+export { appRouter }
+`
+    expect(await restrictedImports('apps/web/src/features/probe.tsx', api)).toBe(1)
+    expect(await restrictedImports('apps/web/app/layout.tsx', api)).toBe(1)
+  })
+})
+
 describe('database entry in the API', () => {
   const code = `import { withTenantTx, withAnonymousTx, createDb, profiles } from '@bizcost/db'\nexport { withTenantTx, withAnonymousTx, createDb, profiles }\n`
 

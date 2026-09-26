@@ -15,6 +15,14 @@ export {
   type StoredCapabilityKey,
 } from './capabilities'
 export {
+  CHECKLIST_RULES,
+  checklistItem,
+  checklistItemIds,
+  checklistItems,
+  hasArabicName,
+  type ChecklistFacts,
+} from './checklist'
+export {
   ALWAYS_ENABLED_MODULE_IDS,
   MODULE_IDS,
   MODULES,

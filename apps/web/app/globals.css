@@ -61,6 +61,15 @@
   }
   html {
     -webkit-text-size-adjust: 100%;
+    /*
+     * A control that gets focus scrolls clear of the sticky top bar (4rem) and, on phones, of the
+     * business shell's tab bar (TAB_BAR_PADDING), never under them (WCAG 2.4.11).
+     */
+    scroll-padding-top: 4.5rem;
+    scroll-padding-bottom: calc(4.75rem + env(safe-area-inset-bottom));
+    @media (width >= 48rem) {
+      scroll-padding-bottom: 0.5rem;
+    }
   }
   body {
     @apply min-h-dvh bg-background font-sans text-foreground antialiased;
@@ -68,5 +77,16 @@
   /* Arabic reads better with a little more line height. */
   :lang(ar) body {
     line-height: 1.65;
+  }
+  /* Reduced motion: no animations, transitions or smooth scrolling (skeletons stay still). */
+  @media (prefers-reduced-motion: reduce) {
+    *,
+    ::before,
+    ::after {
+      animation-duration: 0.01ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 0.01ms !important;
+      scroll-behavior: auto !important;
+    }
   }
 }

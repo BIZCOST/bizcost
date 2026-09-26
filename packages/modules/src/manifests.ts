@@ -40,7 +40,11 @@ export type ModuleId = (typeof MODULE_IDS)[number]
 export type ModuleKind = 'core' | 'optional'
 export type ModuleAvailability = 'released' | 'planned'
 
-/** A navigation entry. Without `permission` every member of the business sees it. */
+/**
+ * A navigation entry (sidebar, tabs). Without `permission` every member of the business sees it.
+ * `labelKey` is a common `nav.*` key; `icon` a lucide icon name the web app maps to its icon (an
+ * unknown name gets a neutral one, so a new module shows without changes to the shell).
+ */
 export interface NavEntry extends NavEntryDto {
   readonly permission?: string
 }
@@ -81,6 +85,7 @@ const DASHBOARD = {
       labelKey: 'nav.dashboard',
       path: '',
       icon: 'layout-dashboard',
+      group: 'main',
       permission: 'dashboard.home.view',
     },
   ],
@@ -106,7 +111,15 @@ const SETTINGS = {
     'settings.roles.manage',
     'settings.modules.manage',
   ],
-  nav: [{ id: 'settings', labelKey: 'nav.settings', path: 'settings', icon: 'settings' }],
+  nav: [
+    {
+      id: 'settings',
+      labelKey: 'nav.settings',
+      path: 'settings',
+      icon: 'settings',
+      group: 'system',
+    },
+  ],
   quickActions: [],
   sensitiveFields: [],
   requiresCapabilities: [],

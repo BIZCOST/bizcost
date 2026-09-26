@@ -6,7 +6,7 @@ import {
   createFetchHandler,
   type ApiDeps,
 } from '@bizcost/api'
-import type { BusinessContextDto, MeDto } from '@bizcost/contracts'
+import type { BusinessContextDto, DashboardChecklistDto, MeDto } from '@bizcost/contracts'
 import { createDb } from '@bizcost/db'
 import { TRPCError } from '@trpc/server'
 import { headers } from 'next/headers'
@@ -52,8 +52,8 @@ export function apiHandler(): (req: Request) => Promise<Response> {
 const createCaller = createCallerFactory(appRouter)
 
 /**
- * A server-side caller for the current request (layouts only), authenticated by the request's session
- * cookies exactly like /api/trpc. proxy.ts has already refreshed the session, and a server component
+ * A server-side caller for the current request (layouts, and the Dashboard's page), authenticated by
+ * the request's session cookies exactly like /api/trpc. proxy.ts has already refreshed the session, and a server component
  * cannot set cookies, so refreshed cookies from this context are dropped.
  */
 export const getServerApi = cache(async () => callerFor(await headers()))
@@ -75,17 +75,22 @@ export async function getMe(): Promise<MeDto | null> {
   }
 }
 
+/** A caller in one business, as `x-business-id` names it (docs/ARCHITECTURE.md §Active business). */
+async function businessCaller(businessId: string) {
+  const requestHeaders = new Headers(await headers())
+  requestHeaders.set('x-business-id', businessId)
+  return callerFor(requestHeaders)
+}
+
 /**
- * `business.context` for a business layout, as `x-business-id` names it (docs/ARCHITECTURE.md §Active
- * business): 'forbidden' when the caller is not an active member or there is no such business (the
- * API answers both the same way), 'signed-out' when the API does not accept the session.
+ * `business.context` for a business layout: 'forbidden' when the caller is not an active member or
+ * there is no such business (the API answers both the same way), 'signed-out' when the API does not
+ * accept the session.
  */
 export const getBusinessContext = cache(
   async (businessId: string): Promise<BusinessContextDto | 'forbidden' | 'signed-out'> => {
-    const requestHeaders = new Headers(await headers())
-    requestHeaders.set('x-business-id', businessId)
     try {
-      return await callerFor(requestHeaders).business.context()
+      return await (await businessCaller(businessId)).business.context()
     } catch (error) {
       if (error instanceof TRPCError && error.code === 'UNAUTHORIZED') return 'signed-out'
       if (error instanceof TRPCError && error.code === 'FORBIDDEN') return 'forbidden'
@@ -93,3 +98,18 @@ export const getBusinessContext = cache(
     }
   },
 )
+
+/**
+ * `dashboard.checklist` for the Dashboard's page, so its first render has the steps (D-090); null
+ * when the API refuses or fails (the page then loads them itself and shows what happened).
+ */
+export async function getDashboardChecklist(
+  businessId: string,
+): Promise<DashboardChecklistDto | null> {
+  try {
+    return await (await businessCaller(businessId)).dashboard.checklist()
+  } catch (error) {
+    if (error instanceof TRPCError) return null
+    throw error
+  }
+}

@@ -1,5 +1,7 @@
 import type { Metadata } from 'next'
 import { SetupView } from '@/features/setup/setup-view'
+import { Messages } from '@/lib/i18n/messages'
+import { SETUP_MESSAGES } from '@/lib/i18n/route-messages'
 import { getT } from '@/lib/i18n/server'
 
 export async function generateMetadata(): Promise<Metadata> {
@@ -13,5 +15,9 @@ export default async function SetupPage({
   searchParams: Promise<Record<string, string | string[] | undefined>>
 }) {
   const { done } = await searchParams
-  return <SetupView done={typeof done === 'string' ? done : null} />
+  return (
+    <Messages specs={SETUP_MESSAGES}>
+      <SetupView done={typeof done === 'string' ? done : null} />
+    </Messages>
+  )
 }

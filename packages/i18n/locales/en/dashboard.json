@@ -1,0 +1,42 @@
+{
+  "checklist": {
+    "title": "Finish setting up",
+    "description": "A few quick steps, and BizCost is ready for your business.",
+    "progress": "{{done}} of {{total}} done",
+    "progressLabel": "Setup progress",
+    "done": "Done",
+    "items": {
+      "profile": {
+        "title": "Complete your business profile",
+        "missingBoth": "Add your business name in Arabic and your logo.",
+        "missingArabicName": "Add your business name in Arabic.",
+        "missingLogo": "Add your logo.",
+        "done": "Your business name in Arabic and your logo are saved.",
+        "action": "Complete profile"
+      },
+      "trn": {
+        "title": "Add your TRN",
+        "todo": "Your business is registered for VAT. Add its 15-digit Tax Registration Number.",
+        "done": "Your TRN is saved.",
+        "action": "Add TRN"
+      },
+      "invite": {
+        "title": "Invite your first team member",
+        "todo": "Send an invitation by email, and choose what they can see and do.",
+        "done": "Your team has started: someone joined or was invited.",
+        "action": "Invite someone"
+      },
+      "location": {
+        "title": "Add your second branch",
+        "todo": "Add each place you work from, so you can follow each branch on its own.",
+        "done": "Your branches are added.",
+        "action": "Add branch"
+      }
+    }
+  },
+  "allSet": {
+    "title": "You're all set",
+    "body": "Your business is set up and ready.",
+    "hide": "Hide"
+  }
+}

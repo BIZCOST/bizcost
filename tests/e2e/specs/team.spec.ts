@@ -139,7 +139,7 @@ test('the owner invites someone; the email arrives and a new user joins from it'
   await inviteePage.getByRole('button', { name: 'Accept the invitation' }).click()
   await expect(inviteePage).toHaveURL(`/b/${businessId}`)
   await expect(inviteePage.getByRole('heading', { level: 1, name: BUSINESS })).toBeVisible()
-  await expect(inviteePage.getByText('Employee', { exact: true })).toBeVisible()
+  await expect(inviteePage.getByRole('main').getByText('Employee', { exact: true })).toBeVisible()
 
   // The member appears; the invitation is gone and its link no longer works.
   await ownerPage.goto(settings('/members'))

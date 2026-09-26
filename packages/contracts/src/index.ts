@@ -65,6 +65,7 @@ export {
   effectivePermissionsDto,
   enabledModuleDto,
   locationScopeDto,
+  NAV_GROUPS,
   navEntryDto,
   quickActionDto,
   type BusinessContextDto,
@@ -72,8 +73,19 @@ export {
   type EnabledModuleDto,
   type LocationScopeDto,
   type NavEntryDto,
+  type NavGroup,
   type QuickActionDto,
 } from './dto/business-context'
+export {
+  CHECKLIST_ITEM_IDS,
+  checklistItemDto,
+  dashboardChecklistDto,
+  PROFILE_PARTS,
+  type ChecklistItemDto,
+  type ChecklistItemId,
+  type DashboardChecklistDto,
+  type ProfilePart,
+} from './dto/dashboard'
 export {
   businessNameInput,
   createFromSetupDto,

@@ -70,17 +70,31 @@ export interface QueryClientOptions {
    * fetching: stale permissions refresh after FORBIDDEN).
    */
   onAccessChange?: () => void
+  /**
+   * Called after every successful mutation with its key (tRPC's: `[['business', 'updateProfile']]`),
+   * e.g. to refresh what summarizes the business's data (the Dashboard's checklist), wherever the
+   * change was made.
+   */
+  onMutationSuccess?: (mutationKey: readonly unknown[] | undefined) => void
 }
 
 /** A fresh QueryClient: one per business (key the provider by businessId); sign-out drops it. */
 export function createQueryClient(options: QueryClientOptions = {}): QueryClient {
-  const { onAccessChange } = options
+  const { onAccessChange, onMutationSuccess } = options
   const onError = (error: unknown) => {
     if (onAccessChange && isAccessChange(error)) onAccessChange()
   }
   return new QueryClient({
     queryCache: new QueryCache({ onError }),
-    mutationCache: new MutationCache({ onError }),
+    mutationCache: new MutationCache({
+      onError,
+      ...(onMutationSuccess
+        ? {
+            onSuccess: (_data, _variables, _context, mutation) =>
+              onMutationSuccess(mutation.options.mutationKey),
+          }
+        : {}),
+    }),
     defaultOptions: {
       queries: { staleTime: API_STALE_TIME_MS, retry: shouldRetry },
       mutations: { retry: false },

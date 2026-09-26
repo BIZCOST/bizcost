@@ -85,6 +85,17 @@ export function scrubBreadcrumb(breadcrumb: Breadcrumb): Breadcrumb {
   return scrubbed
 }
 
+/**
+ * The visitor left while a page or a prefetch was still streaming (a navigation, a closed tab):
+ * React aborts that render with this error. Not a fault of the app, so it is not reported.
+ */
+const CLIENT_GONE = 'The destination stream closed early.'
+
+export function isClientGone(event: ErrorEvent): boolean {
+  const values = event.exception?.values ?? []
+  return values.length > 0 && values.every((exception) => exception.value === CLIENT_GONE)
+}
+
 /** Server-side Sentry options; Sentry is initialised only when SENTRY_DSN is set. */
 export function sentryOptions(dsn: string): NodeOptions {
   return {
@@ -103,7 +114,7 @@ export function sentryOptions(dsn: string): NodeOptions {
       genAI: { inputs: false, outputs: false },
       queues: false,
     },
-    beforeSend: (event) => scrubEvent(event),
+    beforeSend: (event) => (isClientGone(event) ? null : scrubEvent(event)),
     beforeBreadcrumb: (breadcrumb) => scrubBreadcrumb(breadcrumb),
   }
 }

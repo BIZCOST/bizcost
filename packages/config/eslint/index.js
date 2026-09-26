@@ -47,6 +47,25 @@ const API_ADMIN = {
     'The Supabase Admin API (secret key) is for the account service (Auth) and the business profile service (Storage: the logo) only.',
 }
 
+// Every translation of every namespace, both languages: the web's browser code gets its messages from
+// the server instead (D-092), so only the web's server files that pick them may import these.
+const WEB_ALL_MESSAGES = {
+  name: '@bizcost/i18n',
+  importNames: ['resources', 'hasMessage', 'pickMessages', 'createI18n'],
+  message:
+    'These bundle every translation. Browser code gets the messages of its route from the server (<Messages>, D-092); only lib/i18n/server.ts, lib/i18n/messages.tsx and app/layout.tsx use them.',
+}
+const APPS_SERVER_PACKAGES = {
+  group: SERVER_PACKAGES,
+  allowTypeImports: true,
+  message: 'Apps talk to the API over tRPC; only the web API route may import server packages.',
+}
+const WEB_SERVER_I18N_FILES = [
+  'apps/web/src/lib/i18n/server.ts',
+  'apps/web/src/lib/i18n/messages.tsx',
+  'apps/web/app/layout.tsx',
+]
+
 function laterLayers(layer) {
   const later = LAYERS.slice(LAYERS.indexOf(layer) + 1)
   return {
@@ -195,18 +214,21 @@ export default tseslint.config(
     files: ['apps/**'],
     ignores: ['apps/web/app/api/trpc/**', 'apps/web/src/lib/trpc/server.tsx'],
     rules: {
+      'no-restricted-imports': ['error', { patterns: [APPS_SERVER_PACKAGES] }],
+    },
+  },
+  {
+    files: ['apps/web/**/*.{ts,tsx}'],
+    ignores: [
+      'apps/web/app/api/trpc/**',
+      'apps/web/src/lib/trpc/server.tsx',
+      ...WEB_SERVER_I18N_FILES,
+      '**/*.test.{ts,tsx}',
+    ],
+    rules: {
       'no-restricted-imports': [
         'error',
-        {
-          patterns: [
-            {
-              group: SERVER_PACKAGES,
-              allowTypeImports: true,
-              message:
-                'Apps talk to the API over tRPC; only the web API route may import server packages.',
-            },
-          ],
-        },
+        { paths: [WEB_ALL_MESSAGES], patterns: [APPS_SERVER_PACKAGES] },
       ],
     },
   },

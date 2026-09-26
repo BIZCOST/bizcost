@@ -42,7 +42,7 @@ import {
   visiblePermissionGroups,
   type PermissionGroup,
 } from './permission-groups'
-import { LoadError, SectionSkeleton } from './query-state'
+import { LoadError, SectionSkeleton } from '@/components/states/query-state'
 import { canGrantKey, canGrantRole } from './role-labels'
 import { useRoleName, useRoleSummary } from './role-picker'
 import { isSectionVisible } from './sections'

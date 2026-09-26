@@ -42,7 +42,7 @@ import {
 } from '@/components/ui/dialog'
 import { useLocale } from '@/lib/i18n/client'
 import { LanguageChoice } from './language-settings'
-import { LoadError } from './query-state'
+import { LoadError } from '@/components/states/query-state'
 import { canGrantRole } from './role-labels'
 import { RolePicker, useRoleName } from './role-picker'
 import { can } from './sections'

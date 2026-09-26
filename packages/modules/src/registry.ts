@@ -1,4 +1,4 @@
-import type { EnabledModuleDto, NavEntryDto } from '@bizcost/contracts'
+import type { EnabledModuleDto, NavEntryDto, QuickActionDto } from '@bizcost/contracts'
 import {
   ALWAYS_ENABLED_MODULE_IDS,
   MODULES,
@@ -88,22 +88,31 @@ export function isModuleVisible(
   return isModuleActive(manifest, enabledKeys) && visibleNav(manifest, can).length > 0
 }
 
-/** The wire shape of a nav entry or "+" action (without its permission key). */
-function toEntryDto({ id, labelKey, path, icon }: NavEntry | QuickAction): NavEntryDto {
+/** The wire shape of a nav entry (without its permission key). */
+function toNavDto({ id, labelKey, path, icon, group }: NavEntry): NavEntryDto {
+  return { id, labelKey, path, icon, group }
+}
+
+/** The wire shape of a "+" action (without its permission key). */
+function toActionDto({ id, labelKey, path, icon }: QuickAction): QuickActionDto {
   return { id, labelKey, path, icon }
 }
 
 /**
  * The released and enabled modules of a business, each with the nav entries and "+" actions this
- * member may use (the `modules` part of business.context), in manifest order.
+ * member may use (the `modules` part of business.context), in manifest order. `manifests` is the
+ * registry; tests pass their own (e.g. a module released later) to show the shell follows the data.
  */
 export function buildModuleNav(
   enabledKeys: ReadonlySet<string>,
   can: Can,
+  manifests: readonly ModuleManifest[] = MODULES,
 ): readonly EnabledModuleDto[] {
-  return RELEASED.filter((m) => isModuleEnabled(m, enabledKeys)).map((m) => ({
-    id: m.id,
-    nav: visibleNav(m, can).map(toEntryDto),
-    quickActions: visibleQuickActions(m, can).map(toEntryDto),
-  }))
+  return manifests
+    .filter((m) => isModuleActive(m, enabledKeys))
+    .map((m) => ({
+      id: m.id,
+      nav: visibleNav(m, can).map(toNavDto),
+      quickActions: visibleQuickActions(m, can).map(toActionDto),
+    }))
 }

@@ -2,7 +2,7 @@
 
 import { apiErrorCode, apiErrorKey, useTRPC } from '@bizcost/app-core'
 import type { BusinessItemDto, CustomizationDto } from '@bizcost/contracts'
-import { terminologyKey, type I18nKey } from '@bizcost/i18n'
+import type { I18nKey } from '@bizcost/i18n'
 import {
   businessStateOf,
   CAPABILITIES,
@@ -40,10 +40,11 @@ import { Button } from '@/components/ui/button'
 import { Switch } from '@/components/ui/switch'
 import { JOBS_ICON, moduleIcon, STATEMENT_ICONS } from '@/features/setup/icons'
 import { Chips, Group, ShowHide } from '@/features/setup/review-parts'
+import { useTerminology } from '@/lib/i18n/client'
 import { useBusinessContext } from '@/lib/trpc/client'
 import { cn } from '@/lib/utils'
 import { isModuleId } from './module-names'
-import { LoadError, SectionSkeleton } from './query-state'
+import { LoadError, SectionSkeleton } from '@/components/states/query-state'
 import { can, isSectionVisible, sectionPath } from './sections'
 import { SectionPage } from './settings-shell'
 
@@ -156,6 +157,7 @@ function groupsOf(layout: CustomizationDto, current: CustomizationDto, jobsOffer
 
 export function CustomizeSettings({ businessId }: { businessId: string }) {
   const { t } = useTranslation()
+  const term = useTerminology()
   const trpc = useTRPC()
   const queryClient = useQueryClient()
   const ids = useId()
@@ -175,7 +177,7 @@ export function CustomizeSettings({ businessId }: { businessId: string }) {
 
   if (!context) return null
   const profile = context.terminologyProfile
-  const tt = (k: I18nKey) => t(terminologyKey(k, profile))
+  const tt = (k: I18nKey) => term(k, profile)
   const nameOf = (item: SetupItem) => tt(setupItemNameKey(item))
   const canViewBusiness = can(context, 'settings.business.view')
 

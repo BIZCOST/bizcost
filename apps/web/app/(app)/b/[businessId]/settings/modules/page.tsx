@@ -1,5 +1,7 @@
 import type { Metadata } from 'next'
 import { CustomizeSettings } from '@/features/settings/customize-settings'
+import { Messages } from '@/lib/i18n/messages'
+import { SETTINGS_SECTION_MESSAGES } from '@/lib/i18n/route-messages'
 import { getT } from '@/lib/i18n/server'
 
 export async function generateMetadata(): Promise<Metadata> {
@@ -8,5 +10,9 @@ export async function generateMetadata(): Promise<Metadata> {
 
 export default async function Page({ params }: { params: Promise<{ businessId: string }> }) {
   const { businessId } = await params
-  return <CustomizeSettings businessId={businessId} />
+  return (
+    <Messages specs={SETTINGS_SECTION_MESSAGES.modules}>
+      <CustomizeSettings businessId={businessId} />
+    </Messages>
+  )
 }

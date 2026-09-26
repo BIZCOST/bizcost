@@ -9,10 +9,6 @@
     "title": "Your account",
     "description": "Your name, email, password and language."
   },
-  "lost": {
-    "title": "This business isn't open to you",
-    "body": "You're not a member of it any more, or it was removed. Ask its owner if you need access."
-  },
   "noAccess": {
     "title": "This section isn't open to you",
     "body": "Your role doesn't include it, or this business doesn't use it. Ask the owner if you need it.",
@@ -28,7 +24,7 @@
     "legalName": "Business name",
     "legalNameHint": "As on your trade licence.",
     "legalNameAr": "Business name in Arabic",
-    "legalNameArHint": "Optional. Used where BizCost shows your name in Arabic.",
+    "legalNameArHint": "Optional. Your legal name in Arabic, as on your trade licence.",
     "nameRequired": "Enter your business name.",
     "nameTooLong_one": "Use {{count}} character or fewer.",
     "nameTooLong_other": "Use {{count}} characters or fewer.",

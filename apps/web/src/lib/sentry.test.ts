@@ -1,6 +1,13 @@
 import type { ErrorEvent } from '@sentry/nextjs'
 import { describe, expect, it } from 'vitest'
-import { describeError, scrub, scrubBreadcrumb, scrubEvent, sentryOptions } from './sentry'
+import {
+  describeError,
+  isClientGone,
+  scrub,
+  scrubBreadcrumb,
+  scrubEvent,
+  sentryOptions,
+} from './sentry'
 
 describe('scrub', () => {
   it('replaces cost, profit, margin, price and pay keys at any depth', () => {
@@ -138,5 +145,18 @@ describe('describeError', () => {
       'Error: internal <- Error: Failed query: insert into app.items values ($1)\nparams: [redacted] <- Error: duplicate key value violates unique constraint "x"',
     )
     expect(describeError('boom')).toBe('non-error thrown')
+  })
+})
+
+describe('isClientGone', () => {
+  const event = (value: string) =>
+    ({ exception: { values: [{ type: 'Error', value }] } }) as Parameters<typeof isClientGone>[0]
+
+  it('drops a render aborted because the visitor left, and nothing else', () => {
+    expect(isClientGone(event('The destination stream closed early.'))).toBe(true)
+    expect(isClientGone(event('internal'))).toBe(false)
+    expect(isClientGone({ message: 'x' } as Parameters<typeof isClientGone>[0])).toBe(false)
+    const options = sentryOptions('https://key@example.invalid/1')
+    expect(options.beforeSend?.(event('The destination stream closed early.'), {})).toBeNull()
   })
 })

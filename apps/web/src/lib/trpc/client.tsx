@@ -89,6 +89,14 @@ export function BusinessApiProvider({
         void client.invalidateQueries({ queryKey: [['me']] })
         void client.invalidateQueries({ queryKey: [['business', 'context']] })
       },
+      // A change to the business may complete a Dashboard step (a TRN, an invitation, a branch):
+      // refetch the checklist now, even while another page is open, so the Dashboard shows it at
+      // once. The account's own changes (e.g. the business opened last) change no step.
+      onMutationSuccess: (mutationKey) => {
+        const path = Array.isArray(mutationKey?.[0]) ? mutationKey[0] : []
+        if (path[0] === 'account') return
+        void client.invalidateQueries({ queryKey: [['dashboard']], refetchType: 'all' })
+      },
     })
     return client
   })

@@ -276,12 +276,28 @@ describe('business.context', () => {
       modules: [
         {
           id: 'dashboard',
-          nav: [{ id: 'dashboard', labelKey: 'nav.dashboard', path: '', icon: 'layout-dashboard' }],
+          nav: [
+            {
+              id: 'dashboard',
+              labelKey: 'nav.dashboard',
+              path: '',
+              icon: 'layout-dashboard',
+              group: 'main',
+            },
+          ],
           quickActions: [],
         },
         {
           id: 'settings',
-          nav: [{ id: 'settings', labelKey: 'nav.settings', path: 'settings', icon: 'settings' }],
+          nav: [
+            {
+              id: 'settings',
+              labelKey: 'nav.settings',
+              path: 'settings',
+              icon: 'settings',
+              group: 'system',
+            },
+          ],
           quickActions: [],
         },
       ],
