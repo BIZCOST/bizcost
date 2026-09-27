@@ -4,7 +4,9 @@ import {
   apiErrorKey,
   createQueryClient,
   isAccessChange,
+  PERMISSIONS_VERSION_HEADER,
   shouldRetry,
+  watchPermissionsVersion,
   API_STALE_TIME_MS,
 } from './api'
 
@@ -95,5 +97,39 @@ describe('mutation success', () => {
       .catch(() => {})
     await client.fetchQuery({ queryKey: ['q'], queryFn: () => Promise.resolve(1) })
     expect(keys).toEqual([[['a', 'b']]])
+  })
+})
+
+describe('the permissions version', () => {
+  /** A fetch that answers with the given x-permissions-version headers, in order. */
+  function answers(...versions: (string | null)[]): typeof fetch {
+    let next = 0
+    return () => {
+      const version = versions[next++] ?? null
+      const headers = new Headers(version === null ? {} : { [PERMISSIONS_VERSION_HEADER]: version })
+      return Promise.resolve(new Response('{}', { headers }))
+    }
+  }
+
+  it('calls onNewer once per newer version, never for the same, an older or a missing one', async () => {
+    let calls = 0
+    const watched = watchPermissionsVersion(
+      3,
+      () => calls++,
+      answers('3', null, '2', '4', '4', 'x', '5', '4'),
+    )
+    const seen: number[] = []
+    for (let i = 0; i < 8; i++) {
+      await watched('/api/trpc/x')
+      seen.push(calls)
+    }
+    expect(seen).toEqual([0, 0, 0, 1, 1, 1, 2, 2])
+  })
+
+  it('returns the answer unchanged', async () => {
+    const watched = watchPermissionsVersion(1, () => {}, answers('2'))
+    const response = await watched('/api/trpc/x')
+    expect(response.headers.get(PERMISSIONS_VERSION_HEADER)).toBe('2')
+    expect(await response.json()).toEqual({})
   })
 })

@@ -326,3 +326,127 @@ describe('createCodeVerification: a request answered "too soon" is sent again on
     expect(edited.calls.signInWithOtp).not.toHaveBeenCalled()
   })
 })
+
+describe('createCodeVerification: a sign-up code sets the password again (D-102)', () => {
+  // A code that confirms an address drops the password chosen before (a database rule): whoever
+  // signed up first chose it. The page sets the password its sign-up form was given.
+  const options = (password: string | null) =>
+    ({ email: 'a@b.co', purpose: 'signUp', locale: 'en', password }) as const
+
+  it('sets the page’s password with the code’s session, as one step on screen', async () => {
+    const { auth, calls } = fakeAuth()
+    const flow = createCodeVerification({ auth, ...options('A-long-password-42') })
+    const seen: string[] = []
+    flow.subscribe(() => seen.push(flow.getState().status))
+    expect(await flow.verify('123456')).toBe(true)
+    expect(calls.updateUser).toHaveBeenCalledWith({ password: 'A-long-password-42' })
+    expect(calls.verifyOtp.mock.invocationCallOrder[0]).toBeLessThan(
+      calls.updateUser.mock.invocationCallOrder[0] ?? 0,
+    )
+    expect(seen).toEqual(['verifying', 'verified'])
+  })
+
+  it('is done when Supabase answers that it is the same password (no database rule yet)', async () => {
+    const { auth, calls } = fakeAuth()
+    failOnce(calls, 'updateUser', apiError('same_password', 422))
+    const flow = createCodeVerification({ auth, ...options('A-long-password-42') })
+    expect(await flow.verify('123456')).toBe(true)
+    expect(flow.getState()).toMatchObject({ status: 'verified', error: null })
+  })
+
+  it('asks for a password when the page lost it (a reload); nothing is sent before', async () => {
+    const { auth, calls } = fakeAuth()
+    const flow = createCodeVerification({ auth, ...options(null) })
+    expect(await flow.verify('123456')).toBe(false)
+    expect(flow.getState()).toMatchObject({ status: 'password', error: null })
+    expect(calls.updateUser).not.toHaveBeenCalled()
+
+    const saving = flow.savePassword('Chosen-again-7')
+    expect(flow.getState().status).toBe('saving')
+    expect(await saving).toBe(true)
+    expect(calls.updateUser).toHaveBeenCalledWith({ password: 'Chosen-again-7' })
+    expect(flow.getState().status).toBe('verified')
+  })
+
+  it('asks for a password the Auth server accepts when it refuses the one the page had', async () => {
+    // A password sign-in accepts older passwords that no longer meet the rule (D-072).
+    const { auth, calls } = fakeAuth()
+    failOnce(calls, 'updateUser', apiError('weak_password', 422))
+    const flow = createCodeVerification({ auth, ...options('old') })
+    expect(await flow.verify('123456')).toBe(false)
+    expect(flow.getState()).toMatchObject({ status: 'password', error: 'auth.errors.weakPassword' })
+
+    failOnce(calls, 'updateUser', new AuthRetryableFetchError('fetch failed', 0))
+    expect(await flow.savePassword('A-long-password-42')).toBe(false)
+    expect(flow.getState()).toMatchObject({ status: 'password', error: 'errors.network' })
+    expect(await flow.savePassword('A-long-password-42')).toBe(true)
+    expect(flow.getState().status).toBe('verified')
+  })
+
+  it('sets no password after a sign-in code', async () => {
+    const { auth, calls } = fakeAuth()
+    const flow = createCodeVerification({ auth, email: 'a@b.co', purpose: 'signIn', locale: 'en' })
+    expect(await flow.verify('123456')).toBe(true)
+    expect(calls.updateUser).not.toHaveBeenCalled()
+  })
+
+  it('leaves the code step behind: no resend, retry or code error once the code was accepted', async () => {
+    vi.useFakeTimers()
+    try {
+      vi.setSystemTime(1_000_000)
+      const { auth, calls } = fakeAuth()
+      const flow = createCodeVerification({
+        auth,
+        ...options(null),
+        sentAt: 1_000_000 - 120_000,
+        retryAt: 1_000_000 + 5_000,
+      })
+      flow.start()
+      await flow.verify('123456')
+      expect(flow.getState()).toMatchObject({ status: 'password', retryAt: null })
+      await flow.resend()
+      await vi.advanceTimersByTimeAsync(60_000)
+      expect(calls.resend).not.toHaveBeenCalled()
+      expect(await flow.verify('123456')).toBe(false)
+      expect(calls.verifyOtp).toHaveBeenCalledTimes(1)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+})
+
+describe('codeVerificationReducer: the password step', () => {
+  const choosing = { ...base, purpose: 'signUp' as const, status: 'password' as const }
+
+  it('saves only from the password step', () => {
+    expect(codeVerificationReducer(base, { type: 'save' })).toBe(base)
+    expect(codeVerificationReducer(choosing, { type: 'save' })).toMatchObject({
+      status: 'saving',
+      error: null,
+    })
+  })
+
+  it('keeps the step through late answers of the code step', () => {
+    expect(codeVerificationReducer(choosing, { type: 'failed', error: 'errors.internal' })).toBe(
+      choosing,
+    )
+    expect(
+      codeVerificationReducer(choosing, { type: 'retried', at: 5_000, error: 'errors.network' }),
+    ).toBe(choosing)
+    expect(codeVerificationReducer(choosing, { type: 'resend' })).toBe(choosing)
+  })
+
+  it('reaches the step only from a code check or a save', () => {
+    expect(codeVerificationReducer(base, { type: 'choosePassword', error: null })).toBe(base)
+    const saving = { ...choosing, status: 'saving' as const }
+    expect(
+      codeVerificationReducer(saving, {
+        type: 'choosePassword',
+        error: 'auth.errors.weakPassword',
+      }),
+    ).toMatchObject({ status: 'password', error: 'auth.errors.weakPassword' })
+    expect(codeVerificationReducer(saving, { type: 'verified' })).toMatchObject({
+      status: 'verified',
+    })
+  })
+})

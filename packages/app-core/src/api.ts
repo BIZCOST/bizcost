@@ -63,6 +63,35 @@ export function isAccessChange(error: unknown): boolean {
   return code !== undefined && ACCESS_CHANGED.has(code)
 }
 
+/** The caller's permissions version in the business: sent by every business procedure. */
+export const PERMISSIONS_VERSION_HEADER = 'x-permissions-version'
+
+/**
+ * A fetch for the business's API client that watches `x-permissions-version`: when an answer carries a
+ * newer version than the page has seen (a role or its permissions changed while the page is open),
+ * `onNewer` runs once, e.g. to refetch `me` and `business.context`. It catches what no refusal shows:
+ * a role that now grants more is refused nothing (docs/ARCHITECTURE.md §Data fetching, stale
+ * permissions). `initial` is the version of the business context the page loaded; an answer with the
+ * same or an older version (a request that started before the change) changes nothing, so the
+ * refetched context itself never triggers another refetch.
+ */
+export function watchPermissionsVersion(
+  initial: number,
+  onNewer: () => void,
+  fetchImpl: typeof fetch = (input, init) => globalThis.fetch(input, init),
+): typeof fetch {
+  let seen = initial
+  return async (input, init) => {
+    const response = await fetchImpl(input, init)
+    const version = Number(response.headers.get(PERMISSIONS_VERSION_HEADER) ?? Number.NaN)
+    if (Number.isSafeInteger(version) && version > seen) {
+      seen = version
+      onNewer()
+    }
+    return response
+  }
+}
+
 export interface QueryClientOptions {
   /**
    * Called when a query or mutation is refused because the caller's access changed

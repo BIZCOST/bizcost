@@ -123,6 +123,9 @@ catalogs:
     tailwindcss:
       specifier: 4.3.3
       version: 4.3.3
+    tsx:
+      specifier: 4.23.15
+      version: 4.23.15
     turbo:
       specifier: 2.11.3
       version: 2.11.3
@@ -356,6 +359,9 @@ importers:
       postgres:
         specifier: 'catalog:'
         version: 3.4.9
+      tsx:
+        specifier: 'catalog:'
+        version: 4.23.15
       typescript:
         specifier: 'catalog:'
         version: 6.0.3

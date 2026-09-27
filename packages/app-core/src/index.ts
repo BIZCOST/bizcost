@@ -7,11 +7,13 @@ export {
   createApiClient,
   createQueryClient,
   isAccessChange,
+  PERMISSIONS_VERSION_HEADER,
   shouldRetry,
   TRPCProvider,
   useMe,
   useTRPC,
   useTRPCClient,
+  watchPermissionsVersion,
   type ApiClient,
   type QueryClientOptions,
 } from './api'
@@ -44,6 +46,7 @@ export {
 export {
   changeEmailSchema,
   changePasswordSchema,
+  choosePasswordSchema,
   codeFormSchema,
   codeSchema,
   emailCodesSchema,
@@ -59,6 +62,7 @@ export {
   signUpSchema,
   type ChangeEmailForm,
   type ChangePasswordForm,
+  type ChoosePasswordForm,
   type CodeForm,
   type EmailCodesForm,
   type EmailForm,
@@ -70,6 +74,7 @@ export {
   type SignUpForm,
 } from './auth/forms'
 export {
+  codeAccepted,
   codeVerificationReducer,
   createCodeVerification,
   type CodePurpose,

@@ -93,6 +93,8 @@ test('sign up with an email code and land on home', async ({ page }) => {
   await expect(page.getByRole('heading', { level: 1 })).toHaveText('Welcome to BizCost')
   await expect(page.getByText('Add your name in your account')).toBeVisible()
   await expect(page.getByText('No business yet')).toBeVisible()
+  // The code dropped the password chosen before it; the page set it again (D-102).
+  expect(await passwordWorks(email, 'A-long-password-42')).toBe(true)
 })
 
 test('sign-up password rule (D-072): the checklist, and both the page and Auth refuse a weak one', async ({

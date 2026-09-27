@@ -23,6 +23,7 @@ import { Button } from '@/components/ui/button'
 import { InvitationBanner } from '@/features/invite/invitation-banner'
 import { useLocale } from '@/lib/i18n/client'
 import { authClient } from '@/lib/supabase/browser'
+import { holdPassword } from './held-password'
 import { savePending, sentCode } from './pending'
 
 export function SignupForm() {
@@ -50,6 +51,8 @@ export function SignupForm() {
       return setError(result.error)
     }
     savePending({ email: result.email, purpose: 'signUp', sentAt: Date.now() })
+    // The code drops any password chosen before it; the code page sets this one again (D-102).
+    holdPassword(result.email, values.password)
     router.push('/verify')
   })
 

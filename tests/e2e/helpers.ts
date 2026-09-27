@@ -87,6 +87,20 @@ export async function findUserId(email: string): Promise<string | null> {
   return rows[0]?.id ?? null
 }
 
+/**
+ * The owner of an address comes back later: Supabase emails an address at most once a minute
+ * ([auth.email] max_frequency), so its send times move a minute back (codes stay valid for 10).
+ */
+export async function timePasses(email: string): Promise<void> {
+  await asAdmin(
+    (sql) => sql`
+      update auth.users
+         set confirmation_sent_at = confirmation_sent_at - interval '61 seconds',
+             recovery_sent_at = recovery_sent_at - interval '61 seconds'
+       where email = ${email}`,
+  )
+}
+
 /** How many Auth sessions (signed-in devices) the user has. */
 export async function sessionCount(userId: string): Promise<number> {
   const rows = await asAdmin(

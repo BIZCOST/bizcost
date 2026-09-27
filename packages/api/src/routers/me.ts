@@ -19,7 +19,9 @@ import { authedProcedure } from '../trpc'
  * the caller is an active member are listed. Roles are tenant rows, readable only inside that
  * business's context: each membership's role is read in its own withTenantTx. That transaction also
  * copies the account's verified email to the membership when it changed (business_members.email, which
- * co-members see and invitations are checked against), the way a new name is copied (D-048).
+ * co-members see and invitations are checked against), the way a new name is copied (D-048). That copy
+ * makes `me` the one query that writes audited business rows (D-103): it writes only the token's own
+ * email, so a cross-site GET can set nothing else.
  *
  * Each active membership has the business's Arabic name and a signed URL of its logo (D-097): one
  * Storage request for all of them, at most MEMBERSHIP_LOGOS_MAX (the business opened last, then the

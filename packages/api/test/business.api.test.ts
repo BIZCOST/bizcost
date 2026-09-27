@@ -1,4 +1,4 @@
-import { sensitive, withMeta, zDecimal } from '@bizcost/contracts'
+import { withMeta } from '@bizcost/contracts'
 import {
   businessCapabilities,
   businesses,
@@ -40,6 +40,7 @@ import {
   type Admin,
   type TestUser,
 } from './helpers'
+import { item, itemDto, PATHS_OF, VALUES_OF, VISIBLE_TO } from './oracle'
 
 // Business-scoped procedures through the real fetch handler: membership check, business.context per
 // role template, module and permission gates, redaction and FORBIDDEN on hidden-field queries.
@@ -47,59 +48,6 @@ import {
 // password sign-ins, which session.api.test.ts covers, without using up the sign-in rate limit.
 
 const ok = z.object({ ok: z.boolean() })
-
-const lineDto = z.object({
-  qty: zDecimal,
-  unitCost: sensitive(zDecimal, 'cost'),
-  supplierPrice: sensitive(zDecimal, 'supplier_price'),
-})
-const itemDto = z.object({
-  name: z.string(),
-  price: zDecimal,
-  cost: sensitive(zDecimal, 'cost'),
-  margin: sensitive(zDecimal, 'profit_margin'),
-  lines: z.array(lineDto),
-  staff: z.object({
-    name: z.string(),
-    salary: sensitive(zDecimal, 'payroll'),
-    phone: sensitive(z.string(), 'employee_pii'),
-  }),
-})
-const item = {
-  name: 'Latte',
-  price: '18',
-  cost: '6.5',
-  margin: '0.6389',
-  lines: [{ qty: '0.02', unitCost: '120', supplierPrice: '110' }],
-  staff: { name: 'Sara', salary: '4200', phone: '+971500000001' },
-}
-
-// The schema paths and the values of each category in `item`.
-const PATHS_OF: Record<SensitivityCategory, string[]> = {
-  cost: ['cost', 'lines.*.unitCost'],
-  profit_margin: ['margin'],
-  supplier_price: ['lines.*.supplierPrice'],
-  payroll: ['staff.salary'],
-  employee_pii: ['staff.phone'],
-}
-const VALUES_OF: Record<SensitivityCategory, string[]> = {
-  cost: ['6.5', '120'],
-  profit_margin: ['0.6389'],
-  supplier_price: ['110'],
-  payroll: ['4200'],
-  employee_pii: ['+971500000001'],
-}
-
-// Oracle, written out by hand: the categories each starter role template may see (PRODUCT.md §8).
-const VISIBLE_TO: Record<RoleTemplateKey, SensitivityCategory[]> = {
-  owner: [...SENSITIVITY_CATEGORIES],
-  admin: [...SENSITIVITY_CATEGORIES],
-  manager: ['cost', 'profit_margin', 'supplier_price'],
-  accountant: ['cost', 'profit_margin', 'supplier_price', 'payroll'],
-  sales: [],
-  supervisor: [],
-  employee: [],
-}
 
 const SORTABLE: Record<'name' | 'cost' | 'margin', SensitivityCategory | undefined> = {
   name: undefined,

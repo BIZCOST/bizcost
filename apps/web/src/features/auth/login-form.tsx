@@ -26,6 +26,7 @@ import { useLocale } from '@/lib/i18n/client'
 import { authClient } from '@/lib/supabase/browser'
 import { InvitationBanner } from '@/features/invite/invitation-banner'
 import { takeReturnPath } from '@/features/invite/return-path'
+import { holdPassword } from './held-password'
 import { savePending, sentCode } from './pending'
 import { NOTICE_KEYS, type Notice } from './notices'
 
@@ -103,6 +104,8 @@ export function LoginForm({ notice }: { notice?: Notice }) {
         // "Too soon" (D-073): /verify sends the request again once.
         retryAt: result.retryAt,
       })
+      // The right password: the code page keeps it once the code confirms the email (D-102).
+      holdPassword(result.email, values.password)
       return router.push('/verify')
     }
     // Back to an invitation opened before signing in, else home.

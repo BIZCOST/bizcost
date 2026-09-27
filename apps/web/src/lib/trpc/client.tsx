@@ -1,6 +1,12 @@
 'use client'
 
-import { createApiClient, createQueryClient, TRPCProvider, useTRPC } from '@bizcost/app-core'
+import {
+  createApiClient,
+  createQueryClient,
+  TRPCProvider,
+  useTRPC,
+  watchPermissionsVersion,
+} from '@bizcost/app-core'
 import { API_MAX_BATCH_SIZE, type BusinessContextDto, type MeDto } from '@bizcost/contracts'
 import {
   QueryClientProvider,
@@ -41,6 +47,12 @@ export function ApiProvider({ me, children }: { me?: MeDto; children: ReactNode 
 }
 
 const ACCESS_REFRESH_GAP_MS = 5_000
+
+/** Refetches the member's access: `me` and the business context (tRPC's pathKey of each). */
+function refreshAccess(client: QueryClient) {
+  void client.invalidateQueries({ queryKey: [['me']] })
+  void client.invalidateQueries({ queryKey: [['business', 'context']] })
+}
 
 function SeedBusiness({
   me,
@@ -86,8 +98,7 @@ export function BusinessApiProvider({
         const now = Date.now()
         if (now - lastAccessRefresh < ACCESS_REFRESH_GAP_MS) return
         lastAccessRefresh = now
-        void client.invalidateQueries({ queryKey: [['me']] })
-        void client.invalidateQueries({ queryKey: [['business', 'context']] })
+        refreshAccess(client)
       },
       // A change to the business may complete a Dashboard step (a TRN, an invitation, a branch):
       // refetch the checklist now, even while another page is open, so the Dashboard shows it at
@@ -106,6 +117,11 @@ export function BusinessApiProvider({
         url: '/api/trpc',
         maxItems: API_MAX_BATCH_SIZE,
         headers: { 'x-business-id': businessId },
+        // An answer with a newer x-permissions-version (a role changed while the page is open, also
+        // one that now grants more, which no refusal would show): refetch the member's access.
+        fetch: watchPermissionsVersion(context.permissionsVersion, () =>
+          refreshAccess(queryClient),
+        ),
       }),
     ]),
   )

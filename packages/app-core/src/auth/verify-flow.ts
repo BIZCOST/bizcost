@@ -3,19 +3,28 @@ import { createFlowStore, type Flow } from '../flow'
 import { normalizeEmail, type AuthClient } from './client'
 import { isCompleteCode, normalizeCode, resendAvailableAt } from './code'
 import { availableAfterRetry, createRetryTimer, emailRetryAt, plannedRetryAt } from './email-retry'
-import { authErrorKey, isSilentError, type AuthMessageKey } from './errors'
+import { authErrorCode, authErrorKey, isSilentError, type AuthMessageKey } from './errors'
 
 // The code screen after sign-up or "send me a code": verifyOtp(type 'email') and resend with a
 // 60-second cooldown. Resending behaves the same whether or not the account exists ("send me a code"
 // creates a missing account, D-062). A request the server answered "too soon" is sent again once,
 // unseen, while the screen is open (D-073).
+//
+// A code that confirms an address drops any password chosen before (a database rule, D-102: whoever
+// signed up first with the address chose it). So after a sign-up code the flow sets the password
+// the sign-up (or a password sign-in of an unconfirmed email) was given, with the session the code
+// created; when the page no longer has it (a reload), the user chooses one.
 
 export type CodePurpose = 'signUp' | 'signIn'
 
 export interface CodeVerificationState {
   purpose: CodePurpose
   email: string
-  status: 'idle' | 'verifying' | 'resending' | 'verified'
+  /**
+   * `password`: the code was accepted (signed in) and the user chooses the password the page lost,
+   * or one the Auth server refused; `saving`: it is being set. `verified`: done.
+   */
+  status: 'idle' | 'verifying' | 'resending' | 'password' | 'saving' | 'verified'
   error: AuthMessageKey | null
   /** Set after a successful resend until the next action. */
   notice: 'resent' | null
@@ -31,6 +40,8 @@ export interface CodeVerificationState {
 export type CodeVerificationEvent =
   | { type: 'verify' }
   | { type: 'verified' }
+  | { type: 'choosePassword'; error: AuthMessageKey | null }
+  | { type: 'save' }
   | { type: 'resend' }
   | { type: 'resent'; at: number; retryAt: number | null }
   | { type: 'retry' }
@@ -38,6 +49,10 @@ export type CodeVerificationEvent =
   | { type: 'failed'; error: AuthMessageKey }
 
 const busy = (s: CodeVerificationState) => s.status !== 'idle'
+
+/** The code was accepted: nothing of the code step (a resend, its retry or error) applies any more. */
+export const codeAccepted = (s: Pick<CodeVerificationState, 'status'>) =>
+  s.status === 'password' || s.status === 'saving' || s.status === 'verified'
 
 export function codeVerificationReducer(
   state: CodeVerificationState,
@@ -47,9 +62,15 @@ export function codeVerificationReducer(
     case 'verify':
       return busy(state) ? state : { ...state, status: 'verifying', error: null, notice: null }
     case 'verified':
-      return state.status === 'verifying'
+      return state.status === 'verifying' || state.status === 'saving'
         ? { ...state, status: 'verified', error: null, retryAt: null }
         : state
+    case 'choosePassword':
+      return state.status === 'verifying' || state.status === 'saving'
+        ? { ...state, status: 'password', error: event.error, notice: null, retryAt: null }
+        : state
+    case 'save':
+      return state.status === 'password' ? { ...state, status: 'saving', error: null } : state
     case 'resend':
       return busy(state)
         ? state
@@ -70,14 +91,14 @@ export function codeVerificationReducer(
     case 'retry':
       return state.status === 'idle' && state.retryAt !== null ? { ...state, retryAt: null } : state
     case 'retried':
-      if (state.status === 'verified') return state
+      if (codeAccepted(state)) return state
       return {
         ...state,
         resendAvailableAt: availableAfterRetry(state.resendAvailableAt, event.at),
         error: event.error && state.status === 'idle' ? event.error : state.error,
       }
     case 'failed':
-      return state.status === 'verified' ? state : { ...state, status: 'idle', error: event.error }
+      return codeAccepted(state) ? state : { ...state, status: 'idle', error: event.error }
   }
 }
 
@@ -94,12 +115,24 @@ export interface CodeVerificationOptions {
    * time (epoch ms, from `requestSignInCode` or `signInWithPassword`, D-073).
    */
   retryAt?: number
+  /**
+   * A sign-up code (D-102): the password this page was given for the address (the sign-up form, or
+   * a password sign-in of an unconfirmed email), set again once the code confirmed the address; null
+   * when the page lost it (a reload), and the user chooses one. Left out: no password ("Send me a
+   * code").
+   */
+  password?: string | null
   now?: () => number
 }
 
 export interface CodeVerification extends Flow<CodeVerificationState> {
-  /** Verifies the code; resolves true once signed in. */
+  /**
+   * Verifies the code; resolves true once done: signed in and, after a sign-up code, the password
+   * set. False also when the password step follows (`status: 'password'`).
+   */
   verify(code: string): Promise<boolean>
+  /** Sets the password the user chose after the code; resolves true once done. */
+  savePassword(password: string): Promise<boolean>
   /** Sends a new code (ignored during the cooldown). */
   resend(): Promise<void>
   /** Runs the planned automatic resend while the screen is shown; returns the stop function. */
@@ -114,6 +147,7 @@ export function createCodeVerification({
   now = Date.now,
   sentAt = now(),
   retryAt,
+  password,
 }: CodeVerificationOptions): CodeVerification {
   const address = normalizeEmail(email)
   const planned = plannedRetryAt(retryAt, now())
@@ -157,8 +191,36 @@ export function createCodeVerification({
       void retry()
       return false
     }
+    if (password === undefined) {
+      store.dispatch({ type: 'verified' })
+      return true
+    }
+    if (password === null) {
+      store.dispatch({ type: 'choosePassword', error: null })
+      return false
+    }
+    // Still "checking the code" on screen: the user sees one step.
+    return setPassword(password)
+  }
+
+  /**
+   * Sets the password through the session the code created. "Same password" means it is already
+   * the one (the database rule is not there yet): done. Any other refusal (e.g. an old password that
+   * no longer meets the rule, D-072, or the network) asks the user.
+   */
+  async function setPassword(value: string): Promise<boolean> {
+    const { error } = await auth.updateUser({ password: value })
+    if (error && authErrorCode(error) !== 'same_password') {
+      store.dispatch({ type: 'choosePassword', error: authErrorKey(error) })
+      return false
+    }
     store.dispatch({ type: 'verified' })
     return true
+  }
+
+  async function savePassword(value: string): Promise<boolean> {
+    if (!store.dispatch({ type: 'save' })) return false
+    return setPassword(value)
   }
 
   async function resend(): Promise<void> {
@@ -192,6 +254,7 @@ export function createCodeVerification({
     getState: store.getState,
     subscribe: store.subscribe,
     verify,
+    savePassword,
     resend,
     start: timer.start,
   }

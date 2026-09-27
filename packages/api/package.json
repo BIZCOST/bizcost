@@ -10,7 +10,9 @@
     "typecheck": "tsc -p tsconfig.json",
     "lint": "eslint .",
     "test": "vitest run",
-    "test:api": "vitest run --config vitest.api.config.ts"
+    "test:api": "vitest run --config vitest.api.config.ts",
+    "demo:seed": "tsx --conditions=react-server demo/seed.ts",
+    "demo:reset": "tsx --conditions=react-server demo/reset.ts"
   },
   "dependencies": {
     "@bizcost/contracts": "workspace:*",
@@ -33,6 +35,7 @@
     "@types/semver": "catalog:",
     "eslint": "catalog:",
     "postgres": "catalog:",
+    "tsx": "catalog:",
     "typescript": "catalog:",
     "vite": "catalog:",
     "vitest": "catalog:"

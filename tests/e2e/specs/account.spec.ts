@@ -1,12 +1,15 @@
+import { randomUUID } from 'node:crypto'
 import { expect, test, type Browser } from '@playwright/test'
 import {
   ageSignIn,
+  callApi,
   createBusiness,
   createUser,
   deleteUser,
   enterCode,
   getUser,
   nextCode,
+  nextInvitation,
   passwordWorks,
   readSession,
   refreshWorks,
@@ -18,8 +21,10 @@ import {
   WORKSHOP_ANSWERS,
   type TestUser,
 } from '../helpers'
+import { baseURL } from '../stack'
 
-// The account page: name, password ("confirm it's you" code), email (two codes), sessions, delete.
+// The account page: name, password ("confirm it's you" code), email (two codes), sessions, delete
+// (also the sole-owner guard).
 
 let user: TestUser
 test.beforeEach(async ({ page, context }) => {
@@ -121,6 +126,71 @@ test('deleting an account signed in long ago asks for an emailed code first', as
   await dialog.getByRole('button', { name: 'Delete account' }).click()
   await expect(page).toHaveURL('/login?notice=account-deleted')
   expect(await getUser(user.id)).toBeNull()
+})
+
+test('the only owner of a business with other members cannot delete the account until they are gone', async ({
+  page,
+  browser,
+}) => {
+  const businessId = await createBusiness(page, 'Sole Owner Workshop', WORKSHOP_ANSWERS)
+  const member = await createUser('account-member')
+  try {
+    const roles = await callApi<{ id: string; templateKey: string | null }[]>(
+      page,
+      'role.list',
+      {},
+      { businessId, query: true },
+    )
+    const roleId = roles.data?.find((r) => r.templateKey === 'employee')?.id
+    const invited = await callApi(
+      page,
+      'invitation.create',
+      { id: randomUUID(), email: member.email, roleId, locale: 'en' },
+      { businessId },
+    )
+    expect(invited.appCode).toBeUndefined()
+    const { token } = await nextInvitation(member.email)
+    const memberContext = await browser.newContext({ baseURL, locale: 'en-US' })
+    try {
+      await useLanguage(memberContext, 'en')
+      const memberPage = await memberContext.newPage()
+      await signIn(memberPage, member)
+      expect((await callApi(memberPage, 'invitation.accept', { token })).appCode).toBeUndefined()
+    } finally {
+      await memberContext.close()
+    }
+
+    await page.reload()
+    await page.getByRole('button', { name: 'Delete my account' }).click()
+    const dialog = page.getByRole('alertdialog')
+    await dialog.getByRole('button', { name: 'Delete account' }).click()
+    await expect(
+      dialog.getByText('You are the only owner of a business that has other members.', {
+        exact: false,
+      }),
+    ).toBeVisible()
+    // Nothing changed: still signed in here, the account and the business with its member intact.
+    await expect(page).toHaveURL('/account')
+    expect(await getUser(user.id)).not.toBeNull()
+    expect((await callApi(page, 'me', {}, { query: true })).appCode).toBeUndefined()
+    const members = await callApi<{ id: string; email: string | null; status: string }[]>(
+      page,
+      'member.list',
+      {},
+      { businessId, query: true },
+    )
+    const joined = members.data?.find((m) => m.email === member.email)
+    expect(joined?.status).toBe('active')
+
+    // Once the other member is removed, the same dialog deletes the account.
+    const removed = await callApi(page, 'member.remove', { memberId: joined?.id }, { businessId })
+    expect(removed.appCode).toBeUndefined()
+    await dialog.getByRole('button', { name: 'Delete account' }).click()
+    await expect(page).toHaveURL('/login?notice=account-deleted')
+    expect(await getUser(user.id)).toBeNull()
+  } finally {
+    await deleteUser(member.id)
+  }
 })
 
 test('"Sign out" in the header signs out this device only', async ({ page, browser }) => {

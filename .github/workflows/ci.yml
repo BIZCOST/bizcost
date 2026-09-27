@@ -24,8 +24,17 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - run: pnpm format:check
       - run: pnpm check
-      # The web app builds without any environment (it is read on the first request).
+      # The server environment is read on the first request, so the build needs none. The two public
+      # values are inlined into the browser code: dummy ones that are not *.supabase.co, which the
+      # bundle check below must find (so it proves it scanned the client code).
       - run: pnpm --filter @bizcost/web build
+        env:
+          NEXT_PUBLIC_SUPABASE_URL: https://auth.bizcost-ci.invalid
+          NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY: ci-build-placeholder
+      # No *.supabase.co host in any client bundle (docs/ARCHITECTURE.md §Network exposure): browser
+      # chunks and prerendered pages. Mobile builds get the same check with Step 8.
+      - name: No supabase.co in the web client
+        run: node packages/config/ci/check-bundle-hosts.js apps/web/.next --expect auth.bizcost-ci.invalid
 
   db:
     runs-on: ubuntu-latest
@@ -51,12 +60,13 @@ jobs:
       # A throwaway ES256 signing key for this run's Auth server (config.toml signing_keys_path; the
       # file is gitignored). The API accepts only asymmetric tokens, verified with getClaims().
       - run: pnpm auth:signing-key
-      # Postgres (migrations + seed.sql), Auth, Storage (the business logo), the API gateway and
-      # Mailpit (the emailed codes, and invitations over SMTP): what pgTAP, the @bizcost/db tests, the
+      # Postgres (migrations + seed.sql), Auth, Storage (the business logo), the Data API (PostgREST:
+      # the hardening tests attack /rest/v1 as hosted projects expose it), the API gateway and Mailpit
+      # (the emailed codes, and invitations over SMTP): what pgTAP, the @bizcost/db tests, the
       # @bizcost/api integration tests and the e2e tests need. `supabase db start` alone has no Auth.
       - run: >-
           supabase start
-          -x realtime,imgproxy,postgrest,postgres-meta,studio,edge-runtime,logflare,vector,supavisor
+          -x realtime,imgproxy,postgres-meta,studio,edge-runtime,logflare,vector,supavisor
       - run: supabase test db
       - run: pnpm --filter @bizcost/db test:db
       - run: pnpm --filter @bizcost/api test:api

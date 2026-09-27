@@ -71,6 +71,13 @@
       "when": 1790460793595,
       "tag": "20260926221313_business_name_ar_preview",
       "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1790467093366,
+      "tag": "20260926235813_confirmation_drops_password",
+      "breakpoints": true
     }
   ]
 }

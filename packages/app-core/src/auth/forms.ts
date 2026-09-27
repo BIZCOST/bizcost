@@ -95,6 +95,11 @@ export const signUpSchema = z.object({ email: emailSchema, password: newPassword
 /** "Send me a code" and "Forgot password". */
 export const emailFormSchema = z.object({ email: emailSchema })
 export const codeFormSchema = z.object({ code: codeSchema })
+/**
+ * After a sign-up code, when the page lost the sign-up's password (D-102): the password once, as on
+ * the sign-up form.
+ */
+export const choosePasswordSchema = z.object({ password: newPasswordSchema })
 /** Reset screen, after the code was accepted and the user chose to change it: a new password twice. */
 export const resetPasswordSchema = z
   .object({ password: newPasswordSchema, confirmPassword: z.string() })
@@ -122,6 +127,7 @@ export type SignInForm = z.input<typeof signInSchema>
 export type SignUpForm = z.input<typeof signUpSchema>
 export type EmailForm = z.input<typeof emailFormSchema>
 export type CodeForm = z.input<typeof codeFormSchema>
+export type ChoosePasswordForm = z.input<typeof choosePasswordSchema>
 export type ResetPasswordForm = z.input<typeof resetPasswordSchema>
 export type ChangePasswordForm = z.input<typeof changePasswordSchema>
 export type ChangeEmailForm = z.input<typeof changeEmailSchema>
