@@ -522,6 +522,9 @@ importers:
 
   packages/domain:
     dependencies:
+      decimal.js:
+        specifier: 'catalog:'
+        version: 10.6.0
       uuid:
         specifier: 'catalog:'
         version: 14.0.2

@@ -1,4 +1,4 @@
-import { newId } from '@bizcost/domain'
+import { compareDecimal, newId, parseNumber } from '@bizcost/domain'
 import { describe, expect, it } from 'vitest'
 import { DECIMAL_MAX_LENGTH, zBusinessDate, zDecimal, zUuid } from './primitives'
 
@@ -17,6 +17,21 @@ describe('zDecimal', () => {
   it('rejects strings longer than DECIMAL_MAX_LENGTH', () => {
     expect(zDecimal.safeParse('9'.repeat(DECIMAL_MAX_LENGTH)).success).toBe(true)
     expect(zDecimal.safeParse('9'.repeat(DECIMAL_MAX_LENGTH + 1)).success).toBe(false)
+  })
+
+  it('agrees with parseNumber (@bizcost/domain), which reads what people type', () => {
+    // Every value parseNumber returns is accepted unchanged.
+    for (const typed of ['١٬٢٣٤٫٥', '1,234.50', '\u221272', '\u061c-١٢', '007.500', '-0']) {
+      const parsed = parseNumber(typed)
+      if (!parsed.ok) throw new Error(`parseNumber refused "${typed}"`)
+      expect(zDecimal.parse(parsed.value)).toBe(parsed.value)
+    }
+    // Every value zDecimal accepts reads to the same number.
+    for (const wire of ['-0.125', '  42 ', '١٢٫٥', '0012.50', '٠']) {
+      const parsed = parseNumber(wire)
+      if (!parsed.ok) throw new Error(`parseNumber refused "${wire}"`)
+      expect(compareDecimal(parsed.value, zDecimal.parse(wire))).toBe(0)
+    }
   })
 
   it('stays usable as a shared instance inside other schemas', () => {

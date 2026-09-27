@@ -1,5 +1,84 @@
 export { isUuid, newId } from './ids/id'
 export { normalizeDigits } from './numbers/digits'
+// Numbers: branded decimal strings, user input, the two rounding policies (D-032, D-033).
+export { compareDecimal } from './numbers/decimal'
+export {
+  asCostAmount,
+  asDecimal,
+  asMoney,
+  asPercent,
+  asQuantity,
+  asUnitCost,
+  checkDecimal,
+  COST_SCALE,
+  DECIMAL_COLUMNS,
+  QUANTITY_SCALE,
+  type CostAmount,
+  type DecimalCheckError,
+  type DecimalKind,
+  type DecimalKinds,
+  type Money,
+  type Percent,
+  type Quantity,
+  type UnitCost,
+} from './numbers/kinds'
+export { parseNumber, type ParseNumberError, type ParseNumberResult } from './numbers/parse'
+export {
+  CURRENCY_MINOR_UNITS,
+  currencyMinorUnit,
+  isCurrencyCode,
+  roundCost,
+  roundDocument,
+  roundForDisplay,
+  type CurrencyCode,
+} from './numbers/rounding'
+// Document line maths: discount before VAT, per-line rounding, totals as sums of the lines.
+export {
+  computeLine,
+  lineError,
+  type LineAmounts,
+  type LineDiscount,
+  type LineError,
+  type LineInput,
+} from './documents/line'
+export { documentTotals, type DocumentTotals } from './documents/totals'
+// Units: standard units per dimension, material packs and cross factors, conversions (D-034).
+export {
+  BASE_UNITS,
+  dimensionOf,
+  DIMENSIONS,
+  isDimension,
+  isStandardUnit,
+  STANDARD_UNITS,
+  type Dimension,
+  type StandardUnit,
+} from './units/standard'
+export {
+  isValidFactor,
+  validateMaterialUnits,
+  type CrossFactor,
+  type MaterialUnits,
+  type MaterialUnitsError,
+  type MaterialUnitsErrorCode,
+  type PackDefinition,
+  type UnitRef,
+} from './units/materials'
+export { costPerBaseUnit, fromBase, recipeLineCost, toBase, unitFactor } from './units/convert'
+// Weighted-average cost: one average per material per business, in posting order (D-006).
+export {
+  EMPTY_WAC_STATE,
+  replayWac,
+  wacIssue,
+  wacReceive,
+  wacReverseReceipt,
+  type WacIssueResult,
+  type WacMovement,
+  type WacReceipt,
+  type WacReceiptResult,
+  type WacReversalResult,
+  type WacState,
+  type WacStep,
+} from './costing/wac'
 export { parseTrn, TRN_LENGTH, type TrnError, type TrnResult } from './business/trn'
 export { businessDisplayName, type BusinessNames } from './business/display-name'
 export {

@@ -292,14 +292,16 @@ The manifest in `packages/modules` is the single source for the sidebar, mobile 
 ## Numbers, money, units & time
 
 - **Column types:** numeric only (no float, double or `money`); table in DATA_MODEL.md §1.4.
-- In code: decimal.js with branded types in `domain`, and decimal strings on the wire (`zDecimal`). Lint bans `Number()`/`parseFloat` on money. Heavy aggregation runs in SQL.
+- In code: decimal.js with branded types in `domain` (`numbers/`, D-107), and decimal strings on the wire (`zDecimal`). Lint bans `Number()`/`parseFloat` on money. Heavy aggregation runs in SQL.
+- **Exactness rules** (D-107): engines check every input against its column at run time (`checkDecimal`; a RangeError, never a silent rounding by Postgres). A value that multiplies several numbers and divides is an exact product divided once and rounded once. Both policies below round half away from zero (a credit note mirrors its invoice; Postgres `round()` agrees). Signs are tested with `lt(0)`/`gt(0)`, so "-0" is zero.
 - **Two rounding policies** (in `domain`):
   1. Documents (purchase/sale/invoice lines, VAT): round half-up to the currency minor unit from an ISO-4217 table (AED 2; KWD/BHD/OMR 3).
   2. Cost engine (unit cost, recipes, WAC): never round. Store at `numeric(28,12)` and round only for display.
 - **Display:** round with decimal.js to the display digits first, then call Intl with min = max fraction digits, because Hermes may coerce strings to float. A golden test compares web and Hermes output.
 - **Currency, time:** `businesses.currency` (default AED) and a `currency` column on every financial document; multi-currency/FX [Later]. UTC `timestamptz` + `business_date` per document (DATA_MODEL.md §1.4–1.5).
-- **Input:** `parseNumber` in `domain` normalizes Arabic-Indic digits (٠-٩, ۰-۹) and the separators ٫ ٬.
-- **Units** (Phase 2): each material has one base unit in one dimension (mass, volume, count, length, area, time). Standard conversions live in code; packaging conversions are stored exactly per material; cross-dimension needs an explicit factor. Tables: DATA_MODEL.md §6.
+- **Input:** `parseNumber` in `domain` normalizes Arabic-Indic digits (٠-٩, ۰-۹), the separators ٫ ٬ (groups of three only), the minus sign − and direction marks, into the canonical form `zDecimal` accepts.
+- **Units** (Phase 2; engine in `domain/units`, D-108): each material has one base unit in one dimension (mass g, volume ml, count piece, length mm, area cm², time s). Standard conversions live in code; packaging conversions are stored exactly per material; cross-dimension needs an explicit factor. A unit's size in base units is an exact fraction, so conversions and costs per base unit divide once. Tables: DATA_MODEL.md §6.
+- **Weighted average cost** (Phase 2; engine in `domain/costing/wac.ts`, D-109): one state per (business, material): quantity, value and average. A receipt brings in exactly what was paid; an issue costs qty × average; a reversal replays the material's ledger without its receipt. The ledger, projections and lock order: D-110; the owner-visible rules: DECISIONS.md P-001 (proposed).
 
 ## Data fetching & caching
 

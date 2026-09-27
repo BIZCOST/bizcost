@@ -13,6 +13,7 @@
     "test": "vitest run"
   },
   "dependencies": {
+    "decimal.js": "catalog:",
     "uuid": "catalog:"
   },
   "devDependencies": {

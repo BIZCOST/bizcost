@@ -625,7 +625,7 @@ Only Dashboard and Settings are released (M1). The Phase column follows ROADMAP.
   - **Add your second branch** (members who may manage branches, only for a business with branches): done with a second branch. Not for a member who joined after the second branch was added.
   - A step that is undone again (the others left, a branch was removed) shows again, open, to everyone who can do it.
   - Each open step opens its settings section. When all are done, a small "You're all set" takes the list's place; each member can hide it for that business (remembered in the browser). A member who can do none of the steps (e.g. an Employee) sees the welcome and "About your business" only. A member whose role does not include the Dashboard opens the business on their first section (Settings in M1).
-- **When costing modules ship (PLANNED, Phase 2–3):** a checklist titled "Let's calculate your first real profit": add what you sell → add what you use to make it → add purchase prices → add regular business costs → add or import sales → see My Real Profit.
+- **When costing modules ship (PLANNED, Phase 2–3):** a checklist titled "Let's calculate your first real profit": add what you sell → add what you use to make it → add purchase prices → add regular business costs → add or import sales → see My Real Profit. In M2, before sales exist, it is titled "Let's find the real cost of what you sell / لنعرف التكلفة الحقيقية لما تبيعه" and ends at "see your product costs" (ROADMAP.md M2 Step 7).
 
 ## 11. Invoicing (UAE) (requirement DECIDED; build PLANNED)
 
