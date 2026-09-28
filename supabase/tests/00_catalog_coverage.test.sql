@@ -33,15 +33,17 @@ select tables_are(
     'profiles', 'businesses', 'business_capabilities', 'business_modules', 'locations',
     'roles', 'role_permissions', 'business_members', 'member_permission_overrides',
     'member_locations', 'business_invitations', 'setup_answers', 'file_uploads', 'audit_log',
-    'materials', 'material_units', 'products_services', 'product_locations'
+    'materials', 'material_units', 'products_services', 'product_locations',
+    'suppliers', 'purchases', 'purchase_lines', 'purchase_returns', 'purchase_return_lines',
+    'stock_movements', 'material_costs', 'stock_balances', 'attachments'
   ],
   'app contains exactly the Milestone 1 tables and those of M2 so far'
 );
 
 select is(
   (select count(*)::int from business_tables),
-  16,
-  'sanity: 16 app tables carry business_id (the checks below are not vacuous)'
+  25,
+  'sanity: 25 app tables carry business_id (the checks below are not vacuous)'
 );
 
 -- 2. Row level security ---------------------------------------------------------
@@ -250,7 +252,23 @@ select is_empty(
          ('business_invitations', 'role_id', 'roles'),
          ('material_units', 'material_id', 'materials'),
          ('product_locations', 'product_id', 'products_services'),
-         ('product_locations', 'location_id', 'locations')
+         ('product_locations', 'location_id', 'locations'),
+         ('purchases', 'supplier_id', 'suppliers'),
+         ('purchases', 'location_id', 'locations'),
+         ('purchases', 'copied_from_id', 'purchases'),
+         ('purchase_lines', 'purchase_id', 'purchases'),
+         ('purchase_lines', 'material_id', 'materials'),
+         ('purchase_returns', 'purchase_id', 'purchases'),
+         ('purchase_return_lines', 'purchase_id', 'purchases'),
+         ('stock_movements', 'location_id', 'locations'),
+         ('stock_movements', 'material_id', 'materials'),
+         ('stock_movements', 'purchase_line_id', 'purchase_lines'),
+         ('stock_movements', 'return_line_id', 'purchase_return_lines'),
+         ('stock_movements', 'receipt_id', 'stock_movements'),
+         ('stock_movements', 'reverses_id', 'stock_movements'),
+         ('material_costs', 'material_id', 'materials'),
+         ('stock_balances', 'location_id', 'locations'),
+         ('stock_balances', 'material_id', 'materials')
        ) as v(child, col, parent)
       where not exists (
         select 1
@@ -413,7 +431,36 @@ select is_empty(
          ('products_services', 'type'), ('products_services', 'unit'),
          ('products_services', 'default_price'), ('products_services', 'vat_category'),
          ('products_services', 'price_includes_vat'), ('products_services', 'archived_at'),
-         ('product_locations', 'product_id'), ('product_locations', 'location_id')
+         ('product_locations', 'product_id'), ('product_locations', 'location_id'),
+         ('businesses', 'books_closed_through'),
+         ('suppliers', 'name'), ('suppliers', 'phone'), ('suppliers', 'email'), ('suppliers', 'trn'),
+         ('suppliers', 'notes'), ('suppliers', 'archived_at'),
+         ('purchases', 'supplier_id'), ('purchases', 'location_id'), ('purchases', 'business_date'),
+         ('purchases', 'document_type'), ('purchases', 'reference'), ('purchases', 'payment_method'),
+         ('purchases', 'vat_not_reclaimable'), ('purchases', 'currency'), ('purchases', 'status'),
+         ('purchases', 'discount_percent'), ('purchases', 'discount_amount'), ('purchases', 'total'),
+         ('purchases', 'vat_in_cost'), ('purchases', 'cost_total'), ('purchases', 'posted_at'),
+         ('purchases', 'reversed_at'), ('purchases', 'reversal_date'), ('purchases', 'copied_from_id'),
+         ('purchase_lines', 'purchase_id'), ('purchase_lines', 'kind'), ('purchase_lines', 'material_id'),
+         ('purchase_lines', 'qty'), ('purchase_lines', 'unit'), ('purchase_lines', 'pack_id'),
+         ('purchase_lines', 'unit_price'), ('purchase_lines', 'vat_rate'), ('purchase_lines', 'taxable'),
+         ('purchase_lines', 'base_qty'), ('purchase_lines', 'delivery_share'), ('purchase_lines', 'cost'),
+         ('purchase_returns', 'purchase_id'), ('purchase_returns', 'kind'), ('purchase_returns', 'status'),
+         ('purchase_returns', 'business_date'), ('purchase_returns', 'split_amount'),
+         ('purchase_returns', 'cost_total'),
+         ('purchase_return_lines', 'return_id'), ('purchase_return_lines', 'purchase_line_id'),
+         ('purchase_return_lines', 'qty'), ('purchase_return_lines', 'amount'),
+         ('purchase_return_lines', 'base_qty'), ('purchase_return_lines', 'cost'),
+         ('stock_movements', 'seq'), ('stock_movements', 'business_date'),
+         ('stock_movements', 'location_id'), ('stock_movements', 'material_id'),
+         ('stock_movements', 'kind'), ('stock_movements', 'qty'), ('stock_movements', 'value'),
+         ('stock_movements', 'adjustment'), ('stock_movements', 'unit_cost'),
+         ('stock_movements', 'reverses_id'),
+         ('material_costs', 'material_id'), ('material_costs', 'qty'), ('material_costs', 'value'),
+         ('material_costs', 'avg_cost'),
+         ('stock_balances', 'location_id'), ('stock_balances', 'material_id'), ('stock_balances', 'qty'),
+         ('attachments', 'entity'), ('attachments', 'entity_id'), ('attachments', 'path'),
+         ('attachments', 'file_name'), ('attachments', 'content_type'), ('attachments', 'size_bytes')
        ) as v(tbl, col)
       where not exists (
         select 1 from pg_attribute a

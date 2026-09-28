@@ -7,6 +7,7 @@ import arDashboard from '../locales/ar/dashboard.json'
 import arEmails from '../locales/ar/emails.json'
 import arErrors from '../locales/ar/errors.json'
 import arModules from '../locales/ar/modules.json'
+import arPurchasing from '../locales/ar/purchasing.json'
 import arSettings from '../locales/ar/settings.json'
 import arSetup from '../locales/ar/setup.json'
 import arUnits from '../locales/ar/units.json'
@@ -18,6 +19,7 @@ import enDashboard from '../locales/en/dashboard.json'
 import enEmails from '../locales/en/emails.json'
 import enErrors from '../locales/en/errors.json'
 import enModules from '../locales/en/modules.json'
+import enPurchasing from '../locales/en/purchasing.json'
 import enSettings from '../locales/en/settings.json'
 import enSetup from '../locales/en/setup.json'
 import enUnits from '../locales/en/units.json'
@@ -56,6 +58,7 @@ export const en = {
   dashboard: enDashboard,
   catalog: enCatalog,
   units: enUnits,
+  purchasing: enPurchasing,
 } as const
 export type SourceMessages = typeof en
 
@@ -73,6 +76,7 @@ export const resources: Readonly<Record<Locale, Readonly<Record<Namespace, Messa
     dashboard: arDashboard,
     catalog: arCatalog,
     units: arUnits,
+    purchasing: arPurchasing,
   },
 }
 

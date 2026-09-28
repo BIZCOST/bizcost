@@ -61,8 +61,8 @@ create temp view policy_tables as
 
 select is(
   (select count(*)::int from policy_tables),
-  16,
-  'sanity: 16 tables with business_id to explain'
+  25,
+  'sanity: 25 tables with business_id to explain'
 );
 
 -- SELECT ------------------------------------------------------------------------------
@@ -83,14 +83,14 @@ select is_empty(
   'SELECT plans on every table with business_id have no SubPlan'
 );
 
--- UPDATE (audit_log has no UPDATE/DELETE grant) -------------------------------------------
+-- UPDATE (the append-only audit_log and stock_movements have no UPDATE/DELETE grant) ---------
 
 select is_empty(
   $$ select t.table_name, p.plan
        from policy_tables t
       cross join lateral (select pg_temp.api_plan(format(
         'update app.%I set updated_at = updated_at where id = %L', t.table_name, pg_temp.id('some row'))) as plan) as p
-      where t.table_name <> 'audit_log' and p.plan !~ 'InitPlan' $$,
+      where t.table_name not in ('audit_log', 'stock_movements') and p.plan !~ 'InitPlan' $$,
   'UPDATE plans evaluate the policy as an InitPlan'
 );
 
@@ -99,7 +99,7 @@ select is_empty(
        from policy_tables t
       cross join lateral (select pg_temp.api_plan(format(
         'update app.%I set updated_at = updated_at where id = %L', t.table_name, pg_temp.id('some row'))) as plan) as p
-      where t.table_name <> 'audit_log' and (p.plan ~ 'SubPlan' or p.plan ~ '^ERROR') $$,
+      where t.table_name not in ('audit_log', 'stock_movements') and (p.plan ~ 'SubPlan' or p.plan ~ '^ERROR') $$,
   'UPDATE plans have no SubPlan'
 );
 
@@ -110,7 +110,7 @@ select is_empty(
        from policy_tables t
       cross join lateral (select pg_temp.api_plan(format(
         'delete from app.%I where id = %L', t.table_name, pg_temp.id('some row'))) as plan) as p
-      where t.table_name <> 'audit_log' and p.plan !~ 'InitPlan' $$,
+      where t.table_name not in ('audit_log', 'stock_movements') and p.plan !~ 'InitPlan' $$,
   'DELETE plans evaluate the policy as an InitPlan'
 );
 
@@ -119,7 +119,7 @@ select is_empty(
        from policy_tables t
       cross join lateral (select pg_temp.api_plan(format(
         'delete from app.%I where id = %L', t.table_name, pg_temp.id('some row'))) as plan) as p
-      where t.table_name <> 'audit_log' and (p.plan ~ 'SubPlan' or p.plan ~ '^ERROR') $$,
+      where t.table_name not in ('audit_log', 'stock_movements') and (p.plan ~ 'SubPlan' or p.plan ~ '^ERROR') $$,
   'DELETE plans have no SubPlan'
 );
 

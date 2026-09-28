@@ -5,7 +5,7 @@
 -- search_path and are owned by postgres.
 -- Not tested here: app not being exposed through PostgREST (covered by config.toml).
 begin;
-select plan(33);
+select plan(34);
 
 -- 1. The API role -------------------------------------------------------------------
 
@@ -117,9 +117,16 @@ select is_empty(
       cross join unnest(array['SELECT', 'INSERT', 'UPDATE', 'DELETE']) as priv
       where c.relnamespace = (select oid from pg_namespace where nspname = 'app')
         and c.relkind in ('r', 'p')
-        and c.relname <> 'audit_log'
+        and c.relname not in ('audit_log', 'stock_movements')
         and not has_table_privilege('bizcost_api', c.oid, priv) $$,
-  'bizcost_api can SELECT, INSERT, UPDATE and DELETE every app table except audit_log'
+  'bizcost_api can SELECT, INSERT, UPDATE and DELETE every app table except the append-only audit_log and stock_movements'
+);
+
+select ok(
+  has_table_privilege('bizcost_api', to_regclass('app.stock_movements'), 'SELECT')
+  and has_table_privilege('bizcost_api', to_regclass('app.stock_movements'), 'INSERT')
+  and not has_table_privilege('bizcost_api', to_regclass('app.stock_movements'), 'UPDATE, DELETE, TRUNCATE'),
+  'stock_movements is append-only for bizcost_api: SELECT and INSERT, no UPDATE, DELETE or TRUNCATE (M2 Step 3)'
 );
 
 select is_empty(

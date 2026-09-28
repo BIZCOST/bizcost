@@ -1,11 +1,15 @@
 import type {
+  AttachmentUploadUrlDto,
   BusinessProfileDto,
   InvitationDto,
   LocationDto,
   LogoUploadUrlDto,
   MaterialDto,
   ProductDto,
+  PurchaseDto,
+  PurchaseReturnDto,
   RoleDto,
+  SupplierDto,
 } from '@bizcost/contracts'
 import { newId } from '@bizcost/domain'
 import { QUESTION_SET_VERSION } from '@bizcost/modules'
@@ -131,6 +135,88 @@ async function newProduct(): Promise<ProductDto> {
 async function uploadedLogo(): Promise<string> {
   const upload = await ok(
     call<LogoUploadUrlDto>(tenant.owner, 'business.logoUploadUrl', 'mutation', {
+      contentType: 'image/png',
+    }),
+  )
+  expect((await uploadTo(upload.uploadUrl, PNG, 'image/png')).ok).toBe(true)
+  return upload.path
+}
+
+async function newSupplier(): Promise<SupplierDto> {
+  return ok(
+    call<SupplierDto>(tenant.owner, 'supplier.create', 'mutation', {
+      id: newId(),
+      name: `Supplier ${newId()}`,
+    }),
+  )
+}
+
+async function purchaseDraftInput() {
+  return {
+    id: newId(),
+    businessDate: tenant.purchase.businessDate,
+    documentType: 'no_invoice',
+    supplierId: tenant.supplier.id,
+    lines: [
+      {
+        kind: 'material',
+        id: newId(),
+        materialId: tenant.material.id,
+        qty: '2',
+        unit: 'l',
+        unitPrice: '6',
+      },
+    ],
+  }
+}
+
+async function newPurchaseDraft(): Promise<PurchaseDto> {
+  const result = await ok(
+    call<{ data: PurchaseDto }>(tenant.owner, 'purchase.create', 'mutation', {
+      ...(await purchaseDraftInput()),
+    }),
+  )
+  return result.data
+}
+
+async function newPostedPurchase(): Promise<PurchaseDto> {
+  const draft = await newPurchaseDraft()
+  const result = await ok(
+    call<{ data: PurchaseDto }>(tenant.owner, 'purchase.post', 'mutation', {
+      id: draft.id,
+      version: draft.version,
+    }),
+  )
+  return result.data
+}
+
+function returnDraftInput() {
+  return {
+    id: newId(),
+    purchaseId: tenant.purchase.id,
+    kind: 'return',
+    businessDate: tenant.purchase.businessDate,
+    lines: [{ id: newId(), purchaseLineId: tenant.purchase.lines[0]?.id, qty: '1' }],
+  }
+}
+
+async function newReturnDraft(): Promise<PurchaseReturnDto> {
+  const result = await ok(
+    call<{ data: PurchaseReturnDto }>(
+      tenant.owner,
+      'purchaseReturn.create',
+      'mutation',
+      returnDraftInput(),
+    ),
+  )
+  return result.data
+}
+
+async function uploadedReceipt(): Promise<string> {
+  const upload = await ok(
+    call<AttachmentUploadUrlDto>(tenant.owner, 'attachment.uploadUrl', 'mutation', {
+      entity: 'purchase',
+      entityId: tenant.purchase.id,
       contentType: 'image/png',
     }),
   )
@@ -409,6 +495,143 @@ const AUDIT: Record<string, AuditProbe> = {
       const product = await newProduct()
       await ok(call(tenant.owner, 'product.archive', 'mutation', { id: product.id }))
       return asOwner('product.unarchive', { id: product.id })
+    },
+  },
+  // Suppliers, purchases, returns and credit notes, receipts and the books-closed date (M2 Step 3):
+  // every write is audited, a posting's too (stock_movements, material_costs, stock_balances,
+  // purchases and their lines).
+  'supplier.create': {
+    run: () => asOwner('supplier.create', { id: newId(), name: `Supplier ${newId()}` }),
+  },
+  'supplier.update': {
+    run: async () => {
+      const supplier = await newSupplier()
+      return asOwner('supplier.update', {
+        id: supplier.id,
+        version: supplier.version,
+        name: `${supplier.name} LLC`,
+        phone: '+971 4 000 0000',
+      })
+    },
+  },
+  'supplier.archive': {
+    run: async () => asOwner('supplier.archive', { id: (await newSupplier()).id }),
+  },
+  'supplier.unarchive': {
+    run: async () => {
+      const supplier = await newSupplier()
+      await ok(call(tenant.owner, 'supplier.archive', 'mutation', { id: supplier.id }))
+      return asOwner('supplier.unarchive', { id: supplier.id })
+    },
+  },
+  'purchase.create': {
+    run: async () => asOwner('purchase.create', await purchaseDraftInput()),
+  },
+  'purchase.update': {
+    run: async () => {
+      const draft = await newPurchaseDraft()
+      return asOwner('purchase.update', {
+        ...(await purchaseDraftInput()),
+        id: draft.id,
+        version: draft.version,
+        reference: 'Changed',
+      })
+    },
+  },
+  'purchase.discard': {
+    run: async () => {
+      const draft = await newPurchaseDraft()
+      return asOwner('purchase.discard', { id: draft.id, version: draft.version })
+    },
+  },
+  'purchase.post': {
+    run: async () => {
+      const draft = await newPurchaseDraft()
+      return asOwner('purchase.post', { id: draft.id, version: draft.version })
+    },
+  },
+  'purchase.reverse': {
+    run: async () => asOwner('purchase.reverse', { id: (await newPostedPurchase()).id }),
+  },
+  'purchase.correct': {
+    run: async () =>
+      asOwner('purchase.correct', { id: (await newPostedPurchase()).id, newId: newId() }),
+  },
+  'purchaseReturn.create': {
+    run: async () => asOwner('purchaseReturn.create', returnDraftInput()),
+  },
+  'purchaseReturn.update': {
+    run: async () => {
+      const draft = await newReturnDraft()
+      return asOwner('purchaseReturn.update', {
+        id: draft.id,
+        version: draft.version,
+        businessDate: draft.businessDate,
+        reference: 'RN-2',
+        lines: [{ id: newId(), purchaseLineId: tenant.purchase.lines[0]?.id, qty: '0.5' }],
+      })
+    },
+  },
+  'purchaseReturn.discard': {
+    run: async () => {
+      const draft = await newReturnDraft()
+      return asOwner('purchaseReturn.discard', { id: draft.id, version: draft.version })
+    },
+  },
+  'purchaseReturn.post': {
+    run: async () => {
+      const draft = await newReturnDraft()
+      return asOwner('purchaseReturn.post', { id: draft.id, version: draft.version })
+    },
+  },
+  'purchaseReturn.reverse': {
+    run: async () => {
+      const draft = await newReturnDraft()
+      await ok(
+        call(tenant.owner, 'purchaseReturn.post', 'mutation', {
+          id: draft.id,
+          version: draft.version,
+        }),
+      )
+      return asOwner('purchaseReturn.reverse', { id: draft.id })
+    },
+  },
+  'attachment.uploadUrl': {
+    run: () =>
+      asOwner('attachment.uploadUrl', {
+        entity: 'purchase',
+        entityId: tenant.purchase.id,
+        contentType: 'application/pdf',
+      }),
+  },
+  'attachment.add': {
+    run: async () =>
+      asOwner('attachment.add', {
+        entity: 'purchase',
+        entityId: tenant.purchase.id,
+        path: await uploadedReceipt(),
+        fileName: 'receipt.png',
+      }),
+  },
+  'attachment.remove': {
+    run: async () => {
+      const added = await ok(
+        call<{ data: { id: string } }>(tenant.owner, 'attachment.add', 'mutation', {
+          entity: 'purchase',
+          entityId: tenant.purchase.id,
+          path: await uploadedReceipt(),
+          fileName: 'gone.png',
+        }),
+      )
+      return asOwner('attachment.remove', { id: added.data.id })
+    },
+  },
+  'books.close': {
+    run: async () => {
+      // Yesterday: the purchases of the other probes (dated today) stay open.
+      const yesterday = new Date(`${tenant.purchase.businessDate}T00:00:00Z`)
+      yesterday.setUTCDate(yesterday.getUTCDate() - 1)
+      return asOwner('books.close', { closedThrough: yesterday.toISOString().slice(0, 10) })
     },
   },
 }

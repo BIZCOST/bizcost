@@ -1,5 +1,5 @@
 import type Decimal from 'decimal.js'
-import { max, min, plain, roundHalfUp, toDec } from '../numbers/decimal'
+import { exactProduct, max, min, plain, roundHalfUp, toDec } from '../numbers/decimal'
 import {
   checkDecimal,
   COST_SCALE,
@@ -23,21 +23,37 @@ import {
 //   last unit on hand takes exactly the value left, so zero stock always has zero value. Beyond the
 //   stock on hand it reports `shortfall` and costs the average (0, `unitCost` null, before any
 //   receipt);
-// - receipt reversal (a posted purchase corrected, D-036): the state becomes exactly what it would be
-//   had the receipt never been posted, i.e. the ledger replayed without it (and without any receipt
+// - supplier return (D-120 rule 2): takes goods of one receipt out at the price paid for them: what
+//   the receipt still carries (its value less earlier returns and credits) × returned ÷ what is left
+//   of it; the last return of a receipt takes exactly what is left. The average moves back:
+//   (value − returned value) ÷ (quantity − returned quantity), never below zero. When that leaves
+//   zero or less on hand (goods already used), the average stays and the rest is the adjustment. A
+//   return of all that is left of a receipt with nothing else posted for the material since (other
+//   than that receipt's own returns and credits) restores the state from before the receipt exactly,
+//   at any stock level ("a full return right after its purchase", D-120);
+// - credit note (D-120 rule 3): lowers the value of the credited goods still on hand. The receipt's
+//   goods on hand are tracked as the usage takes every unit on hand in proportion (each issue keeps
+//   1 − used ÷ on hand before of every receipt's goods, at least 0), and its own returns take its
+//   goods out; the share still on hand is s = those goods ÷ (bought − returned). The stock value falls
+//   by credit × s (never below zero), the average becomes value ÷ quantity, and the rest is the
+//   adjustment (negative: usage was charged too much). In M2 nothing uses stock, so s = 1;
+// - reversal of a receipt, return or credit (D-036, D-109, D-120): the state becomes exactly what it
+//   would be had it never been posted, i.e. the ledger replayed without it (and without anything
 //   reversed earlier). Costs already charged in between are never changed: what they were charged
-//   too much or too little is the reversal's `adjustment`. So a reversal right after its receipt
-//   restores the previous state, at any stock level, and the average is always an average of
-//   receipts that still stand.
+//   too much or too little is the reversal's `adjustment`. So a reversal right after its movement
+//   restores the previous state, at any stock level. A receipt is reversed only after its returns and
+//   credits are, and a return or credit only while no later return of its receipt stands (that
+//   return's value came from what the goods carried after it, D-142).
 // Values keep 12 decimals (numeric(28,12)), rounded half away from zero; never to the currency.
 // Conservation is exact: value = start + Σ in − Σ out − Σ adjustments. Inputs are checked against
 // their columns at run time (a RangeError, never a silent rounding by Postgres).
 //
-// Receipts and issues update the state directly (the cost row); a reversal replays the material's
-// ledger (reversals are rare). Negative stock and the reversal rule follow the costing-policy
-// proposal (DECISIONS.md P-001, D-109): a different owner answer changes only this file and its tests.
+// Receipts and issues update the state directly (the cost row); returns, credits and reversals
+// replay the material's ledger (they are rare). Negative stock follows the costing-policy proposal
+// (DECISIONS.md P-001, D-109, D-114): a different owner answer changes only this file and its tests.
 
 const ZERO = toDec('0')
+const ONE = toDec('1')
 
 export interface WacState {
   /** Stock on hand in base units; negative when more was used than received. */
@@ -89,11 +105,34 @@ export interface WacReversalResult {
   readonly adjustment: CostAmount
 }
 
-/** One stock movement of a material, in posting order. */
+/** One stock movement of a material, in posting order. Ids are unique across the ledger. */
 export type WacMovement =
   | ({ readonly type: 'receipt'; readonly id: string } & WacReceipt)
   | { readonly type: 'issue'; readonly qty: Quantity }
+  /**
+   * Goods of `receiptId` sent back. `value` is what the ledger stored when it was posted; without
+   * it, the engine works it out (D-120 rule 2) and reports it as the step's `valueOut`.
+   */
+  | {
+      readonly type: 'return'
+      readonly id: string
+      readonly receiptId: string
+      readonly qty: Quantity
+      readonly value?: Money | CostAmount
+    }
+  /**
+   * A credit note on `receiptId`'s goods: `amount` is what it takes off their cost (the credit with
+   * its VAT when VAT is part of the cost). At most what the receipt still carries.
+   */
+  | {
+      readonly type: 'credit'
+      readonly id: string
+      readonly receiptId: string
+      readonly amount: Money | CostAmount
+    }
   | { readonly type: 'receipt_reversal'; readonly receiptId: string }
+  | { readonly type: 'return_reversal'; readonly returnId: string }
+  | { readonly type: 'credit_reversal'; readonly creditId: string }
 
 /** What one movement did to the value: value after = value before + in − out − adjustment. */
 export interface WacStep {
@@ -101,6 +140,29 @@ export interface WacStep {
   readonly valueIn: CostAmount
   readonly valueOut: CostAmount
   readonly adjustment: CostAmount
+}
+
+/** Where a receipt stands after the ledger: what is left of it and what its goods still carry. */
+export interface WacReceiptStanding {
+  /** Base quantity received. */
+  readonly qty: Quantity
+  /** Its value (what was paid). */
+  readonly value: CostAmount
+  /** Base quantity returned (returns that still stand). */
+  readonly returnedQty: Quantity
+  /** Value taken out by those returns. */
+  readonly returnedValue: CostAmount
+  /** Σ credit amounts that still stand. */
+  readonly credited: CostAmount
+  /** What its goods still carry: value − returned value − credited. */
+  readonly remainingValue: CostAmount
+}
+
+export interface WacReplay {
+  readonly state: WacState
+  readonly steps: WacStep[]
+  /** Every receipt that still stands (not reversed), by id. */
+  readonly receipts: ReadonlyMap<string, WacReceiptStanding>
 }
 
 /** Adds received stock; see the rules at the top. */
@@ -156,8 +218,8 @@ export function wacIssue(state: WacState, qty: Quantity): WacIssueResult {
 /**
  * Reverses the receipt `receiptId` of `ledger` (every movement of the material posted so far, from
  * `initial`): the state becomes the ledger replayed without that receipt. Throws RangeError when the
- * receipt is not in the ledger or is already reversed, so a ledger that starts from a saved state
- * must start before every receipt it reverses.
+ * receipt is not in the ledger, is already reversed, or still has returns or credits, so a ledger
+ * that starts from a saved state must start before every receipt it reverses.
  */
 export function wacReverseReceipt(
   ledger: readonly WacMovement[],
@@ -171,64 +233,301 @@ export function wacReverseReceipt(
 
 /**
  * Replays movements in posting order: rebuilds a material's cost state from its ledger and gives
- * what each movement did. Receipt ids must be unique; a reversal names a receipt earlier in
- * `movements` that is not reversed yet (see wacReverseReceipt).
+ * what each movement did. Ids of receipts, returns and credits are unique; a return or credit names a
+ * receipt earlier in `movements` that still stands, and a reversal names a receipt, return or credit
+ * earlier in `movements` that is not reversed yet (a receipt only once its returns and credits are; a
+ * return or credit only while no later return of its receipt stands). Throws RangeError otherwise,
+ * and when a return or credit is more than what is left of its receipt.
  */
 export function replayWac(
   movements: readonly WacMovement[],
   initial: WacState = EMPTY_WAC_STATE,
-): { state: WacState; steps: WacStep[] } {
-  const receipts = new Map<string, WacReceipt>()
+): WacReplay {
+  let book = new Book(initial)
+  // The movements that still stand, as applied (a return with the value it was given).
+  const standing: Applied[] = []
+  const kinds = new Map<string, 'receipt' | 'return' | 'credit'>()
   const reversed = new Set<string>()
   const steps: WacStep[] = []
-  let state = initial
-  for (const [index, movement] of movements.entries()) {
-    let step: WacStep
-    if (movement.type === 'receipt') {
-      if (receipts.has(movement.id)) throw new RangeError(`Duplicate receipt "${movement.id}"`)
-      receipts.set(movement.id, movement)
-      const r = wacReceive(state, movement)
-      step = { state: r.state, valueIn: r.value, valueOut: amount(ZERO), adjustment: r.adjustment }
-    } else if (movement.type === 'issue') {
-      const r = wacIssue(state, movement.qty)
-      step = { state: r.state, valueIn: amount(ZERO), valueOut: r.cost, adjustment: amount(ZERO) }
-    } else {
-      const receipt = receipts.get(movement.receiptId)
-      if (!receipt) throw new RangeError(`Receipt "${movement.receiptId}" is not in this ledger`)
-      if (reversed.has(movement.receiptId)) {
-        throw new RangeError(`Receipt "${movement.receiptId}" is already reversed`)
-      }
-      reversed.add(movement.receiptId)
-      const after = standing(movements.slice(0, index), reversed, initial)
-      const out = toDec(receipt.value)
-      step = {
-        state: after,
-        valueIn: amount(ZERO),
-        valueOut: amount(out),
-        adjustment: amount(toDec(state.value).minus(out).minus(toDec(after.value))),
+
+  for (const movement of movements) {
+    if (movement.type === 'receipt' || movement.type === 'return' || movement.type === 'credit') {
+      const id = movement.id
+      if (kinds.has(id)) throw new RangeError(`Duplicate movement "${id}"`)
+      kinds.set(id, movement.type)
+      const { step, applied } = book.apply(movement)
+      standing.push(applied)
+      steps.push(step)
+      continue
+    }
+    if (movement.type === 'issue') {
+      const { step, applied } = book.apply(movement)
+      standing.push(applied)
+      steps.push(step)
+      continue
+    }
+
+    const [kind, targetId] =
+      movement.type === 'receipt_reversal'
+        ? (['receipt', movement.receiptId] as const)
+        : movement.type === 'return_reversal'
+          ? (['return', movement.returnId] as const)
+          : (['credit', movement.creditId] as const)
+    if (kinds.get(targetId) !== kind) {
+      const what = kind === 'receipt' ? 'Receipt' : kind === 'return' ? 'Return' : 'Credit'
+      throw new RangeError(`${what} "${targetId}" is not in this ledger`)
+    }
+    if (reversed.has(targetId)) throw new RangeError(`"${targetId}" is already reversed`)
+    if (kind === 'receipt' && book.hasOpenAdjustments(targetId)) {
+      throw new RangeError(`Receipt "${targetId}" still has returns or credits: reverse them first`)
+    }
+    const index = standing.findIndex(
+      (a) => a.movement.type !== 'issue' && a.movement.id === targetId,
+    )
+    const target = standing[index]!
+    // A later return of the same receipt was valued by what its goods carried after this one; it
+    // would keep that value once this one is gone. So it is reversed first (D-142).
+    if (target.movement.type === 'return' || target.movement.type === 'credit') {
+      const { receiptId } = target.movement
+      const later = standing
+        .slice(index + 1)
+        .some((a) => a.movement.type === 'return' && a.movement.receiptId === receiptId)
+      if (later) {
+        throw new RangeError(`"${targetId}" has a later return of its receipt: reverse that first`)
       }
     }
-    steps.push(step)
-    state = step.state
+    reversed.add(targetId)
+    standing.splice(index, 1)
+    const before = book.state
+    book = new Book(initial)
+    for (const applied of standing) book.apply(applied.movement)
+    const after = book.state
+    // The target's own effect, taken back: a receipt's value goes out, a return's or credit's in.
+    const valueIn = kind === 'receipt' ? ZERO : toDec(target.value)
+    const valueOut = kind === 'receipt' ? toDec(target.value) : ZERO
+    steps.push({
+      state: after,
+      valueIn: amount(valueIn),
+      valueOut: amount(valueOut),
+      adjustment: amount(
+        toDec(before.value).plus(valueIn).minus(valueOut).minus(toDec(after.value)),
+      ),
+    })
   }
-  return { state, steps }
+  return { state: book.state, steps, receipts: book.standings() }
 }
 
-/** The state from `initial` over the receipts that still stand and every issue. */
-function standing(
-  movements: readonly WacMovement[],
-  reversed: ReadonlySet<string>,
-  initial: WacState,
-): WacState {
-  let state = initial
-  for (const movement of movements) {
-    if (movement.type === 'receipt' && !reversed.has(movement.id)) {
-      state = wacReceive(state, movement).state
-    } else if (movement.type === 'issue') {
-      state = wacIssue(state, movement.qty).state
+/** A movement as the book applied it (a return with its value), and the value it moved. */
+interface Applied {
+  readonly movement: Exclude<
+    WacMovement,
+    { type: 'receipt_reversal' } | { type: 'return_reversal' } | { type: 'credit_reversal' }
+  >
+  /** Receipt: its value; return: the value taken out; credit: its amount; issue: its cost. */
+  readonly value: string
+}
+
+/** What the book knows of a receipt that still stands. */
+interface Track {
+  readonly qty: Decimal
+  readonly value: Decimal
+  returnedQty: Decimal
+  returnedValue: Decimal
+  credited: Decimal
+  /** Its goods still on hand (usage takes every receipt's goods in proportion). */
+  onHand: Decimal
+  /** The state before the receipt. */
+  readonly before: WacState
+  /** Nothing but its own returns and credits was posted for the material since it. */
+  untouched: boolean
+  /** Its returns and credits that still stand. */
+  readonly open: Set<string>
+}
+
+/** One material's cost state and its receipts, movement by movement (no reversals). */
+class Book {
+  state: WacState
+  private readonly tracks = new Map<string, Track>()
+
+  constructor(initial: WacState) {
+    this.state = initial
+  }
+
+  hasOpenAdjustments(receiptId: string): boolean {
+    return (this.tracks.get(receiptId)?.open.size ?? 0) > 0
+  }
+
+  standings(): ReadonlyMap<string, WacReceiptStanding> {
+    const out = new Map<string, WacReceiptStanding>()
+    for (const [id, t] of this.tracks) {
+      out.set(id, {
+        qty: plain(t.qty) as Quantity,
+        value: amount(t.value),
+        returnedQty: plain(t.returnedQty) as Quantity,
+        returnedValue: amount(t.returnedValue),
+        credited: amount(t.credited),
+        remainingValue: amount(t.value.minus(t.returnedValue).minus(t.credited)),
+      })
+    }
+    return out
+  }
+
+  apply(movement: Applied['movement']): { step: WacStep; applied: Applied } {
+    switch (movement.type) {
+      case 'receipt':
+        return this.receive(movement)
+      case 'issue':
+        return this.issue(movement)
+      case 'return':
+        return this.sendBack(movement)
+      case 'credit':
+        return this.credit(movement)
     }
   }
-  return state
+
+  private touchOthers(except?: string) {
+    for (const [id, t] of this.tracks) if (id !== except) t.untouched = false
+  }
+
+  private track(receiptId: string): Track {
+    const t = this.tracks.get(receiptId)
+    if (!t) throw new RangeError(`Receipt "${receiptId}" is not in this ledger or is reversed`)
+    return t
+  }
+
+  private receive(movement: Extract<Applied['movement'], { type: 'receipt' }>) {
+    const before = this.state
+    const r = wacReceive(before, movement)
+    const qty0 = toDec(before.qty)
+    const q = toDec(movement.qty)
+    this.touchOthers()
+    // Stock was empty or negative: nothing of earlier receipts is on hand, and part of this one may
+    // have covered usage already.
+    if (!qty0.gt(0)) for (const t of this.tracks.values()) t.onHand = ZERO
+    this.tracks.set(movement.id, {
+      qty: q,
+      value: toDec(r.value),
+      returnedQty: ZERO,
+      returnedValue: ZERO,
+      credited: ZERO,
+      onHand: qty0.gt(0) ? q : max(ZERO, min(q, toDec(r.state.qty))),
+      before,
+      untouched: true,
+      open: new Set(),
+    })
+    this.state = r.state
+    return {
+      step: { state: r.state, valueIn: r.value, valueOut: amount(ZERO), adjustment: r.adjustment },
+      applied: { movement, value: r.value },
+    }
+  }
+
+  private issue(movement: Extract<Applied['movement'], { type: 'issue' }>) {
+    const before = this.state
+    const r = wacIssue(before, movement.qty)
+    const qty0 = toDec(before.qty)
+    const used = toDec(movement.qty)
+    // Every unit on hand is taken in proportion: each receipt keeps 1 − used ÷ on hand of its goods.
+    const kept = qty0.gt(0) ? max(ZERO, ONE.minus(used.dividedBy(qty0))) : ZERO
+    for (const t of this.tracks.values()) {
+      t.untouched = false
+      t.onHand = t.onHand.times(kept)
+    }
+    this.state = r.state
+    return {
+      step: { state: r.state, valueIn: amount(ZERO), valueOut: r.cost, adjustment: amount(ZERO) },
+      applied: { movement, value: r.cost },
+    }
+  }
+
+  private sendBack(movement: Extract<Applied['movement'], { type: 'return' }>) {
+    const t = this.track(movement.receiptId)
+    const y = positive(movement.qty, 'quantity')
+    const left = t.qty.minus(t.returnedQty)
+    if (y.gt(left)) {
+      throw new RangeError(`Return "${movement.id}" is more than is left of its receipt`)
+    }
+    const carried = t.value.minus(t.returnedValue).minus(t.credited)
+    const all = y.eq(left)
+    const v =
+      movement.value !== undefined
+        ? notNegative(movement.value, 'costAmount')
+        : all
+          ? carried
+          : round(exactProduct([carried, y]).dividedBy(left))
+
+    const before = this.state
+    const qty0 = toDec(before.qty)
+    const value0 = toDec(before.value)
+    let after: WacState
+    if (all && t.untouched) {
+      // A full return with nothing else posted since its receipt: as if it had never come in.
+      after = t.before
+    } else {
+      const qty1 = qty0.minus(y)
+      if (qty1.gt(0)) {
+        const value1 = max(ZERO, value0.minus(v))
+        after = stateOf(qty1, value1, round(value1.dividedBy(qty1)))
+      } else {
+        // Nothing (or less than nothing) left on hand: the average stays.
+        const avg = before.avgCost === null ? null : toDec(before.avgCost)
+        after = {
+          qty: plain(qty1) as Quantity,
+          value: amount(avg === null ? ZERO : round(qty1.times(avg))),
+          avgCost: before.avgCost,
+        }
+      }
+    }
+    t.returnedQty = t.returnedQty.plus(y)
+    t.returnedValue = t.returnedValue.plus(v)
+    t.onHand = max(ZERO, t.onHand.minus(y))
+    t.open.add(movement.id)
+    this.touchOthers(movement.receiptId)
+    this.state = after
+    return {
+      step: {
+        state: after,
+        valueIn: amount(ZERO),
+        valueOut: amount(v),
+        adjustment: amount(value0.minus(v).minus(toDec(after.value))),
+      },
+      applied: { movement: { ...movement, value: amount(v) }, value: plain(v) },
+    }
+  }
+
+  private credit(movement: Extract<Applied['movement'], { type: 'credit' }>) {
+    const t = this.track(movement.receiptId)
+    const credit = positive(movement.amount, 'costAmount')
+    const carried = t.value.minus(t.returnedValue).minus(t.credited)
+    if (credit.gt(carried)) {
+      throw new RangeError(`Credit "${movement.id}" is more than its receipt's goods still carry`)
+    }
+    const left = t.qty.minus(t.returnedQty)
+    // The share of the credited goods still on hand (between 0 and 1).
+    const share = left.gt(0) ? min(ONE, max(ZERO, t.onHand.dividedBy(left))) : ZERO
+
+    const before = this.state
+    const qty0 = toDec(before.qty)
+    const value0 = toDec(before.value)
+    const reduce = qty0.gt(0) ? min(round(credit.times(share)), max(ZERO, value0)) : ZERO
+    const value1 = value0.minus(reduce)
+    const after: WacState = reduce.isZero()
+      ? before
+      : stateOf(qty0, value1, round(value1.dividedBy(qty0)))
+    t.credited = t.credited.plus(credit)
+    t.open.add(movement.id)
+    this.touchOthers(movement.receiptId)
+    this.state = after
+    return {
+      step: {
+        state: after,
+        valueIn: amount(ZERO),
+        valueOut: amount(credit),
+        adjustment: amount(value0.minus(credit).minus(value1)),
+      },
+      applied: { movement, value: plain(credit) },
+    }
+  }
 }
 
 function round(value: Decimal): Decimal {

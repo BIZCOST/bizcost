@@ -1,4 +1,9 @@
-import type { BusinessContextDto, MeDto, RoleDto } from '@bizcost/contracts'
+import {
+  API_MAX_BATCH_SIZE,
+  type BusinessContextDto,
+  type MeDto,
+  type RoleDto,
+} from '@bizcost/contracts'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { appRouter } from '../../src'
 import { batch, query } from '../helpers'
@@ -148,6 +153,27 @@ describe('stale permissions: the next request tells', () => {
 describe('no cache leak between businesses (one API instance, one account in two businesses)', () => {
   const QUERIES = proceduresOf(appRouter).filter((p) => p.base === 'business' && p.type === 'query')
 
+  /** Every business query in batches of at most API_MAX_BATCH_SIZE calls, answers in order. */
+  async function batchAll(person: Person, tenant: Tenant) {
+    const results: Awaited<ReturnType<typeof batch>>['results'] = []
+    const statuses: number[] = []
+    for (let start = 0; start < QUERIES.length; start += API_MAX_BATCH_SIZE) {
+      const chunk = QUERIES.slice(start, start + API_MAX_BATCH_SIZE)
+      const answer = await batch(
+        api.handler,
+        chunk.map((p) => p.path),
+        {
+          token: person.token,
+          businessId: tenant.id,
+          inputs: chunk.map((p) => queryInputOf(p.path, tenant)),
+        },
+      )
+      statuses.push(answer.status)
+      results.push(...answer.results)
+    }
+    return { statuses, results }
+  }
+
   it('alternating requests: each answer holds only its own business', async () => {
     for (let round = 0; round < 2; round++) {
       for (const [own, other] of [
@@ -171,16 +197,8 @@ describe('no cache leak between businesses (one API instance, one account in two
       [A, B],
       [B, A],
     ] as const) {
-      const answer = await batch(
-        api.handler,
-        QUERIES.map((p) => p.path),
-        {
-          token: both.token,
-          businessId: own.id,
-          inputs: QUERIES.map((p) => queryInputOf(p.path, own)),
-        },
-      )
-      expect(answer.status).toBe(200)
+      const answer = await batchAll(both, own)
+      expect(answer.statuses.every((status) => status === 200)).toBe(true)
       expect(answer.results.every((r) => r.result !== undefined)).toBe(true)
       expect(leaksOf(JSON.stringify(answer.results), other)).toEqual([])
       expect(leaksOf(JSON.stringify(answer.results), own).length).toBeGreaterThan(0)
@@ -207,15 +225,7 @@ describe('no cache leak between businesses (one API instance, one account in two
     await join(api.db, A.owner.user, A.id, mixed.user, 'admin')
     await join(api.db, B.owner.user, B.id, mixed.user, 'employee')
     const codes = async (person: Person, tenant: Tenant) => {
-      const answer = await batch(
-        api.handler,
-        QUERIES.map((p) => p.path),
-        {
-          token: person.token,
-          businessId: tenant.id,
-          inputs: QUERIES.map((p) => queryInputOf(p.path, tenant)),
-        },
-      )
+      const answer = await batchAll(person, tenant)
       return answer.results.map((r, i) => {
         const error = r.error as { data?: { appCode?: string } } | undefined
         return `${QUERIES[i]?.path}: ${error?.data?.appCode ?? 'ok'}`

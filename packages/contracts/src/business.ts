@@ -16,7 +16,7 @@ export const INVITATION_DAILY_LIMIT = 20
 /** Times one invitation may be sent again (send_count ≤ 1 + this, counted in the database). */
 export const INVITATION_MAX_RESENDS = 3
 
-/** Largest business logo (the bucket's file_size_limit), in bytes. */
+/** Largest business logo, in bytes (the API checks it; the bucket takes attachments up to 10 MB). */
 export const LOGO_MAX_BYTES = 2 * 1024 * 1024
 
 /** Image types a logo may have (the bucket's allowed_mime_types; never SVG). */

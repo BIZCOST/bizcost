@@ -43,6 +43,15 @@ export function roundDocument(amount: string, currency: CurrencyCode): Money {
   return fixed(toDec(amount), currencyMinorUnit(currency)) as Money
 }
 
+/**
+ * Whether a document amount typed by a person has at most the currency's minor-unit decimals
+ * (trailing zeros are fine): fitsCurrency('10.50', 'AED') is true, fitsCurrency('10.005', 'AED')
+ * false. An amount that doesn't fit is refused, never rounded silently (D-142).
+ */
+export function fitsCurrency(amount: string, currency: CurrencyCode): boolean {
+  return toDec(amount).decimalPlaces() <= currencyMinorUnit(currency)
+}
+
 /** A cost-engine value at COST_SCALE (12) decimals, as its numeric(28,12) column stores it. */
 export function roundCost(value: string): CostAmount {
   return plain(roundHalfUp(toDec(value), COST_SCALE)) as CostAmount

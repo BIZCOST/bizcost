@@ -29,6 +29,22 @@ export const DASHBOARD_MESSAGES: readonly MessageSpec[] = [
  */
 export const CATALOG_MESSAGES: readonly MessageSpec[] = ['catalog', 'units']
 
+/**
+ * Suppliers (M2 Step 3; its layout): the list frame and form words of the catalog, and the
+ * purchasing messages.
+ */
+export const SUPPLIERS_MESSAGES: readonly MessageSpec[] = [
+  { namespace: 'catalog', paths: ['list', 'form', 'numbers'] },
+  'purchasing',
+]
+
+/**
+ * Purchases, supplier returns and credit notes (M2 Step 3; its layout): the purchasing messages,
+ * the catalog's list and form words (the supplier and material forms open from a purchase) and the
+ * unit names.
+ */
+export const PURCHASES_MESSAGES: readonly MessageSpec[] = ['catalog', 'units', 'purchasing']
+
 /** Settings of a business (layout): the section list, the settings home and every section's frame. */
 export const SETTINGS_MESSAGES: readonly MessageSpec[] = ['settings']
 
@@ -47,5 +63,7 @@ export const SETTINGS_SECTION_MESSAGES: Readonly<Record<SettingsSection, readonl
     roles: ['modules'],
     // Customize BizCost: the setup's rules, statements and module names.
     modules: ['setup', 'modules'],
+    // Closing the books: its own words (settings) only.
+    books: [],
     language: [],
   }

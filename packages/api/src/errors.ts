@@ -27,6 +27,15 @@ const TRPC_CODE_OF: Record<AppErrorCode, TRPC_ERROR_CODE_KEY> = {
   only_location_of_products: 'CONFLICT',
   name_taken: 'CONFLICT',
   file_invalid: 'BAD_REQUEST',
+  attachment_invalid: 'BAD_REQUEST',
+  books_closed: 'CONFLICT',
+  future_date: 'BAD_REQUEST',
+  document_posted: 'CONFLICT',
+  document_not_posted: 'CONFLICT',
+  purchase_has_returns: 'CONFLICT',
+  has_later_returns: 'CONFLICT',
+  exceeds_purchase: 'BAD_REQUEST',
+  material_in_use: 'CONFLICT',
   internal: 'INTERNAL_SERVER_ERROR',
 }
 

@@ -45,6 +45,30 @@ export const APP_ERROR_CODES = [
   'name_taken',
   /** An uploaded file is missing, too large or not an allowed type (logo: PNG, JPEG or WebP, 2 MB). */
   'file_invalid',
+  /** An attachment is missing, too large or not an allowed type (a photo or a PDF, 10 MB). */
+  'attachment_invalid',
+  /**
+   * Posting or reversing something dated on or before the business's "books closed up to" date
+   * (D-114 rule 6).
+   */
+  'books_closed',
+  /** Posting a document dated after today (the business's time zone). */
+  'future_date',
+  /** Changing, discarding or posting again a document that is posted or reversed (D-036). */
+  'document_posted',
+  /** Reversing a draft, or a return or credit note for a purchase that is not posted (or reversed). */
+  'document_not_posted',
+  /** Reversing a purchase that has posted returns or credit notes: they are reversed first (D-120). */
+  'purchase_has_returns',
+  /**
+   * Reversing a return or credit note while a later return of the same purchase line is posted: that
+   * return is reversed first (D-142).
+   */
+  'has_later_returns',
+  /** A return or credit note for more than is left of the purchase line (D-120). */
+  'exceeds_purchase',
+  /** Changing the kind of measure (dimension) of a material that has purchases. */
+  'material_in_use',
   'internal',
 ] as const
 export type AppErrorCode = (typeof APP_ERROR_CODES)[number]

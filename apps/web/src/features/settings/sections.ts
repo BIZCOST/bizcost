@@ -13,11 +13,15 @@ export const SETTINGS_SECTIONS = [
   'members',
   'roles',
   'modules',
+  'books',
   'language',
 ] as const
 export type SettingsSection = (typeof SETTINGS_SECTIONS)[number]
 
-type Access = Pick<BusinessContextDto, 'permissions' | 'capabilities'>
+type Access = Pick<BusinessContextDto, 'permissions' | 'capabilities'> & {
+  /** The modules on for the business (business.context); a section of a module needs it on. */
+  readonly modules?: readonly { readonly id: string }[]
+}
 
 /** Whether the member holds `key` in this business (the owner holds every key). */
 export function can(access: Pick<BusinessContextDto, 'permissions'>, key: PermissionKey): boolean {
@@ -42,6 +46,12 @@ export function isSectionVisible(access: Access, section: SettingsSection): bool
       return capability(access, 'has_team') && can(access, 'settings.roles.manage')
     case 'modules':
       return can(access, 'settings.modules.manage')
+    case 'books':
+      // "Books closed up to" belongs to Purchases, the first module that posts (D-137).
+      return (
+        (access.modules ?? []).some((module) => module.id === 'purchases') &&
+        can(access, 'purchases.books.close')
+      )
   }
 }
 
@@ -70,6 +80,7 @@ export const SECTION_TITLES: Readonly<Record<SettingsSection, I18nKey>> = {
   members: 'settings.members.title',
   roles: 'settings.roles.title',
   modules: 'settings.modules.title',
+  books: 'settings.books.title',
   language: 'settings.language.title',
 }
 
@@ -79,5 +90,6 @@ export const SECTION_DESCRIPTIONS: Readonly<Record<SettingsSection, I18nKey>> = 
   members: 'settings.members.description',
   roles: 'settings.roles.description',
   modules: 'settings.modules.description',
+  books: 'settings.books.description',
   language: 'settings.language.description',
 }

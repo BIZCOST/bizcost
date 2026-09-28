@@ -25,14 +25,15 @@ export const SENSITIVITY_PERMISSION_KEYS: readonly SensitivityPermissionKey[] =
 
 /**
  * Grouping rule: a category is visible only when every category listed here is visible too, so a
- * hidden value cannot be derived from visible ones (price + margin would reveal a hidden cost).
+ * hidden value cannot be derived from visible ones: price + margin would reveal a hidden cost, and
+ * the prices paid to suppliers would reveal the average cost they make (M2 Step 3).
  */
 export const SENSITIVITY_REQUIRES: {
   readonly [C in SensitivityCategory]: readonly SensitivityCategory[]
 } = {
   cost: [],
   profit_margin: ['cost'],
-  supplier_price: [],
+  supplier_price: ['cost'],
   payroll: [],
   employee_pii: [],
 }

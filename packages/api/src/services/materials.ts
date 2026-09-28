@@ -291,6 +291,19 @@ export async function updateMaterial(ctx: BusinessCtx, input: UpdateInput): Prom
   const wanted = checkedUnits(dimension, input)
   return withUniqueName(NAME_KEY, () =>
     ctx.tx(async (tx) => {
+      // A material with purchases (drafts too) keeps its kind of measure: their quantities and the
+      // ledger are in its base unit (M2 Step 3). Its unit may still change within the dimension.
+      const current = await findMaterial(tx, ctx.businessId, input.id)
+      if (current && current.dimension !== dimension) {
+        const [used] = (await tx.execute(sql`
+          select exists (
+            select 1 from app.purchase_lines l
+             where l.business_id = ${ctx.businessId} and l.material_id = ${input.id}
+               and l.deleted_at is null
+          ) as used
+        `)) as unknown as { used: boolean }[]
+        if (used?.used) throw new AppError('material_in_use')
+      }
       // The row lock taken here also makes saves of this material wait for each other.
       const [row] = await tx
         .update(materials)

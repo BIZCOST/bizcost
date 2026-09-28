@@ -46,8 +46,9 @@ describe('module manifests', () => {
     const started = MODULES.filter(
       (m) => m.availability === 'planned' && (m.permissionKeys.length > 0 || m.nav.length > 0),
     )
-    // M2 Step 2 builds Products & Services and Materials; they stay planned until Step 7 (D-124).
-    expect(started.map((m) => m.id)).toEqual(['products', 'materials'])
+    // M2 Steps 2 and 3 build Products & Services, Materials, Suppliers and Purchases; they stay
+    // planned until Step 7 (D-124).
+    expect(started.map((m) => m.id)).toEqual(['products', 'materials', 'suppliers', 'purchases'])
     for (const m of started) {
       expect(m.permissionKeys.length, m.id).toBeGreaterThan(0)
       expect(m.nav.length, m.id).toBeGreaterThan(0)
@@ -156,6 +157,8 @@ describe('module manifests', () => {
       ['settings', 'system'],
       ['products', 'main'],
       ['materials', 'main'],
+      ['suppliers', 'main'],
+      ['purchases', 'main'],
     ])
   })
 
@@ -169,7 +172,7 @@ describe('module manifests', () => {
 })
 
 describe('permission catalog', () => {
-  it('holds the keys of dashboard, settings, products and materials, and one data key per sensitivity category', () => {
+  it('holds the keys of dashboard, settings, products, materials, suppliers and purchases, and one data key per sensitivity category', () => {
     expect([...PERMISSION_CATALOG].sort()).toEqual(
       [
         'dashboard.home.view',
@@ -184,6 +187,13 @@ describe('permission catalog', () => {
         'products.items.manage',
         'materials.items.view',
         'materials.items.manage',
+        'suppliers.items.view',
+        'suppliers.items.manage',
+        'purchases.documents.view',
+        'purchases.documents.manage',
+        'purchases.documents.post',
+        'purchases.documents.reverse',
+        'purchases.books.close',
         'data.cost.view',
         'data.profit_margin.view',
         'data.supplier_price.view',
@@ -275,6 +285,12 @@ describe('role templates', () => {
         'products.items.manage',
         'materials.items.view',
         'materials.items.manage',
+        'suppliers.items.view',
+        'suppliers.items.manage',
+        'purchases.documents.view',
+        'purchases.documents.manage',
+        'purchases.documents.post',
+        'purchases.documents.reverse',
         'data.cost.view',
         'data.profit_margin.view',
         'data.supplier_price.view',
@@ -286,6 +302,8 @@ describe('role templates', () => {
         'settings.business.view',
         'products.items.view',
         'materials.items.view',
+        'suppliers.items.view',
+        'purchases.documents.view',
         'data.cost.view',
         'data.profit_margin.view',
         'data.supplier_price.view',

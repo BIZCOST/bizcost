@@ -211,6 +211,13 @@
     "products_items_manage": "Add and edit products & services",
     "materials_items_view": "See materials",
     "materials_items_manage": "Add and edit materials",
+    "suppliers_items_view": "See suppliers",
+    "suppliers_items_manage": "Add and edit suppliers",
+    "purchases_documents_view": "See purchases",
+    "purchases_documents_manage": "Enter purchases",
+    "purchases_documents_post": "Finalize purchases",
+    "purchases_documents_reverse": "Reverse and correct purchases",
+    "purchases_books_close": "Close the books",
     "data_cost_view": "See costs",
     "data_profit_margin_view": "See profit",
     "data_supplier_price_view": "See supplier prices",
@@ -230,6 +237,13 @@
     "products_items_manage": "Add, change and archive products and services.",
     "materials_items_view": "What you buy to make or sell, and the units you buy it in.",
     "materials_items_manage": "Add, change and archive materials and their units.",
+    "suppliers_items_view": "Who you buy from, with their phone, email and TRN.",
+    "suppliers_items_manage": "Add, change and archive suppliers.",
+    "purchases_documents_view": "Purchases, returns to suppliers and credit notes, with their receipts.",
+    "purchases_documents_manage": "Enter drafts, attach receipts and discard drafts.",
+    "purchases_documents_post": "Make purchases, returns and credit notes final, which updates material costs.",
+    "purchases_documents_reverse": "Cancel a final purchase, return or credit note as if it was never entered.",
+    "purchases_books_close": "Stop finalizing or reversing anything dated on or before a day you choose.",
     "data_cost_view": "What products, materials and work really cost.",
     "data_profit_margin_view": "Profit and margins.",
     "data_supplier_price_view": "What you pay each supplier.",
@@ -272,5 +286,20 @@
   "leave": {
     "title": "Leave this business",
     "description": "You lose access to it. To come back, you need a new invitation."
+  },
+  "books": {
+    "title": "Closing the books",
+    "description": "Stop changes to purchases up to a day you choose.",
+    "explain": "Once you have checked a period, close the books up to its last day. Nothing dated on or before it can then be finalized or reversed.",
+    "statusOpen": "The books are open: anything can be finalized or reversed.",
+    "statusClosed": "The books are closed up to {{date}}.",
+    "closeThrough": "Close the books up to",
+    "close": "Close the books",
+    "closeHint": "Today at the latest. You can move it back later.",
+    "open": "Open the books",
+    "openHint": "Anything can then be finalized or reversed again, whatever its date.",
+    "closed": "The books are closed up to {{date}}.",
+    "opened": "The books are open.",
+    "sectionTitle": "Closing date"
   }
 }

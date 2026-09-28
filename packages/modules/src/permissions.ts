@@ -28,6 +28,11 @@ export const PERMISSION_NEEDS: Readonly<Partial<Record<PermissionKey, Permission
   'settings.members.manage': 'settings.members.view',
   'products.items.manage': 'products.items.view',
   'materials.items.manage': 'materials.items.view',
+  'suppliers.items.manage': 'suppliers.items.view',
+  'purchases.documents.manage': 'purchases.documents.view',
+  'purchases.documents.post': 'purchases.documents.view',
+  'purchases.documents.reverse': 'purchases.documents.view',
+  'purchases.books.close': 'purchases.documents.view',
 }
 
 /** The keys of `keys` granted without the key they need (empty when the set is coherent). */

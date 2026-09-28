@@ -5,6 +5,7 @@ import { asMoney, asPercent, asQuantity, asUnitCost, checkDecimal } from './kind
 import {
   CURRENCY_MINOR_UNITS,
   currencyMinorUnit,
+  fitsCurrency,
   isCurrencyCode,
   roundCost,
   roundDocument,
@@ -59,6 +60,16 @@ describe('roundDocument', () => {
         expect(gap.lte(pow10(-digits).dividedBy(2))).toBe(true)
       }),
     )
+  })
+})
+
+describe('fitsCurrency', () => {
+  it('takes at most the minor unit (trailing zeros are fine), never rounds', () => {
+    expect(fitsCurrency('10.5', 'AED')).toBe(true)
+    expect(fitsCurrency('10.5000', 'AED')).toBe(true)
+    expect(fitsCurrency('10.005', 'AED')).toBe(false)
+    expect(fitsCurrency('10.005', 'KWD')).toBe(true)
+    expect(fitsCurrency('0.0001', 'KWD')).toBe(false)
   })
 })
 

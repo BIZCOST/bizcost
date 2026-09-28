@@ -1,7 +1,7 @@
 'use client'
 
 import { apiErrorKey, useTRPC } from '@bizcost/app-core'
-import type { MaterialDto } from '@bizcost/contracts'
+import type { MaterialCostDto, MaterialDto } from '@bizcost/contracts'
 import type { I18nKey } from '@bizcost/i18n'
 import {
   keepPreviousData,
@@ -32,6 +32,7 @@ import {
   useFirstTime,
   useListParams,
 } from './catalog-list'
+import { MaterialCostDetails, useMaterialCosts } from './material-cost'
 import { MaterialSheet } from './material-sheet'
 import { PackChainText, useUnitQuantity } from './unit-parts'
 import { materialUnits, outerPacks, packChain } from './units'
@@ -40,8 +41,18 @@ import { materialUnits, outerPacks, packChain } from './units'
 // sell, in its wording ("Ingredients & supplies" for food, "Raw materials" for a factory). Everyone
 // with materials.items.view sees the list; materials.items.manage adds, edits and archives.
 
-/** A material's details in the list: its unit, and each pack in words. */
-function MaterialDetails({ material }: { material: MaterialDto }) {
+/**
+ * A material's details in the list: its unit, each pack in words and, while the business uses
+ * Purchases (M2 Step 3), its average cost and last purchase price.
+ */
+function MaterialDetails({
+  material,
+  cost,
+}: {
+  material: MaterialDto
+  /** Absent while the costs load, or when the business doesn't use Purchases. */
+  cost: MaterialCostDto | undefined
+}) {
   const { t } = useTranslation()
   const unitQuantity = useUnitQuantity()
   const units = materialUnits(material.unit, material.packs, material.crossFactors)
@@ -67,6 +78,7 @@ function MaterialDetails({ material }: { material: MaterialDto }) {
           <bdi>{unitQuantity(cross.qty, cross.ofUnit)}</bdi>
         </span>
       ))}
+      <MaterialCostDetails material={material} cost={cost} />
     </>
   )
 }
@@ -97,6 +109,9 @@ function MaterialsList() {
     nothingInUse,
     everything.isFetching ? undefined : everything.data,
   )
+  // Costs come from purchases: shown while the business uses Purchases.
+  const withCosts = context?.modules.some((module) => module.id === 'purchases') === true
+  const costs = useMaterialCosts(list.data?.pages ?? [], withCosts)
   const archive = useMutation(trpc.material.archive.mutationOptions())
   const unarchive = useMutation(trpc.material.unarchive.mutationOptions())
   const [editing, setEditing] = useState<Editing | null>(null)
@@ -168,7 +183,7 @@ function MaterialsList() {
             icon={PackageIcon}
             name={material.name}
             archived={material.archivedAt !== null}
-            details={<MaterialDetails material={material} />}
+            details={<MaterialDetails material={material} cost={costs.get(material.id)} />}
             onEdit={canManage ? () => setEditing({ material, key: material.id }) : undefined}
             onArchive={() => {
               setArchiveError(null)

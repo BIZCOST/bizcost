@@ -14,10 +14,12 @@ import {
   AUTH_MESSAGES,
   CATALOG_MESSAGES,
   DASHBOARD_MESSAGES,
+  PURCHASES_MESSAGES,
   ROOT_MESSAGES,
   SETTINGS_MESSAGES,
   SETTINGS_SECTION_MESSAGES,
   SETUP_MESSAGES,
+  SUPPLIERS_MESSAGES,
 } from './route-messages'
 
 // The browser holds only the messages its route was given (D-092). This guard reads the code of each
@@ -107,6 +109,26 @@ describe("each route's messages have the keys its code translates", () => {
     expect(missing(['features/catalog', 'components/ui'], CATALOG_MESSAGES)).toEqual({})
   })
 
+  it('Suppliers', () => {
+    const purchasing = 'features/purchasing'
+    expect(
+      missing(
+        [
+          `${purchasing}/suppliers-page.tsx`,
+          `${purchasing}/supplier-sheet.tsx`,
+          `${purchasing}/supplier-draft.ts`,
+          'features/catalog/catalog-list.tsx',
+          'features/catalog/catalog-loading.tsx',
+        ],
+        SUPPLIERS_MESSAGES,
+      ),
+    ).toEqual({})
+  })
+
+  it('Purchases, supplier returns and credit notes', () => {
+    expect(missing(['features/purchasing', 'components/ui'], PURCHASES_MESSAGES)).toEqual({})
+  })
+
   it('settings: the home and every section', () => {
     const settings = 'features/settings'
     const sections = {
@@ -115,6 +137,7 @@ describe("each route's messages have the keys its code translates", () => {
       members: ['members-settings.tsx', 'invitations.tsx', 'member-dialogs.tsx', 'role-picker.tsx'],
       roles: ['roles-settings.tsx', 'role-picker.tsx'],
       modules: ['customize-settings.tsx', '../setup/review-parts.tsx'],
+      books: ['books-settings.tsx'],
       language: ['language-settings.tsx'],
     } as const
     expect(
@@ -146,6 +169,8 @@ describe("each route's messages have the keys its code translates", () => {
       SETUP_MESSAGES,
       DASHBOARD_MESSAGES,
       CATALOG_MESSAGES,
+      SUPPLIERS_MESSAGES,
+      PURCHASES_MESSAGES,
       SETTINGS_MESSAGES,
       ...Object.values(SETTINGS_SECTION_MESSAGES),
     ].flat()

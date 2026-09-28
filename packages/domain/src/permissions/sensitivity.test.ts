@@ -77,10 +77,14 @@ describe('visibleCategories', () => {
       'cost',
       'payroll',
     ])
-    expect(sorted(visibleCategories(withKeys('data.supplier_price.view')))).toEqual([
-      'supplier_price',
-    ])
+    expect(
+      sorted(visibleCategories(withKeys('data.supplier_price.view', 'data.cost.view'))),
+    ).toEqual(['cost', 'supplier_price'])
     expect(sorted(visibleCategories(withKeys('data.employee_pii.view')))).toEqual(['employee_pii'])
+  })
+
+  it('hides supplier prices when cost is hidden (the prices paid would reveal the average)', () => {
+    expect(visibleCategories(withKeys('data.supplier_price.view')).size).toBe(0)
   })
 
   it('hides profit/margin when cost is hidden (price + margin would reveal cost)', () => {

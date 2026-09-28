@@ -1,8 +1,10 @@
 import {
   checkDecimal,
   compareDecimal,
+  fitsCurrency,
   normalizeDigits,
   parseNumber,
+  type CurrencyCode,
   type DecimalKind,
 } from '@bizcost/domain'
 import type { I18nKey } from '@bizcost/i18n'
@@ -51,6 +53,49 @@ export function readPrice(input: string): { ok: true; value: string | null } | R
   const result = read(input, 'money')
   if (result.ok && compareDecimal(result.value, '0') < 0) {
     return { ok: false, error: { key: 'catalog.numbers.notNegative' } }
+  }
+  return result
+}
+
+/** A quantity bought or returned: more than zero, numeric(24,6). */
+export function readQuantity(input: string): ReadNumber {
+  const result = read(input, 'quantity')
+  if (result.ok && compareDecimal(result.value, '0') <= 0) {
+    return { ok: false, error: { key: 'catalog.numbers.positive' } }
+  }
+  return result
+}
+
+/**
+ * A price or an amount on a document: zero or more (or more than zero), numeric(20,4); with
+ * `currency`, a document amount with at most its minor-unit decimals (a credit, D-142).
+ */
+export function readAmount(
+  input: string,
+  { positive = false, currency }: { positive?: boolean; currency?: CurrencyCode } = {},
+): ReadNumber {
+  const result = read(input, 'money')
+  if (result.ok && currency && !fitsCurrency(result.value, currency)) {
+    return { ok: false, error: { key: 'catalog.numbers.tooManyDecimals' } }
+  }
+  if (result.ok && compareDecimal(result.value, '0') < (positive ? 1 : 0)) {
+    return {
+      ok: false,
+      error: { key: positive ? 'catalog.numbers.positive' : 'catalog.numbers.notNegative' },
+    }
+  }
+  return result
+}
+
+/** A percentage from 0 to 100, numeric(9,6). */
+export function readPercent(input: string): ReadNumber {
+  const result = read(input, 'percent')
+  if (
+    (result.ok &&
+      (compareDecimal(result.value, '0') < 0 || compareDecimal(result.value, '100') > 0)) ||
+    (!result.ok && result.error.key === 'catalog.numbers.tooLarge')
+  ) {
+    return { ok: false, error: { key: 'catalog.numbers.percent' } }
   }
   return result
 }

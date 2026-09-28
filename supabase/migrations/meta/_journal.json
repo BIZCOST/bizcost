@@ -92,6 +92,20 @@
       "when": 1790554372344,
       "tag": "20260928001252_catalog_security",
       "breakpoints": true
+    },
+    {
+      "idx": 13,
+      "version": "7",
+      "when": 1790569285204,
+      "tag": "20260928042125_purchasing_tables",
+      "breakpoints": true
+    },
+    {
+      "idx": 14,
+      "version": "7",
+      "when": 1790569318858,
+      "tag": "20260928042158_purchasing_security",
+      "breakpoints": true
     }
   ]
 }

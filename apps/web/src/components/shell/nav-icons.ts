@@ -4,7 +4,9 @@ import {
   PackageIcon,
   PlusIcon,
   SettingsIcon,
+  ShoppingCartIcon,
   TagIcon,
+  TruckIcon,
   type LucideIcon,
 } from 'lucide-react'
 
@@ -20,6 +22,9 @@ const NAV_ICONS: Readonly<Record<string, LucideIcon>> = {
   // Products & Services and Materials (M2 Step 2).
   tag: TagIcon,
   package: PackageIcon,
+  // Suppliers and Purchases (M2 Step 3).
+  truck: TruckIcon,
+  'shopping-cart': ShoppingCartIcon,
 }
 
 export const FALLBACK_NAV_ICON: LucideIcon = LayoutGridIcon

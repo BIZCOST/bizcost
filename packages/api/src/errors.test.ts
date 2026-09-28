@@ -31,6 +31,15 @@ describe('AppError', () => {
     ['only_location_of_products', 'CONFLICT'],
     ['name_taken', 'CONFLICT'],
     ['file_invalid', 'BAD_REQUEST'],
+    ['attachment_invalid', 'BAD_REQUEST'],
+    ['books_closed', 'CONFLICT'],
+    ['future_date', 'BAD_REQUEST'],
+    ['document_posted', 'CONFLICT'],
+    ['document_not_posted', 'CONFLICT'],
+    ['purchase_has_returns', 'CONFLICT'],
+    ['has_later_returns', 'CONFLICT'],
+    ['exceeds_purchase', 'BAD_REQUEST'],
+    ['material_in_use', 'CONFLICT'],
     ['internal', 'INTERNAL_SERVER_ERROR'],
   ] as const)('%s uses the tRPC code %s', (appCode, trpcCode) => {
     const error = new AppError(appCode)

@@ -1,5 +1,5 @@
 import { sql } from 'drizzle-orm'
-import { boolean, char, check, text, uuid } from 'drizzle-orm/pg-core'
+import { boolean, char, check, date, text, uuid } from 'drizzle-orm/pg-core'
 import { app, rowMetaColumns, timestamptz } from './_app'
 
 // Tenant root: businesses.id is the business_id used by every tenant table.
@@ -21,6 +21,8 @@ export const businesses = app.table(
     plan: text('plan'),
     setupCompletedAt: timestamptz('setup_completed_at'),
     logoPath: text('logo_path'),
+    // "Books closed up to" (D-114 rule 6): nothing dated on or before it is posted or reversed.
+    booksClosedThrough: date('books_closed_through', { mode: 'string' }),
     ...rowMetaColumns(),
   },
   () => [

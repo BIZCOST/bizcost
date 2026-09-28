@@ -107,6 +107,13 @@ export function useLocale() {
  */
 export function useTerminology() {
   const { t, i18n } = useTranslation()
-  return (key: I18nKey, profile: TerminologyProfile | null | undefined): string =>
-    t(terminologyKey(key, profile, (k) => hasKey(i18n, k)))
+  return (
+    key: I18nKey,
+    profile: TerminologyProfile | null | undefined,
+    values?: Readonly<Record<string, unknown>>,
+  ): string =>
+    t(
+      terminologyKey(key, profile, (k) => hasKey(i18n, k)),
+      values,
+    )
 }

@@ -449,16 +449,20 @@ describe('visibleCategories', () => {
 
   it('maps each independent category to data.<category>.view', () => {
     expect(visibleFor(['data.cost.view'])).toEqual(['cost'])
-    expect(visibleFor(['data.supplier_price.view'])).toEqual(['supplier_price'])
     expect(visibleFor(['data.payroll.view'])).toEqual(['payroll'])
     expect(visibleFor(['data.employee_pii.view'])).toEqual(['employee_pii'])
   })
 
   it('hides profit_margin when cost is hidden (price + margin would reveal cost)', () => {
     expect(visibleFor(['data.profit_margin.view'])).toEqual([])
-    expect(visibleFor(['data.profit_margin.view', 'data.supplier_price.view'])).toEqual([
-      'supplier_price',
-    ])
+    expect(visibleFor(['data.profit_margin.view', 'data.supplier_price.view'])).toEqual([])
+  })
+
+  it('hides supplier_price when cost is hidden (the prices paid would reveal the average cost)', () => {
+    expect(visibleFor(['data.supplier_price.view'])).toEqual([])
+    expect(visibleFor(['data.cost.view', 'data.supplier_price.view'])).toEqual(
+      sorted(['cost', 'supplier_price']),
+    )
   })
 
   it('shows profit_margin when cost is visible too', () => {
@@ -508,7 +512,7 @@ describe('visibleCategories', () => {
     expect(visibleCategories(effective).size).toBe(0)
   })
 
-  it('property: follows data.<category>.view, and profit_margin requires cost', () => {
+  it('property: follows data.<category>.view; profit_margin and supplier_price require cost', () => {
     fc.assert(
       fc.property(nonOwnerInputArb, (input) => {
         const effective = resolveEffective(input)
@@ -516,11 +520,12 @@ describe('visibleCategories', () => {
         for (const category of visible) expect(SENSITIVITY_CATEGORIES).toContain(category)
         for (const category of SENSITIVITY_CATEGORIES) {
           const granted = can(effective, `data.${category}.view`)
-          const expected =
-            category === 'profit_margin' ? granted && can(effective, 'data.cost.view') : granted
+          const needsCost = category === 'profit_margin' || category === 'supplier_price'
+          const expected = needsCost ? granted && can(effective, 'data.cost.view') : granted
           expect(visible.has(category)).toBe(expected)
         }
         if (visible.has('profit_margin')) expect(visible.has('cost')).toBe(true)
+        if (visible.has('supplier_price')) expect(visible.has('cost')).toBe(true)
       }),
     )
   })

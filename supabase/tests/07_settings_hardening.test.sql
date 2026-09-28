@@ -168,7 +168,7 @@ select is(
                'image/png', now() + interval '2 hours') $f$, n, pg_temp.id('biz A'))) as r
        from generate_series(1, 7) as n) as s
     where r <> 'ok 1'),
-  'ERROR BZ429: file_upload_limit: at most 10 uploads per business in an hour',
+  'ERROR BZ429: file_upload_limit: at most 10 logo uploads per business in an hour',
   'the 11th upload of a business in an hour is refused (BZ429)'
 );
 

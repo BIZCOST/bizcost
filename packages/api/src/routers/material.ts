@@ -3,9 +3,12 @@ import {
   catalogListInput,
   createMaterialInput,
   materialDto,
+  materialCostsDto,
+  materialCostsInput,
   materialListDto,
   updateMaterialInput,
 } from '@bizcost/contracts'
+import { materialCosts } from '../services/material-costs'
 import {
   archiveMaterial,
   createMaterial,
@@ -36,6 +39,15 @@ export const materialRouter = router({
     .input(catalogIdInput)
     .output(materialDto)
     .query(({ ctx, input }) => getMaterial(ctx, input)),
+  /**
+   * `material.costs`: the average each material's cost uses today (the 90-day purchase average until
+   * the first stock count, D-115) and its last purchase price. Averages are `cost`, prices
+   * `supplier_price` (withMeta).
+   */
+  costs: viewMaterials
+    .input(materialCostsInput)
+    .output(materialCostsDto)
+    .query(({ ctx, input }) => materialCosts(ctx, input)),
   /** `material.create`: idempotent on the client's id; units checked by the domain engine. */
   create: manageMaterials
     .input(createMaterialInput)

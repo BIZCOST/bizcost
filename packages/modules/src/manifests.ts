@@ -175,7 +175,63 @@ const MATERIALS = {
     },
   ],
   quickActions: [],
+  // The cost view (M2 Step 3): its average cost, and its last purchase price.
+  sensitiveFields: ['cost', 'supplier_price'],
+  requiresCapabilities: [],
+} as const satisfies ModuleManifest
+
+// Suppliers (M2 Step 3; planned until Step 7): a list of its own, separate from customers (D-112).
+const SUPPLIERS = {
+  id: 'suppliers',
+  kind: 'core',
+  availability: 'planned',
+  phase: 2,
+  deps: [],
+  permissionKeys: ['suppliers.items.view', 'suppliers.items.manage'],
+  nav: [
+    {
+      id: 'suppliers',
+      labelKey: 'nav.suppliers',
+      path: 'suppliers',
+      icon: 'truck',
+      group: 'main',
+      permission: 'suppliers.items.view',
+    },
+  ],
+  quickActions: [],
   sensitiveFields: [],
+  requiresCapabilities: [],
+} as const satisfies ModuleManifest
+
+// Purchases (M2 Step 3; planned until Step 7): purchases, supplier returns and credit notes, posted
+// with the weighted average (D-114, D-120), their receipts (attachments), and the "books closed up
+// to" date. Materials depend on it (their cost comes from purchases); the reverse would be a cycle,
+// so Purchases lists no deps. The supplier of a purchase is optional (no dependency either).
+const PURCHASES = {
+  id: 'purchases',
+  kind: 'core',
+  availability: 'planned',
+  phase: 2,
+  deps: [],
+  permissionKeys: [
+    'purchases.documents.view',
+    'purchases.documents.manage',
+    'purchases.documents.post',
+    'purchases.documents.reverse',
+    'purchases.books.close',
+  ],
+  nav: [
+    {
+      id: 'purchases',
+      labelKey: 'nav.purchases',
+      path: 'purchases',
+      icon: 'shopping-cart',
+      group: 'main',
+      permission: 'purchases.documents.view',
+    },
+  ],
+  quickActions: [],
+  sensitiveFields: ['cost', 'supplier_price'],
   requiresCapabilities: [],
 } as const satisfies ModuleManifest
 
@@ -216,8 +272,8 @@ export const MODULES = [
   SETTINGS,
   PRODUCTS,
   MATERIALS,
-  planned('suppliers', 'core', 2),
-  planned('purchases', 'core', 2),
+  SUPPLIERS,
+  PURCHASES,
   planned('expenses', 'core', 2),
   planned('running_costs', 'core', 2),
   planned('files', 'core', 2),

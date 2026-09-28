@@ -1,5 +1,7 @@
 import { router } from '../trpc'
 import { accountRouter } from './account'
+import { attachmentRouter } from './attachment'
+import { booksRouter } from './books'
 import { businessRouter } from './business'
 import { dashboardRouter } from './dashboard'
 import { health } from './health'
@@ -9,7 +11,10 @@ import { materialRouter } from './material'
 import { me } from './me'
 import { memberRouter } from './member'
 import { productRouter } from './product'
+import { purchaseRouter } from './purchase'
+import { purchaseReturnRouter } from './purchase-return'
 import { roleRouter } from './role'
+import { supplierRouter } from './supplier'
 
 /**
  * The API of M1 and of M2 so far. Routers of each module arrive with the module's build (no
@@ -27,6 +32,11 @@ export const appRouter = router({
   role: roleRouter,
   material: materialRouter,
   product: productRouter,
+  supplier: supplierRouter,
+  purchase: purchaseRouter,
+  purchaseReturn: purchaseReturnRouter,
+  attachment: attachmentRouter,
+  books: booksRouter,
 })
 
 export type AppRouter = typeof appRouter

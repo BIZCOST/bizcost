@@ -33,7 +33,7 @@ const isoTimestamp = z.iso.datetime({ offset: true })
  * removed, spaces and marks trimmed from its ends), 1–`max` characters with something to see
  * (D-131).
  */
-function nameInput(max: number) {
+export function nameInput(max: number) {
   return z
     .string()
     .refine((value) => !CONTROL_CHARACTER.test(value), { message: 'control character' })

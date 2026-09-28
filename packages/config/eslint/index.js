@@ -44,7 +44,7 @@ const API_DB_ENTRY = {
 const API_ADMIN = {
   group: ['**/admin', '**/admin/*'],
   message:
-    'The Supabase Admin API (secret key) is for the account service (Auth) and the business profile service (Storage: the logo) only.',
+    'The Supabase Admin API (secret key) is for the account service (Auth), the business profile service (Storage: the logo) and the attachments service (Storage: receipts) only.',
 }
 
 // Every translation of every namespace, both languages: the web's browser code gets its messages from
@@ -155,7 +155,8 @@ export default tseslint.config(
   // The API reaches the database only through ctx.tenantTx / ctx.tx, which bind withTenantTx to the
   // verified caller and the request id (context.ts). The raw pool is never on the context.
   // The Supabase Admin API (secret key, packages/api/src/admin) is used by the account service (Auth
-  // admin: account deletion) and the business profile service (Storage signed URLs for the logo) only.
+  // admin: account deletion), the business profile service (Storage signed URLs for the logo) and the
+  // attachments service (Storage signed URLs for receipts) only.
   {
     files: ['packages/api/src/**/*.ts'],
     ignores: ['**/*.test.ts'],
@@ -169,6 +170,7 @@ export default tseslint.config(
     files: [
       'packages/api/src/services/account.ts',
       'packages/api/src/services/business-profile.ts',
+      'packages/api/src/services/attachments.ts',
       'packages/api/src/admin/**/*.ts',
     ],
     ignores: ['**/*.test.ts'],

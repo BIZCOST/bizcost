@@ -316,6 +316,15 @@ describe('APP_ERROR_CODES', () => {
     'only_location_of_products',
     'name_taken',
     'file_invalid',
+    'attachment_invalid',
+    'books_closed',
+    'future_date',
+    'document_posted',
+    'document_not_posted',
+    'purchase_has_returns',
+    'has_later_returns',
+    'exceeds_purchase',
+    'material_in_use',
     'internal',
   ]
 

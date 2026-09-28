@@ -49,7 +49,8 @@
     "positive": "Enter a number more than zero.",
     "notNegative": "Enter zero or more.",
     "tooManyDecimals": "Use fewer decimal places.",
-    "tooLarge": "This number is too large."
+    "tooLarge": "This number is too large.",
+    "percent": "Enter a percentage from 0 to 100."
   },
   "materials": {
     "intro": "What you buy to make or sell. Enter each one once, in the unit you use it in.",
@@ -108,6 +109,17 @@
       "wrongTarget": "Pick a unit like the one you use it in.",
       "tooLarge": "This is more than BizCost can count. Check the number.",
       "tooSmall": "This is less than BizCost can count. Check the number."
+    },
+    "cost": {
+      "average": "Average cost",
+      "basis": {
+        "purchases_90_days": "from your purchases of the last 90 days",
+        "last_purchase": "from your last purchase (none in the last 90 days)"
+      },
+      "noPrice": "No price yet. It shows once a first purchase is final.",
+      "lastPurchase": "Last purchase cost",
+      "lastPurchaseHint": "with delivery and discounts",
+      "perPack": "per {{unit}}"
     }
   },
   "products": {

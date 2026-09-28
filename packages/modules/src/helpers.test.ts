@@ -128,7 +128,7 @@ describe('the dev-only preview (D-125)', () => {
   const materials = moduleById('materials')!
 
   it('may show only planned modules whose build started', () => {
-    expect(PREVIEWABLE_MODULE_IDS).toEqual(['products', 'materials'])
+    expect(PREVIEWABLE_MODULE_IDS).toEqual(['products', 'materials', 'suppliers', 'purchases'])
   })
 
   it('parses a comma or space separated list, and names what it cannot preview', () => {

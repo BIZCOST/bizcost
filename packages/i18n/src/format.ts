@@ -51,6 +51,32 @@ export function formatCurrency(locale: Locale, amount: string, currency: string)
   }).format(roundHalfUp(amount, digits))
 }
 
+/** Most decimals a unit cost shows (a price per ml or per gram can be a tiny amount). */
+const UNIT_COST_MAX_DIGITS = 6
+
+/**
+ * A cost or price per unit (decimal string, often 12 decimals) in `currency`: with the currency's
+ * digits, or, below one, with as many more as it takes to show two significant digits (up to 6), so
+ * a price per ml or per gram never reads as 0.00: 6.666666666667 → AED 6.67, 0.006666666667 → AED
+ * 0.0067, 0.05 → AED 0.050. Rounded half up like formatCurrency.
+ */
+export function formatUnitCost(locale: Locale, amount: string, currency: string): string {
+  const minor = currencyDigits(currency)
+  const value = new Decimal(amount).abs()
+  let digits = minor
+  if (value.gt(0) && value.lt(1)) {
+    // Zeros after the point before the first significant digit (0.0066 → 2).
+    const zeros = -value.e - 1
+    digits = Math.min(UNIT_COST_MAX_DIGITS, Math.max(minor, zeros + 2))
+  }
+  return new Intl.NumberFormat(intlLocale(locale), {
+    style: 'currency',
+    currency,
+    minimumFractionDigits: digits,
+    maximumFractionDigits: digits,
+  }).format(roundHalfUp(amount, digits))
+}
+
 /**
  * How `currency` is written in `locale`, as formatCurrency writes it: "AED" in English, «د.إ.» in
  * Arabic. For a field's prefix, so the field and the lists show the same symbol.

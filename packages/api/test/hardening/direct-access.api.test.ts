@@ -437,8 +437,8 @@ describe('Storage straight from the client, with a real user token', () => {
         from storage.buckets where id = ${BUCKET}`
       expect(row).toEqual({
         public: false,
-        file_size_limit: String(2 * 1024 * 1024),
-        types: ['image/png', 'image/jpeg', 'image/webp'],
+        file_size_limit: String(10 * 1024 * 1024),
+        types: ['image/png', 'image/jpeg', 'image/webp', 'application/pdf'],
       })
       const [buckets] = await api.admin<{ n: number }[]>`
       select count(*)::int as n from storage.buckets where name like 'evil-%'`

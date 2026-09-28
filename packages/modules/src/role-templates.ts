@@ -5,7 +5,8 @@ import { PERMISSION_CATALOG, type PermissionKey } from './permissions'
 // `roles.template_key` = the key and one `role_permissions` row per permission key. The owner template
 // holds every permission implicitly and has no rows (D-049). A key added here later reaches the roles
 // that businesses already have only through a migration that adds it to their template roles (the
-// catalog_permissions migration of M2 Step 2 did so for the products and materials keys, D-124).
+// catalog_security migration of M2 Step 2 did so for the products and materials keys, D-124, and
+// purchasing_security for the suppliers and purchases keys of M2 Step 3).
 
 export const ROLE_TEMPLATE_KEYS = [
   OWNER_TEMPLATE_KEY,
@@ -42,6 +43,12 @@ export const ROLE_TEMPLATES: readonly RoleTemplate[] = [
       'products.items.manage',
       'materials.items.view',
       'materials.items.manage',
+      'suppliers.items.view',
+      'suppliers.items.manage',
+      'purchases.documents.view',
+      'purchases.documents.manage',
+      'purchases.documents.post',
+      'purchases.documents.reverse',
       'data.cost.view',
       'data.profit_margin.view',
       'data.supplier_price.view',
@@ -55,6 +62,8 @@ export const ROLE_TEMPLATES: readonly RoleTemplate[] = [
       'settings.business.view',
       'products.items.view',
       'materials.items.view',
+      'suppliers.items.view',
+      'purchases.documents.view',
       'data.cost.view',
       'data.profit_margin.view',
       'data.supplier_price.view',

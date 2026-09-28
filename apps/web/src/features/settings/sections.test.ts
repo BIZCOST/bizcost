@@ -54,6 +54,24 @@ describe('settings sections', () => {
     expect(isSectionVisible(access([]), 'locations')).toBe(false)
   })
 
+  it('offers closing the books only with Purchases on and the key to close them (D-137)', () => {
+    const purchases = { modules: [{ id: 'purchases' }] }
+    expect(isSectionVisible({ ...access('all'), ...purchases }, 'books')).toBe(true)
+    expect(isSectionVisible(access('all'), 'books')).toBe(false)
+    expect(
+      isSectionVisible({ ...access(['purchases.documents.view']), ...purchases }, 'books'),
+    ).toBe(false)
+    expect(
+      isSectionVisible({ ...access(['purchases.books.close'], SOLO), ...purchases }, 'books'),
+    ).toBe(true)
+    expect(visibleSections({ ...access('all', SOLO), ...purchases })).toEqual([
+      'business',
+      'modules',
+      'books',
+      'language',
+    ])
+  })
+
   it('reads the section from a settings path', () => {
     const id = '0190a4f2-7b5c-7c3e-9b1a-2f3c4d5e6f70'
     expect(sectionOfPath(`/b/${id}/settings`)).toBeNull()

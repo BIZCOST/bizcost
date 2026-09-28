@@ -8,6 +8,7 @@ export {
   formatDecimal,
   formatList,
   formatNumber,
+  formatUnitCost,
 } from './format'
 export {
   addMessages,

@@ -26,6 +26,7 @@ export { parseNumber, type ParseNumberError, type ParseNumberResult } from './nu
 export {
   CURRENCY_MINOR_UNITS,
   currencyMinorUnit,
+  fitsCurrency,
   isCurrencyCode,
   roundCost,
   roundDocument,
@@ -42,6 +43,20 @@ export {
   type LineInput,
 } from './documents/line'
 export { documentTotals, type DocumentTotals } from './documents/totals'
+// Purchases: document discount and delivery split by line net, VAT in or out of cost (D-114 rule 4).
+export {
+  computePurchase,
+  purchaseError,
+  type PurchaseAmounts,
+  type PurchaseDeliveryLineInput,
+  type PurchaseError,
+  type PurchaseErrorCode,
+  type PurchaseInput,
+  type PurchaseLineAmounts,
+  type PurchaseLineInput,
+  type PurchaseMaterialLineInput,
+} from './documents/purchase'
+export { proportionOf, splitByWeights, subtractDecimals, sumDecimals } from './documents/split'
 // Units: standard units per dimension, material packs and cross factors, conversions (D-034).
 export {
   BASE_UNITS,
@@ -75,10 +90,13 @@ export {
   type WacMovement,
   type WacReceipt,
   type WacReceiptResult,
+  type WacReceiptStanding,
+  type WacReplay,
   type WacReversalResult,
   type WacState,
   type WacStep,
 } from './costing/wac'
+export { costRatio } from './costing/cost-ratio'
 export {
   MATERIAL_UNIT_KINDS,
   PRODUCT_TYPES,
@@ -87,6 +105,25 @@ export {
   type ProductType,
   type VatCategory,
 } from './catalog/keys'
+export {
+  ATTACHMENT_ENTITIES,
+  DOCUMENT_STATUSES,
+  PAYMENT_METHODS,
+  PURCHASE_AVERAGE_DAYS,
+  PURCHASE_DOCUMENT_TYPES,
+  PURCHASE_LINE_KINDS,
+  PURCHASE_RETURN_KINDS,
+  STOCK_MOVEMENT_KINDS,
+  vatInCost,
+  type AttachmentEntity,
+  type DocumentStatus,
+  type PaymentMethod,
+  type PurchaseDocumentType,
+  type PurchaseLineKind,
+  type PurchaseReturnKind,
+  type StockMovementKind,
+  type VatInCostInput,
+} from './purchasing/keys'
 export { parseTrn, TRN_LENGTH, type TrnError, type TrnResult } from './business/trn'
 export { businessDisplayName, type BusinessNames } from './business/display-name'
 export {

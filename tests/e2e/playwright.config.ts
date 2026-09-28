@@ -15,11 +15,11 @@ import {
 // developer's `next dev`. One worker: the local Auth server limits sign-ins per IP, and every test
 // reads its codes from the shared Mailpit.
 //
-// The modules being built (M2 Step 2: Materials, Products & Services) are still `planned`, and a
-// production build never shows a planned module (D-125). Their specs (`preview` project) run on a
-// `next dev` server with the dev-only preview, in its own folder (.next/e2e-preview) on
-// E2E_PREVIEW_PORT (default E2E_PORT + 1). When Step 7 releases them, their specs move to the
-// production project and this server goes.
+// The modules being built (M2 Step 2: Materials, Products & Services; Step 3: Suppliers, Purchases)
+// are still `planned`, and a production build never shows a planned module (D-125). Their specs
+// (`preview` project) run on a `next dev` server with the dev-only preview, in its own folder
+// (.next/e2e-preview) on E2E_PREVIEW_PORT (default E2E_PORT + 1). When Step 7 releases them, their
+// specs move to the production project and this server goes.
 
 const { apiUrl, publishableKey, secretKey } = stack()
 const web = 'pnpm --filter @bizcost/web exec next'
@@ -42,7 +42,7 @@ function webEnv(origin: string): Record<string, string> {
 }
 
 /** Specs of the modules shown only by the dev-only preview. */
-const PREVIEW_SPECS = /catalog\.spec\.ts$/
+const PREVIEW_SPECS = /(?:catalog|purchasing)\.spec\.ts$/
 
 export default defineConfig({
   testDir: './specs',

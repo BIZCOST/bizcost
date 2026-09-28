@@ -168,7 +168,7 @@ describe('business logo', () => {
     expect(row?.logo_path).toBeNull()
   })
 
-  it('never offers SVG, and the bucket refuses SVG and files over 2 MB', async () => {
+  it('never offers SVG; the bucket refuses SVG, and a logo over 2 MB is refused and removed', async () => {
     const owner = await newUser()
     const businessId = await setupBusiness(handler, owner.token, WORKSHOP)
     expect(appCode(await uploadUrl(owner.token, businessId, 'image/svg+xml'))).toBe('validation')
@@ -179,10 +179,22 @@ describe('business logo', () => {
       'image/svg+xml',
     )
     expect(svg.ok).toBe(false)
+    // The bucket takes receipts up to 10 MB (M2 Step 3): the API refuses a logo over 2 MB and
+    // removes it.
     const big = Buffer.concat([PNG, Buffer.alloc(2 * 1024 * 1024)])
-    const tooBig = await upload(data!.uploadUrl, big, 'image/png')
-    expect(tooBig.ok).toBe(false)
+    const stored = await upload(data!.uploadUrl, big, 'image/png')
+    expect(stored.ok).toBe(true)
     expect(appCode(await setLogo(owner.token, businessId, data!.path))).toBe('file_invalid')
+    const [left] = await admin<{ n: number }[]>`
+      select count(*)::int as n from storage.objects
+       where bucket_id = 'business-files' and name = ${data!.path}`
+    expect(left?.n).toBe(0)
+    const tooBig = await upload(
+      (await uploadUrl(owner.token, businessId, 'image/png')).data!.uploadUrl,
+      Buffer.concat([PNG, Buffer.alloc(10 * 1024 * 1024)]),
+      'image/png',
+    )
+    expect(tooBig.ok).toBe(false)
   })
 
   it('refuses paths outside this business’s logo folder (tampering)', async () => {

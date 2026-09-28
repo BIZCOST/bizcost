@@ -20,6 +20,15 @@
   "only_location_of_products": "Some products or services are sold only at this branch. In Products & Services, choose other branches for them first, then remove it.",
   "name_taken": "You already have one with this name. Use another name, or find it in your list (archived ones too).",
   "file_invalid": "Use a PNG, JPG or WebP image of up to 2 MB.",
+  "attachment_invalid": "Use a photo (PNG, JPG or WebP) or a PDF of up to 10\u00a0MB.",
+  "books_closed": "The books are closed up to this date. Use a later date, or open the books again in Settings.",
+  "future_date": "This date is after today. Choose today or an earlier date.",
+  "document_posted": "This is final and can't be changed. To fix it, reverse or correct it.",
+  "document_not_posted": "This works only with a final document that wasn't reversed.",
+  "purchase_has_returns": "This purchase has returns or credit notes. Reverse them first, then try again.",
+  "has_later_returns": "The same goods have a later return that is still final. Reverse that return first, then try again.",
+  "exceeds_purchase": "That's more than is left of this purchase. Check the quantity or the amount.",
+  "material_in_use": "This material has purchases, so its kind of measure can't change. You can still pick another unit of the same kind.",
   "internal": "Something went wrong on our side. Please try again.",
   "network": "Can't connect. Check your internet and try again."
 }

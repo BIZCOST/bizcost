@@ -56,6 +56,8 @@
     "materials": "Materials",
     "materials_food": "Ingredients & supplies",
     "materials_factory": "Raw materials",
+    "suppliers": "Suppliers",
+    "purchases": "Purchases",
     "more": "More",
     "moreTitle": "More sections",
     "quickAdd": "Add new"
@@ -117,5 +119,11 @@
   },
   "errorPage": {
     "title": "Something went wrong"
+  },
+  "locked": {
+    "label": "Hidden",
+    "cost": "Your role doesn't show costs.",
+    "supplier_price": "Your role doesn't show supplier prices.",
+    "note": "Some amounts are hidden: your role doesn't show supplier prices or costs."
   }
 }

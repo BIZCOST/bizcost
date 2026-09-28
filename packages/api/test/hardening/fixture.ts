@@ -1,4 +1,7 @@
 import type {
+  AttachmentDto,
+  AttachmentUploadUrlDto,
+  BooksDto,
   BusinessProfileDto,
   InvitationDto,
   LocationDto,
@@ -6,7 +9,10 @@ import type {
   MaterialDto,
   MemberDto,
   ProductDto,
+  PurchaseDto,
+  PurchaseReturnDto,
   RoleDto,
+  SupplierDto,
 } from '@bizcost/contracts'
 import type { Db } from '@bizcost/db'
 import { newId } from '@bizcost/domain'
@@ -37,8 +43,10 @@ import { CapturedEmails, join, setupBusiness, WORKSHOP } from '../settings'
 // business; query or mutation) straight from the router, the strings that identify a business's data
 // in a response, and a digest of everything a business has in the database and in Storage.
 //
-// Materials and Products & Services are still planned (M2 Step 2, released with Step 7): the suites run
-// the API with the dev-only preview of both (D-125), so their procedures are attacked like the others.
+// Materials, Products & Services, Suppliers and Purchases are still planned (M2 Steps 2–3, released with
+// Step 7): the suites run the API with the dev-only preview of them (D-125), so their procedures are
+// attacked like the others. Each business also has a supplier, a posted purchase with a receipt
+// attached, a draft purchase, a posted return and a draft return (M2 Step 3).
 
 export type Handler = ReturnType<typeof handlerFor>
 
@@ -57,7 +65,7 @@ export interface Api {
 }
 
 /** The modules still being built that the suites preview (D-125). */
-export const PREVIEW_MODULES = ['materials', 'products'] as const
+export const PREVIEW_MODULES = ['materials', 'products', 'suppliers', 'purchases'] as const
 
 /**
  * The API as deployed (secret key for Storage, emails kept instead of sent), with the modules still
@@ -188,6 +196,17 @@ export interface Tenant {
   material: MaterialDto
   /** A product sold at the branch only. */
   product: ProductDto
+  supplier: SupplierDto
+  /** A posted purchase of the material from the supplier, with a receipt attached. */
+  purchase: PurchaseDto
+  /** A draft purchase. */
+  draftPurchase: PurchaseDto
+  /** A posted return of part of the purchase. */
+  purchaseReturn: PurchaseReturnDto
+  /** A draft credit note on the purchase. */
+  draftReturn: PurchaseReturnDto
+  /** The receipt attached to the purchase. */
+  attachment: AttachmentDto
 }
 
 function ok<T>(result: CallResult<T>, what: string): T {
@@ -301,6 +320,108 @@ export async function createTenant(api: Api, label: string): Promise<Tenant> {
     'product.create',
   ) as ProductDto
 
+  const { today } = ok(await as('books.get', 'query'), 'books.get') as BooksDto
+  const supplier = ok(
+    await as('supplier.create', 'mutation', { id: newId(), name: `Dairy ${label} ${tag}` }),
+    'supplier.create',
+  ) as SupplierDto
+  const purchaseLine = {
+    kind: 'material',
+    id: newId(),
+    materialId: material.id,
+    qty: '12',
+    unit: 'l',
+    unitPrice: '6.5',
+  }
+  const draft = (
+    ok(
+      await as('purchase.create', 'mutation', {
+        id: newId(),
+        supplierId: supplier.id,
+        businessDate: today,
+        documentType: 'no_invoice',
+        reference: `REF-${label}-${tag}`,
+        lines: [purchaseLine],
+      }),
+      'purchase.create',
+    ) as { data: PurchaseDto }
+  ).data
+  const posted = (
+    ok(
+      await as('purchase.post', 'mutation', { id: draft.id, version: draft.version }),
+      'purchase.post',
+    ) as { data: PurchaseDto }
+  ).data
+  const draftPurchase = (
+    ok(
+      await as('purchase.create', 'mutation', {
+        id: newId(),
+        businessDate: today,
+        documentType: 'no_invoice',
+        lines: [{ ...purchaseLine, id: newId() }],
+      }),
+      'purchase.create',
+    ) as { data: PurchaseDto }
+  ).data
+  const returnDraft = (
+    ok(
+      await as('purchaseReturn.create', 'mutation', {
+        id: newId(),
+        purchaseId: posted.id,
+        kind: 'return',
+        businessDate: today,
+        lines: [{ id: newId(), purchaseLineId: posted.lines[0]?.id, qty: '1' }],
+      }),
+      'purchaseReturn.create',
+    ) as { data: PurchaseReturnDto }
+  ).data
+  const purchaseReturn = (
+    ok(
+      await as('purchaseReturn.post', 'mutation', {
+        id: returnDraft.id,
+        version: returnDraft.version,
+      }),
+      'purchaseReturn.post',
+    ) as { data: PurchaseReturnDto }
+  ).data
+  const draftReturn = (
+    ok(
+      await as('purchaseReturn.create', 'mutation', {
+        id: newId(),
+        purchaseId: posted.id,
+        kind: 'credit_note',
+        businessDate: today,
+        lines: [{ id: newId(), purchaseLineId: posted.lines[0]?.id, amount: '1' }],
+      }),
+      'purchaseReturn.create',
+    ) as { data: PurchaseReturnDto }
+  ).data
+  const receiptUpload = ok(
+    await as('attachment.uploadUrl', 'mutation', {
+      entity: 'purchase',
+      entityId: posted.id,
+      contentType: 'image/png',
+    }),
+    'attachment.uploadUrl',
+  ) as AttachmentUploadUrlDto
+  expect((await uploadTo(receiptUpload.uploadUrl, PNG, 'image/png')).ok).toBe(true)
+  const attachment = (
+    ok(
+      await as('attachment.add', 'mutation', {
+        entity: 'purchase',
+        entityId: posted.id,
+        path: receiptUpload.path,
+        fileName: `receipt-${label}-${tag}.png`,
+      }),
+      'attachment.add',
+    ) as { data: AttachmentDto }
+  ).data
+  const purchase = (
+    ok(await as('purchase.get', 'query', { id: posted.id }), 'purchase.get') as {
+      data: PurchaseDto
+    }
+  ).data
+
   return {
     id,
     label,
@@ -321,6 +442,12 @@ export async function createTenant(api: Api, label: string): Promise<Tenant> {
     openUpload,
     material,
     product,
+    supplier,
+    purchase,
+    draftPurchase,
+    purchaseReturn,
+    draftReturn,
+    attachment,
   }
 }
 
@@ -328,6 +455,11 @@ export async function createTenant(api: Api, label: string): Promise<Tenant> {
 export function queryInputOf(path: string, tenant: Tenant): unknown {
   if (path === 'material.get') return { id: tenant.material.id }
   if (path === 'product.get') return { id: tenant.product.id }
+  if (path === 'supplier.get') return { id: tenant.supplier.id }
+  if (path === 'purchase.get') return { id: tenant.purchase.id }
+  if (path === 'purchaseReturn.get') return { id: tenant.purchaseReturn.id }
+  if (path === 'attachment.list') return { entity: 'purchase', entityId: tenant.purchase.id }
+  if (path === 'material.costs') return { ids: [tenant.material.id] }
   return undefined
 }
 
@@ -356,6 +488,16 @@ export function markersOf(tenant: Tenant): string[] {
     ...tenant.material.packs.flatMap((pack) => [pack.id, pack.name]),
     tenant.product.id,
     tenant.product.name,
+    tenant.supplier.id,
+    tenant.supplier.name,
+    tenant.purchase.id,
+    tenant.purchase.reference ?? tenant.purchase.id,
+    ...tenant.purchase.lines.map((l) => l.id),
+    tenant.draftPurchase.id,
+    tenant.purchaseReturn.id,
+    tenant.draftReturn.id,
+    tenant.attachment.id,
+    tenant.attachment.fileName,
     ...Object.values(tenant.roles).map((role) => role.id),
     ...[tenant.owner, tenant.admin, tenant.employee].flatMap(({ user }) => [
       user.id,

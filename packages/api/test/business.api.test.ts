@@ -279,12 +279,13 @@ describe('business.context', () => {
     ])
   })
 
-  it('applies deny overrides and the cost → margin grouping rule', async () => {
+  it('applies deny overrides and the grouping rule (no cost: no margin, no supplier prices)', async () => {
     const result = await query<ContextResult>(handler, 'business.context', as('manager'))
     expect(result.data?.roleTemplateKey).toBe('manager')
     expect(result.data?.permissions.keys).not.toContain('data.cost.view')
     expect(result.data?.permissions.keys).toContain('data.profit_margin.view')
-    expect(result.data?.visibleCategories).toEqual(['supplier_price'])
+    expect(result.data?.permissions.keys).toContain('data.supplier_price.view')
+    expect(result.data?.visibleCategories).toEqual([])
   })
 
   it('derives vat_registered from the business and reads stored capabilities', async () => {
@@ -382,20 +383,22 @@ describe('redaction', () => {
     expect(JSON.stringify(result.data)).not.toMatch(/6\.5|0\.6389|120|110|4200|\+971/)
   })
 
-  it('hides the margin together with a denied cost, keeps supplier prices', async () => {
+  it('hides the margin and the supplier prices together with a denied cost', async () => {
     const result = await query<{ data: typeof item; meta: { redacted: string[] } }>(
       handler,
       'test.item',
       as('manager'),
     )
+    // Supplier prices need cost too (M2 Step 3): the prices paid would reveal the average cost.
     expect(result.data?.meta.redacted).toEqual([
       'cost',
+      'lines.*.supplierPrice',
       'lines.*.unitCost',
       'margin',
       'staff.phone',
       'staff.salary',
     ])
-    expect(result.data?.data.lines).toEqual([{ qty: '0.02', supplierPrice: '110' }])
+    expect(result.data?.data.lines).toEqual([{ qty: '0.02' }])
     expect(result.data?.data).not.toHaveProperty('margin')
   })
 

@@ -414,6 +414,322 @@ const PROBES: Record<string, Probe> = {
       },
     ],
   },
+  // Suppliers and Purchases (M2 Step 3): every reference is looked up in the x-business-id business;
+  // ids used anywhere are CONFLICT; composite foreign keys keep lines inside their document.
+  'supplier.list': {
+    base: 'business',
+    reason: `${NO_ROWS}; the cursor only positions a page inside that business`,
+    variants: () => [{ input: { search: 'dairy', status: 'all' } }],
+  },
+  'supplier.get': {
+    base: 'business',
+    reason: 'looked up in the x-business-id business',
+    variants: (victim) => [{ input: { id: victim.supplier.id }, own: ['not_found'] }],
+  },
+  'supplier.create': {
+    base: 'business',
+    reason: 'an id already used anywhere is CONFLICT (insertIdempotent), the row is never read',
+    variants: (victim) => [
+      { input: { id: victim.supplier.id, name: `Pwned ${newId()}` }, own: ['conflict'] },
+    ],
+  },
+  'supplier.update': {
+    base: 'business',
+    reason: 'looked up in the x-business-id business',
+    variants: (victim) => [
+      {
+        input: { id: victim.supplier.id, version: victim.supplier.version, name: 'Pwned' },
+        own: ['not_found'],
+      },
+    ],
+  },
+  'supplier.archive': {
+    base: 'business',
+    reason: 'looked up in the x-business-id business',
+    variants: (victim) => [{ input: { id: victim.supplier.id }, own: ['not_found'] }],
+  },
+  'supplier.unarchive': {
+    base: 'business',
+    reason: 'looked up in the x-business-id business',
+    variants: (victim) => [{ input: { id: victim.supplier.id }, own: ['not_found'] }],
+  },
+  'purchase.list': {
+    base: 'business',
+    reason: `${NO_ROWS}; a supplier filter is looked up in that business (NOT_FOUND)`,
+    variants: (victim) => [
+      { input: { status: 'all' } },
+      { input: { supplierId: victim.supplier.id }, own: ['not_found'] },
+    ],
+  },
+  'purchase.get': {
+    base: 'business',
+    reason: 'looked up in the x-business-id business',
+    variants: (victim) => [{ input: { id: victim.purchase.id }, own: ['not_found'] }],
+  },
+  'purchase.create': {
+    base: 'business',
+    reason:
+      'its supplier, location and materials are looked up in the x-business-id business, a pack ' +
+      'must be one of its material, and an id used anywhere (the purchase or a line) is CONFLICT',
+    variants: (victim, attacker) => {
+      const own = {
+        kind: 'material',
+        id: newId(),
+        materialId: attacker.material.id,
+        qty: '1',
+        unit: 'l',
+        unitPrice: '1',
+      }
+      const draft = (extra: object) => ({
+        id: newId(),
+        businessDate: attacker.purchase.businessDate,
+        documentType: 'no_invoice',
+        lines: [{ ...own, id: newId() }],
+        ...extra,
+      })
+      return [
+        { input: { ...draft({}), id: victim.purchase.id }, own: ['conflict'] },
+        { input: draft({ supplierId: victim.supplier.id }), own: ['not_found'] },
+        { input: draft({ locationId: victim.defaultLocationId }), own: ['not_found'] },
+        {
+          input: draft({ lines: [{ ...own, materialId: victim.material.id }] }),
+          own: ['not_found'],
+        },
+        {
+          input: draft({
+            lines: [{ ...own, unit: undefined, packId: victim.material.packs[0]?.id }],
+          }),
+          own: ['validation'],
+        },
+        {
+          input: draft({ lines: [{ ...own, id: victim.purchase.lines[0]?.id }] }),
+          own: ['conflict'],
+        },
+      ]
+    },
+  },
+  'purchase.update': {
+    base: 'business',
+    reason: 'the draft and every row it names are looked up in the x-business-id business',
+    variants: (victim, attacker) => [
+      {
+        input: {
+          id: victim.draftPurchase.id,
+          version: victim.draftPurchase.version,
+          businessDate: victim.draftPurchase.businessDate,
+          documentType: 'no_invoice',
+        },
+        own: ['not_found'],
+      },
+      {
+        input: {
+          id: attacker.draftPurchase.id,
+          version: attacker.draftPurchase.version,
+          businessDate: attacker.draftPurchase.businessDate,
+          documentType: 'no_invoice',
+          supplierId: victim.supplier.id,
+        },
+        own: ['not_found'],
+      },
+    ],
+  },
+  'purchase.discard': {
+    base: 'business',
+    reason: 'looked up in the x-business-id business',
+    variants: (victim) => [
+      {
+        input: { id: victim.draftPurchase.id, version: victim.draftPurchase.version },
+        own: ['not_found'],
+      },
+    ],
+  },
+  'purchase.post': {
+    base: 'business',
+    reason: 'looked up (and locked) in the x-business-id business',
+    variants: (victim) => [
+      {
+        input: { id: victim.draftPurchase.id, version: victim.draftPurchase.version },
+        own: ['not_found'],
+      },
+    ],
+  },
+  'purchase.reverse': {
+    base: 'business',
+    reason: 'looked up (and locked) in the x-business-id business',
+    variants: (victim) => [{ input: { id: victim.purchase.id }, own: ['not_found'] }],
+  },
+  'purchase.correct': {
+    base: 'business',
+    reason:
+      'the purchase is looked up in the x-business-id business; a new id used anywhere is ' +
+      'CONFLICT and the whole correction (its reversal too) is rolled back',
+    variants: (victim, attacker) => [
+      { input: { id: victim.purchase.id, newId: newId() }, own: ['not_found'] },
+      { input: { id: attacker.purchase.id, newId: victim.draftPurchase.id }, own: ['conflict'] },
+    ],
+  },
+  'purchaseReturn.list': {
+    base: 'business',
+    reason: `${NO_ROWS}; a purchase filter is looked up in that business (NOT_FOUND)`,
+    variants: (victim) => [
+      { input: { status: 'all' } },
+      { input: { purchaseId: victim.purchase.id }, own: ['not_found'] },
+    ],
+  },
+  'purchaseReturn.get': {
+    base: 'business',
+    reason: 'looked up in the x-business-id business',
+    variants: (victim) => [{ input: { id: victim.purchaseReturn.id }, own: ['not_found'] }],
+  },
+  'purchaseReturn.create': {
+    base: 'business',
+    reason:
+      'the purchase and its lines are looked up in the x-business-id business (a line of another ' +
+      'purchase too); an id used anywhere is CONFLICT',
+    variants: (victim, attacker) => [
+      {
+        input: {
+          id: newId(),
+          purchaseId: victim.purchase.id,
+          kind: 'return',
+          businessDate: attacker.purchase.businessDate,
+          lines: [{ id: newId(), purchaseLineId: victim.purchase.lines[0]?.id, qty: '1' }],
+        },
+        own: ['not_found'],
+      },
+      {
+        input: {
+          id: newId(),
+          purchaseId: attacker.purchase.id,
+          kind: 'credit_note',
+          businessDate: attacker.purchase.businessDate,
+          lines: [{ id: newId(), purchaseLineId: victim.purchase.lines[0]?.id, amount: '1' }],
+        },
+        own: ['not_found'],
+      },
+      {
+        input: {
+          id: victim.draftReturn.id,
+          purchaseId: attacker.purchase.id,
+          kind: 'credit_note',
+          businessDate: attacker.purchase.businessDate,
+          lines: [{ id: newId(), purchaseLineId: attacker.purchase.lines[0]?.id, amount: '1' }],
+        },
+        own: ['conflict'],
+      },
+    ],
+  },
+  'purchaseReturn.update': {
+    base: 'business',
+    reason: 'the draft and its lines are looked up in the x-business-id business',
+    variants: (victim, attacker) => [
+      {
+        input: {
+          id: victim.draftReturn.id,
+          version: victim.draftReturn.version,
+          businessDate: victim.draftReturn.businessDate,
+          lines: [],
+        },
+        own: ['not_found'],
+      },
+      {
+        input: {
+          id: attacker.draftReturn.id,
+          version: attacker.draftReturn.version,
+          businessDate: attacker.draftReturn.businessDate,
+          lines: [{ id: newId(), purchaseLineId: victim.purchase.lines[0]?.id, amount: '1' }],
+        },
+        own: ['not_found'],
+      },
+    ],
+  },
+  'purchaseReturn.discard': {
+    base: 'business',
+    reason: 'looked up in the x-business-id business',
+    variants: (victim) => [
+      {
+        input: { id: victim.draftReturn.id, version: victim.draftReturn.version },
+        own: ['not_found'],
+      },
+    ],
+  },
+  'purchaseReturn.post': {
+    base: 'business',
+    reason: 'looked up (and locked) in the x-business-id business',
+    variants: (victim) => [
+      {
+        input: { id: victim.draftReturn.id, version: victim.draftReturn.version },
+        own: ['not_found'],
+      },
+    ],
+  },
+  'purchaseReturn.reverse': {
+    base: 'business',
+    reason: 'looked up (and locked) in the x-business-id business',
+    variants: (victim) => [{ input: { id: victim.purchaseReturn.id }, own: ['not_found'] }],
+  },
+  'attachment.list': {
+    base: 'business',
+    reason: 'the record is looked up in the x-business-id business',
+    variants: (victim) => [
+      { input: { entity: 'purchase', entityId: victim.purchase.id }, own: ['not_found'] },
+    ],
+  },
+  'attachment.uploadUrl': {
+    base: 'business',
+    reason: 'the record is looked up in the x-business-id business; the path is made by the server',
+    variants: (victim) => [
+      {
+        input: { entity: 'purchase', entityId: victim.purchase.id, contentType: 'image/png' },
+        own: ['not_found'],
+      },
+    ],
+  },
+  'attachment.add': {
+    base: 'business',
+    reason:
+      'only an attachment path of the x-business-id business that it issued, for a record of it ' +
+      '(D-085)',
+    variants: (victim, attacker) => [
+      {
+        input: {
+          entity: 'purchase',
+          entityId: attacker.purchase.id,
+          path: `${victim.id}/purchase/${newId()}.png`,
+          fileName: 'x.png',
+        },
+        own: ['validation'],
+      },
+      {
+        input: {
+          entity: 'purchase',
+          entityId: victim.purchase.id,
+          path: `${attacker.id}/purchase/${newId()}.png`,
+          fileName: 'x.png',
+        },
+        own: ['not_found'],
+      },
+    ],
+  },
+  'attachment.remove': {
+    base: 'business',
+    reason: 'looked up in the x-business-id business',
+    variants: (victim) => [{ input: { id: victim.attachment.id }, own: ['not_found'] }],
+  },
+  'books.get': { base: 'business', reason: NO_ROWS },
+  'books.close': {
+    base: 'business',
+    reason: NO_ROWS,
+    variants: () => [{ input: { closedThrough: null } }],
+  },
+  'material.costs': {
+    base: 'business',
+    reason: 'every id is looked up in the x-business-id business (NOT_FOUND otherwise)',
+    variants: (victim, attacker) => [
+      { input: { ids: [victim.material.id] }, own: ['not_found'] },
+      { input: { ids: [attacker.material.id, victim.material.id] }, own: ['not_found'] },
+    ],
+  },
 }
 
 // A stand-in tenant for reading the probes' shape before the fixture exists (never sent).
@@ -424,6 +740,8 @@ const STUB_FIELD = {
   email: 'stub@test.bizcost.local',
   name: 'stub',
   packs: [{ id: newId(), name: 'stub' }],
+  lines: [{ id: newId() }],
+  businessDate: '2026-01-01',
 }
 const STUB = new Proxy({} as Tenant, {
   get: (_target, key) => (key === 'roles' ? new Proxy({}, { get: () => STUB_FIELD }) : STUB_FIELD),

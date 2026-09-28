@@ -84,14 +84,14 @@ select is(
 
 select is(
   (select file_size_limit from storage.buckets where id = 'business-files'),
-  2097152::bigint,
-  'business-files takes files up to 2 MB'
+  10485760::bigint,
+  'business-files takes files up to 10 MB (receipts, M2 Step 3; the API keeps logos to 2 MB)'
 );
 
 select is(
   (select allowed_mime_types from storage.buckets where id = 'business-files'),
-  array['image/png', 'image/jpeg', 'image/webp'],
-  'business-files takes only PNG, JPEG and WebP (no SVG)'
+  array['image/png', 'image/jpeg', 'image/webp', 'application/pdf'],
+  'business-files takes only PNG, JPEG, WebP and PDF (no SVG)'
 );
 
 select is_empty(

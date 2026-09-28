@@ -6,6 +6,7 @@ import {
   formatDate,
   formatDecimal,
   formatNumber,
+  formatUnitCost,
 } from './format'
 import { dir, intlLocale, negotiateLocale, resolveLocale } from './locale'
 
@@ -55,6 +56,22 @@ describe('formatters', () => {
     expect(formatDate('ar', '2026-09-25T08:00:00Z', { timeZone: 'Asia/Dubai' })).not.toMatch(
       ARABIC_INDIC,
     )
+  })
+
+  it('show unit costs with enough digits to read, never 0.00', () => {
+    // Intl puts a no-break space between the code and the amount (\s matches it).
+    const cost = (amount: string, currency = 'AED') =>
+      formatUnitCost('en', amount, currency).replace(/\s/g, ' ')
+    expect(cost('6.666666666667')).toBe('AED 6.67')
+    expect(cost('0.006666666667')).toBe('AED 0.0067')
+    expect(cost('0.006')).toBe('AED 0.0060')
+    expect(cost('0.05')).toBe('AED 0.050')
+    expect(cost('0.5')).toBe('AED 0.50')
+    // At most 6 decimals.
+    expect(cost('0.000000123')).toBe('AED 0.000000')
+    expect(cost('0')).toBe('AED 0.00')
+    expect(cost('0.0005', 'KWD')).toBe('KWD 0.00050')
+    expect(formatUnitCost('ar', '0.006666666667', 'AED')).not.toMatch(ARABIC_INDIC)
   })
 
   it('write the currency as formatCurrency does', () => {

@@ -685,10 +685,19 @@ select isnt_empty(
   'invitation writes are audited'
 );
 
+-- A token hash is 64 lowercase hex characters, so it can only sit inside a run of 64 or more of them:
+-- each audit row is read once, and only such runs are compared with the hashes (an index lookup for a
+-- run of exactly 64). Comparing every row with every hash took minutes on a local database that API
+-- test runs had filled.
 select is_empty(
   $$ select a.id from app.audit_log a
       where a.changes::text like '%token_hash%'
-         or exists (select 1 from app.business_invitations i where strpos(a.changes::text, i.token_hash) > 0) $$,
+         or exists (
+           select 1 from regexp_matches(a.changes::text, '[0-9a-f]{64,}', 'g') as run(m)
+            where exists (select 1 from app.business_invitations i where i.token_hash = run.m[1])
+               or (length(run.m[1]) > 64
+                   and exists (select 1 from app.business_invitations i
+                                where strpos(run.m[1], i.token_hash) > 0))) $$,
   'audit rows never contain token_hash (neither the key nor a value)'
 );
 
