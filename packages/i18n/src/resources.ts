@@ -1,6 +1,7 @@
 import type { Locale } from '@bizcost/domain'
 import arAccount from '../locales/ar/account.json'
 import arAuth from '../locales/ar/auth.json'
+import arCatalog from '../locales/ar/catalog.json'
 import arCommon from '../locales/ar/common.json'
 import arDashboard from '../locales/ar/dashboard.json'
 import arEmails from '../locales/ar/emails.json'
@@ -8,8 +9,10 @@ import arErrors from '../locales/ar/errors.json'
 import arModules from '../locales/ar/modules.json'
 import arSettings from '../locales/ar/settings.json'
 import arSetup from '../locales/ar/setup.json'
+import arUnits from '../locales/ar/units.json'
 import enAccount from '../locales/en/account.json'
 import enAuth from '../locales/en/auth.json'
+import enCatalog from '../locales/en/catalog.json'
 import enCommon from '../locales/en/common.json'
 import enDashboard from '../locales/en/dashboard.json'
 import enEmails from '../locales/en/emails.json'
@@ -17,6 +20,7 @@ import enErrors from '../locales/en/errors.json'
 import enModules from '../locales/en/modules.json'
 import enSettings from '../locales/en/settings.json'
 import enSetup from '../locales/en/setup.json'
+import enUnits from '../locales/en/units.json'
 import { NAMESPACES, type MessageBundle, type Messages, type Namespace } from './namespaces'
 
 // Translations: locales/<locale>/<namespace>.json. English is the source language and types every key;
@@ -50,6 +54,8 @@ export const en = {
   emails: enEmails,
   settings: enSettings,
   dashboard: enDashboard,
+  catalog: enCatalog,
+  units: enUnits,
 } as const
 export type SourceMessages = typeof en
 
@@ -65,6 +71,8 @@ export const resources: Readonly<Record<Locale, Readonly<Record<Namespace, Messa
     emails: arEmails,
     settings: arSettings,
     dashboard: arDashboard,
+    catalog: arCatalog,
+    units: arUnits,
   },
 }
 

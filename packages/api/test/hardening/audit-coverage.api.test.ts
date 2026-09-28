@@ -3,6 +3,8 @@ import type {
   InvitationDto,
   LocationDto,
   LogoUploadUrlDto,
+  MaterialDto,
+  ProductDto,
   RoleDto,
 } from '@bizcost/contracts'
 import { newId } from '@bizcost/domain'
@@ -17,6 +19,7 @@ import {
   openApi,
   PNG,
   proceduresOf,
+  queryInputOf,
   uploadTo,
   type Api,
   type Person,
@@ -98,6 +101,29 @@ async function newInvitation(email = `audit-${newId()}@test.bizcost.local`) {
       email,
       roleId: tenant.roles.employee.id,
       locale: 'en',
+    }),
+  )
+}
+
+async function newMaterial(): Promise<MaterialDto> {
+  const bag = newId()
+  return ok(
+    call<MaterialDto>(tenant.owner, 'material.create', 'mutation', {
+      id: newId(),
+      name: `Beans ${newId()}`,
+      unit: 'kg',
+      packs: [{ id: bag, name: 'bag', qty: '1', ofUnit: 'kg' }],
+    }),
+  )
+}
+
+async function newProduct(): Promise<ProductDto> {
+  return ok(
+    call<ProductDto>(tenant.owner, 'product.create', 'mutation', {
+      id: newId(),
+      name: `Mocha ${newId()}`,
+      type: 'product',
+      unit: 'piece',
     }),
   )
 }
@@ -317,6 +343,74 @@ const AUDIT: Record<string, AuditProbe> = {
       })
     },
   },
+  // Materials and Products & Services: every write is audited (materials, material_units,
+  // products_services, product_locations).
+  'material.create': {
+    run: () =>
+      asOwner('material.create', {
+        id: newId(),
+        name: `Sugar ${newId()}`,
+        unit: 'kg',
+        packs: [{ id: newId(), name: 'sack', qty: '50', ofUnit: 'kg' }],
+      }),
+  },
+  'material.update': {
+    run: async () => {
+      const material = await newMaterial()
+      return asOwner('material.update', {
+        id: material.id,
+        version: material.version,
+        name: material.name,
+        unit: 'g',
+        packs: [{ id: newId(), name: 'box', qty: '250', ofUnit: 'g' }],
+      })
+    },
+  },
+  'material.archive': {
+    run: async () => asOwner('material.archive', { id: (await newMaterial()).id }),
+  },
+  'material.unarchive': {
+    run: async () => {
+      const material = await newMaterial()
+      await ok(call(tenant.owner, 'material.archive', 'mutation', { id: material.id }))
+      return asOwner('material.unarchive', { id: material.id })
+    },
+  },
+  'product.create': {
+    run: () =>
+      asOwner('product.create', {
+        id: newId(),
+        name: `Tea ${newId()}`,
+        type: 'product',
+        unit: 'piece',
+        defaultPrice: '12',
+        locationIds: [tenant.branch.id],
+      }),
+  },
+  'product.update': {
+    run: async () => {
+      const product = await newProduct()
+      return asOwner('product.update', {
+        id: product.id,
+        version: product.version,
+        name: product.name,
+        type: 'product',
+        unit: 'piece',
+        defaultPrice: '18.25',
+        locationIds: [tenant.defaultLocationId],
+      })
+    },
+  },
+  'product.archive': {
+    run: async () => asOwner('product.archive', { id: (await newProduct()).id }),
+  },
+  'product.unarchive': {
+    run: async () => {
+      const product = await newProduct()
+      await ok(call(tenant.owner, 'product.archive', 'mutation', { id: product.id }))
+      return asOwner('product.unarchive', { id: product.id })
+    },
+  },
 }
 
 const PROCEDURES = proceduresOf(appRouter)
@@ -359,7 +453,9 @@ describe('audit coverage', () => {
     '%s (a query) writes no audited row',
     async (_path, procedure) => {
       const input =
-        procedure.path === 'invitation.preview' ? { token: tenant.invitationToken } : undefined
+        procedure.path === 'invitation.preview'
+          ? { token: tenant.invitationToken }
+          : queryInputOf(procedure.path, tenant)
       const result = await callProcedure(api.handler, procedure, tenant.owner.token, {
         businessId: procedure.base === 'business' ? tenant.id : undefined,
         input,

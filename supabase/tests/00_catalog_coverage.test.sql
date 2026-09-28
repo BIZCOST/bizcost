@@ -32,15 +32,16 @@ select tables_are(
   array[
     'profiles', 'businesses', 'business_capabilities', 'business_modules', 'locations',
     'roles', 'role_permissions', 'business_members', 'member_permission_overrides',
-    'member_locations', 'business_invitations', 'setup_answers', 'file_uploads', 'audit_log'
+    'member_locations', 'business_invitations', 'setup_answers', 'file_uploads', 'audit_log',
+    'materials', 'material_units', 'products_services', 'product_locations'
   ],
-  'app contains exactly the Milestone 1 tables'
+  'app contains exactly the Milestone 1 tables and those of M2 so far'
 );
 
 select is(
   (select count(*)::int from business_tables),
-  12,
-  'sanity: 12 app tables carry business_id (the checks below are not vacuous)'
+  16,
+  'sanity: 16 app tables carry business_id (the checks below are not vacuous)'
 );
 
 -- 2. Row level security ---------------------------------------------------------
@@ -246,7 +247,10 @@ select is_empty(
          ('member_permission_overrides', 'member_id', 'business_members'),
          ('member_locations', 'member_id', 'business_members'),
          ('member_locations', 'location_id', 'locations'),
-         ('business_invitations', 'role_id', 'roles')
+         ('business_invitations', 'role_id', 'roles'),
+         ('material_units', 'material_id', 'materials'),
+         ('product_locations', 'product_id', 'products_services'),
+         ('product_locations', 'location_id', 'locations')
        ) as v(child, col, parent)
       where not exists (
         select 1
@@ -399,7 +403,17 @@ select is_empty(
          ('business_invitations', 'preview_count'), ('business_invitations', 'preview_window_started_at'),
          ('file_uploads', 'path'), ('file_uploads', 'purpose'), ('file_uploads', 'content_type'),
          ('file_uploads', 'expires_at'), ('file_uploads', 'status'),
-         ('setup_answers', 'question_set_version'), ('setup_answers', 'answers')
+         ('setup_answers', 'question_set_version'), ('setup_answers', 'answers'),
+         ('materials', 'name'), ('materials', 'dimension'), ('materials', 'unit'),
+         ('materials', 'archived_at'),
+         ('material_units', 'material_id'), ('material_units', 'kind'), ('material_units', 'name'),
+         ('material_units', 'unit'), ('material_units', 'qty'), ('material_units', 'of_unit'),
+         ('material_units', 'of_pack_id'),
+         ('products_services', 'name'), ('products_services', 'description'),
+         ('products_services', 'type'), ('products_services', 'unit'),
+         ('products_services', 'default_price'), ('products_services', 'vat_category'),
+         ('products_services', 'price_includes_vat'), ('products_services', 'archived_at'),
+         ('product_locations', 'product_id'), ('product_locations', 'location_id')
        ) as v(tbl, col)
       where not exists (
         select 1 from pg_attribute a
@@ -407,7 +421,7 @@ select is_empty(
            and a.attname = v.col
            and a.attnum > 0
            and not a.attisdropped) $$,
-  'every documented Milestone 1 column exists'
+  'every documented column exists (Milestone 1 and M2 so far)'
 );
 
 select hasnt_column('app', 'businesses', 'business_id', 'businesses is the tenant root and has no business_id');

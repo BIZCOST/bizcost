@@ -1,5 +1,6 @@
 import 'server-only'
 import type { EmailConfig } from '@bizcost/api'
+import { parsePreviewModules } from '@bizcost/modules'
 import { z } from 'zod'
 
 // Server environment of the API, validated on first use (not at import, so `next build` needs no
@@ -52,6 +53,11 @@ const schema = z
     /** Sender of the API's emails, e.g. 'BizCost <notify@example.com>'. Required with Resend. */
     EMAIL_FROM: optional(z.string().min(3)),
     VERCEL_GIT_COMMIT_SHA: optional(z.string()),
+    /**
+     * Dev-only (D-125): planned modules to try before their release, e.g. "materials,products".
+     * Read only when NODE_ENV is development or test; ignored in production (next build/start).
+     */
+    BIZCOST_PREVIEW_MODULES: optional(z.string()),
   })
   .transform((env, ctx) => {
     const supabaseUrl = env.NEXT_PUBLIC_SUPABASE_URL ?? env.SUPABASE_URL
@@ -96,6 +102,19 @@ const schema = z
       })
       return z.NEVER
     }
+    // The preview never reaches a production server: the variable is not even read there.
+    let previewModules: readonly string[] = []
+    if (env.NODE_ENV === 'development' || env.NODE_ENV === 'test') {
+      const preview = parsePreviewModules(env.BIZCOST_PREVIEW_MODULES)
+      if (preview.invalid.length > 0) {
+        ctx.addIssue({
+          code: 'custom',
+          message: `BIZCOST_PREVIEW_MODULES: ${preview.invalid.join(', ')} cannot be previewed`,
+        })
+        return z.NEVER
+      }
+      previewModules = preview.ids
+    }
     const allowedOrigins = origins ?? DEV_ORIGINS
     for (const value of allowedOrigins) {
       const checked = origin.safeParse(value)
@@ -116,6 +135,7 @@ const schema = z
       appUrl: env.APP_URL ?? allowedOrigins[0] ?? 'http://localhost:3000',
       // Without a transport (development), sending an invitation fails with a clear error.
       email,
+      previewModules,
     }
   })
 

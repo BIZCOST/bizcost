@@ -24,6 +24,7 @@ import { NoLongerMember } from './no-longer-member'
 import { PlainShell } from './plain-shell'
 import { Sidebar } from './sidebar'
 import { TAB_BAR_PADDING } from './sizes'
+import { useNavWording } from './use-nav-wording'
 import { BusinessTopbar, SkipLink } from './topbar'
 
 const noSubscription = () => () => {}
@@ -125,6 +126,7 @@ export function BusinessShell({
   const pathname = usePathname()
   const context = useBusinessContext()
   const main = useFocusAfterNavigation(pathname)
+  const wording = useNavWording()
   if (context.error && apiErrorCode(context.error) === 'forbidden') {
     return (
       <PlainShell>
@@ -136,7 +138,7 @@ export function BusinessShell({
   if (!context.data) return null
   return (
     <ShellFrame
-      items={shellNav(context.data.modules, businessId, pathname)}
+      items={shellNav(context.data.modules, businessId, pathname, wording)}
       quickActions={shellQuickActions(context.data.modules, businessId)}
       mainRef={main}
     >

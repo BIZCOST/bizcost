@@ -39,7 +39,9 @@ describe('terminologyKey', () => {
         i18n.t('modules.materials.name', { context: profile } as never),
       )
     }
-    expect(i18n.t(terminologyKey('modules.materials.name', 'food', english))).toBe('المكونات')
+    expect(i18n.t(terminologyKey('modules.materials.name', 'food', english))).toBe(
+      'المكونات والمستلزمات',
+    )
   })
 
   it('works with the part of the messages a page holds', () => {

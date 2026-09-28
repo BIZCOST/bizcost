@@ -73,13 +73,24 @@ const KEY_CAPABILITY: Readonly<Partial<Record<PermissionKey, string>>> = {
   'settings.locations.manage': 'multi_location',
 }
 
-/** The groups and keys the Roles section offers to a business with these capabilities. */
+/** Groups that belong to Dashboard and Settings, which every business has. */
+const BUILT_IN_GROUPS: ReadonlySet<PermissionGroupId> = new Set(['dashboard', 'business', 'team'])
+
+/**
+ * The groups and keys the Roles section offers to a business with these capabilities. A module's group
+ * shows only while the module is released and on for the business (`modules`: the ids of
+ * business.context.modules), so a module still being built (D-124) offers nothing; its keys stay on
+ * the role as they are when it is saved.
+ */
 export function visiblePermissionGroups(
   capabilities: Readonly<Record<string, boolean>>,
+  modules: readonly string[],
   catalog: readonly PermissionKey[] = PERMISSION_CATALOG,
 ): PermissionGroup[] {
+  const active = new Set(modules)
   return permissionGroups(catalog)
     .filter((group) => !HIDDEN_GROUPS.has(group.id))
+    .filter((group) => BUILT_IN_GROUPS.has(group.id) || active.has(group.id))
     .map((group) => ({
       id: group.id,
       keys: group.keys.filter((key) => {

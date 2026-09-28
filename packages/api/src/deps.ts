@@ -34,6 +34,12 @@ export interface ApiConfig {
   readonly appUrl: string
   /** Email transport; without it, sending an invitation fails with an internal error. */
   readonly email?: EmailConfig
+  /**
+   * Dev-only preview (D-125): planned modules whose build has started, counted as released for the
+   * nav, the module gates and Customize BizCost (e.g. ['materials', 'products'], from
+   * BIZCOST_PREVIEW_MODULES). Ignored unless NODE_ENV is development or test (moduleRegistry).
+   */
+  readonly previewModules?: readonly string[]
 }
 
 export interface ApiDeps {

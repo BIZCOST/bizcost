@@ -310,7 +310,10 @@ export function RolesSettings({ businessId }: { businessId: string }) {
   })
   const [open, setOpen] = useState<string | null>(null)
   if (!context) return null
-  const groups = visiblePermissionGroups(context.capabilities)
+  const groups = visiblePermissionGroups(
+    context.capabilities,
+    context.modules.map((m) => m.id),
+  )
   return (
     <SectionPage businessId={businessId} section="roles">
       <p className="flex items-start gap-2.5 rounded-xl bg-muted/60 px-4 py-3 text-sm leading-relaxed">

@@ -4,7 +4,10 @@ import type { CapabilityKey } from './capabilities'
 
 // Module manifests (docs/ARCHITECTURE.md §Modules): the single source for navigation, "+" actions,
 // Smart Setup, API guards and Customize BizCost. Every module of PRODUCT.md §7 has one line here.
-// Planned modules carry no permission keys, nav or actions: those arrive when the module is built.
+// A planned module gets its permission keys and nav when its build starts (Products & Services and
+// Materials in M2 Step 2, D-124) and stays hidden until it is released: nav, tabs, "+" and the API
+// gates count only released modules (the dev-only preview of registry.ts aside, D-125). Modules not
+// being built carry no permission keys, nav or actions.
 
 export const MODULE_IDS = [
   'dashboard',
@@ -36,6 +39,10 @@ export const MODULE_IDS = [
   'vat_center',
 ] as const
 export type ModuleId = (typeof MODULE_IDS)[number]
+
+export function isModuleId(value: unknown): value is ModuleId {
+  return (MODULE_IDS as readonly unknown[]).includes(value)
+}
 
 export type ModuleKind = 'core' | 'optional'
 export type ModuleAvailability = 'released' | 'planned'
@@ -125,6 +132,53 @@ const SETTINGS = {
   requiresCapabilities: [],
 } as const satisfies ModuleManifest
 
+// Products & Services (M2 Step 2; planned until Step 7 releases the M2 modules together).
+const PRODUCTS = {
+  id: 'products',
+  kind: 'core',
+  availability: 'planned',
+  phase: 2,
+  deps: [],
+  permissionKeys: ['products.items.view', 'products.items.manage'],
+  nav: [
+    {
+      id: 'products',
+      labelKey: 'nav.products',
+      path: 'products',
+      icon: 'tag',
+      group: 'main',
+      permission: 'products.items.view',
+    },
+  ],
+  quickActions: [],
+  sensitiveFields: [],
+  requiresCapabilities: [],
+} as const satisfies ModuleManifest
+
+// Materials (M2 Step 2; planned until Step 7). Material cost comes only from purchases (PRODUCT.md
+// §4.8), hence the dependency.
+const MATERIALS = {
+  id: 'materials',
+  kind: 'core',
+  availability: 'planned',
+  phase: 2,
+  deps: ['purchases'],
+  permissionKeys: ['materials.items.view', 'materials.items.manage'],
+  nav: [
+    {
+      id: 'materials',
+      labelKey: 'nav.materials',
+      path: 'materials',
+      icon: 'package',
+      group: 'main',
+      permission: 'materials.items.view',
+    },
+  ],
+  quickActions: [],
+  sensitiveFields: [],
+  requiresCapabilities: [],
+} as const satisfies ModuleManifest
+
 interface PlannedManifest extends ModuleManifest {
   readonly availability: 'planned'
   readonly permissionKeys: readonly []
@@ -160,9 +214,8 @@ function planned(
 export const MODULES = [
   DASHBOARD,
   SETTINGS,
-  planned('products', 'core', 2),
-  // Material cost comes only from purchases (PRODUCT.md §4.8).
-  planned('materials', 'core', 2, { deps: ['purchases'] }),
+  PRODUCTS,
+  MATERIALS,
   planned('suppliers', 'core', 2),
   planned('purchases', 'core', 2),
   planned('expenses', 'core', 2),

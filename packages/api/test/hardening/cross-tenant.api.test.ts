@@ -253,6 +253,153 @@ const PROBES: Record<string, Probe> = {
     variants: (victim) => [{ input: { id: victim.invitation.id }, own: ['not_found'] }],
   },
   'role.list': { base: 'business', reason: NO_ROWS },
+  'material.list': {
+    base: 'business',
+    reason: `${NO_ROWS}; the cursor only positions a page inside that business`,
+    variants: () => [{ input: { search: 'milk', status: 'all' } }],
+  },
+  'material.get': {
+    base: 'business',
+    reason: 'looked up in the x-business-id business',
+    variants: (victim) => [{ input: { id: victim.material.id }, own: ['not_found'] }],
+  },
+  'material.create': {
+    base: 'business',
+    reason:
+      'an id already used anywhere is CONFLICT (the material through insertIdempotent, a unit ' +
+      'through its primary key), and a pack may only name a pack of the same material',
+    variants: (victim) => [
+      {
+        input: { id: victim.material.id, name: `Pwned ${newId()}`, unit: 'kg' },
+        own: ['conflict'],
+      },
+      {
+        input: {
+          id: newId(),
+          name: `Pwned ${newId()}`,
+          unit: 'l',
+          packs: [{ id: victim.material.packs[0]?.id, name: 'crate', qty: '1', ofUnit: 'l' }],
+        },
+        own: ['conflict'],
+      },
+      {
+        input: {
+          id: newId(),
+          name: `Pwned ${newId()}`,
+          unit: 'l',
+          packs: [{ id: newId(), name: 'crate', qty: '1', ofPackId: victim.material.packs[0]?.id }],
+        },
+        own: ['validation'],
+      },
+    ],
+  },
+  'material.update': {
+    base: 'business',
+    reason:
+      'the material is looked up in the x-business-id business, a unit it keeps among its own ' +
+      'units, and a new unit id used anywhere is CONFLICT',
+    variants: (victim, attacker) => [
+      {
+        input: {
+          id: victim.material.id,
+          version: victim.material.version,
+          name: 'Pwned',
+          unit: 'l',
+        },
+        own: ['not_found'],
+      },
+      // Own material, the victim's pack: its id is taken (the transaction rolls back).
+      {
+        input: {
+          id: attacker.material.id,
+          version: attacker.material.version,
+          name: attacker.material.name,
+          unit: 'l',
+          packs: [{ id: victim.material.packs[0]?.id, name: 'crate', qty: '1', ofUnit: 'l' }],
+        },
+        own: ['conflict'],
+      },
+    ],
+  },
+  'material.archive': {
+    base: 'business',
+    reason: 'looked up in the x-business-id business',
+    variants: (victim) => [{ input: { id: victim.material.id }, own: ['not_found'] }],
+  },
+  'material.unarchive': {
+    base: 'business',
+    reason: 'looked up in the x-business-id business',
+    variants: (victim) => [{ input: { id: victim.material.id }, own: ['not_found'] }],
+  },
+  'product.list': {
+    base: 'business',
+    reason: `${NO_ROWS}; the cursor only positions a page inside that business`,
+    variants: () => [{ input: { search: 'latte', status: 'all' } }],
+  },
+  'product.get': {
+    base: 'business',
+    reason: 'looked up in the x-business-id business',
+    variants: (victim) => [{ input: { id: victim.product.id }, own: ['not_found'] }],
+  },
+  'product.create': {
+    base: 'business',
+    reason:
+      'an id already used anywhere is CONFLICT (insertIdempotent); its locations are looked up ' +
+      'in the x-business-id business',
+    variants: (victim) => [
+      {
+        input: { id: victim.product.id, name: `Pwned ${newId()}`, type: 'product', unit: 'piece' },
+        own: ['conflict'],
+      },
+      {
+        input: {
+          id: newId(),
+          name: `Pwned ${newId()}`,
+          type: 'product',
+          unit: 'piece',
+          locationIds: [victim.branch.id],
+        },
+        own: ['not_found'],
+      },
+    ],
+  },
+  'product.update': {
+    base: 'business',
+    reason: 'the record and its locations are looked up in the x-business-id business',
+    variants: (victim, attacker) => [
+      {
+        input: {
+          id: victim.product.id,
+          version: victim.product.version,
+          name: 'Pwned',
+          type: 'product',
+          unit: 'piece',
+        },
+        own: ['not_found'],
+      },
+      {
+        input: {
+          id: attacker.product.id,
+          version: attacker.product.version,
+          name: attacker.product.name,
+          type: 'product',
+          unit: 'piece',
+          locationIds: [victim.branch.id],
+        },
+        own: ['not_found'],
+      },
+    ],
+  },
+  'product.archive': {
+    base: 'business',
+    reason: 'looked up in the x-business-id business',
+    variants: (victim) => [{ input: { id: victim.product.id }, own: ['not_found'] }],
+  },
+  'product.unarchive': {
+    base: 'business',
+    reason: 'looked up in the x-business-id business',
+    variants: (victim) => [{ input: { id: victim.product.id }, own: ['not_found'] }],
+  },
   'role.updatePermissions': {
     base: 'business',
     reason: 'looked up in the x-business-id business',
@@ -270,7 +417,14 @@ const PROBES: Record<string, Probe> = {
 }
 
 // A stand-in tenant for reading the probes' shape before the fixture exists (never sent).
-const STUB_FIELD = { id: newId(), version: 1, path: 'stub', email: 'stub@test.bizcost.local' }
+const STUB_FIELD = {
+  id: newId(),
+  version: 1,
+  path: 'stub',
+  email: 'stub@test.bizcost.local',
+  name: 'stub',
+  packs: [{ id: newId(), name: 'stub' }],
+}
 const STUB = new Proxy({} as Tenant, {
   get: (_target, key) => (key === 'roles' ? new Proxy({}, { get: () => STUB_FIELD }) : STUB_FIELD),
 })

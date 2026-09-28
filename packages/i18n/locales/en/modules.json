@@ -5,7 +5,7 @@
   },
   "materials": {
     "name": "Materials",
-    "name_food": "Ingredients",
+    "name_food": "Ingredients & supplies",
     "name_factory": "Raw materials",
     "desc": "Track what you buy to make or sell, and what it costs."
   },

@@ -437,7 +437,9 @@ test('an employee sees no checklist, and settings sections are not open (403)', 
 
 test('an address that does not exist inside the business: "Page not found" inside the shell', async () => {
   await page.setViewportSize({ width: 1440, height: 900 })
-  for (const path of ['orders', 'settings/nothing-here']) {
+  // Materials and Products & Services have pages, but a production build serves them only once
+  // they are released (D-125, D-126): their address is not found either, title included.
+  for (const path of ['orders', 'settings/nothing-here', 'materials', 'products']) {
     await page.goto(`${home()}/${path}`)
     await expect(page.getByRole('heading', { level: 1, name: 'Page not found' })).toBeVisible()
     await expect(page).toHaveTitle('Page not found · BizCost')

@@ -11,6 +11,7 @@ import { can, sectionPath } from '@/features/settings/sections'
 import { useBusinessContext } from '@/lib/trpc/client'
 import { moduleAccess, shellNav, wayBack } from './nav'
 import { PageContainer } from './page-container'
+import { useNavWording } from './use-nav-wording'
 
 /**
  * A module's page, shown only when the module is on for the business and the member may use its
@@ -31,10 +32,11 @@ export function ModuleGate({
   const { businessId } = useParams<{ businessId: string }>()
   const pathname = usePathname()
   const { data: context } = useBusinessContext()
+  const wording = useNavWording()
   if (!context) return null
   const access = moduleAccess(context.modules, moduleId, entryId)
   if (access === 'open') return children
-  const back = wayBack(shellNav(context.modules, businessId, pathname), moduleId)
+  const back = wayBack(shellNav(context.modules, businessId, pathname, wording), moduleId)
   const backLink = back ? (
     <Button asChild variant="outline" size="lg">
       <Link href={back.href}>{t('states.goTo', { section: t(back.labelKey) })}</Link>

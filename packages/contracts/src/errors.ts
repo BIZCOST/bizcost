@@ -33,6 +33,16 @@ export const APP_ERROR_CODES = [
   'owner_transfer_required',
   /** The default location cannot be removed (make another location the default first). */
   'default_location',
+  /**
+   * A location cannot be removed while some products or services are sold only there: they would be
+   * sold everywhere (choose other locations for them first).
+   */
+  'only_location_of_products',
+  /**
+   * Another material, or another product or service, of the business already has this name (archived
+   * ones included; names are compared ignoring case).
+   */
+  'name_taken',
   /** An uploaded file is missing, too large or not an allowed type (logo: PNG, JPEG or WebP, 2 MB). */
   'file_invalid',
   'internal',

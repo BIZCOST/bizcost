@@ -103,7 +103,7 @@ export function useLocale() {
 
 /**
  * `t` in a business's wording: the key's terminology overlay for `profile` when the page has one
- * (`modules.materials.name` → "Ingredients" for food), else the key's own message.
+ * (`modules.materials.name` → "Ingredients & supplies" for food), else the key's own message.
  */
 export function useTerminology() {
   const { t, i18n } = useTranslation()

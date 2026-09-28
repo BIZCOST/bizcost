@@ -6,8 +6,10 @@ import {
   PERMISSION_CATALOG,
   releasedModules,
   roleTemplateByKey,
+  withPreviewModules,
   type ModuleManifest,
 } from '@bizcost/modules'
+import { hasMessage, terminologyKey, type I18nKey } from '@bizcost/i18n'
 import { describe, expect, it } from 'vitest'
 import {
   bottomTabs,
@@ -175,6 +177,48 @@ describe('a module released later shows with no change to the shell', () => {
     )
     // Still planned in the real registry: off, whatever the business chose.
     expect(moduleAccess(buildModuleNav(on, owner), 'orders', 'orders')).toBe('off')
+  })
+})
+
+describe('the modules being built (M2 Step 2), in the dev-only preview', () => {
+  const registry = withPreviewModules(['products', 'materials'])
+  const on = new Set(['products', 'materials'])
+
+  it('show before Settings with their own icons, for members with their permission', () => {
+    const items = shellNav(buildModuleNav(on, owner, registry), ID, `${ROOT}/materials`)
+    expect(items.map((item) => [item.id, item.href])).toEqual([
+      ['dashboard', ROOT],
+      ['products', `${ROOT}/products`],
+      ['materials', `${ROOT}/materials`],
+      ['settings', `${ROOT}/settings`],
+    ])
+    expect(active(items)).toBe('materials')
+    for (const item of items) expect(navIcon(item.icon)).not.toBe(FALLBACK_NAV_ICON)
+    // An employee sees Products & Services, not Materials (PRODUCT.md §8).
+    expect(labels(shellNav(buildModuleNav(on, canFor('employee'), registry), ID, ROOT))).toEqual([
+      'dashboard',
+      'products',
+      'settings',
+    ])
+    // Released code: not there, whatever the business chose.
+    expect(labels(shellNav(buildModuleNav(on, owner), ID, ROOT))).toEqual(['dashboard', 'settings'])
+  })
+
+  it('are named in the business wording', () => {
+    const modules = buildModuleNav(on, owner, registry)
+    const wording = (profile: 'food' | 'factory' | 'projects' | 'general') => (key: I18nKey) =>
+      terminologyKey(key, profile, (overlay) => hasMessage('en', overlay))
+    const names = (profile: 'food' | 'factory' | 'projects' | 'general') =>
+      shellNav(modules, ID, ROOT, wording(profile)).map((item) => item.labelKey)
+    expect(names('food')).toContain('common.nav.materials_food')
+    expect(names('factory')).toContain('common.nav.materials_factory')
+    expect(names('projects')).toContain('common.nav.products_projects')
+    expect(names('general')).toEqual([
+      'common.nav.dashboard',
+      'common.nav.products',
+      'common.nav.materials',
+      'common.nav.settings',
+    ])
   })
 })
 

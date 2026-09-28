@@ -21,9 +21,12 @@ import {
   isModuleReleased,
   isModuleVisible,
   moduleById,
+  parsePreviewModules,
+  PREVIEWABLE_MODULE_IDS,
   releasedModules,
   resolveEnabledModules,
   visibleNav,
+  withPreviewModules,
 } from './registry'
 
 const NONE = new Set<string>()
@@ -117,6 +120,78 @@ describe('module gates', () => {
     expect(visibleNav(dashboard, (k) => k === 'dashboard.home.view').map((e) => e.id)).toEqual([
       'dashboard',
     ])
+  })
+})
+
+describe('the dev-only preview (D-125)', () => {
+  const products = moduleById('products')!
+  const materials = moduleById('materials')!
+
+  it('may show only planned modules whose build started', () => {
+    expect(PREVIEWABLE_MODULE_IDS).toEqual(['products', 'materials'])
+  })
+
+  it('parses a comma or space separated list, and names what it cannot preview', () => {
+    expect(parsePreviewModules(undefined)).toEqual({ ids: [], invalid: [] })
+    expect(parsePreviewModules('  ')).toEqual({ ids: [], invalid: [] })
+    expect(parsePreviewModules('materials,products')).toEqual({
+      ids: ['products', 'materials'],
+      invalid: [],
+    })
+    expect(parsePreviewModules(' materials , materials products')).toEqual({
+      ids: ['products', 'materials'],
+      invalid: [],
+    })
+    // Unknown, released, or planned without a build: refused by name.
+    expect(parsePreviewModules('materials,orders,settings,Materials,nope')).toEqual({
+      ids: ['materials'],
+      invalid: ['orders', 'settings', 'Materials', 'nope'],
+    })
+  })
+
+  it('counts the named modules as released, and nothing else', () => {
+    const registry = withPreviewModules(['materials'])
+    const enabled = resolveEnabledModules([])
+    expect(
+      isModuleActive(
+        registry.find((m) => m.id === 'materials')!,
+        enabled,
+      ),
+    ).toBe(true)
+    expect(
+      isModuleActive(
+        registry.find((m) => m.id === 'products')!,
+        enabled,
+      ),
+    ).toBe(false)
+    expect(registry.find((m) => m.id === 'orders')?.availability).toBe('planned')
+    // The global registry is untouched.
+    expect(materials.availability).toBe('planned')
+    expect(isModuleActive(materials, enabled)).toBe(false)
+    // A module that cannot be previewed stays planned.
+    expect(withPreviewModules(['orders']).find((m) => m.id === 'orders')?.availability).toBe(
+      'planned',
+    )
+    expect(withPreviewModules([])).toBe(MODULES)
+  })
+
+  it('still needs the business to have the module on and the member its permission', () => {
+    const registry = withPreviewModules(['products', 'materials'])
+    const off = resolveEnabledModules([{ key: 'materials', enabled: false }])
+    const ids = (enabled: ReadonlySet<string>, can: (key: string) => boolean) =>
+      buildModuleNav(enabled, can, registry).map((m) => [m.id, m.nav.map((e) => e.id)])
+    expect(ids(resolveEnabledModules([]), canFor('employee'))).toEqual([
+      ['dashboard', ['dashboard']],
+      ['settings', ['settings']],
+      ['products', ['products']],
+      ['materials', []],
+    ])
+    expect(ids(off, canFor('manager')).map(([id]) => id)).toEqual([
+      'dashboard',
+      'settings',
+      'products',
+    ])
+    expect(isModuleVisible(products, resolveEnabledModules([]), everybody)).toBe(false)
   })
 })
 

@@ -26,6 +26,8 @@ export function isCatalogPermissionKey(value: unknown): value is PermissionKey {
 export const PERMISSION_NEEDS: Readonly<Partial<Record<PermissionKey, PermissionKey>>> = {
   'settings.business.edit': 'settings.business.view',
   'settings.members.manage': 'settings.members.view',
+  'products.items.manage': 'products.items.view',
+  'materials.items.manage': 'materials.items.view',
 }
 
 /** The keys of `keys` granted without the key they need (empty when the set is coherent). */

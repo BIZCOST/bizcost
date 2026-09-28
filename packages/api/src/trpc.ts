@@ -2,7 +2,6 @@ import type { Tx } from '@bizcost/db'
 import { can, isUuid, type SensitivityCategory } from '@bizcost/domain'
 import {
   isModuleActive,
-  moduleById,
   type CapabilityKey,
   type ModuleId,
   type PermissionKey,
@@ -165,13 +164,15 @@ export const businessProcedure = base.use(businessScoped).use(redact)
 
 /**
  * The module must be released and enabled for the business (MODULE_DISABLED otherwise). Core modules
- * are on unless switched off, Dashboard and Settings always (D-059). Use after businessProcedure.
+ * are on unless switched off, Dashboard and Settings always (D-059). "Released" is read from the
+ * server's registry (ctx.modules: the dev-only preview may count a planned module as released,
+ * D-125). Use after businessProcedure.
  */
 export function requireModule(id: ModuleId) {
   return t.middleware(({ ctx, next }) => {
     const access = accessOf(ctx)
     if (!access) throw new AppError('internal', { message: 'requireModule outside a business' })
-    const manifest = moduleById(id)
+    const manifest = ctx.modules.find((m) => m.id === id)
     if (!manifest || !isModuleActive(manifest, access.enabledModules)) {
       throw new AppError('module_disabled')
     }

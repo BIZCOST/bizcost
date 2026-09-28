@@ -154,7 +154,9 @@ test('sign up, set up a home bakery with Smart Setup and land on its home (Engli
   // The review: Orders chosen, the food wording, capabilities as statements.
   await onQuestion(page, "Here's your BizCost")
   await expect(page.getByRole('switch', { name: 'Orders' })).toBeChecked()
-  await expect(page.getByRole('listitem').filter({ hasText: /^Ingredients$/ })).toBeVisible()
+  await expect(
+    page.getByRole('listitem').filter({ hasText: /^Ingredients & supplies$/ }),
+  ).toBeVisible()
   const team = page.getByRole('switch', { name: 'Team', exact: true })
   await expect(team).not.toBeChecked()
   await expect(team).toHaveAccessibleDescription('Just you, no team')

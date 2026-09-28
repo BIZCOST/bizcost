@@ -401,17 +401,20 @@ export async function mutate<T = unknown>(
   return toResult<T>(response)
 }
 
-/** Batched GET of several queries, as httpBatchLink sends them. */
+/** Batched GET of several queries, as httpBatchLink sends them (`inputs[i]` for `paths[i]`). */
 export async function batch(
   handler: Handler,
   paths: string[],
-  options: CallOptions = {},
+  options: CallOptions & { inputs?: readonly unknown[] } = {},
 ): Promise<{
   status: number
   headers: Headers
   results: { result?: { data: unknown }; error?: unknown }[]
 }> {
-  const input = Object.fromEntries(paths.map((_, i) => [String(i), null]))
+  // Without `inputs` every call gets null; with them, an undefined input is left out (no input).
+  const input = Object.fromEntries(
+    paths.map((_, i) => [String(i), options.inputs ? options.inputs[i] : null]),
+  )
   const response = await handler(
     new Request(
       `${ORIGIN}/api/trpc/${paths.join(',')}?batch=1&input=${encodeURIComponent(JSON.stringify(input))}`,

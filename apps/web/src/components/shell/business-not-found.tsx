@@ -9,6 +9,7 @@ import { Button } from '@/components/ui/button'
 import { useBusinessContext } from '@/lib/trpc/client'
 import { shellNav } from './nav'
 import { PageContainer } from './page-container'
+import { useNavWording } from './use-nav-wording'
 
 /**
  * "Page not found" inside a business (a mistyped address, or a section that is not released): said
@@ -19,7 +20,8 @@ export function BusinessNotFound() {
   const { businessId } = useParams<{ businessId: string }>()
   const pathname = usePathname()
   const { data: context } = useBusinessContext()
-  const first = context ? shellNav(context.modules, businessId, pathname)[0] : undefined
+  const wording = useNavWording()
+  const first = context ? shellNav(context.modules, businessId, pathname, wording)[0] : undefined
   return (
     <PageContainer>
       <StatePanel

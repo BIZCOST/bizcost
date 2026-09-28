@@ -9,6 +9,7 @@ import {
   leaksOf,
   openApi,
   proceduresOf,
+  queryInputOf,
   type Api,
   type Person,
   type Tenant,
@@ -156,6 +157,7 @@ describe('no cache leak between businesses (one API instance, one account in two
         for (const procedure of QUERIES) {
           const result = await callProcedure(api.handler, procedure, both.token, {
             businessId: own.id,
+            input: queryInputOf(procedure.path, own),
           })
           expect(result.error, `${procedure.path} in ${own.label}: ${result.raw}`).toBeUndefined()
           expect(leaksOf(result.raw, other), `${procedure.path} in ${own.label}`).toEqual([])
@@ -172,7 +174,11 @@ describe('no cache leak between businesses (one API instance, one account in two
       const answer = await batch(
         api.handler,
         QUERIES.map((p) => p.path),
-        { token: both.token, businessId: own.id },
+        {
+          token: both.token,
+          businessId: own.id,
+          inputs: QUERIES.map((p) => queryInputOf(p.path, own)),
+        },
       )
       expect(answer.status).toBe(200)
       expect(answer.results.every((r) => r.result !== undefined)).toBe(true)
@@ -200,11 +206,15 @@ describe('no cache leak between businesses (one API instance, one account in two
     const mixed = await api.newPerson()
     await join(api.db, A.owner.user, A.id, mixed.user, 'admin')
     await join(api.db, B.owner.user, B.id, mixed.user, 'employee')
-    const codes = async (person: Person, businessId: string) => {
+    const codes = async (person: Person, tenant: Tenant) => {
       const answer = await batch(
         api.handler,
         QUERIES.map((p) => p.path),
-        { token: person.token, businessId },
+        {
+          token: person.token,
+          businessId: tenant.id,
+          inputs: QUERIES.map((p) => queryInputOf(p.path, tenant)),
+        },
       )
       return answer.results.map((r, i) => {
         const error = r.error as { data?: { appCode?: string } } | undefined
@@ -212,9 +222,9 @@ describe('no cache leak between businesses (one API instance, one account in two
       })
     }
     // In A first (Admin access loaded and memoized for A), then in B: B's Employee answers only.
-    expect(await codes(mixed, A.id)).toEqual(await codes(A.admin, A.id))
-    expect(await codes(mixed, B.id)).toEqual(await codes(B.employee, B.id))
-    expect(await codes(mixed, B.id)).toContain('member.list: forbidden')
+    expect(await codes(mixed, A)).toEqual(await codes(A.admin, A))
+    expect(await codes(mixed, B)).toEqual(await codes(B.employee, B))
+    expect(await codes(mixed, B)).toContain('member.list: forbidden')
   })
 
   it('`me` gives each membership its own name and a logo URL of its own logo', async () => {

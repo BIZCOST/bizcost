@@ -1,5 +1,6 @@
 'use client'
 
+import { hasKey, type I18nKey } from '@bizcost/i18n'
 import { EllipsisIcon, PlusIcon, type LucideIcon } from 'lucide-react'
 import Link from 'next/link'
 import type { ReactNode } from 'react'
@@ -24,7 +25,9 @@ import { navIcon } from './nav-icons'
 
 // The phone's tab bar (below 768px, D-089): the released sections the business has on and the member
 // may use, fixed at the bottom above the home indicator (safe-area inset). Each tab is at least 44px
-// tall. "More" holds what does not fit; "+" shows only when a module has "+" actions.
+// tall. "More" holds what does not fit; "+" shows only when a module has "+" actions. A section with a
+// long name shows its short name on its tab (`common.navShort`, in the business's wording, D-132);
+// the tab is still called by its full name.
 
 const TAB =
   'flex min-h-11 w-full flex-col items-center justify-center gap-1 rounded-xl px-1 py-1.5 text-[0.6875rem] leading-none font-medium transition-colors outline-none focus-visible:ring-3 focus-visible:ring-ring'
@@ -60,11 +63,25 @@ function TabFace({
   )
 }
 
+/** A nav label's short form for a tab (`common.nav.x` → `common.navShort.x`), when it has one. */
+function shortLabelKey(labelKey: I18nKey, has: (key: string) => boolean): I18nKey | null {
+  const short = labelKey.replace(/^common.nav./, 'common.navShort.')
+  return short !== labelKey && has(short) ? (short as I18nKey) : null
+}
+
 function Tab({ item }: { item: ShellNavItem }) {
-  const { t } = useTranslation()
+  const { t, i18n } = useTranslation()
+  const label = t(item.labelKey)
+  const short = shortLabelKey(item.labelKey, (key) => hasKey(i18n, key))
+  const shown = short ? t(short) : label
   return (
-    <Link href={item.href} aria-current={item.active ? 'page' : undefined} className={TAB}>
-      <TabFace icon={navIcon(item.icon)} label={t(item.labelKey)} active={item.active} />
+    <Link
+      href={item.href}
+      aria-current={item.active ? 'page' : undefined}
+      aria-label={shown === label ? undefined : label}
+      className={TAB}
+    >
+      <TabFace icon={navIcon(item.icon)} label={shown} active={item.active} />
     </Link>
   )
 }

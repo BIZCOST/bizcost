@@ -1,5 +1,6 @@
 import { withAnonymousTx, withTenantTx, type Tx } from '@bizcost/db'
 import { newId } from '@bizcost/domain'
+import { MODULES, withPreviewModules, type ModuleManifest } from '@bizcost/modules'
 import type { AnyRouter } from '@trpc/server'
 import { authModeOf, resolveAuth, type AuthMode, type AuthUser } from './auth'
 import type { ApiConfig, ApiDeps } from './deps'
@@ -23,6 +24,12 @@ export interface Context {
   /** The router being served; the redact middleware reads each procedure's output schema from it. */
   readonly router: AnyRouter
   readonly config: ApiConfig
+  /**
+   * The module registry this server runs with: the manifests as released code has them, or, in
+   * development and test only, with the preview modules counted as released (moduleRegistry, D-125).
+   * The module gates and the nav read it; nothing else does.
+   */
+  readonly modules: readonly ModuleManifest[]
   readonly authMode: AuthMode
   /** Verifies the caller once per request, on first use (public procedures never call it). */
   readonly getAuth: () => Promise<AuthUser | null>
@@ -39,6 +46,26 @@ export interface Context {
   readonly memo: Map<string, Promise<unknown>>
   /** Reports an unexpected failure the request goes on without (e.g. logos Storage did not sign). */
   readonly reportError: (error: unknown) => void
+}
+
+/** NODE_ENV values in which the preview switch is honoured (D-125): never production, never unset. */
+const PREVIEW_ENVIRONMENTS: ReadonlySet<string> = new Set(['development', 'test'])
+
+/**
+ * The module registry for a server config: MODULES, unless the config names preview modules AND
+ * NODE_ENV is development or test (`next dev`, Vitest). `next build`/`next start` and Vercel run with
+ * NODE_ENV=production, so a production server never shows an unreleased module, whatever its
+ * environment says (the web app also refuses to read BIZCOST_PREVIEW_MODULES there).
+ */
+export function moduleRegistry(
+  config: Pick<ApiConfig, 'previewModules'>,
+  nodeEnv: string | undefined,
+): readonly ModuleManifest[] {
+  const preview = config.previewModules ?? []
+  if (preview.length === 0 || nodeEnv === undefined || !PREVIEW_ENVIRONMENTS.has(nodeEnv)) {
+    return MODULES
+  }
+  return withPreviewModules(preview)
 }
 
 export interface CreateContextOptions {
@@ -71,6 +98,7 @@ export function createContext({ req, resHeaders, deps, router }: CreateContextOp
     requestId,
     router,
     config: deps.config,
+    modules: moduleRegistry(deps.config, process.env.NODE_ENV),
     authMode: authModeOf(req),
     getAuth,
     tenantTx,

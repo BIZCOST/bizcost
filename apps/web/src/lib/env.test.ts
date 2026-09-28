@@ -19,6 +19,7 @@ describe('parseServerEnv', () => {
       supabaseSecretKey: undefined,
       appUrl: 'http://localhost:3000',
       email: undefined,
+      previewModules: [],
     })
   })
 
@@ -113,6 +114,51 @@ describe('parseServerEnv', () => {
     expect(() => parseServerEnv({ ...base, EMAIL_TRANSPORT: 'sendmail' })).toThrow(
       /EMAIL_TRANSPORT/,
     )
+  })
+
+  describe('BIZCOST_PREVIEW_MODULES (dev-only, D-125)', () => {
+    const production = {
+      ...base,
+      NODE_ENV: 'production',
+      SUPABASE_SECRET_KEY: 'sb_secret_x',
+      APP_ORIGINS: 'https://app.example.com',
+      APP_URL: 'https://app.example.com',
+      EMAIL_TRANSPORT: 'smtp',
+    }
+
+    it('previews the named modules in development and test', () => {
+      for (const NODE_ENV of ['development', 'test']) {
+        expect(
+          parseServerEnv({ ...base, NODE_ENV, BIZCOST_PREVIEW_MODULES: 'materials,products' })
+            .previewModules,
+        ).toEqual(['products', 'materials'])
+      }
+    })
+
+    it('is never read in production, nor without NODE_ENV', () => {
+      expect(
+        parseServerEnv({ ...production, BIZCOST_PREVIEW_MODULES: 'materials,products' })
+          .previewModules,
+      ).toEqual([])
+      // Not even checked there: a bad value cannot take a production server down either.
+      expect(
+        parseServerEnv({ ...production, BIZCOST_PREVIEW_MODULES: 'nope' }).previewModules,
+      ).toEqual([])
+      expect(
+        parseServerEnv({ ...base, BIZCOST_PREVIEW_MODULES: 'materials' }).previewModules,
+      ).toEqual([])
+    })
+
+    it('refuses a module that cannot be previewed (unknown, released or not being built)', () => {
+      const dev = { ...base, NODE_ENV: 'development' }
+      expect(() => parseServerEnv({ ...dev, BIZCOST_PREVIEW_MODULES: 'materials,orders' })).toThrow(
+        /BIZCOST_PREVIEW_MODULES: orders/,
+      )
+      expect(() => parseServerEnv({ ...dev, BIZCOST_PREVIEW_MODULES: 'settings' })).toThrow(
+        /BIZCOST_PREVIEW_MODULES/,
+      )
+      expect(parseServerEnv({ ...dev, BIZCOST_PREVIEW_MODULES: '' }).previewModules).toEqual([])
+    })
   })
 
   it('rejects origins with a path or trailing slash', () => {

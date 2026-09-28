@@ -3,7 +3,9 @@ import type {
   InvitationDto,
   LocationDto,
   LogoUploadUrlDto,
+  MaterialDto,
   MemberDto,
+  ProductDto,
   RoleDto,
 } from '@bizcost/contracts'
 import type { Db } from '@bizcost/db'
@@ -34,6 +36,9 @@ import { CapturedEmails, join, setupBusiness, WORKSHOP } from '../settings'
 // invitation, a saved logo and an issued upload. Also: how a procedure is classified (public, authed,
 // business; query or mutation) straight from the router, the strings that identify a business's data
 // in a response, and a digest of everything a business has in the database and in Storage.
+//
+// Materials and Products & Services are still planned (M2 Step 2, released with Step 7): the suites run
+// the API with the dev-only preview of both (D-125), so their procedures are attacked like the others.
 
 export type Handler = ReturnType<typeof handlerFor>
 
@@ -51,12 +56,23 @@ export interface Api {
   close: () => Promise<void>
 }
 
-/** The API as deployed (secret key for Storage, emails kept instead of sent), and its test users. */
+/** The modules still being built that the suites preview (D-125). */
+export const PREVIEW_MODULES = ['materials', 'products'] as const
+
+/**
+ * The API as deployed (secret key for Storage, emails kept instead of sent), with the modules still
+ * being built previewed, and its test users.
+ */
 export function openApi(router?: AnyRouter): Api {
   const db = connectApi()
   const admin = connectAdmin()
   const emails = new CapturedEmails()
-  const handler = handlerFor(db, router, { supabaseSecretKey: SECRET_KEY }, { emailSender: emails })
+  const handler = handlerFor(
+    db,
+    router,
+    { supabaseSecretKey: SECRET_KEY, previewModules: PREVIEW_MODULES },
+    { emailSender: emails },
+  )
   const users: TestUser[] = []
   return {
     db,
@@ -168,6 +184,10 @@ export interface Tenant {
   logoPath: string
   /** An upload URL issued (registered, still open) but not used. */
   openUpload: LogoUploadUrlDto
+  /** A material with two packs (1 carton = 12 bottles, 1 bottle = 1 l). */
+  material: MaterialDto
+  /** A product sold at the branch only. */
+  product: ProductDto
 }
 
 function ok<T>(result: CallResult<T>, what: string): T {
@@ -256,6 +276,31 @@ export async function createTenant(api: Api, label: string): Promise<Tenant> {
     'logoUploadUrl',
   ) as LogoUploadUrlDto
 
+  const bottle = newId()
+  const material = ok(
+    await as('material.create', 'mutation', {
+      id: newId(),
+      name: `Milk ${label} ${tag}`,
+      unit: 'l',
+      packs: [
+        { id: bottle, name: `bottle ${tag}`, qty: '1', ofUnit: 'l' },
+        { id: newId(), name: `carton ${tag}`, qty: '12', ofPackId: bottle },
+      ],
+    }),
+    'material.create',
+  ) as MaterialDto
+  const product = ok(
+    await as('product.create', 'mutation', {
+      id: newId(),
+      name: `Latte ${label} ${tag}`,
+      type: 'product',
+      unit: 'piece',
+      defaultPrice: '15.5',
+      locationIds: [branch.id],
+    }),
+    'product.create',
+  ) as ProductDto
+
   return {
     id,
     label,
@@ -274,7 +319,16 @@ export async function createTenant(api: Api, label: string): Promise<Tenant> {
     invitationToken,
     logoPath: upload.path,
     openUpload,
+    material,
+    product,
   }
+}
+
+/** A valid input for a business query that needs one, naming the tenant's own rows. */
+export function queryInputOf(path: string, tenant: Tenant): unknown {
+  if (path === 'material.get') return { id: tenant.material.id }
+  if (path === 'product.get') return { id: tenant.product.id }
+  return undefined
 }
 
 /**
@@ -297,6 +351,11 @@ export function markersOf(tenant: Tenant): string[] {
     tenant.ownerMemberId,
     tenant.adminMemberId,
     tenant.employeeMemberId,
+    tenant.material.id,
+    tenant.material.name,
+    ...tenant.material.packs.flatMap((pack) => [pack.id, pack.name]),
+    tenant.product.id,
+    tenant.product.name,
     ...Object.values(tenant.roles).map((role) => role.id),
     ...[tenant.owner, tenant.admin, tenant.employee].flatMap(({ user }) => [
       user.id,

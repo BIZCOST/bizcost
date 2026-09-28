@@ -1,5 +1,15 @@
 import 'server-only'
-import { createI18n, LOCALE_COOKIE, resolveLocale, type Locale } from '@bizcost/i18n'
+import type { TerminologyProfile } from '@bizcost/domain'
+import {
+  createI18n,
+  FALLBACK_LOCALE,
+  hasMessage,
+  LOCALE_COOKIE,
+  resolveLocale,
+  terminologyKey,
+  type I18nKey,
+  type Locale,
+} from '@bizcost/i18n'
 import { cookies, headers } from 'next/headers'
 import { cache } from 'react'
 
@@ -21,4 +31,9 @@ export const getI18n = cache(async () => createI18n({ locale: await getLocale() 
 /** `t` of the current request, for server components and metadata. */
 export async function getT() {
   return (await getI18n()).t
+}
+
+/** `key` in a business's wording: its terminology overlay for `profile` when there is one. */
+export function wordingKey(key: I18nKey, profile: TerminologyProfile | null | undefined): I18nKey {
+  return terminologyKey(key, profile, (overlay) => hasMessage(FALLBACK_LOCALE, overlay))
 }

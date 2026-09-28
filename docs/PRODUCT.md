@@ -1,9 +1,9 @@
 # BizCost: Product
 
 Purpose: what BizCost is, who it is for, and the product rules every screen and feature must follow.
-Last updated: 2026-09-27
+Last updated: 2026-09-28
 
-> **Status:** M1 in progress: auth, account, businesses and Smart Setup, settings, and the app shell with the Dashboard checklist are built (Steps 1–3, 5–7); no data module yet. **DECIDED** = confirmed by the owner. **PLANNED** = intended but not built. Phases and step status: ROADMAP.md. Decision history: DECISIONS.md. Technical design: ARCHITECTURE.md. Tables and entities: DATA_MODEL.md.
+> **Status:** M1 is complete on the web (auth, account, businesses and Smart Setup, settings, and the app shell with the Dashboard checklist); mobile and the hosted deploy are deferred. M2 Costing Core is approved and in progress (D-111); no data module is released yet. **DECIDED** = confirmed by the owner. **PLANNED** = intended but not built. Phases and step status: ROADMAP.md. Decision history: DECISIONS.md. Technical design: ARCHITECTURE.md. Tables and entities: DATA_MODEL.md.
 
 ## 1. Purpose & positioning
 
@@ -33,7 +33,7 @@ Last updated: 2026-09-27
 
 ## 4. Core product rules (DECIDED)
 
-1. **Single source of truth.** Each business fact is entered once and reused everywhere. There is one record each for a Customer, Supplier, Material, Employee, Product/Service and piece of Equipment, and no copies inside projects or documents. An edit made on a document line never changes the master record.
+1. **Single source of truth.** Each business fact is entered once and reused everywhere. There is one record each for a Customer, Supplier, Material, Employee, Product/Service and piece of Equipment, and no copies inside projects or documents. An edit made on a document line never changes the master record. Customers and suppliers are two separate lists, so a company that is both has one record in each (D-112). An item bought ready to sell is entered once for buying and selling (D-117).
 2. **Business type = recommended setup, NOT a limitation.** A home baker can later open a shop, hire staff, add equipment, register for VAT, add locations and start using inventory. It stays the same business with the same data, and no migration is needed (§5).
 3. **Keep existing systems.** Never force a business to replace its POS. Sales can come from manual entry or an Excel/CSV import now, and from POS/API integrations later. All sources feed one sales model. Daily sales totals per product are enough for cost analysis.
 4. **Simple language, no accounting jargon in the UI.** Backend and domain names can stay precise. Examples:
@@ -49,11 +49,11 @@ Last updated: 2026-09-27
 5. **Neutral waste language.** Never accuse staff of theft. Usage that doesn't match is called "Unexplained Usage". Reasons the user can pick: waste/spillage, damaged/expired, staff use, free/complimentary, stock count correction, recipe needs adjustment, other, unknown. Impact is shown per week, per month and as an estimated yearly amount.
 6. **Theoretical vs actual profit.** Theoretical profit uses the standard recipe cost. Actual profit comes after actual usage, waste, variance and real operating costs. Show both.
 7. **True Cost** = material + labor + machine/equipment + packaging + delivery paid by the business + payment/selling fees + direct expenses + allocated running costs + waste/usage variance. **Real Profit = Revenue − True Cost.** It can be shown by product, order, job, project, day, week, month, location or business.
-8. **Enter materials the way you buy them.** Example: 1 carton = 12 bottles, 1 bottle = 1 L, the carton costs AED 72, so the cost is AED 0.006/ml and a 200 ml recipe line costs AED 1.20. Material cost always comes from purchases (weighted average), never from a price typed into a recipe. There is **one weighted-average cost per business**, not per location (DECIDED). Rules: DATA_MODEL.md §6.
+8. **Enter materials the way you buy them.** Example: 1 carton = 12 bottles, 1 bottle = 1 L, the carton costs AED 72, so the cost is AED 0.006/ml and a 200 ml recipe line costs AED 1.20. Material cost always comes from purchases (weighted average), never from a price typed into a recipe. There is **one weighted-average cost per business**, not per location (DECIDED). A posted purchase updates it; past costs are never recomputed (D-114). Until a business first counts its stock, it is the average of the last 90 days of purchases (D-115). Rules: DATA_MODEL.md §6.
 9. **Delivery is per transaction**, not an onboarding setting. On each sale or order: does it need delivery? If yes, record the area, the actual delivery cost and the amount charged. BizCost then shows who paid for delivery and the delivery margin.
 10. **Purchase Orders are optional.** A purchase can be direct, verbal, or made with a PO.
 11. **Discounts come before VAT** on every document line. Optional "Make Round Amount": the user types the final amount they want, and the system works out the adjustment before VAT.
-12. **VAT is kept separate from profit.** It never inflates revenue or cost.
+12. **VAT is kept separate from profit.** VAT you can reclaim never counts as cost or revenue; VAT you cannot reclaim is part of what you paid (D-114). It is part of the cost when the business is not VAT-registered, the document is a non-tax invoice, there is no invoice, or the document is marked "VAT can't be reclaimed".
 13. **Expenses:** the document type (Tax Invoice / Non-Tax Invoice / No Invoice) is independent of the payment method (cash, card, bank transfer, cheque, other). Approval before finalizing is optional.
 14. **AI suggestions need confirmation** (future, Phase 6). AI only creates drafts, with confidence scores and duplicate detection. A person confirms before anything is posted.
 15. **Never build around one industry.** Navigation, dashboards and wording adapt to the business through its setup (§5).
@@ -79,14 +79,14 @@ What a capability hides when it is off (names are indicative until built):
 
 Example: the same product, two very different setups.
 
-|                       | Solo home baker                                                                    | Multi-task workshop                                                                                 |
-| --------------------- | ---------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------- |
-| Setup answers         | Food, home, alone, WhatsApp orders, not VAT registered, no machines                | Makes products/jobs, workshop, team, jobs, VAT registered, keeps stock, machines                    |
-| Modules on            | Dashboard, Products, Ingredients, Purchases, Expenses, Running Costs, Orders       | The baker's modules + Inventory, Employees, Attendance, Equipment, Quotations, Invoices, VAT Center |
-| Capabilities          | `works_alone`, single location, no VAT, no stock, no machines                      | `has_team`, `vat_registered`, `keeps_stock`, `uses_machines`, Jobs & Tasks                          |
-| Hidden inside screens | Roles, "assigned to", location picker, VAT fields, stock quantities, machine hours | Only the options the workshop's own setup excludes                                                  |
-| Labor cost from       | The owner's own time, per hour                                                     | Employees, attendance, labor time per job                                                           |
-| Wording               | "Recipe", "Ingredients"                                                            | "Materials / Product Cost", "Jobs"                                                                  |
+|                       | Solo home baker                                                                         | Multi-task workshop                                                                                 |
+| --------------------- | --------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------- |
+| Setup answers         | Food, home, alone, WhatsApp orders, not VAT registered, no machines                     | Makes products/jobs, workshop, team, jobs, VAT registered, keeps stock, machines                    |
+| Modules on            | Dashboard, Products, Ingredients & supplies, Purchases, Expenses, Running Costs, Orders | The baker's modules + Inventory, Employees, Attendance, Equipment, Quotations, Invoices, VAT Center |
+| Capabilities          | `works_alone`, single location, no VAT, no stock, no machines                           | `has_team`, `vat_registered`, `keeps_stock`, `uses_machines`, Jobs & Tasks                          |
+| Hidden inside screens | Roles, "assigned to", location picker, VAT fields, stock quantities, machine hours      | Only the options the workshop's own setup excludes                                                  |
+| Labor cost from       | The owner's own time: minutes per product × hourly rate (from M2, D-119)                | Employees, attendance, labor time per job                                                           |
+| Wording               | "Recipe", "Ingredients & supplies"                                                      | "Materials / Product Cost", "Jobs"                                                                  |
 
 Rules:
 
@@ -94,7 +94,7 @@ Rules:
 - **No option the user doesn't use.** Every field, section, picker, menu item and "+" action is tied to a module or capability. If the business doesn't use it, it isn't shown.
 - **Only released modules are ever shown. No placeholder screens.** Each module is marked `released` or `planned`. Navigation, tabs and "+" show only modules that are both released and enabled. Smart Setup can enable a planned module, but it stays hidden until it is released. There are no "coming soon" pages. In M1 only Dashboard and Settings are released.
 - **Disabling a module hides it and never deletes its data.** Customize BizCost warns about modules that depend on it.
-- **Wording adapts to the business type.** Terminology profiles: general, food, maker, workshop, factory, projects. The costing structure underneath is the same. How translation files handle this: ARCHITECTURE.md §i18n & RTL.
+- **Wording adapts to the business type.** Terminology profiles: general, food, maker, workshop, factory, projects, retail (D-117). The costing structure underneath is the same. How translation files handle this: ARCHITECTURE.md §i18n & RTL.
 
 ## 6. Smart Setup (principles DECIDED; question set v1 BUILT in Step 5, wording awaits the owner's confirmation)
 
@@ -238,7 +238,7 @@ Input: normalised, complete answers (A). Output (pure, deterministic, total):
 interface Recommendation {
   businessType:
     'food' | 'factory' | 'workshop' | 'projects' | 'maker' | 'retail' | 'services' | 'other'
-  terminologyProfile: 'general' | 'food' | 'maker' | 'workshop' | 'factory' | 'projects'
+  terminologyProfile: 'general' | 'food' | 'maker' | 'workshop' | 'factory' | 'projects' | 'retail'
   capabilities: Record<StoredCapabilityKey, boolean>
   vatRegistered: boolean | null // null = "Not sure": stored as false, the review shows a note
   modules: { id: ModuleId; reason: I18nKey }[] // the ON set, MODULE_IDS order, closed under deps
@@ -279,9 +279,11 @@ Business type = **first match**; the terminology profile follows from it:
 | 4   | `projects ∈ what`                                                                              | `projects`     | `projects`           |
 | 5   | `make_products ∈ what`                                                                         | `maker`        | `maker`              |
 | 6   | `jobsAndTasks`                                                                                 | `workshop`     | `workshop`           |
-| 7   | `sell_products ∈ what`                                                                         | `retail`       | `general`            |
+| 7   | `sell_products ∈ what`                                                                         | `retail`       | `retail`             |
 | 8   | `services ∈ what`                                                                              | `services`     | `general`            |
 | 9   | otherwise                                                                                      | `other`        | `general`            |
+
+The `retail` profile is new (D-117, built with M2 Step 4); until then retail businesses get `general`, and a migration moves them.
 
 Default location: one row, `is_default = true`, named in the user's language (then it is plain data). The name uses the final `multi_location` after review adjustments. Keys `setup.location.<workplace>` and `setup.location.<workplace>_main`:
 
@@ -348,6 +350,8 @@ Core modules are on unless switched off; `recommend()` switches off only `materi
 |                 |                                                     | `default`                                       | Know who has paid and who still owes.                                                       | اعرف من دفع ومن بقي عليه مبلغ.                                                          |
 | `reports`       | always                                              | `projects` · `projects` on                      | See your real profit by project, month and more.                                            | اعرف ربحك الحقيقي حسب المشروع والشهر وغير ذلك.                                          |
 |                 |                                                     | `default`                                       | See your real profit by product, month and more.                                            | اعرف ربحك الحقيقي حسب المنتج والشهر وغير ذلك.                                           |
+
+The `cost_engine` `solo` reason ("including your own time") holds from M2: a business without a team gets a "Your time" line in each product's cost (D-119), so the reason needs no rewording.
 
 **Optional modules**
 
@@ -455,7 +459,7 @@ Names `modules.<id>.name`; descriptions `modules.<id>.desc` for every module tha
 | Module          | EN                    | AR                        | Overlays                                                             | Description EN / AR                                                                                       |
 | --------------- | --------------------- | ------------------------- | -------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------- |
 | `products`      | Products & Services   | المنتجات والخدمات         | projects: Services & work items / الخدمات وبنود العمل                | —                                                                                                         |
-| `materials`     | Materials             | المواد                    | food: Ingredients / المكونات · factory: Raw materials / المواد الخام | Track what you buy to make or sell, and what it costs. / تابع ما تشتريه لتصنعه أو تبيعه، وتكلفته.         |
+| `materials`     | Materials             | المواد                    | food, retail: see note below · factory: Raw materials / المواد الخام | Track what you buy to make or sell, and what it costs. / تابع ما تشتريه لتصنعه أو تبيعه، وتكلفته.         |
 | `suppliers`     | Suppliers             | الموردون                  |                                                                      | —                                                                                                         |
 | `purchases`     | Purchases             | المشتريات                 |                                                                      | Record what you buy, so your costs come from real prices. / سجّل مشترياتك، لتأتي تكاليفك من أسعار حقيقية. |
 | `expenses`      | Expenses              | المصروفات                 |                                                                      | —                                                                                                         |
@@ -479,6 +483,8 @@ Names `modules.<id>.name`; descriptions `modules.<id>.desc` for every module tha
 | `projects`      | Projects              | المشاريع                  |                                                                      | See each project's costs and profit. / اعرف تكاليف كل مشروع وربحه.                                        |
 | `petty_cash`    | Petty Cash            | العهدة النقدية            |                                                                      | Track cash given to staff until it's settled. / تابع العهدة النقدية حتى تُسوّى.                           |
 | `vat_center`    | VAT Center            | مركز ضريبة القيمة المضافة |                                                                      | Prepare and check your VAT return. / جهّز إقرار ضريبة القيمة المضافة وراجعه.                              |
+
+Materials overlays for food and retail: food "Ingredients & supplies / المكونات والمستلزمات" (D-118), retail "Goods / البضاعة" (D-117).
 
 ### 6.10 Invariants (unit + fast-check property tests over every valid answer walk generated from the question data)
 
@@ -508,7 +514,7 @@ Question order: what, how, workplace, branches, team, team_tracking, work_setup,
 | 3   | 3D printing maker (one helper)      | [make_products] · [catalog, custom_jobs] · home · team · [cost_only] · [stock, machines] · [messages, online] · no                              | 8   | maker / maker       | has_team, keeps_stock, uses_machines, jobs_and_tasks · false | orders (`messages`), inventory, usage_waste (`make`), employees, equipment                                                                                                    | none                 | cost_engine `jobs`, payments `deposits`, sales `apps`, jobs row `custom_jobs` ("order")                                | Home / المنزل             |
 | 4   | Fit-out / decor project company     | [projects] · customer_sites · no · team · [hours, salaries, staff_cash] · [materials, vehicles] · yes                                           | 7   | projects / projects | has_team · true                                              | quotations (`projects`), invoices (`projects`), projects, employees, attendance, payroll, petty_cash, vehicles, vat_center                                                    | none                 | products `projects`, materials `uses`, suppliers `projects`, payments `projects`, sales `invoices`, reports `projects` | Main base / المقر الرئيسي |
 | 5   | Freelance designer (services only)  | [services] · home · alone · [none] · [messages, quotes, invoice_later] · no                                                                     | 6   | services / general  | none · false                                                 | quotations (`quotes`), invoices (`quotes`)                                                                                                                                    | materials, purchases | products `services`, suppliers `no_purchases`, cost_engine `solo`, sales `invoices`; jobs row in More                  | Home / المنزل             |
-| 6   | Retail shop with stock              | [sell_products] · shop · no · team · [salaries, staff_cash] · [stock, vehicles] · [walk_in, messages] · yes · yes                               | 9   | retail / general    | has_team, keeps_stock, sells_via_pos · true                  | inventory, usage_waste (`resell`), employees, payroll, petty_cash, vehicles, vat_center                                                                                       | customers, payments  | materials `resell`, sales `pos`; off notes orders `outside_pos`, invoices `pos_off`                                    | Shop / المحل              |
+| 6   | Retail shop with stock              | [sell_products] · shop · no · team · [salaries, staff_cash] · [stock, vehicles] · [walk_in, messages] · yes · yes                               | 9   | retail / retail     | has_team, keeps_stock, sells_via_pos · true                  | inventory, usage_waste (`resell`), employees, payroll, petty_cash, vehicles, vat_center                                                                                       | customers, payments  | materials `resell`, sales `pos`; off notes orders `outside_pos`, invoices `pos_off`                                    | Shop / المحل              |
 | 7   | Small factory (cleaning products)   | [make_products] · [batches] · factory · no · team · [hours, salaries] · [stock, machines, vehicles] · [messages, quotes, invoice_later] · yes   | 9   | factory / factory   | has_team, keeps_stock, uses_machines · true                  | orders (`invoice_later`), quotations (`quotes`), invoices (`vat`), inventory, usage_waste (`make`), employees, attendance, payroll, equipment, vehicles, vat_center           | none                 | materials `make` ("Raw materials"), sales `with_orders`, payments `orders`                                             | Factory / المصنع          |
 | 8   | Workshop with many jobs (carpentry) | [make_products] · [custom_jobs] · workshop · no · team · [hours, salaries, staff_cash] · [stock, machines, vehicles] · [messages, quotes] · yes | 9   | workshop / workshop | has_team, keeps_stock, uses_machines, jobs_and_tasks · true  | orders (`custom_jobs`), quotations (`quotes`), invoices (`vat`), inventory, usage_waste (`make`), employees, attendance, payroll, petty_cash, equipment, vehicles, vat_center | none                 | products `custom`, cost_engine `jobs`, payments `deposits`, sales `with_orders`; jobs row first                        | Workshop / الورشة         |
 
@@ -525,7 +531,7 @@ Edge cases (also tested):
 
 Example `setup_answers.answers` for persona 1: `{"what_you_do":["food_drinks"],"workplace":"home","team":"alone","work_setup":["none"],"sales_channels":["messages"],"vat":"no"}`.
 
-Checks against §5 and §12: persona 1 gets the §5 baker set (Products, Ingredients, Purchases, Expenses, Running Costs, Orders) and "your own time" (§12 case 2); persona 8 is a superset of the §5 workshop set; persona 2 = §12 case 1 (imported sales, stock, waste, employees); persona 3 = case 3 (orders, filament stock, machine time, failed prints); persona 4 = case 4 (projects, employees, purchases, vehicles, running costs).
+Checks against §5 and §12: persona 1 gets the §5 baker set (Products, Ingredients & supplies, Purchases, Expenses, Running Costs, Orders) and "your own time" (§12 case 2); persona 8 is a superset of the §5 workshop set; persona 2 = §12 case 1 (imported sales, stock, waste, employees); persona 3 = case 3 (orders, filament stock, machine time, failed prints); persona 4 = case 4 (projects, employees, purchases, vehicles, running costs).
 
 ### 6.12 Open points
 
@@ -536,9 +542,9 @@ For the owner to confirm:
 3. A shop without a POS gets Orders, with a reason that offers daily totals instead.
 4. Invoices also serve businesses that are not VAT-registered (plain invoices; tax invoices when registered). This changes §7 and §11.
 5. «أمر عمل» for "job" in the workshop, factory and general profiles («طلب» for makers).
-6. Food: "Ingredients / المكونات" leaves out cups and boxes (the reason mentions packaging); keep it, or use "Ingredients & supplies / المكونات والمستلزمات".
+6. Food wording: DECIDED (D-118), "Ingredients & supplies / المكونات والمستلزمات", since cups and boxes are not ingredients.
 
-Parked for later phases: a retail wording profile ("Goods / البضاعة") together with how resellers avoid entering one item as both product and material (Phase 2); expected usage from production records for batch factories (Phase 4); whether Orders and jobs are one structure in the workshop profile (Phase 5, with "Projects vs Jobs & Tasks").
+Decided with M2 (D-117): the retail wording profile ("Goods / البضاعة"), and an item bought ready to sell is entered once for buying and selling. Parked for later phases: expected usage from production records for batch factories (Phase 4); whether Orders and jobs are one structure in the workshop profile (Phase 5, with "Projects vs Jobs & Tasks").
 
 ## 7. Module catalog
 
@@ -548,15 +554,15 @@ Only Dashboard and Settings are released (M1). The Phase column follows ROADMAP.
 | ---------------------------------- | ---------- | ---------------------------------------------------------------------------------------- | ----------------- |
 | Dashboard                          | Core       | Decision dashboard (§9). In M1 it only shows the setup checklist                         | 1 → 3             |
 | Settings / Customize BizCost       | Core       | Business profile, TRN, locations, team, roles, modules, language                         | 1                 |
-| Products & Services                | Core       | Master list: unit, default price, VAT setting, active. Holds the cost structure (recipe) | 2                 |
-| Materials / Ingredients            | Core       | Shared master records, bought in any unit and converted to a base unit                   | 2                 |
-| Suppliers                          | Core       | One record, reused by purchases, expenses and materials                                  | 2                 |
-| Purchases                          | Core       | Supplier, items, units, VAT, payment, attachments. PO optional                           | 2                 |
-| Expenses                           | Core       | Document type separate from payment method; optional approval                            | 2                 |
-| Running Costs                      | Core       | "What do you pay to run your business?" Allocated to products, jobs and projects         | 2                 |
+| Products & Services                | Core       | Master list: unit, default price, VAT, active. Recipe, or "bought ready to sell" (D-117) | 2                 |
+| Materials / Ingredients & supplies | Core       | Shared master records, bought in any unit and converted to a base unit                   | 2                 |
+| Suppliers                          | Core       | One record, reused by purchases, expenses and materials. Separate from Customers (D-112) | 2                 |
+| Purchases                          | Core       | Items, units, VAT, payment, attachments; returns and credit notes (D-120). PO optional   | 2                 |
+| Expenses                           | Core       | Document type separate from payment method; optional approval; shared categories (D-116) | 2                 |
+| Running Costs                      | Core       | "What do you pay to run your business?" A share of material cost (D-116); by time in P5  | 2                 |
 | Files / Attachments                | Core       | Receipts and documents attached to records                                               | 2                 |
 | Cost Engine                        | Core       | Unit costs, weighted average, True Cost (basic in 2, full in 3)                          | 2 → 3             |
-| Customers                          | Core       | One customer across orders, quotations, invoices and payments                            | 3 (tentative)     |
+| Customers                          | Core       | One customer across orders, quotations, invoices and payments; its own list (D-112)      | 3 (tentative)     |
 | Sales Data                         | Core       | Manual entry and Excel/CSV import (POS/API in Phase 6)                                   | 3                 |
 | Payments                           | Core       | Payments on sales, orders and invoices                                                   | 3 (tentative)     |
 | Reports                            | Core       | Real profit reports (advanced analytics in Phase 6)                                      | 3 → 6             |
@@ -583,17 +589,17 @@ Only Dashboard and Settings are released (M1). The Phase column follows ROADMAP.
 - **Staff without email (DECIDED):** they sign in with a PIN on a shared branch device. From M1 the data model allows a member without a login account. The PIN sign-in screens come later.
 - Role templates are copied into each business and can be edited. Starter set (DECIDED in M1 Step 2; keys in `packages/modules`):
 
-  | Template   | Can do and see                                                                                                  |
-  | ---------- | --------------------------------------------------------------------------------------------------------------- |
-  | Owner      | Everything, including permissions added later; cannot be locked out. Only an owner can transfer ownership       |
-  | Admin      | Every permission (not ownership transfer)                                                                       |
-  | Manager    | Dashboard; view the business and the team; manage locations; see cost, profit/margin and supplier prices        |
-  | Accountant | Dashboard; view the business; see cost, profit/margin, supplier prices and payroll (not employee personal data) |
-  | Sales      | Dashboard only                                                                                                  |
-  | Supervisor | Dashboard; view the team                                                                                        |
-  | Employee   | Dashboard only (sees no sensitive field)                                                                        |
+  | Template   | Can do and see                                                                                                                                                |
+  | ---------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+  | Owner      | Everything, including permissions added later; cannot be locked out. Only an owner can transfer ownership                                                     |
+  | Admin      | Every permission (not ownership transfer)                                                                                                                     |
+  | Manager    | Dashboard; view the business and the team; manage locations; see, add and edit products & services and materials; see cost, profit/margin and supplier prices |
+  | Accountant | Dashboard; view the business; see products & services and materials; see cost, profit/margin, supplier prices and payroll (not employee personal data)        |
+  | Sales      | Dashboard; see products & services                                                                                                                            |
+  | Supervisor | Dashboard; view the team; see products & services and materials                                                                                               |
+  | Employee   | Dashboard; see products & services (sees no sensitive field)                                                                                                  |
 
-  Modules add their own permissions to the templates when they are released. Every member can open Settings for their own profile and language.
+  Modules add their own permissions to the templates when their build starts, and the Roles editor offers them once the module is released (D-124). Products & Services and Materials (M2 Step 2): "see" (`products.items.view`, `materials.items.view`) and "add and edit" (`products.items.manage`, `materials.items.manage`, which need "see"), as in the table; businesses made before got them by migration. Every member can open Settings for their own profile and language.
 
 - Custom permissions, for example: View/Create/Edit Orders, View Customers, View Selling Price, View Product Cost, View Profit, Create/Approve Expenses, View Payroll, Manage Employees, Manage Projects.
 - **Never assume every user can see cost or profit.** Sensitive fields (cost, profit/margin, supplier price, payroll, employee personal data) are removed on the server. The UI shows a lock, not a misleading zero. Users can't filter, sort or search by a field they can't see. Mechanism: ARCHITECTURE.md §Permissions, modules & capabilities.
@@ -625,7 +631,7 @@ Only Dashboard and Settings are released (M1). The Phase column follows ROADMAP.
   - **Add your second branch** (members who may manage branches, only for a business with branches): done with a second branch. Not for a member who joined after the second branch was added.
   - A step that is undone again (the others left, a branch was removed) shows again, open, to everyone who can do it.
   - Each open step opens its settings section. When all are done, a small "You're all set" takes the list's place; each member can hide it for that business (remembered in the browser). A member who can do none of the steps (e.g. an Employee) sees the welcome and "About your business" only. A member whose role does not include the Dashboard opens the business on their first section (Settings in M1).
-- **When costing modules ship (PLANNED, Phase 2–3):** a checklist titled "Let's calculate your first real profit": add what you sell → add what you use to make it → add purchase prices → add regular business costs → add or import sales → see My Real Profit. In M2, before sales exist, it is titled "Let's find the real cost of what you sell / لنعرف التكلفة الحقيقية لما تبيعه" and ends at "see your product costs" (ROADMAP.md M2 Step 7).
+- **When costing modules ship (PLANNED, Phase 2–3):** a checklist titled "Let's calculate your first real profit": add what you sell → add what you use to make it → add purchase prices → add regular business costs → add or import sales → see My Real Profit. In M2, before sales exist, it is titled "Let's find the real cost of what you sell / لنعرف التكلفة الحقيقية لما تبيعه" and ends at "see your product costs" (ROADMAP.md M2 Step 7). M2 steps: add what you sell → add what you use to make it (not needed for items bought ready to sell, D-117) → add purchase prices → add your regular costs (with an estimate of your monthly purchases until you have 3 months of them, D-116) → add your time (only for a business without a team: your hourly rate and your minutes per product, D-119) → see your product costs. As in M1, a step shows only when it fits the business and the member can do it.
 
 ## 11. Invoicing (UAE) (requirement DECIDED; build PLANNED)
 
@@ -668,7 +674,7 @@ The design must handle all four without hacks. Use them to test the setup recomm
 | Unexplained Usage     | استهلاك غير مبرر      | Actual − expected. Never "theft"                               |
 | Waste                 | الهدر                 | Usage the user explained as waste                              |
 | Recipe                | وصفة                  | Food wording for the product cost structure                    |
-| Materials             | المواد                | Food profile: Ingredients / المكونات                           |
+| Materials             | المواد                | Food: Ingredients & supplies (D-118); retail: Goods (D-117)    |
 | Products & Services   | المنتجات والخدمات     |                                                                |
 | Purchases             | المشتريات             |                                                                |
 | Suppliers             | الموردون              |                                                                |

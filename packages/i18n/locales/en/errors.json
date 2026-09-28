@@ -17,6 +17,8 @@
   "locations_in_use": "Your business still has more than one branch. Remove the other branches first, then turn this off.",
   "owner_transfer_required": "The owner can only change by transferring ownership.",
   "default_location": "This is your main branch. Make another branch the main one first.",
+  "only_location_of_products": "Some products or services are sold only at this branch. In Products & Services, choose other branches for them first, then remove it.",
+  "name_taken": "You already have one with this name. Use another name, or find it in your list (archived ones too).",
   "file_invalid": "Use a PNG, JPG or WebP image of up to 2 MB.",
   "internal": "Something went wrong on our side. Please try again.",
   "network": "Can't connect. Check your internet and try again."

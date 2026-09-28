@@ -79,6 +79,14 @@ export {
   type WacState,
   type WacStep,
 } from './costing/wac'
+export {
+  MATERIAL_UNIT_KINDS,
+  PRODUCT_TYPES,
+  VAT_CATEGORIES,
+  type MaterialUnitKind,
+  type ProductType,
+  type VatCategory,
+} from './catalog/keys'
 export { parseTrn, TRN_LENGTH, type TrnError, type TrnResult } from './business/trn'
 export { businessDisplayName, type BusinessNames } from './business/display-name'
 export {

@@ -313,6 +313,8 @@ describe('APP_ERROR_CODES', () => {
     'locations_in_use',
     'owner_transfer_required',
     'default_location',
+    'only_location_of_products',
+    'name_taken',
     'file_invalid',
     'internal',
   ]

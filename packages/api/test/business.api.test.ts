@@ -117,6 +117,7 @@ interface ContextResult {
   visibleCategories: string[]
   modules: { id: string; nav: { id: string }[]; quickActions: unknown[] }[]
   terminologyProfile: string
+  currency: string
   capabilities: Record<string, boolean>
   permissionsVersion: number
 }
@@ -250,6 +251,7 @@ describe('business.context', () => {
         },
       ],
       terminologyProfile: 'general',
+      currency: 'AED',
       capabilities: {
         has_team: false,
         multi_location: false,
@@ -267,7 +269,7 @@ describe('business.context', () => {
     const result = await query<ContextResult>(handler, 'business.context', as('staff'))
     expect(result.data).toMatchObject({
       roleTemplateKey: 'employee',
-      permissions: { all: false, keys: ['dashboard.home.view'] },
+      permissions: { all: false, keys: ['dashboard.home.view', 'products.items.view'] },
       locationScope: { all: false, ids: [branchId] },
       visibleCategories: [],
     })

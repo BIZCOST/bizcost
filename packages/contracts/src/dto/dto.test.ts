@@ -78,6 +78,7 @@ describe('businessContextDto', () => {
       },
     ],
     terminologyProfile: 'food',
+    currency: 'AED',
     capabilities: { has_team: true, vat_registered: false },
     permissionsVersion: 3,
   }
@@ -108,6 +109,8 @@ describe('businessContextDto', () => {
     expect(businessContextDto.safeParse(badVersion).success).toBe(false)
     const badProfile = { ...context, terminologyProfile: 'retail' }
     expect(businessContextDto.safeParse(badProfile).success).toBe(false)
+    const badCurrency = { ...context, currency: 'aed' }
+    expect(businessContextDto.safeParse(badCurrency).success).toBe(false)
   })
 })
 

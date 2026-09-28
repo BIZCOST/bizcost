@@ -30,6 +30,56 @@ export function isModuleReleased(manifest: ModuleManifest): boolean {
   return manifest.availability === 'released'
 }
 
+/**
+ * Planned modules whose build has started (they have nav entries): the only ones the dev-only preview
+ * may show (D-125).
+ */
+export const PREVIEWABLE_MODULE_IDS: readonly ModuleId[] = MODULES.filter(
+  (m) => m.availability === 'planned' && m.nav.length > 0,
+).map((m) => m.id)
+
+export interface ParsedPreviewModules {
+  /** Previewable modules named, in registry order, once each. */
+  readonly ids: readonly ModuleId[]
+  /** Names that are not a previewable module (unknown, released, or not being built). */
+  readonly invalid: readonly string[]
+}
+
+/**
+ * Reads the dev-only preview list (BIZCOST_PREVIEW_MODULES, e.g. "materials,products"): comma or
+ * space separated module ids. The host app reads the variable, and only outside production (D-125).
+ */
+export function parsePreviewModules(value: string | undefined): ParsedPreviewModules {
+  const names = (value ?? '')
+    .split(/[\s,]+/)
+    .map((name) => name.trim())
+    .filter(Boolean)
+  const invalid = names.filter(
+    (name) => !(PREVIEWABLE_MODULE_IDS as readonly string[]).includes(name),
+  )
+  const named = new Set(names)
+  return { ids: PREVIEWABLE_MODULE_IDS.filter((id) => named.has(id)), invalid }
+}
+
+/**
+ * The registry with the `preview` modules counted as released: the dev-only preview switch (D-125).
+ * Only planned modules whose build has started change; everything else is as released code has it,
+ * so the business must still have the module on and the member its permission. The API applies it
+ * only when NODE_ENV is development or test (never in production builds).
+ */
+export function withPreviewModules(
+  preview: readonly string[],
+  manifests: readonly ModuleManifest[] = MODULES,
+): readonly ModuleManifest[] {
+  const ids = new Set(
+    preview.filter((id) => (PREVIEWABLE_MODULE_IDS as readonly string[]).includes(id)),
+  )
+  if (ids.size === 0) return manifests
+  return manifests.map((m) =>
+    ids.has(m.id) && m.availability === 'planned' ? { ...m, availability: 'released' } : m,
+  )
+}
+
 /** A business_modules row: the business switched a module on or off. */
 export interface ModuleState {
   readonly key: string

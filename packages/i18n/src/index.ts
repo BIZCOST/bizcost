@@ -2,6 +2,7 @@ export { isLocale, LOCALES, type Locale } from '@bizcost/domain'
 export { createI18n, type CreateI18nOptions } from './create'
 export {
   currencyDigits,
+  currencySymbol,
   formatCurrency,
   formatDate,
   formatDecimal,

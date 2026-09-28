@@ -51,6 +51,16 @@ export function formatCurrency(locale: Locale, amount: string, currency: string)
   }).format(roundHalfUp(amount, digits))
 }
 
+/**
+ * How `currency` is written in `locale`, as formatCurrency writes it: "AED" in English, «د.إ.» in
+ * Arabic. For a field's prefix, so the field and the lists show the same symbol.
+ */
+export function currencySymbol(locale: Locale, currency: string): string {
+  const format = new Intl.NumberFormat(intlLocale(locale), { style: 'currency', currency })
+  if (typeof format.formatToParts !== 'function') return currency
+  return format.formatToParts(0).find((part) => part.type === 'currency')?.value ?? currency
+}
+
 /** A date or timestamp (Date or ISO string). Pass `timeZone` so server and browser agree. */
 export function formatDate(
   locale: Locale,

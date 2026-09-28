@@ -24,6 +24,7 @@ export {
 } from './checklist'
 export {
   ALWAYS_ENABLED_MODULE_IDS,
+  isModuleId,
   MODULE_IDS,
   MODULES,
   type ModuleAvailability,
@@ -56,11 +57,15 @@ export {
   isModuleReleased,
   isModuleVisible,
   moduleById,
+  parsePreviewModules,
+  PREVIEWABLE_MODULE_IDS,
   releasedModules,
   resolveEnabledModules,
   visibleNav,
   visibleQuickActions,
+  withPreviewModules,
   type ModuleState,
+  type ParsedPreviewModules,
 } from './registry'
 export {
   has,

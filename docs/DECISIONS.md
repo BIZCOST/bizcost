@@ -1,9 +1,9 @@
 # BizCost: Decision Log
 
 Purpose: a numbered record of every confirmed decision, why we made it, and what we rejected. The details live in the doc each entry links to.
-Last updated: 2026-09-27
+Last updated: 2026-09-28
 
-- **Status:** every entry is DECIDED. Implemented so far: the Step 0a repo scaffold, the Step 1 data foundation (D-047–D-053 and the data/tenancy entries they build on), the Step 2 API core (D-054–D-061), the Step 3 web auth (D-062–D-071), the owner's password rule (D-072), the "too soon" fix (D-073), Step 5 businesses & Smart Setup (D-074–D-079), Step 6 web settings (D-080–D-088), Step 7 the web shell (D-089–D-096) and the owner's answers after it (D-097, D-098), Step 9 hardening & docs (D-099–D-106), and M2 Step 1, the pure domain engines built as pre-approval groundwork (D-107–D-110; the owner-visible costing rules they follow are the proposal P-001). "Open:" marks a sub-choice that is still unsettled, tracked in ROADMAP.md §Open, with deadline. Proposals (P-0xx, §Proposals at the end) are NOT decided: once the owner confirms one, it becomes the next D-entry with the owner's changes.
+- **Status:** every entry is DECIDED. Implemented so far: the Step 0a repo scaffold, the Step 1 data foundation (D-047–D-053 and the data/tenancy entries they build on), the Step 2 API core (D-054–D-061), the Step 3 web auth (D-062–D-071), the owner's password rule (D-072), the "too soon" fix (D-073), Step 5 businesses & Smart Setup (D-074–D-079), Step 6 web settings (D-080–D-088), Step 7 the web shell (D-089–D-096) and the owner's answers after it (D-097, D-098), Step 9 hardening & docs (D-099–D-106), and M2 Step 1, the pure domain engines built as pre-approval groundwork (D-107–D-110). The owner's M2 answers of 2026-09-28 (D-111–D-120) are decided and built step by step in M2; M2 Step 2 has its data and API (D-121–D-125), its web screens (D-126–D-128) and the fixes of its review (D-129–D-132). "Open:" marks a sub-choice that is still unsettled, tracked in ROADMAP.md §Open, with deadline. Proposals (P-0xx, §Proposals at the end) are NOT decided: once the owner confirms one, it becomes the next D-entry with the owner's changes, and the proposal stays for history (P-001 became D-114 and D-115). None is awaiting the owner.
 - **Editing:** append new entries with the next number and never renumber. To change a decision, add a new entry and mark the old one "Superseded by D-0xx".
 - **Sources:** the owner's spec, the owner's confirmations (2026-09-24), and the architecture panel as corrected by its critique.
 
@@ -16,6 +16,8 @@ Last updated: 2026-09-27
 - **Rejected:** separate apps or editions per industry; modules alone (too coarse); screens hard-coded around one industry. Details: PRODUCT.md §5 Adaptive product model, §6 Smart Setup
 
 ### D-002 · 2026-09-24 · One master record per real-world thing
+
+Refined by D-112: customers and suppliers are two separate lists, so a company that is both has one record in each.
 
 - **Decision:** Each customer, supplier, material, product/service, employee and piece of equipment is entered once and reused everywhere. Edits made inside a document never change the master record. Material cost comes from purchase and inventory valuation, never from a price typed into a recipe.
 - **Why:** This is the owner's single-source-of-truth rule. It stops modules from drifting apart.
@@ -45,7 +47,7 @@ Last updated: 2026-09-27
 - **Decision:** Each material has one WAC for the whole business, not one per location. Every purchase updates it, and recipes use it automatically.
 - **Why:** The owner chose this. It keeps the stock ledger, row locking and the cost engine simple.
 - **Rejected:** a WAC per location.
-- **Open:** the full costing policy must be written before Phase 2: perpetual WAC in posting order, locking order, period close, per-location stock quantities. Technical part: D-110; the rules the owner sees: proposal P-001 (awaiting the owner). Details: DATA_MODEL.md §1.6, §6
+- **Open (answered 2026-09-28):** the full costing policy must be written before Phase 2: perpetual WAC in posting order, locking order, period close, per-location stock quantities. Technical part: D-110; the rules the owner sees: D-114 and D-115 (the owner confirmed proposal P-001). Details: DATA_MODEL.md §1.6, §6
 
 ### D-007 · 2026-09-24 · No offline mode
 
@@ -715,6 +717,8 @@ Refined by D-106: the secrets reach only the steps that need them, the actions a
 
 ### D-109 · 2026-09-27 · WAC engine: a receipt carries what was paid; a reversal is "as if never posted"
 
+Refined by D-114, D-115 and D-120: the owner confirmed the rules this engine follows (2026-09-28); the 90-day average and supplier returns and credit notes join it in M2 Step 3. Negative stock is still asked with Phase 3.
+
 - **Decision:** `costing/wac.ts` keeps one cost state per (business, material): quantity, value and average (D-006).
   - `wacReceive` brings in exactly the purchase line's cost (`value`). Stock value therefore matches the purchases to the fils: 3 kg bought for AED 100 is worth 100, not 99.999999999. The average is value ÷ quantity, to 12 decimals.
   - `wacIssue` (usage and sales from Phase 3, waste from Phase 4) costs qty × average. The last unit on hand takes exactly the value left, so zero stock has zero value. An issue beyond the stock reports its `shortfall` and costs it at the average.
@@ -737,13 +741,204 @@ Refined by D-106: the secrets reach only the steps that need them, the actions a
 - **Why:** These follow from settled decisions or are implementation detail. The owner is asked only about the rules he sees (P-001).
 - **Rejected:** projections updated outside the posting transaction; any lock order other than this one.
 
-## Proposals (awaiting the owner)
+## Owner decisions for M2 (2026-09-28)
 
-Not decided. The plain-language questions are in ROADMAP.md §Open, "Before Phase 2".
+The owner's answers to ROADMAP.md §Open "Close M1" and O1–O5, and to the four scope points of question 0 (asked in chat on 2026-09-28).
 
-### P-001 · 2026-09-27 · Costing policy: the rules the owner sees (PROPOSED: needs the owner's confirmation)
+### D-111 · 2026-09-28 · M1 closed with its deferred items; M2 approved
 
-- **Status:** PROPOSED. Together with D-110 (the technical part), it answers D-006's "Open" (ROADMAP.md §Open, O3 and O5). The owner can answer rule by rule, e.g. "A, except rule 4". Until he answers, only the pure code of M2 Step 1 follows it (D-109), and no table stores data by it.
+- **Decision:** Owner decision (ROADMAP.md §Open, "Close M1"). The owner answered O1–O5 and the four scope points (D-112–D-120) and asked for no deferred item first. With his standing instruction of 2026-09-27 (go on unless a decision is needed), this closes M1 as complete, with Steps 4 and 8 (mobile), the hosted deploy, the real-device checks and the TestFlight build still DEFERRED, and approves the M2 scope (ROADMAP.md §Milestone 2) with two changes: supplier returns and credit notes join Step 3 (D-120), and the owner's own time is confirmed for Step 6 (D-119). M2 runs step by step; the owner is asked again only for decisions.
+- **Why:** D-046: a milestone starts after the owner's approval.
+- **Rejected:** starting with a deferred M1 item (mobile or the hosted deploy); the owner asked for none.
+
+### D-112 · 2026-09-28 · Customers and suppliers are two separate lists (against the recommendation)
+
+- **Decision:** Owner decision O1 = B, against the recommendation (one contact list with supplier and customer roles). Suppliers (`suppliers`, M2 Step 3) and customers (`customers`, Phase 3) are separate tables, pages and pickers. Within its list, each supplier or customer is entered once and reused everywhere (D-002): a supplier by purchases, returns and credit notes, expenses and materials; a customer by orders, quotations, invoices, projects and payments. A payment (Phase 3) points to a customer or a supplier.
+- **Consequences (accepted):** a company that is both (a wholesaler you buy from and sell to) is entered twice, once in each list, with no link between the two records. Its details (phone, TRN, address) can drift apart, and nothing adds up what you bought from it and sold to it. A later "copy from supplier" helper may fill a new customer from a supplier record (a copy, not a link) to save the typing; it is not planned now. Moving to one list later means merging records.
+- **Why:** The owner's answer (O1 = B).
+- **Rejected:** one `parties` list with roles (the recommendation). Details: DATA_MODEL.md §6
+
+### D-113 · 2026-09-28 · One name field for master records, in any language (against the recommendation)
+
+- **Decision:** Owner decision O2 = B, against the recommendation (a name plus an optional Arabic name). Materials, products & services, suppliers, customers, running costs and the expense and running-cost categories have one `name` (`text NOT NULL`) in whatever language the user types. There is no `name_ar` or `name_en` column. Both app languages show the name as typed, in its own direction (`dir="auto"`, as for person names, D-095). Records that BizCost creates (the starter categories, D-116) are created in the business's language (`default_locale`) and are then plain data, like the default location (PRODUCT.md §6.4). Businesses keep `legal_name` + `legal_name_ar` (D-097): a legal name, from the trade licence, for tax invoices.
+- **Consequences:** a member who reads the other language sees names as they were typed. Document lines copy the name into their own description (D-002), so an Arabic description on a document line needs no master column.
+- **Open (before Invoices, Phase 3):** whether UAE tax invoices need Arabic item descriptions. If they do, choose then between an Arabic description on the invoice line and an optional Arabic name on products & services (a migration). ROADMAP.md §Open.
+- **Why:** The owner's answer (O2 = B).
+- **Rejected:** a name plus an optional Arabic name (A, the recommendation); two required names (C).
+
+### D-114 · 2026-09-28 · Costing policy: the rules the owner sees (P-001 confirmed)
+
+- **Decision:** Owner decision O3 = A: the six rules of proposal P-001 are accepted as proposed. With D-110 (the technical part) they settle D-006's "Open".
+  1. **Posting updates the average**; a draft never does. One weighted average per material for the whole business (D-006): (value on hand + what the purchase cost) ÷ (quantity on hand + quantity bought). 50 L at AED 6, then 100 L at AED 7, gives 6.666666666667 per L, shown as 6.67.
+  2. **Posting order, not the document date.** A backdated purchase changes the average from the moment it is posted. Costs already recorded are never recomputed.
+  3. **A posted purchase is never edited** (D-036). It is reversed and a new one is posted. The reversal puts the average back to what it would be without the wrong purchase (D-109). Costs recorded in between stay, and the difference is recorded once, as a correction on the reversal. The reversal takes the original's date, or the first open date when that date is closed.
+  4. **VAT** (PRODUCT.md §4 rule 12, refined): "VAT you can reclaim never counts as cost or revenue; VAT you cannot reclaim is part of what you paid." VAT stays out of the cost when the business is VAT-registered and the document is a tax invoice. Otherwise it is part of the cost: the business is not registered, the document is a non-tax invoice, there is no invoice, or the document is marked "VAT can't be reclaimed". The line stores the choice made at posting. Line discounts, and a share of the document discounts (split by line net amount, the rounding remainder on the largest line), come off before VAT. Delivery charged on the same purchase invoice is split over its material lines by net amount; a separate delivery bill is an expense.
+  5. **Quantities per branch, one cost for the whole business.** Each branch has its own quantities (shown from Phase 4). Moving stock between branches never changes the average.
+  6. **The "books closed up to" date:** optional and off by default, set by the Owner or an Admin (a new permission). Nothing dated on or before it can be posted or reversed. Moving it back is allowed and audited.
+- **Owner's changes to P-001:** none to the six rules. P-001's part for businesses that don't count their stock is D-115. Its "later" note on supplier returns and credit notes is replaced by D-120 (now in M2).
+- **Open (Phase 3 planning):** may stock go below zero? P-001 proposes yes: usage is costed at the current average and the next purchase revalues it. The engine supports both answers (D-109). ROADMAP.md §Open.
+- **Why:** Exact (no floats, no drift); history never shifts; no deadlocks (D-110); imported sales never fail; it matches the owner's examples and D-006.
+- **Rejected:** recomputing history for backdated or corrected documents; a WAC per location (D-006); FIFO; editing posted documents.
+
+### D-115 · 2026-09-28 · Until its first stock count, a business uses the average of its last 90 days of purchases
+
+- **Decision:** Owner decision O5 = B (P-001's recommendation). Until a business's first stock count (Phase 4, only with `keeps_stock`), the average used for each material (on the material page, in product costs and, from Phase 3, for usage) is the average of its purchases in the last 90 days: Σ value ÷ Σ base quantity of the material's posted purchase lines whose `business_date` is within the 90 days ending on the day it is read (the business's timezone). Reversed purchases drop out; returns and credit notes reduce their purchase line (D-120). With no purchase in the window, it is the unit cost of the last posted purchase; a material never bought shows "no price yet", never 0. After the first count, the stock-based average (D-109, D-114) applies. It is still one average per material for the whole business, and every purchase updates it (D-006).
+  - Computed on read in SQL from the ledger's purchase rows, unrounded (D-033). Every posting keeps the stock-based cost row from day one (D-110), so neither Phase 3 nor the first count needs a reset or a rebuild. The first posted count sets `businesses.first_stock_count_at` (Phase 4), which switches the business to the stock-based average.
+  - The material page (Step 3) says which average it shows and shows the last purchase price beside it; so does the product cost breakdown (Step 6).
+- **Open:** Phase 3 planning: how usage before the first count is posted to the ledger (it is costed at the 90-day average, and the stock value must stay exact). Phase 4 planning: whether the first count must cover every material. ROADMAP.md §Open.
+- **Why:** A business that never counts its stock never corrects its quantity on hand, so a stock-based average becomes a lifetime average that falls behind prices: flour at AED 5 for a year, then AED 7, averages 5.15, 26% below the real price.
+- **Rejected:** the stock-based average for everyone (A: Phase 3 would need an opening count or a reset); the last purchase price until the first count (C: one unusual purchase swings the cost).
+
+### D-116 · 2026-09-28 · Running costs reach products as a share of their material cost, and each counts once
+
+- **Decision:** Owner decision O4 = the recommendation.
+  - **M2 method, a share of the material cost:** the running-cost rate = monthly running costs ÷ monthly material purchases. Monthly running costs = the sum of the active running costs, each turned into a monthly amount from its frequency. Monthly material purchases = the average of the last 3 full calendar months of posted purchases by `business_date` (the value that went into stock: after discounts, without reclaimable VAT, net of returns and credit notes, reversed purchases left out). Until 3 full calendar months have passed after the month of the business's first posted purchase, the owner's estimate of monthly purchases (a business setting) is used instead; the setting and the cost breakdown say which one is in use. A product's share = its material cost × the rate, shown as its own line next to the materials and explained in words (AED 15,000 of running costs ÷ AED 30,000 of purchases a month = 50%, so AED 4 of materials carries AED 2). With neither an estimate nor purchases, the line says "not set yet", never 0, and the product's total says it is incomplete. Computed on read, unrounded (D-033). The owner's time (D-119) is not part of the base.
+  - **Phase 5, by working time:** running costs ÷ working hours, charged per minute of each product or job, for time-heavy work (workshops, services, 3D printing), together with labour and machine time. The business then picks its method in Settings; until then there is one method and no picker.
+  - **Counted once** (the default the owner accepted with it): Expenses and Running Costs share one category list; the starter categories are the owner's list (rent, electricity, water, salaries, internet, phone, licences, insurance, software, vehicles, marketing, equipment, maintenance, other). Product costs use the regular amounts, not the bills, and the Expenses page says so in one line. From Phase 3, real profit counts each running cost once, at its regular monthly amount: a bill in a running-cost category is its payment, not a second cost, and BizCost shows when a category's bills run above or below its regular amount. Other expenses count as themselves; an expense tied to an order, job or project is a direct cost of it.
+- **Consequences:** work with few materials (services, handmade work, machine time) carries little until Phase 5, and a business without materials (e.g. a freelance designer) carries no running-cost share in M2. Months of bulk buying move the rate, hence the 3-month average.
+- **Why:** No guess once purchases exist; it works for custom orders and quotes (they have materials); it doesn't move with the selling price, so it helps set prices; bigger products carry more.
+- **Rejected:** the same amount on every item sold (A: a AED 3 water carries as much as a AED 40 cake); a share of the selling price (B: an item without a fixed price gets nothing until it is sold, and raising a price raises its "cost"); working time now (C: product times arrive with Phase 5).
+
+### D-117 · 2026-09-28 · Goods bought ready to sell are entered once; the retail wording "Goods"
+
+- **Decision:** Owner decision (question 0a, the recommendation; closes the point parked in PRODUCT.md §6.12). "Bought ready to sell" creates one item for buying and selling. Its form asks the name and the unit once and creates, in one transaction, a product (`products_services`) and its material, linked one to one (`products_services.resale_material_id`). The API keeps the pair in step: the name, the unit and archiving are edited once, for both. Purchases buy the material, with its packs (1 carton = 24 cans). The product's unit is a unit of the material's dimension, and its cost is the material's average for one unit sold (D-115), with no recipe lines or recipe screen, plus its running-cost share (D-116). Sales (Phase 3) sell the product. A new terminology profile `retail`, for the business type `retail` (PRODUCT.md §6.4), calls Materials "Goods / البضاعة"; existing retail businesses (local and demo data only) move to it by migration. Built in M2 Step 4.
+- **Why:** Enter everything once (D-002). A shop has many such items; entering each as a material and as a product would double the typing and let the two drift apart.
+- **Rejected:** a separate material and product for each item.
+
+### D-118 · 2026-09-28 · Food businesses call their materials "Ingredients & supplies"
+
+- **Decision:** Owner decision (question 0b, the recommendation; closes PRODUCT.md §6.12 #6). In the food profile, Materials is "Ingredients & supplies / المكونات والمستلزمات" (was "Ingredients / المكونات"): in the module's name overlay, its screens (M2 Step 2) and Smart Setup's review. "Recipe / وصفة" stays.
+- **Why:** Cups, lids, straws and boxes are materials too (the Spanish Latte), and they are not ingredients.
+- **Rejected:** "Ingredients / المكونات".
+
+### D-119 · 2026-09-28 · A business that works alone counts the owner's time in product cost
+
+- **Decision:** Owner decision (question 0c, the recommendation). For a business without a team (`has_team` off), each product's cost has its own line, "Your time": the owner's minutes for one unit × the owner's hourly rate ÷ 60, an exact product divided once, unrounded until display (D-107). Data: `businesses.owner_hourly_rate` (`numeric(20,4)`, NULL, set in Settings) and `products_services.owner_minutes` (`numeric(24,6)`, NULL, on the product form), added with their tables or in Step 6. A product without minutes has no time line; minutes without a rate ask for the hourly rate, never 0. The fields and the line are sensitive (`cost`). Turning `has_team` on hides them and keeps the data; a team's labour comes from Employees and Attendance in Phase 5. Smart Setup's `cost_engine` reason for a solo business ("including your own time", PRODUCT.md §6.6) now holds from M2 and needs no rewording. Built in M2 Step 6.
+- **Why:** Solo businesses are a core segment, the home bakery reference case counts the owner's time (PRODUCT.md §12 case 2), and the line is small.
+- **Rejected:** waiting for Phase 5 and rewording the Smart Setup reason until then.
+
+### D-120 · 2026-09-28 · Supplier returns and credit notes are in M2 (against the recommendation)
+
+- **Decision:** Owner decision (question 0d), against the recommendation (defer them; correct a purchase by reversing it). M2 Step 3 adds two documents, each linked to a posted purchase: a **return** (goods sent back to the supplier) and a **credit note** (a price reduction without goods). Their rules are proposed with this entry, following D-114 (posting order, no rewriting of past costs), and are the default unless the owner objects before Step 3 ships:
+  1. **Like purchases:** draft → post → reverse; never edited once posted; a reversal is "as if never posted" (a replay of the material's ledger, D-109). Each posts on its own `business_date`, which must be open (D-114 rule 6; the purchase's own date may be closed), and changes the average from the moment it is posted. A purchase with posted returns or credit notes can be reversed only after they are.
+  2. **Return:** a quantity per purchase line, at most what the line brought in minus earlier returns. It takes the goods out at the price paid for them: the line's value × returned ÷ bought (its discounts and any VAT in its cost included, D-114 rule 4). The average moves back: (value − returned value) ÷ (quantity − returned quantity). When that leaves zero or less on hand (goods already used, from Phase 3), the average stays and the rest is a correction. A full return right after its purchase restores the previous state exactly.
+  3. **Credit note:** an amount per purchase line, or a document amount split over the lines by net amount (the remainder on the largest line), with the purchase's VAT treatment; it can't exceed the line's value net of earlier returns and credit notes. It lowers the value of the credited goods still on hand. The part for goods already used is recorded once, as a correction on the credit note, and costs already recorded never change. Every unit on hand carries the same average, so usage takes each purchase's goods in proportion: the share still on hand, s, is the product of (1 − used ÷ on hand before), each factor at least 0, over the usage posted after the purchase (from the replay). The stock value falls by credit × s (never below zero), the average becomes value ÷ quantity, and credit × (1 − s) is the correction. In M2 nothing uses stock, so s = 1 and the whole credit lowers the average.
+  4. The 90-day average (D-115) and the monthly purchases (D-116) count returns and credit notes against their purchase line.
+  5. **Ledger:** `stock_movements` kinds `purchase_return` (quantity and value out) and `purchase_credit` (value only), each naming its purchase line's receipt. The WAC engine gets a return and a credit function, and `replayWac` handles both; conservation (value = Σ in − Σ out − Σ corrections) covers them.
+  6. Money back from the supplier (refunds, what is owed to suppliers) stays out of M2 with supplier payments. The VAT of credit notes feeds the VAT Center later (Phase 5).
+- **Consequences:** Step 3 grows by two documents with their screens and tests (about a week). A wrong purchase is still corrected by reversal (D-036); a real return or price cut keeps the purchase and its history.
+- **Why:** The owner's answer (add them now).
+- **Rejected:** deferring them (the recommendation); rewriting the purchase's cost (history would shift); tracking which units were returned or used (one pooled average, D-006); taking the whole credit off the goods on hand (they would carry a price cut that belonged to goods already used).
+
+## Costing Core, Step 2: materials and products (data and API)
+
+### D-121 · 2026-09-28 · A product's VAT setting: a VAT category, and whether its price includes VAT
+
+- **Decision:** The "VAT setting" of products & services (ROADMAP.md M2 Step 2) is two columns. `vat_category`: `standard` (the country's standard rate, 5 % in the UAE), `zero_rated` (0 %, input VAT stays reclaimable) or `exempt` (no VAT, input VAT not reclaimable); default `standard`. `price_includes_vat`: whether `default_price` includes VAT; default false. The rate is not stored on the product: a document copies the rate of the category when it is posted. Both matter only while the business is VAT-registered: the form hides them otherwise (capability `vat_registered`), and the API stores them either way (the schema never depends on a capability). The margin of Step 6 takes VAT out of a price that includes it (VAT is never revenue, D-114).
+- **Why:** UAE shops and cafés show prices with VAT, so their owners know the price with VAT, not without. Zero-rated and exempt sales both charge no VAT but differ in the VAT return and in reclaiming input VAT (VAT Center, Phase 5).
+- **Rejected:** a VAT rate per product (a copy of the country's rate on every record, wrong the day it changes); prices always before VAT (a café would work out 14.29 by hand).
+
+### D-122 · 2026-09-28 · Materials: a counting unit that fixes the dimension; packs and cross factors saved whole
+
+Refined by D-130: one of every pack and cross unit must be a quantity the stock columns can hold.
+
+- **Decision:** `materials` has `name`, `dimension` and `unit`: the standard unit the business counts the material in (kg, l, piece…), which fixes the dimension (a CHECK keeps them together); quantities and costs are kept per base unit of the dimension (D-108). The API takes the unit and derives the dimension. `material_units` holds the packs (`kind = 'pack'`: a name, qty, and either a standard unit or another pack of the same material) and the cross factors (`kind = 'cross'`: a standard unit of another dimension, qty, a unit of the material's own), qty `numeric(28,12)` > 0. A composite FK (business, material, pack) keeps a pack chain inside its material.
+  - A material is created and updated whole, with all its units: `validateMaterialUnits` checks the complete set before anything is written, with unique ids and pack names (case ignored). Units are matched by their client ids: new ones are inserted in one statement (they may name each other), changed ones updated, missing ones soft-deleted, so nothing that names them later breaks. A unit keeps its kind. The row lock of the versioned update makes saves of one material wait for each other, so the set check needs no unique index (a save that swaps two pack names would trip one halfway).
+  - The dimension may change while nothing uses the material; Step 3 adds the rule for a material with purchases.
+- **Why:** D-108; one save is one version of the material, and a half-saved chain can never exist.
+- **Rejected:** a procedure per pack (half-saved chains); two tables for packs and cross factors (one chain, one check); unique indexes on pack names.
+
+### D-123 · 2026-09-28 · Catalog records are archived, never deleted; one name per business; lists by name with a cursor
+
+Refined by D-129 (where a product is sold, when a branch is removed and who changes it) and D-131 (invisible characters in names).
+
+- **Decision:** For materials and products & services (M2 Step 2; later master records follow the same shape):
+  - **Archive, never delete.** `archived_at` hides a record from pickers; it stays in the list under a filter and comes back with unarchive. There is no delete procedure. Units and product locations taken out of a list are soft-deleted.
+  - **One name per business,** ignoring case, among records that are not deleted, archived ones included (unique indexes `materials_name_key`, `products_services_name_key`; a product and a service share one list). A clash is the new app error NAME_TAKEN ("You already have one with this name…").
+  - **Lists:** `status` active (default), archived or all; `search` in the name (ILIKE, `%` and `_` taken literally); `limit` 1–100 (default 50); ordered by the database's `lower(name)`, then id, with an opaque cursor (base64url of both); a cursor the server did not make is VALIDATION. Decimals leave the API without trailing zeros (`trim_scale`).
+  - **Writes:** creates are idempotent on the client's id (`createIdempotent` in `packages/db` also says whether this call inserted, so child rows are written once); updates take the whole record and its `version`.
+  - **Where a product is sold** (`product_locations`, only with `multi_location`): no row means every location, as a member's scope (D-054). Without the capability, a non-empty list is CAPABILITY_DISABLED and a save without the list keeps what is stored (a hidden field is kept, never cleared). Every location must be a live one of the business (NOT_FOUND).
+- **Why:** "A used record is never deleted" (ROADMAP.md Step 2). Two materials with one name would split one weighted average in two. Cursor pagination is the documented default (ARCHITECTURE.md §Data fetching).
+- **Rejected:** deleting unused records; names unique among active records only (unarchiving could then clash); offset pagination.
+
+### D-124 · 2026-09-28 · Products & Services and Materials get their permission keys at build time, with template defaults and a backfill
+
+- **Decision:** The two modules stay `planned` until Step 7 releases the M2 modules, but their manifests get their keys and nav now: `products.items.view` / `products.items.manage` and `materials.items.view` / `materials.items.manage` (managing needs viewing, `PERMISSION_NEEDS`), and nav entries `products` and `materials` (labels in `common.nav`, with the food, factory and projects wording). Template defaults (PRODUCT.md §8): Admin every key; Manager views and manages both; Accountant and Supervisor view both; Sales and Employee view Products & Services. Smart Setup copies them into new businesses; the migration `catalog_security` added them once to every existing template role and gave the members of those roles a new `permissions_version`. A planned module still shows nowhere: the nav, tabs, "+" and the API gates count only released modules, and the Roles editor shows a module's group only while the module is in `business.context.modules`, so the keys stay on a role as they are when it is saved (D-084).
+- **Why:** The procedures exist from Step 2, so their gates must exist too; Step 7 then only changes the availability. The backfill keeps existing businesses equal to new ones.
+- **Rejected:** adding the keys at release (the procedures would need other gates until then); showing a planned module's keys in the Roles editor (a placeholder, D-003).
+
+### D-125 · 2026-09-28 · A dev-only preview of modules being built
+
+- **Decision:** `BIZCOST_PREVIEW_MODULES` (e.g. `materials,products`) lets the lead and the owner try planned modules whose build has started (those with nav entries) on a local server. `apps/web` reads it only when NODE_ENV is `development` or `test` (a name it cannot preview is an environment error there) and passes it to the API as `previewModules`. The API checks again (`moduleRegistry`): it honours the list only when NODE_ENV is `development` or `test`, so `next build`/`next start` (e2e, CI, Vercel) and an unset NODE_ENV never preview, whatever their environment holds. A previewed module counts as released for the nav of `business.context`, `requireModule` and Customize BizCost; the business must still have it on and the member its permission. The API hardening suites run with the preview, so the new procedures are attacked like the others, and a test checks that the released registry refuses them (MODULE_DISABLED).
+- **Why:** Trying a module before its release without releasing it (D-003: no placeholder in any real deployment).
+- **Rejected:** releasing modules early; a switch stored in the database (it would reach real businesses); a switch in the client (the API gates would still refuse).
+
+## Costing Core, Step 2: the web screens
+
+### D-126 · 2026-09-28 · Catalog screens: a list with search in the address, a sheet or side panel to edit, packs said in words
+
+Refined by D-132 after the review: short phone tabs, Arabic counts from 3 to 10, English plurals for one word only, a loop said once, the phone sheet and the first-time page; and by D-129 (the branches a product is sold at).
+
+- **Decision:** Materials and Products & Services (`apps/web/src/features/catalog`) share one list frame: the page's title in the business's wording and its "Add" button (only with `<module>.items.manage`), a search in the names (it searches a moment after typing) and a status choice (In use, Archived, All), both kept in the address (`?q=`, `?status=`), rows by name with "Show more" for the next page (the API's cursor), and three empty states: a first-time list says in plain words what to add first, a search without matches, nothing archived. A row opens its form for members who may change it, and its menu has Edit and Archive, or Bring back (archiving asks first and says nothing is deleted); members who may only look see the same rows without actions.
+  - The forms open in a **sheet** from the bottom on phones and a **side panel** on the end side from 768 px (`components/ui/sheet.tsx`, a Radix dialog): the header and the buttons stay while the body scrolls. Missing fields are said once the person tries to save, on the field, and the focus goes to the first one; everything else is checked as it is typed. A name the API refuses (`name_taken`) shows on the name field.
+  - **The unit editor** (a material): the unit it is used in (every standard unit, grouped by kind of measure, `units` namespace), then each pack as a line "1 [name] = [qty] [unit or another pack]", and optional conversions "1 [unit of another kind] = [qty] [own unit]". The domain's `validateMaterialUnits` checks the whole set on every change, and each problem is said once, on the pack whose own choice causes it (a loop on the packs in it, another kind of measure on the pack that picked it). A valid pack says its chain in words under it and in the list, from the domain's exact conversions (`packChain`): "1 carton = 12 bottles = 12 L", then the material's own unit when the chain ends in another one ("1 bag = 1 kg = 1,000 g"). Quantities show Latin digits in both languages (D-067) with at most 6 decimals; a standard unit after a number has its plural where the language needs it ("3 pieces", «3 قطع»); an English pack name gets a simple English plural after a number other than 1 ("12 bottles", "3 boxes"), and any other name stays as typed (an Arabic count word reads correctly in the singular from 11 on). Removing a pack that another holds makes that one hold what the removed one held, so the chain stays whole.
+  - **Numbers** are typed in a text field (`inputMode="decimal"`, left to right) and read by the domain's `parseNumber`: Arabic-Indic digits, ٫ and grouping in threes, checked against the column (a pack or conversion more than zero and `numeric(28,12)`, a price zero or more and `numeric(20,4)`). The price field shows the business currency beside it, and the list shows the price with `formatCurrency`, "per" the unit.
+  - **Capabilities hide fields:** VAT (category and "price includes VAT") only for a VAT-registered business; where it is sold only with `multi_location`, as "every branch" or ticked branches (the list comes from `location.list`, so a member without `settings.locations.manage` sees how many branches, read only, and the save keeps what is stored). A hidden field is sent as stored, never cleared (D-123).
+  - A module's pages (`app/(app)/b/[businessId]/{materials,products}`) exist only while the server counts the module as released (`isModuleServed`, the API's `moduleRegistry`): until Step 7 that is only the dev-only preview (D-125), and anywhere else the address is "Page not found", its title too.
+- **Why:** ROADMAP.md M2 Step 2 and the lead's brief (sheet on phones, dialog or side panel on desktop; the chain in words; Arabic digits; money in the business currency; fields hidden by capability). The engine that checks the form is the one the API runs, so the form and the API never disagree.
+- **Rejected:** a separate page per record (the lists are short, and a panel keeps the list in view); an input of type `number` (it refuses Arabic digits and grouping in some browsers); one centered dialog for every size (a long form on a phone needs the full width); a pack picker listing every unit (only the material's own kind of measure and the kinds it has a conversion for can end a chain); plurals of Arabic pack names (the app cannot know a typed word's plural).
+
+### D-127 · 2026-09-28 · The e2e tests of modules not yet released run on a development server with the preview
+
+- **Decision:** `pnpm e2e` starts two servers: the production build as before (`.next/e2e` on `E2E_PORT`) for every released screen, and `next dev` with `BIZCOST_PREVIEW_MODULES=materials,products` (`.next/e2e-preview` on `E2E_PREVIEW_PORT`, default `E2E_PORT` + 1) for the specs of the modules being built (Playwright project `preview`, today `catalog.spec.ts`), with a longer timeout because a development server compiles each page the first time it opens. The specs hide the development server's own badge. When Step 7 releases the M2 modules, their specs join the production project and the second server goes.
+- **Why:** The lead asked for e2e tests of the Step 2 screens with the preview on, and D-125 keeps every production build (`next build`/`next start`, which inline `NODE_ENV=production`) from previewing, whatever its environment holds. A development server is where the preview is meant to run.
+- **Rejected:** letting a production build preview behind another switch (a Vercel variable set by mistake would show unreleased modules); a development build for every spec (slower, and the released screens must be tested as they ship); no e2e tests for these screens until Step 7.
+
+### D-128 · 2026-09-28 · The business's wording in the nav, and its currency in business.context
+
+- **Decision:** The shell names each section in the business's wording (`useNavWording`: the nav label's terminology overlay, e.g. `nav.materials_food` "Ingredients & supplies", `nav.materials_factory` "Raw materials", `nav.products_projects` "Services & work items") in the sidebar, the rail, the tab bar, "More" and the "Go to …" of page states; a module's page uses the same overlay for its heading and, on the server, for its title (`wordingKey`). The food name of Materials is "Ingredients & supplies / المكونات والمستلزمات" everywhere, Smart Setup's review and Customize BizCost included (D-118). `business.context` gains `currency` (ISO 4217, `businesses.currency`), so every member who may see a price shows it in the business currency without the business profile, which needs `settings.business.view`.
+- **Why:** D-118 and PRODUCT.md §13: one name for a section wherever it appears. Prices are shown to Sales and Employee members, who cannot read the business profile.
+- **Rejected:** overlays chosen in each component (one hook for the shell); a hard-coded AED (ARCHITECTURE.md §Numbers: amounts are shown in the business's currency); a separate procedure for the currency (one more request on every page that shows money).
+
+## Costing Core, Step 2: fixes after the security, spec and UX review
+
+### D-129 · 2026-09-28 · Where a product is sold follows the branches, and only people who manage branches change it
+
+- **Decision:** Removing a branch (`location.remove`) takes it out of the list of every product sold there, in the same transaction (its `product_locations` rows are soft-deleted). A product or service whose only branch it is, archived ones included, would then be sold everywhere, so that removal is refused with the new error ONLY_LOCATION_OF_PRODUCTS ("Some products or services are sold only at this branch…"): the owner picks other branches for them first. `product.get` and `product.list` name only live branches (a link to a branch removed before this rule is left out too). Where a product is sold changes only for members with `settings.locations.manage`, as the form says: for anyone else the API takes the list as stored and changes nothing, refuses any other list with FORBIDDEN, and a new product is sold at every branch (an empty list). The check runs after the version check, so a form opened before another change gets CONFLICT.
+- **Why:** The review of Step 2: a removed branch kept its links, so every later save of such a product failed with NOT_FOUND (the form sends the stored list back) and the read-only note counted the removed branch; and while the form showed the list read only, the API took a new one from any member with `products.items.manage` (CLAUDE.md: permissions are enforced on the server).
+- **Rejected:** turning a product sold only at the removed branch into "every branch" (it would be sold where the owner never chose); archiving it without asking; keeping links to removed branches (they would still count); ignoring a changed list from a member without the permission (a refusal says what happened).
+
+### D-130 · 2026-09-28 · One of any unit a material is bought in is a quantity the stock columns can hold
+
+- **Decision:** `validateMaterialUnits` also checks, once the chains are valid, what one of each pack and of each cross factor's unit is in base units: 10^18 or more is `too_large` (the Quantity column, `numeric(24,6)`, holds less), and less than 0.0000005 (0 once rounded to 6 decimals) is `too_small`. For a cross factor, `too_large` is checked on every unit of its kind (1 kg is 1000 × 1 g) and `too_small` only on the unit given (1 m² = 0.1 piece leaves 1 mm² at 0, which is fine). The API refuses them as VALIDATION, and the form says them on the number that causes them: a pack's own quantity (not the packs that hold it), or a conversion's. A purchase of many packs is checked against the column when it is recorded (Step 3).
+- **Why:** Each factor fitting `numeric(28,12)` did not bound a chain: 1 silo = 9,999,999,999,999,999 kg, or 10^9 tanks of 10^9 L, were accepted, and a purchase of one would fail in Postgres (22003) while its cost per base unit rounded to 0.
+- **Rejected:** a limit on each factor alone or on the number of packs (a chain multiplies them).
+
+### D-131 · 2026-09-28 · Catalog names drop invisible characters and need something to see
+
+- **Decision:** Names of materials, products and services, and packs are stored as `cleanName` (`packages/contracts/src/text.ts`) leaves them: the zero-width space, word joiner, byte-order mark, soft hyphen and Mongolian vowel separator are removed everywhere; spaces, joiners and bidi marks (U+061C, U+200C–U+200F, U+202A–U+202E, U+2066–U+2069) are trimmed from both ends and kept inside a name (Arabic and Persian text and emoji may need them). Control characters are still refused (VALIDATION). A name must have a character that is neither a space nor a format mark. So "Sugar" and "Sugar" with a zero-width space are one name (NAME_TAKEN), and so are two such pack names; the forms use the same function. The unique indexes stay on `lower(name)`, since stored names no longer carry those characters.
+- **Why:** The review of Step 2: a name of one zero-width space was accepted, and "Sugar" + U+200B was a second material that looks the same, which D-123's one name per business is there to prevent (two materials would split one average).
+- **Rejected:** unique indexes that ignore format characters (a migration for what the API already prevents, and marks inside a name can matter); refusing such names (pasted text often carries them).
+
+### D-132 · 2026-09-28 · Catalog screens after the review: phone tabs, Arabic counts, lines and boxes
+
+- **Decision:** Refines D-126:
+  - **Tab bar:** a section with a long name shows a short one on its phone tab (`common.navShort`, in the business's wording: «المكونات», «المنتجات», "Ingredients", "Products"). The tab's accessible name stays the full one, and the sidebar, the rail and "More" keep the full names.
+  - **Packs in words:** an English pack name gets a plural only when it is one word, does not already end in s and is not in capitals ("12 bottles"; "12 tray of eggs", "6 glass" and "3 BOX" stay as typed). A name without Latin letters after 3 to 10 is said as a count, «6 × كيس», since «6 كيس» is not Arabic; after 1 or 2, and from 11, the singular reads correctly. A number and what it counts never break across lines (no-break spaces, also before the " ·" of the product list). Arabic units in these lines are whole words, «غرام», «كيلو», «متر» («6,000 غرام», «لكل كيلو»); the pickers keep «غرام (غ)», «كيلوغرام (كغ)», «متر (م)».
+  - **Boxes:** the search and name boxes keep the page's direction (icon, placeholder, clear button) while typed text reads in its own (`unicode-bidi: plaintext` instead of `dir="auto"`). A unit chosen before that is no longer offered (the material's unit changed to another kind) shows as itself, «لتر: نوع قياس آخر», disabled, until another is picked. A pack's unit box ends with "Another kind of measure…", which adds a conversion and brings it into view. Quantity boxes show an example ("e.g. 12"), unit boxes say "Pick a unit" without a full stop, and a number is shown with Latin digits once it is typed (D-067).
+  - **A loop of packs** is said once, on the pack whose "holds" was changed last (else the loop's last in the list), naming it: «زجاجة ← طبلية ← كرتونة ← زجاجة: …».
+  - **Sheets:** the header keeps its end padding at every width, so a long title wraps before the ×; on phones the description is left to screen readers and Cancel and Add sit side by side.
+  - **Lists:** a business with no records at all (none in use, none archived) sees only the first-time card with its one "Add": no search, no status choice, no second button (whether archived ones exist is asked with one row of the list). "No matches" under All suggests a shorter word. The price box writes the currency as the list does («د.إ.», "AED"; `currencySymbol` of `@bizcost/i18n`), and the VAT tag shows only with a price, as "excl. VAT" / «غير شامل الضريبة».
+- **Why:** The UX review of the Step 2 screens (screenshots at 375, 768 and 1440 px in both languages).
+- **Rejected:** a second, plural name for packs (the owner can ask for it later); two-line tab labels (the bar would grow); leaving a stored unit out of its box (the browser then shows another unit than the one stored).
+
+## Proposals
+
+Proposals are kept for history once the owner confirms them, with the entries they became. None is awaiting the owner.
+
+### P-001 · 2026-09-27 · Costing policy: the rules the owner sees (CONFIRMED 2026-09-28: became D-114 and D-115)
+
+- **Status:** CONFIRMED by the owner on 2026-09-28: rules 1–6 (O3 = A) became D-114, and the part for businesses that don't count their stock (O5 = B) became D-115. The note on supplier returns and credit notes is replaced by D-120 (in M2). Negative stock is still asked with Phase 3. The text below is the proposal as it was put to the owner. Before the answer: together with D-110 (the technical part), it answered D-006's "Open" (ROADMAP.md §Open, O3 and O5). The owner could answer rule by rule, e.g. "A, except rule 4". Until he answered, only the pure code of M2 Step 1 followed it (D-109), and no table stored data by it.
 - **Proposal (O3):**
   1. **The average updates when a purchase is posted** (confirmed), not when it is saved as a draft. There is one weighted average per material for the whole business (D-006): (value on hand + what the purchase cost) ÷ (quantity on hand + quantity bought). The owner's example: 50 L at AED 6, then 100 L at AED 7, gives (300 + 700) ÷ 150 = 6.666666666667 per L, shown as 6.67.
   2. **Backdated purchases:** the order is the posting order, not the document date. A purchase dated in the past changes the average from the moment it is posted, and costs already recorded are never recomputed. The alternative is to recompute everything after that date: past costs and reports change, and it is slower.

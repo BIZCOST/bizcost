@@ -12,6 +12,7 @@ import { describe, expect, it } from 'vitest'
 import {
   ACCOUNT_MESSAGES,
   AUTH_MESSAGES,
+  CATALOG_MESSAGES,
   DASHBOARD_MESSAGES,
   ROOT_MESSAGES,
   SETTINGS_MESSAGES,
@@ -102,6 +103,10 @@ describe("each route's messages have the keys its code translates", () => {
     expect(missing(['features/dashboard'], DASHBOARD_MESSAGES)).toEqual({})
   })
 
+  it('Materials and Products & Services', () => {
+    expect(missing(['features/catalog', 'components/ui'], CATALOG_MESSAGES)).toEqual({})
+  })
+
   it('settings: the home and every section', () => {
     const settings = 'features/settings'
     const sections = {
@@ -140,6 +145,7 @@ describe("each route's messages have the keys its code translates", () => {
       ACCOUNT_MESSAGES,
       SETUP_MESSAGES,
       DASHBOARD_MESSAGES,
+      CATALOG_MESSAGES,
       SETTINGS_MESSAGES,
       ...Object.values(SETTINGS_SECTION_MESSAGES),
     ].flat()

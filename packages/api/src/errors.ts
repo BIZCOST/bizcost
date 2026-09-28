@@ -24,6 +24,8 @@ const TRPC_CODE_OF: Record<AppErrorCode, TRPC_ERROR_CODE_KEY> = {
   locations_in_use: 'CONFLICT',
   owner_transfer_required: 'CONFLICT',
   default_location: 'CONFLICT',
+  only_location_of_products: 'CONFLICT',
+  name_taken: 'CONFLICT',
   file_invalid: 'BAD_REQUEST',
   internal: 'INTERNAL_SERVER_ERROR',
 }

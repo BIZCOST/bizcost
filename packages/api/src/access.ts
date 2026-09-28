@@ -32,6 +32,8 @@ export interface BusinessAccess {
   readonly capabilities: Capabilities
   /** businesses.terminology_profile ('general' for an unknown value). */
   readonly terminologyProfile: TerminologyProfile
+  /** businesses.currency (ISO 4217): amounts of the business are shown in it. */
+  readonly currency: string
   readonly permissionsVersion: number
 }
 
@@ -41,6 +43,7 @@ interface AccessRow extends Record<string, unknown> {
   template_key: string | null
   vat_registered: boolean
   terminology_profile: string
+  currency: string
   role_keys: string[]
   overrides: { key: string; effect: PermissionEffect }[]
   location_ids: string[]
@@ -50,7 +53,8 @@ interface AccessRow extends Record<string, unknown> {
 
 /**
  * Loads the caller's membership, role, role permissions, overrides, locations, enabled modules, stored
- * capabilities and businesses.vat_registered in ONE statement, inside the request's withTenantTx.
+ * capabilities, businesses.vat_registered and the business's currency in ONE statement, inside the
+ * request's withTenantTx.
  * Returns null unless the caller is an active account member of a live business; RLS hides other
  * businesses entirely, and the caller's own non-active memberships are filtered out here.
  *
@@ -69,6 +73,7 @@ export async function loadBusinessAccess(
       r.template_key,
       b.vat_registered,
       b.terminology_profile,
+      b.currency,
       coalesce((
         select array_agg(rp.permission_key)
         from app.role_permissions rp
@@ -128,6 +133,7 @@ export async function loadBusinessAccess(
     terminologyProfile: isTerminologyProfile(row.terminology_profile)
       ? row.terminology_profile
       : 'general',
+    currency: row.currency,
     permissionsVersion: row.permissions_version,
   }
 }

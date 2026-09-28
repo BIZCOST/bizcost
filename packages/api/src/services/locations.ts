@@ -6,7 +6,14 @@ import type {
   OkDto,
   RenameLocationInput,
 } from '@bizcost/contracts'
-import { businessCapabilities, businesses, insertIdempotent, locations, type Tx } from '@bizcost/db'
+import {
+  businessCapabilities,
+  businesses,
+  insertIdempotent,
+  locations,
+  productLocations,
+  type Tx,
+} from '@bizcost/db'
 import { and, asc, desc, eq, isNull, sql } from 'drizzle-orm'
 import type { BusinessCtx } from '../business-context'
 import { AppError } from '../errors'
@@ -140,12 +147,59 @@ export async function setDefaultLocation(
   })
 }
 
-/** `location.remove`: soft delete; the default location cannot be removed (DEFAULT_LOCATION). */
+/**
+ * `location.remove`: soft delete; the default location cannot be removed (DEFAULT_LOCATION). The
+ * location leaves the list of every product sold there, in the same transaction (D-129). A product or
+ * service sold only there would then be sold everywhere, so the removal is refused while one is
+ * (ONLY_LOCATION_OF_PRODUCTS): the owner picks other branches for it first.
+ */
 export async function removeLocation(ctx: BusinessCtx, input: LocationIdInput): Promise<OkDto> {
   return ctx.tx(async (tx) => {
-    const target = await findLocation(tx, ctx.businessId, input.id)
+    // Locked first: a product save that names this location (FOR SHARE) finishes before the check
+    // below, or waits and then finds it gone.
+    const [target] = await tx
+      .select(columns)
+      .from(locations)
+      .where(
+        and(
+          eq(locations.businessId, ctx.businessId),
+          eq(locations.id, input.id),
+          isNull(locations.deletedAt),
+        ),
+      )
+      .for('update')
     if (!target) throw new AppError('not_found')
     if (target.isDefault) throw new AppError('default_location')
+    const soleLocation = await tx.execute(sql`
+      select 1
+        from app.product_locations pl
+        join app.products_services p
+          on p.business_id = pl.business_id and p.id = pl.product_id and p.deleted_at is null
+       where pl.business_id = ${ctx.businessId}
+         and pl.location_id = ${input.id}
+         and pl.deleted_at is null
+         and not exists (
+           select 1
+             from app.product_locations other
+             join app.locations l
+               on l.business_id = other.business_id and l.id = other.location_id
+              and l.deleted_at is null
+            where other.business_id = pl.business_id
+              and other.product_id = pl.product_id
+              and other.location_id <> pl.location_id
+              and other.deleted_at is null)
+       limit 1`)
+    if (soleLocation.length > 0) throw new AppError('only_location_of_products')
+    await tx
+      .update(productLocations)
+      .set({ deletedAt: sql`now()` })
+      .where(
+        and(
+          eq(productLocations.businessId, ctx.businessId),
+          eq(productLocations.locationId, input.id),
+          isNull(productLocations.deletedAt),
+        ),
+      )
     await tx
       .update(locations)
       .set({ deletedAt: sql`now()` })

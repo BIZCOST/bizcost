@@ -3,7 +3,9 @@ import { PERMISSION_CATALOG, type PermissionKey } from './permissions'
 
 // Role templates (docs/PRODUCT.md §8, the owner's list). Each business gets editable copies:
 // `roles.template_key` = the key and one `role_permissions` row per permission key. The owner template
-// holds every permission implicitly and has no rows (D-049).
+// holds every permission implicitly and has no rows (D-049). A key added here later reaches the roles
+// that businesses already have only through a migration that adds it to their template roles (the
+// catalog_permissions migration of M2 Step 2 did so for the products and materials keys, D-124).
 
 export const ROLE_TEMPLATE_KEYS = [
   OWNER_TEMPLATE_KEY,
@@ -36,6 +38,10 @@ export const ROLE_TEMPLATES: readonly RoleTemplate[] = [
       'settings.business.view',
       'settings.members.view',
       'settings.locations.manage',
+      'products.items.view',
+      'products.items.manage',
+      'materials.items.view',
+      'materials.items.manage',
       'data.cost.view',
       'data.profit_margin.view',
       'data.supplier_price.view',
@@ -47,19 +53,34 @@ export const ROLE_TEMPLATES: readonly RoleTemplate[] = [
     permissionKeys: [
       'dashboard.home.view',
       'settings.business.view',
+      'products.items.view',
+      'materials.items.view',
       'data.cost.view',
       'data.profit_margin.view',
       'data.supplier_price.view',
       'data.payroll.view',
     ],
   },
-  { key: 'sales', allPermissions: false, permissionKeys: ['dashboard.home.view'] },
+  {
+    key: 'sales',
+    allPermissions: false,
+    permissionKeys: ['dashboard.home.view', 'products.items.view'],
+  },
   {
     key: 'supervisor',
     allPermissions: false,
-    permissionKeys: ['dashboard.home.view', 'settings.members.view'],
+    permissionKeys: [
+      'dashboard.home.view',
+      'settings.members.view',
+      'products.items.view',
+      'materials.items.view',
+    ],
   },
-  { key: 'employee', allPermissions: false, permissionKeys: ['dashboard.home.view'] },
+  {
+    key: 'employee',
+    allPermissions: false,
+    permissionKeys: ['dashboard.home.view', 'products.items.view'],
+  },
 ]
 
 export function isRoleTemplateKey(value: unknown): value is RoleTemplateKey {

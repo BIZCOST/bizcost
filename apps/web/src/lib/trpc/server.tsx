@@ -4,10 +4,12 @@ import {
   createCallerFactory,
   createContext,
   createFetchHandler,
+  moduleRegistry,
   type ApiDeps,
 } from '@bizcost/api'
 import type { BusinessContextDto, DashboardChecklistDto, MeDto } from '@bizcost/contracts'
 import { createDb } from '@bizcost/db'
+import type { ModuleManifest } from '@bizcost/modules'
 import { TRPCError } from '@trpc/server'
 import { headers } from 'next/headers'
 import { cache } from 'react'
@@ -34,6 +36,7 @@ function apiDeps(): ApiDeps {
         version: env.version,
         appUrl: env.appUrl,
         email: env.email,
+        previewModules: env.previewModules,
       },
       reportError: reportApiError,
     }
@@ -47,6 +50,20 @@ let handler: ((req: Request) => Promise<Response>) | undefined
 export function apiHandler(): (req: Request) => Promise<Response> {
   handler ??= createFetchHandler(apiDeps())
   return handler
+}
+
+/**
+ * The module registry this server runs with, as the API's gates see it: the manifests, with the
+ * dev-only preview counted as released in development and test (moduleRegistry, D-125). A module's
+ * pages exist only while it is released here; elsewhere its address is "Page not found".
+ */
+export function serverModules(): readonly ModuleManifest[] {
+  return moduleRegistry(apiDeps().config, process.env.NODE_ENV)
+}
+
+/** Whether module `id` is released on this server (its pages exist). */
+export function isModuleServed(id: string): boolean {
+  return serverModules().some((m) => m.id === id && m.availability === 'released')
 }
 
 const createCaller = createCallerFactory(appRouter)

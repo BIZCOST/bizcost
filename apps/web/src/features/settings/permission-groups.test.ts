@@ -13,7 +13,14 @@ import {
 describe('permission groups of the Roles section', () => {
   it('list every catalog key once, the dashboard first and private data last', () => {
     const groups = permissionGroups()
-    expect(groups.map((g) => g.id)).toEqual(['dashboard', 'business', 'team', 'data'])
+    expect(groups.map((g) => g.id)).toEqual([
+      'dashboard',
+      'business',
+      'team',
+      'products',
+      'materials',
+      'data',
+    ])
     expect(groups.flatMap((g) => g.keys).sort()).toEqual([...PERMISSION_CATALOG].sort())
     expect(groups.find((g) => g.id === 'team')?.keys).toEqual([
       'settings.members.view',
@@ -28,6 +35,8 @@ describe('permission groups of the Roles section', () => {
       'dashboard',
       'business',
       'team',
+      'products',
+      'materials',
       'orders',
       'data',
     ])
@@ -48,13 +57,37 @@ describe('permission groups of the Roles section', () => {
 })
 
 describe('visiblePermissionGroups', () => {
+  const M1 = ['dashboard', 'settings']
+
   it('leaves out private data (not in M1) and branches for a single-location business', () => {
-    const single = visiblePermissionGroups({ has_team: true, multi_location: false })
+    const single = visiblePermissionGroups({ has_team: true, multi_location: false }, M1)
     expect(single.map((g) => g.id)).toEqual(['dashboard', 'business', 'team'])
     expect(single.flatMap((g) => g.keys)).not.toContain('settings.locations.manage')
-    const branches = visiblePermissionGroups({ has_team: true, multi_location: true })
+    const branches = visiblePermissionGroups({ has_team: true, multi_location: true }, M1)
     expect(branches.flatMap((g) => g.keys)).toContain('settings.locations.manage')
     expect(branches.flatMap((g) => g.keys).some((key) => key.startsWith('data.'))).toBe(false)
+  })
+
+  it('offers a module’s permissions only while the module is released and on (D-124)', () => {
+    const capabilities = { has_team: true, multi_location: false }
+    // Products & Services and Materials are still being built: nothing of them in M1.
+    expect(visiblePermissionGroups(capabilities, M1).map((g) => g.id)).not.toContain('products')
+    const withModules = visiblePermissionGroups(capabilities, [...M1, 'products', 'materials'])
+    expect(withModules.map((g) => g.id)).toEqual([
+      'dashboard',
+      'business',
+      'team',
+      'products',
+      'materials',
+    ])
+    expect(withModules.find((g) => g.id === 'materials')?.keys).toEqual([
+      'materials.items.view',
+      'materials.items.manage',
+    ])
+    // A module the business turned off offers nothing either.
+    expect(
+      visiblePermissionGroups(capabilities, [...M1, 'products']).map((g) => g.id),
+    ).not.toContain('materials')
   })
 })
 

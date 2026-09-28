@@ -42,8 +42,17 @@ describe('module manifests', () => {
     expect(released).toEqual(['dashboard', 'settings'])
   })
 
-  it('give planned modules no permission keys, nav or quick actions (no stubs)', () => {
-    for (const m of MODULES.filter((x) => x.availability === 'planned')) {
+  it('give planned modules no permission keys, nav or quick actions until their build starts (no stubs)', () => {
+    const started = MODULES.filter(
+      (m) => m.availability === 'planned' && (m.permissionKeys.length > 0 || m.nav.length > 0),
+    )
+    // M2 Step 2 builds Products & Services and Materials; they stay planned until Step 7 (D-124).
+    expect(started.map((m) => m.id)).toEqual(['products', 'materials'])
+    for (const m of started) {
+      expect(m.permissionKeys.length, m.id).toBeGreaterThan(0)
+      expect(m.nav.length, m.id).toBeGreaterThan(0)
+    }
+    for (const m of MODULES.filter((x) => x.availability === 'planned' && !started.includes(x))) {
       expect(m.permissionKeys, m.id).toEqual([])
       expect(m.nav, m.id).toEqual([])
       expect(m.quickActions, m.id).toEqual([])
@@ -120,11 +129,9 @@ describe('module manifests', () => {
         expect(ids.has(entry.id), `duplicate nav id ${entry.id}`).toBe(false)
         ids.add(entry.id)
         expect(entry.labelKey).toMatch(/^nav\.[a-z][a-z0-9_.]*$/)
-        // Shipped with the module: the label in both languages (a common `nav.*` key).
-        if (m.availability === 'released') {
-          for (const locale of LOCALES) {
-            expect(hasMessage(locale, `common.${entry.labelKey}`), entry.labelKey).toBe(true)
-          }
+        // Shipped with the module's build: the label in both languages (a common `nav.*` key).
+        for (const locale of LOCALES) {
+          expect(hasMessage(locale, `common.${entry.labelKey}`), entry.labelKey).toBe(true)
         }
         expect(entry.icon).toMatch(/^[a-z0-9]+(?:-[a-z0-9]+)*$/)
         expect(entry.path).toMatch(/^(?:[a-z0-9-]+(?:\/[a-z0-9-]+)*)?$/)
@@ -147,6 +154,8 @@ describe('module manifests', () => {
     expect(groups).toEqual([
       ['dashboard', 'main'],
       ['settings', 'system'],
+      ['products', 'main'],
+      ['materials', 'main'],
     ])
   })
 
@@ -160,7 +169,7 @@ describe('module manifests', () => {
 })
 
 describe('permission catalog', () => {
-  it('holds the Step 2 keys: dashboard, settings and one data key per sensitivity category', () => {
+  it('holds the keys of dashboard, settings, products and materials, and one data key per sensitivity category', () => {
     expect([...PERMISSION_CATALOG].sort()).toEqual(
       [
         'dashboard.home.view',
@@ -171,6 +180,10 @@ describe('permission catalog', () => {
         'settings.members.manage',
         'settings.roles.manage',
         'settings.modules.manage',
+        'products.items.view',
+        'products.items.manage',
+        'materials.items.view',
+        'materials.items.manage',
         'data.cost.view',
         'data.profit_margin.view',
         'data.supplier_price.view',
@@ -258,6 +271,10 @@ describe('role templates', () => {
         'settings.business.view',
         'settings.members.view',
         'settings.locations.manage',
+        'products.items.view',
+        'products.items.manage',
+        'materials.items.view',
+        'materials.items.manage',
         'data.cost.view',
         'data.profit_margin.view',
         'data.supplier_price.view',
@@ -267,15 +284,24 @@ describe('role templates', () => {
       [
         'dashboard.home.view',
         'settings.business.view',
+        'products.items.view',
+        'materials.items.view',
         'data.cost.view',
         'data.profit_margin.view',
         'data.supplier_price.view',
         'data.payroll.view',
       ].sort(),
     )
-    expect(keysOf('sales')).toEqual(['dashboard.home.view'])
-    expect(keysOf('supervisor')).toEqual(['dashboard.home.view', 'settings.members.view'])
-    expect(keysOf('employee')).toEqual(['dashboard.home.view'])
+    expect(keysOf('sales')).toEqual(['dashboard.home.view', 'products.items.view'])
+    expect(keysOf('supervisor')).toEqual(
+      [
+        'dashboard.home.view',
+        'settings.members.view',
+        'products.items.view',
+        'materials.items.view',
+      ].sort(),
+    )
+    expect(keysOf('employee')).toEqual(['dashboard.home.view', 'products.items.view'])
   })
 })
 

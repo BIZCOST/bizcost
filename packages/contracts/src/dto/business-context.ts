@@ -57,6 +57,8 @@ export const businessContextDto = z.object({
   modules: z.array(enabledModuleDto),
   /** The business's wording (businesses.terminology_profile): overlays of @bizcost/i18n. */
   terminologyProfile: z.enum(TERMINOLOGY_PROFILES),
+  /** businesses.currency (ISO 4217, e.g. AED): the business's amounts are shown in it. */
+  currency: z.string().regex(/^[A-Z]{3}$/),
   /** Every capability of the registry (stored and derived) → on/off. */
   capabilities: z.record(z.string(), z.boolean()),
   permissionsVersion: z.int().nonnegative(),

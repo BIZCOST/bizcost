@@ -5,11 +5,16 @@ import { dashboardRouter } from './dashboard'
 import { health } from './health'
 import { invitationRouter } from './invitation'
 import { locationRouter } from './location'
+import { materialRouter } from './material'
 import { me } from './me'
 import { memberRouter } from './member'
+import { productRouter } from './product'
 import { roleRouter } from './role'
 
-/** The API of Steps 2–7. Routers of each module arrive with the module (no placeholders). */
+/**
+ * The API of M1 and of M2 so far. Routers of each module arrive with the module's build (no
+ * placeholders); a planned module's procedures answer MODULE_DISABLED until it is released.
+ */
 export const appRouter = router({
   health,
   me,
@@ -20,6 +25,8 @@ export const appRouter = router({
   member: memberRouter,
   invitation: invitationRouter,
   role: roleRouter,
+  material: materialRouter,
+  product: productRouter,
 })
 
 export type AppRouter = typeof appRouter

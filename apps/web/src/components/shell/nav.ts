@@ -30,6 +30,14 @@ function commonKey(labelKey: string): I18nKey {
   return `common.${labelKey}` as I18nKey
 }
 
+/**
+ * The business's wording of a label (its terminology overlay, e.g. `common.nav.materials_food` for a
+ * food business): given a label key, the key to show. use-nav-wording.ts gives the page's.
+ */
+export type NavWording = (labelKey: I18nKey) => I18nKey
+
+const asIs: NavWording = (labelKey) => labelKey
+
 /** A business page: `path` is relative to the business root ('' is the root, the Dashboard). */
 export function businessHref(businessId: string, path: string): string {
   return path === '' ? `/b/${businessId}` : `/b/${businessId}/${path}`
@@ -52,11 +60,13 @@ function holds(entryPath: string, subpath: string): boolean {
 /**
  * The shell's items: the `main` entries in manifest order, then the `system` ones (Settings). The
  * entry whose path holds the current page is active (the longest, so a module's own pages win).
+ * Labels are in the business's wording when `wording` is given.
  */
 export function shellNav(
   modules: readonly EnabledModuleDto[],
   businessId: string,
   pathname: string,
+  wording: NavWording = asIs,
 ): ShellNavItem[] {
   const entries = modules.flatMap((module) =>
     module.nav.map((entry) => ({ ...entry, moduleId: module.id })),
@@ -75,7 +85,7 @@ export function shellNav(
   return ordered.map((entry) => ({
     id: entry.id,
     moduleId: entry.moduleId,
-    labelKey: commonKey(entry.labelKey),
+    labelKey: wording(commonKey(entry.labelKey)),
     href: businessHref(businessId, entry.path),
     icon: entry.icon,
     group: entry.group,

@@ -23,6 +23,12 @@ export const DASHBOARD_MESSAGES: readonly MessageSpec[] = [
   { namespace: 'setup', paths: ['cap', 'review.groups.about'] },
 ]
 
+/**
+ * Materials and Products & Services (M2 Step 2; their layouts): the lists, the forms and the unit
+ * names.
+ */
+export const CATALOG_MESSAGES: readonly MessageSpec[] = ['catalog', 'units']
+
 /** Settings of a business (layout): the section list, the settings home and every section's frame. */
 export const SETTINGS_MESSAGES: readonly MessageSpec[] = ['settings']
 

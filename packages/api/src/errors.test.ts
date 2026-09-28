@@ -28,6 +28,8 @@ describe('AppError', () => {
     ['locations_in_use', 'CONFLICT'],
     ['owner_transfer_required', 'CONFLICT'],
     ['default_location', 'CONFLICT'],
+    ['only_location_of_products', 'CONFLICT'],
+    ['name_taken', 'CONFLICT'],
     ['file_invalid', 'BAD_REQUEST'],
     ['internal', 'INTERNAL_SERVER_ERROR'],
   ] as const)('%s uses the tRPC code %s', (appCode, trpcCode) => {

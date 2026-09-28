@@ -24,6 +24,7 @@ import {
   resolveCapabilities,
   resolveEnabledModules,
   toggleBusinessItem,
+  type ModuleManifest,
   type SetupItem,
   type SetupState,
 } from '@bizcost/modules'
@@ -101,18 +102,25 @@ async function usageOf(tx: Tx, businessId: string): Promise<Usage> {
   }
 }
 
-function customizationOf(state: SetupState, usage: Usage): CustomizationDto {
+/** `registry` is the server's (ctx.modules): the dev-only preview shows a module as released (D-125). */
+function customizationOf(
+  state: SetupState,
+  usage: Usage,
+  registry: readonly ModuleManifest[] = MODULES,
+): CustomizationDto {
   const capabilities: Record<string, boolean> = {}
   for (const key of CAPABILITY_KEYS) {
     capabilities[key] = key === 'vat_registered' ? state.vatRegistered : state.capabilities[key]
   }
   return {
-    modules: MODULES.filter((m) => !ALWAYS_ENABLED_MODULE_IDS.includes(m.id)).map((m) => ({
-      id: m.id,
-      kind: m.kind,
-      availability: m.availability,
-      enabled: state.modules.has(m.id),
-    })),
+    modules: registry
+      .filter((m) => !ALWAYS_ENABLED_MODULE_IDS.includes(m.id))
+      .map((m) => ({
+        id: m.id,
+        kind: m.kind,
+        availability: m.availability,
+        enabled: state.modules.has(m.id),
+      })),
     capabilities,
     teamInUse: usage.teamInUse,
     locationsInUse: usage.locationsInUse,
@@ -202,7 +210,7 @@ export async function applySwitch(
 export async function getCustomization(ctx: BusinessCtx): Promise<CustomizationDto> {
   return ctx.tx(async (tx) => {
     const state = await readBusinessState(tx, ctx.businessId, { lock: false })
-    return customizationOf(state, await usageOf(tx, ctx.businessId))
+    return customizationOf(state, await usageOf(tx, ctx.businessId), ctx.modules)
   })
 }
 
@@ -215,7 +223,7 @@ export async function customize(ctx: BusinessCtx, input: CustomizeInput): Promis
     const before = await readBusinessState(tx, ctx.businessId, { lock: true })
     const result = await applySwitch(tx, ctx, before, toSetupItem(input.item), input.enabled)
     return {
-      customization: customizationOf(result.state, await usageOf(tx, ctx.businessId)),
+      customization: customizationOf(result.state, await usageOf(tx, ctx.businessId), ctx.modules),
       turnedOn: result.turnedOn.map(toItemDto),
       turnedOff: result.turnedOff.map(toItemDto),
     }

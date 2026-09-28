@@ -78,6 +78,20 @@
       "when": 1790467093366,
       "tag": "20260926235813_confirmation_drops_password",
       "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "7",
+      "when": 1790554347820,
+      "tag": "20260928001227_catalog_tables",
+      "breakpoints": true
+    },
+    {
+      "idx": 12,
+      "version": "7",
+      "when": 1790554372344,
+      "tag": "20260928001252_catalog_security",
+      "breakpoints": true
     }
   ]
 }

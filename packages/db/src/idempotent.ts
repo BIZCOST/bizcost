@@ -40,13 +40,25 @@ export async function insertIdempotent<TTable extends IdempotentTable>(
   table: TTable,
   values: IdempotentValues<TTable>,
 ): Promise<InferSelectModel<TTable>> {
+  return (await createIdempotent(tx, table, values)).row
+}
+
+/**
+ * insertIdempotent, telling whether this call inserted the row (`created`) or found the same create
+ * done before: a create that also writes child rows (a material's units) writes them only once.
+ */
+export async function createIdempotent<TTable extends IdempotentTable>(
+  tx: Tx,
+  table: TTable,
+  values: IdempotentValues<TTable>,
+): Promise<{ row: InferSelectModel<TTable>; created: boolean }> {
   const inserted = (await tx
     .insert(table)
     .values(values)
     .onConflictDoNothing({ target: table.id })
     .returning()) as InferSelectModel<TTable>[]
   const created = inserted[0]
-  if (created) return created
+  if (created) return { row: created, created: true }
 
   const existing = (await tx
     .select()
@@ -61,6 +73,6 @@ export async function insertIdempotent<TTable extends IdempotentTable>(
     )
     .limit(1)) as InferSelectModel<TTable>[]
   const same = existing[0]
-  if (same) return same
+  if (same) return { row: same, created: false }
   throw new ConflictError('id already used by a different create')
 }

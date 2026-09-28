@@ -1,5 +1,12 @@
 import { describe, expect, it } from 'vitest'
-import { currencyDigits, formatCurrency, formatDate, formatDecimal, formatNumber } from './format'
+import {
+  currencyDigits,
+  currencySymbol,
+  formatCurrency,
+  formatDate,
+  formatDecimal,
+  formatNumber,
+} from './format'
 import { dir, intlLocale, negotiateLocale, resolveLocale } from './locale'
 
 const ARABIC_INDIC = /[٠-٩۰-۹]/
@@ -48,6 +55,13 @@ describe('formatters', () => {
     expect(formatDate('ar', '2026-09-25T08:00:00Z', { timeZone: 'Asia/Dubai' })).not.toMatch(
       ARABIC_INDIC,
     )
+  })
+
+  it('write the currency as formatCurrency does', () => {
+    expect(currencySymbol('en', 'AED')).toBe('AED')
+    expect(currencySymbol('ar', 'AED')).toBe('د.إ.')
+    expect(formatCurrency('ar', '18.5', 'AED')).toContain(currencySymbol('ar', 'AED'))
+    expect(formatCurrency('en', '18.5', 'KWD')).toContain(currencySymbol('en', 'KWD'))
   })
 
   it('round decimal strings half up to the currency minor unit before Intl', () => {

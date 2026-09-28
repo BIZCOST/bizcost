@@ -51,9 +51,21 @@
     "accountMenu": "Account menu",
     "settings": "Settings",
     "dashboard": "Dashboard",
+    "products": "Products & Services",
+    "products_projects": "Services & work items",
+    "materials": "Materials",
+    "materials_food": "Ingredients & supplies",
+    "materials_factory": "Raw materials",
     "more": "More",
     "moreTitle": "More sections",
     "quickAdd": "Add new"
+  },
+  "navShort": {
+    "products": "Products",
+    "products_projects": "Services",
+    "materials": "Materials",
+    "materials_food": "Ingredients",
+    "materials_factory": "Materials"
   },
   "home": {
     "greeting": "Hello, {{name}}",

@@ -51,9 +51,21 @@
     "accountMenu": "قائمة الحساب",
     "settings": "الإعدادات",
     "dashboard": "الرئيسية",
+    "products": "المنتجات والخدمات",
+    "products_projects": "الخدمات وبنود العمل",
+    "materials": "المواد",
+    "materials_food": "المكونات والمستلزمات",
+    "materials_factory": "المواد الخام",
     "more": "المزيد",
     "moreTitle": "أقسام أخرى",
     "quickAdd": "إضافة جديد"
+  },
+  "navShort": {
+    "products": "المنتجات",
+    "products_projects": "الخدمات",
+    "materials": "المواد",
+    "materials_food": "المكونات",
+    "materials_factory": "المواد"
   },
   "home": {
     "greeting": "مرحبًا، {{name}}",
