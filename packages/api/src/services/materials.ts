@@ -269,6 +269,22 @@ export async function createMaterial(ctx: BusinessCtx, input: CreateInput): Prom
   )
 }
 
+/** Whether a purchase line (drafts too) or a stock movement names the material. */
+async function materialInUse(tx: Tx, businessId: string, id: string): Promise<boolean> {
+  const [row] = (await tx.execute(sql`
+    select exists (
+             select 1 from app.purchase_lines l
+              where l.business_id = ${businessId} and l.material_id = ${id}
+                and l.deleted_at is null
+           )
+        or exists (
+             select 1 from app.stock_movements m
+              where m.business_id = ${businessId} and m.material_id = ${id}
+           ) as used
+  `)) as unknown as { used: boolean }[]
+  return row?.used === true
+}
+
 function sameUnit(a: UnitValues, b: UnitValues): boolean {
   return (
     a.kind === b.kind &&
@@ -291,20 +307,12 @@ export async function updateMaterial(ctx: BusinessCtx, input: UpdateInput): Prom
   const wanted = checkedUnits(dimension, input)
   return withUniqueName(NAME_KEY, () =>
     ctx.tx(async (tx) => {
-      // A material with purchases (drafts too) keeps its kind of measure: their quantities and the
-      // ledger are in its base unit (M2 Step 3). Its unit may still change within the dimension.
+      // As read: the update below matches only this version, so its dimension is the one it changes.
       const current = await findMaterial(tx, ctx.businessId, input.id)
-      if (current && current.dimension !== dimension) {
-        const [used] = (await tx.execute(sql`
-          select exists (
-            select 1 from app.purchase_lines l
-             where l.business_id = ${ctx.businessId} and l.material_id = ${input.id}
-               and l.deleted_at is null
-          ) as used
-        `)) as unknown as { used: boolean }[]
-        if (used?.used) throw new AppError('material_in_use')
-      }
-      // The row lock taken here also makes saves of this material wait for each other.
+      // The row lock taken here also makes saves of this material wait for each other, and a draft
+      // save or a posting of it (they lock it FOR SHARE first) waits for this one, or this one for it.
+      // With the row locked, the trigger keep_dimension refuses a change of dimension once the
+      // material is in the stock ledger (MATERIAL_IN_USE, D-145).
       const [row] = await tx
         .update(materials)
         .set({ name: input.name, dimension, unit: input.unit })
@@ -320,6 +328,12 @@ export async function updateMaterial(ctx: BusinessCtx, input: UpdateInput): Prom
       if (!row) {
         if (await findMaterial(tx, ctx.businessId, input.id)) throw new AppError('conflict')
         throw new AppError('not_found')
+      }
+      // A material with purchases (drafts too) or anything in the ledger keeps its kind of measure:
+      // their quantities are in its base unit (D-134). Its unit may still change within the
+      // dimension. Checked under the row lock, so a draft saved meanwhile is seen (D-145).
+      if (current?.dimension !== dimension && (await materialInUse(tx, ctx.businessId, input.id))) {
+        throw new AppError('material_in_use')
       }
 
       const live = new Map(

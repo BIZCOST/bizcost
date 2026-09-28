@@ -494,6 +494,10 @@ async function prepareDraft(tx: Tx, ctx: BusinessCtx, input: Fields) {
   await assertSupplier(tx, ctx.businessId, input.supplierId)
   const locationId = await resolveLocation(tx, ctx, input.locationId, defaultLocationId)
   const materialIds = input.lines.flatMap((l) => (l.kind === 'material' ? [l.materialId] : []))
+  // Locked FOR SHARE first, as a posting does: a change of a material's units or kind of measure in
+  // flight finishes before its units are read here, or waits for this save and then sees its lines
+  // (MATERIAL_IN_USE, D-145).
+  await lockMaterials(tx, ctx.businessId, materialIds)
   const materials = await loadMaterials(tx, ctx.businessId, materialIds)
   for (const line of input.lines) {
     if (line.kind !== 'material') continue

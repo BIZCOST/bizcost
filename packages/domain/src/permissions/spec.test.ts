@@ -448,7 +448,6 @@ describe('visibleCategories', () => {
   })
 
   it('maps each independent category to data.<category>.view', () => {
-    expect(visibleFor(['data.cost.view'])).toEqual(['cost'])
     expect(visibleFor(['data.payroll.view'])).toEqual(['payroll'])
     expect(visibleFor(['data.employee_pii.view'])).toEqual(['employee_pii'])
   })
@@ -465,15 +464,29 @@ describe('visibleCategories', () => {
     )
   })
 
+  it('hides cost when supplier_price is hidden (the average over time reveals each price, D-144)', () => {
+    expect(visibleFor(['data.cost.view'])).toEqual([])
+    expect(visibleFor(['data.cost.view', 'data.profit_margin.view'])).toEqual([])
+    expect(
+      visibleFor(
+        ['data.cost.view', 'data.profit_margin.view', 'data.supplier_price.view'],
+        [deny('data.supplier_price.view')],
+      ),
+    ).toEqual([])
+  })
+
   it('shows profit_margin when cost is visible too', () => {
-    expect(visibleFor(['data.cost.view', 'data.profit_margin.view'])).toEqual(
-      sorted(['cost', 'profit_margin']),
-    )
+    expect(
+      visibleFor(['data.cost.view', 'data.profit_margin.view', 'data.supplier_price.view']),
+    ).toEqual(sorted(['cost', 'profit_margin', 'supplier_price']))
   })
 
   it('hides profit_margin when cost is removed by a deny override', () => {
     expect(
-      visibleFor(['data.cost.view', 'data.profit_margin.view'], [deny('data.cost.view')]),
+      visibleFor(
+        ['data.cost.view', 'data.profit_margin.view', 'data.supplier_price.view'],
+        [deny('data.cost.view')],
+      ),
     ).toEqual([])
   })
 
@@ -506,13 +519,13 @@ describe('visibleCategories', () => {
 
   it('does not reveal a category whose data key is missing from the catalog', () => {
     const effective = resolve({
-      rolePermissionKeys: ['data.cost.view'],
+      rolePermissionKeys: ['data.cost.view', 'data.supplier_price.view'],
       catalog: ['dashboard.home.view'],
     })
     expect(visibleCategories(effective).size).toBe(0)
   })
 
-  it('property: follows data.<category>.view; profit_margin and supplier_price require cost', () => {
+  it('property: follows data.<category>.view; cost and supplier_price together; profit_margin needs cost', () => {
     fc.assert(
       fc.property(nonOwnerInputArb, (input) => {
         const effective = resolveEffective(input)
@@ -520,12 +533,16 @@ describe('visibleCategories', () => {
         for (const category of visible) expect(SENSITIVITY_CATEGORIES).toContain(category)
         for (const category of SENSITIVITY_CATEGORIES) {
           const granted = can(effective, `data.${category}.view`)
-          const needsCost = category === 'profit_margin' || category === 'supplier_price'
-          const expected = needsCost ? granted && can(effective, 'data.cost.view') : granted
+          const costs =
+            can(effective, 'data.cost.view') && can(effective, 'data.supplier_price.view')
+          const grouped =
+            category === 'cost' || category === 'profit_margin' || category === 'supplier_price'
+          const expected = grouped ? granted && costs : granted
           expect(visible.has(category)).toBe(expected)
         }
         if (visible.has('profit_margin')) expect(visible.has('cost')).toBe(true)
         if (visible.has('supplier_price')) expect(visible.has('cost')).toBe(true)
+        if (visible.has('cost')) expect(visible.has('supplier_price')).toBe(true)
       }),
     )
   })

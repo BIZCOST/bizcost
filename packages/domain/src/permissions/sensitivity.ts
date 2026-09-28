@@ -25,13 +25,15 @@ export const SENSITIVITY_PERMISSION_KEYS: readonly SensitivityPermissionKey[] =
 
 /**
  * Grouping rule: a category is visible only when every category listed here is visible too, so a
- * hidden value cannot be derived from visible ones: price + margin would reveal a hidden cost, and
- * the prices paid to suppliers would reveal the average cost they make (M2 Step 3).
+ * hidden value cannot be derived from visible ones: price + margin would reveal a hidden cost. Costs
+ * and supplier prices go together (D-140, D-144): the prices paid reveal the average they make, and
+ * the average read before and after a purchase (or with the other purchases returned) reveals each
+ * price paid. A rule may name a category that names it back: the pair is then visible only together.
  */
 export const SENSITIVITY_REQUIRES: {
   readonly [C in SensitivityCategory]: readonly SensitivityCategory[]
 } = {
-  cost: [],
+  cost: ['supplier_price'],
   profit_margin: ['cost'],
   supplier_price: ['cost'],
   payroll: [],
@@ -42,19 +44,26 @@ export function isSensitivityCategory(value: unknown): value is SensitivityCateg
   return (SENSITIVITY_CATEGORIES as readonly unknown[]).includes(value)
 }
 
-/** The categories this member may see: its permission is granted and the grouping rule holds. */
+/**
+ * The categories this member may see: its permission is granted and the grouping rule holds. Starting
+ * from the granted categories, any whose required categories are not all still in the set is taken
+ * out, until nothing changes (the largest set that follows the rule, also when rules name each other).
+ */
 export function visibleCategories(
   effective: EffectivePermissions,
 ): ReadonlySet<SensitivityCategory> {
-  const memo = new Map<SensitivityCategory, boolean>()
-  const isVisible = (category: SensitivityCategory): boolean => {
-    const known = memo.get(category)
-    if (known !== undefined) return known
-    const visible =
-      can(effective, sensitivityPermissionKey(category)) &&
-      SENSITIVITY_REQUIRES[category].every(isVisible)
-    memo.set(category, visible)
-    return visible
+  const visible = new Set(
+    SENSITIVITY_CATEGORIES.filter((category) => can(effective, sensitivityPermissionKey(category))),
+  )
+  let changed = true
+  while (changed) {
+    changed = false
+    for (const category of visible) {
+      if (!SENSITIVITY_REQUIRES[category].every((required) => visible.has(required))) {
+        visible.delete(category)
+        changed = true
+      }
+    }
   }
-  return new Set(SENSITIVITY_CATEGORIES.filter(isVisible))
+  return visible
 }

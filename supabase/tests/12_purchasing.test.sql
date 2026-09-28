@@ -5,10 +5,11 @@
 -- lists and shapes; a posted purchase and its lines are never changed (only reversed), a draft is never
 -- reversed; the stock ledger is append-only for everyone, each purchase line comes in once and each
 -- movement is reversed once; attachments never move; logo and attachment uploads are counted apart;
+-- a material in the ledger keeps its kind of measure and a discarded purchase takes no receipt (D-145);
 -- the touch and audit triggers run. RLS, the policy, the triggers and the grants of every tenant table
 -- are also checked generically by 00_catalog_coverage, 01_grants and 03_rls_initplan.
 begin;
-select plan(73);
+select plan(77);
 
 do $$
 begin
@@ -490,7 +491,39 @@ select is(
   'attachment uploads are counted apart from logos (100 an hour)'
 );
 
--- 9. Touch and audit triggers (2) ------------------------------------------------------------------
+-- 9. Kept whole when requests race (D-145) (4) ---------------------------------------------------
+
+select is(
+  pg_temp.state_of(pg_temp.api_exec('user A', 'biz A', $$
+    update app.materials set dimension = 'mass', unit = 'kg' where id = pg_temp.id('mat A') $$)),
+  'BZ423',
+  'a material in the stock ledger keeps its kind of measure (keep_dimension)'
+);
+
+select is(
+  pg_temp.api_exec('user A', 'biz A', $$
+    update app.materials set unit = 'ml' where id = pg_temp.id('mat A') $$),
+  'ok 1',
+  'its unit may still change within the kind of measure'
+);
+
+select is(
+  pg_temp.api_exec('user A', 'biz A', $$
+    update app.purchases set deleted_at = now() where id = pg_temp.id('pur A2') $$),
+  'ok 1',
+  'setup: A''s second draft is discarded'
+);
+
+select is(
+  pg_temp.state_of(pg_temp.api_exec('user A', 'biz A', $$
+    insert into app.attachments (id, business_id, entity, entity_id, path, file_name, content_type, size_bytes)
+    values (pg_temp.id('att A2'), pg_temp.id('biz A'), 'purchase', pg_temp.id('pur A2'),
+            pg_temp.id('biz A') || '/purchase/att2.png', 'receipt.png', 'image/png', 1234) $$)),
+  '23503',
+  'a discarded purchase takes no receipt (check_target)'
+);
+
+-- 10. Touch and audit triggers (2) -----------------------------------------------------------------
 
 select is(
   pg_temp.state_of(pg_temp.api_exec('user A', 'biz A', $$

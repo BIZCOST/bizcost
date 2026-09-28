@@ -116,7 +116,10 @@ export function reversalDateOf(business: PostingBusiness, businessDate: string):
   return firstOpen
 }
 
-/** Locks the materials FOR SHARE by ascending id (lock 3); returns the ids found (live ones). */
+/**
+ * Locks the materials FOR SHARE by ascending id (lock 3; a draft save takes it too before it reads
+ * their units, D-145); returns the ids found (live ones).
+ */
 export async function lockMaterials(
   tx: Tx,
   businessId: string,

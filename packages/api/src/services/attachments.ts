@@ -72,13 +72,24 @@ export function sniffAttachmentType(bytes: Uint8Array): AttachmentContentType | 
   return null
 }
 
-/** The record must be a live record of this business (NOT_FOUND otherwise). */
-async function assertRecord(tx: Tx, businessId: string, entity: AttachmentEntity, id: string) {
+/**
+ * The record must be a live record of this business (NOT_FOUND otherwise). With `lock`, its row is
+ * locked FOR NO KEY UPDATE until the transaction ends: a discard of it (FOR UPDATE, then the files it
+ * sees) and other attaches to it wait, or this waits for them and then finds a discarded record.
+ */
+async function assertRecord(
+  tx: Tx,
+  businessId: string,
+  entity: AttachmentEntity,
+  id: string,
+  lock = false,
+) {
   // One entity today; the attachments table's trigger checks the same (DATA_MODEL.md §6).
   if (entity !== 'purchase') throw new AppError('not_found')
   const [row] = (await tx.execute(sql`
     select p.id from app.purchases p
      where p.business_id = ${businessId} and p.id = ${id} and p.deleted_at is null
+     ${lock ? sql`for no key update` : sql``}
   `)) as unknown as { id: string }[]
   if (!row) throw new AppError('not_found')
 }
@@ -290,7 +301,28 @@ export async function addAttachment(
     throw new AppError('attachment_invalid', { message: 'not an allowed file' })
   }
   const records = await ctx.tx(async (tx) => {
-    await assertRecord(tx, ctx.businessId, input.entity, input.entityId)
+    // The upload is closed only while it is still open: two adds of one path wait for each other
+    // here, and the second finds it closed. Refused later, the transaction reopens it.
+    const closed = await tx
+      .update(fileUploads)
+      .set({ status: 'used' })
+      .where(
+        and(
+          eq(fileUploads.businessId, ctx.businessId),
+          eq(fileUploads.path, input.path),
+          eq(fileUploads.purpose, 'attachment'),
+          eq(fileUploads.status, 'issued'),
+          isNull(fileUploads.deletedAt),
+        ),
+      )
+      .returning({ id: fileUploads.id })
+    if (closed.length === 0) {
+      throw new AppError('attachment_invalid', { message: 'not an open upload of this business' })
+    }
+    // Then the record, locked until the attachment is committed: a discard in flight has taken it
+    // out (NOT_FOUND), or waits and takes this file with it (D-139, D-145). The lock also makes the
+    // count below exact.
+    await assertRecord(tx, ctx.businessId, input.entity, input.entityId, true)
     if (
       (await countOn(tx, ctx.businessId, input.entity, input.entityId)) >=
       ATTACHMENTS_PER_RECORD_MAX
@@ -308,7 +340,6 @@ export async function addAttachment(
       contentType: sniffed,
       sizeBytes: object.bytes.byteLength,
     })
-    await closeUploads(tx, ctx.businessId, [input.path], 'used')
     return recordsOf(tx, ctx.businessId, sql`a.id = ${id}`)
   })
   const urls = await urlsFor(ctx, records)

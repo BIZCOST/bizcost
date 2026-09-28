@@ -66,6 +66,7 @@ describe('toAppError', () => {
     ['BZ429', 'rate_limited'],
     ['BZ404', 'invitation_invalid'],
     ['BZ409', 'already_member'],
+    ['BZ423', 'material_in_use'],
   ] as const)('maps SQLSTATE %s to %s', (state, appCode) => {
     const mapped = toAppError(dbFailure(state))
     expect(appCodeOf(mapped)).toBe(appCode)
