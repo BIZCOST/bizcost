@@ -176,6 +176,20 @@
       "when": 1790660845073,
       "tag": "20260929054725_expenses_security",
       "breakpoints": true
+    },
+    {
+      "idx": 25,
+      "version": "7",
+      "when": 1790699439134,
+      "tag": "20260929163039_recipe_yield",
+      "breakpoints": true
+    },
+    {
+      "idx": 26,
+      "version": "7",
+      "when": 1790699447952,
+      "tag": "20260929163047_owners_answers_access",
+      "breakpoints": true
     }
   ]
 }

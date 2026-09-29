@@ -249,7 +249,13 @@ describe('the Spanish Latte, from real purchases', () => {
     ])
     expect(recipe.lines.at(-1)?.cost).toBeNull()
     // The total of the lines with a price, marked incomplete.
-    expect(recipe.cost).toEqual({ total: '2.967034632035', unpricedLines: 1, complete: false })
+    expect(recipe.cost).toEqual({
+      total: '2.967034632035',
+      perUnit: '2.967034632035',
+      tooLarge: false,
+      unpricedLines: 1,
+      complete: false,
+    })
     expect(recipe.averageTo).toBe(today)
   })
 
@@ -259,9 +265,16 @@ describe('the Spanish Latte, from real purchases', () => {
       productId: latte.id,
       kind: 'recipe',
       unit: 'piece',
+      yieldQty: '1',
       lineCount: 6,
       basis: null,
-      cost: { total: '2.967034632035', unpricedLines: 1, complete: false },
+      cost: {
+        total: '2.967034632035',
+        perUnit: '2.967034632035',
+        tooLarge: false,
+        unpricedLines: 1,
+        complete: false,
+      },
     })
   })
 
@@ -269,9 +282,21 @@ describe('the Spanish Latte, from real purchases', () => {
     await cafe.buy(purchaseInput(today, [bought(straw.id, '1', '7', { packId: strawPack })]))
     const recipe = await recipeOf(cafe, latte.id)
     expect(recipe.lines.at(-1)?.cost?.lineCost).toBe('0.035')
-    expect(recipe.cost).toEqual({ total: '3.002034632035', unpricedLines: 0, complete: true })
+    expect(recipe.cost).toEqual({
+      total: '3.002034632035',
+      perUnit: '3.002034632035',
+      tooLarge: false,
+      unpricedLines: 0,
+      complete: true,
+    })
     const [cost] = await costsOf(cafe, [latte.id])
-    expect(cost?.cost).toEqual({ total: '3.002034632035', unpricedLines: 0, complete: true })
+    expect(cost?.cost).toEqual({
+      total: '3.002034632035',
+      perUnit: '3.002034632035',
+      tooLarge: false,
+      unpricedLines: 0,
+      complete: true,
+    })
   })
 })
 
@@ -314,7 +339,13 @@ describe('saving a recipe', () => {
       ['50', 'ml', null, null, '46', 'kg'],
     ])
     // Nothing bought: no total, and incomplete.
-    expect(recipe.cost).toEqual({ total: null, unpricedLines: 2, complete: false })
+    expect(recipe.cost).toEqual({
+      total: null,
+      perUnit: null,
+      tooLarge: false,
+      unpricedLines: 2,
+      complete: false,
+    })
   })
 
   it('is versioned: a stale version or a second first save is CONFLICT', async () => {
@@ -332,7 +363,13 @@ describe('saving a recipe', () => {
     // Taking every line out leaves an empty recipe (no total).
     const empty = ok(await save(cafe, tea.id, second.version, [])).data
     expect(empty.lines).toEqual([])
-    expect(empty.cost).toEqual({ total: null, unpricedLines: 0, complete: false })
+    expect(empty.cost).toEqual({
+      total: null,
+      perUnit: null,
+      tooLarge: false,
+      unpricedLines: 0,
+      complete: false,
+    })
     const [cost] = await costsOf(cafe, [tea.id])
     expect(cost?.lineCount).toBe(0)
   })
@@ -370,7 +407,13 @@ describe('saving a recipe', () => {
     ).data
     expect(recipe.productUnit).toBe('h')
     // 100 for 5 000 ml: 250 ml = 5.
-    expect(recipe.cost).toEqual({ total: '5', unpricedLines: 0, complete: true })
+    expect(recipe.cost).toEqual({
+      total: '5',
+      perUnit: '5',
+      tooLarge: false,
+      unpricedLines: 0,
+      complete: true,
+    })
   })
 
   it('is audited: the recipe row and its lines, with the caller', async () => {
@@ -413,6 +456,163 @@ describe('saving a recipe', () => {
     const reordered = ok(await save(cafe, salad.id, first.version, [oilLine, pepperLine])).data
     expect(reordered.version).toBe(first.version + 1)
     expect(reordered.lines.map((l) => l.materialId)).toEqual([oil.id, pepper.id])
+  })
+})
+
+// The owner's answer of 2026-09-29 (A1, D-178): a recipe can say how many of the product's unit it
+// makes; one unit sold costs the recipe's total ÷ that, never rounded (12 decimals), shown rounded.
+describe('a recipe that makes several units (yield)', () => {
+  let cake: ProductDto
+  let lines: object[]
+
+  beforeAll(async () => {
+    const flour = await material(cafe, { name: `Flour ${tag()}`, unit: 'kg' })
+    const eggs = await material(cafe, { name: `Eggs ${tag()}`, unit: 'piece' })
+    const sugar = await material(cafe, { name: `Sugar ${tag()}`, unit: 'kg' })
+    const butter = await material(cafe, { name: `Butter ${tag()}`, unit: 'kg' })
+    // A 10 kg sack of flour at 50, a tray of 30 eggs at 12, 1 kg of sugar at 4, of butter at 32.
+    await cafe.buy(
+      purchaseInput(today, [
+        bought(flour.id, '10', '5', { unit: 'kg' }),
+        bought(eggs.id, '30', '0.4', { unit: 'piece' }),
+        bought(sugar.id, '1', '4', { unit: 'kg' }),
+        bought(butter.id, '1', '32', { unit: 'kg' }),
+      ]),
+    )
+    cake = await product(cafe, { name: `Chocolate cake slice ${tag()}` })
+    lines = [
+      { id: newId(), materialId: flour.id, qty: '500', unit: 'g' },
+      { id: newId(), materialId: eggs.id, qty: '4', unit: 'piece' },
+      { id: newId(), materialId: sugar.id, qty: '200', unit: 'g' },
+      { id: newId(), materialId: butter.id, qty: '250', unit: 'g' },
+    ]
+  })
+
+  it('a cake that makes 12 slices: the whole cake costs 12.9, one slice 1.075 (shown 1.08)', async () => {
+    const saved = ok(
+      await cafe.run<RecipeResultDto>('recipe.save', {
+        productId: cake.id,
+        version: 0,
+        yieldQty: '12',
+        lines,
+      }),
+    ).data
+    expect(saved.yieldQty).toBe('12')
+    expect(saved.lines.map((l) => l.cost?.lineCost)).toEqual(['2.5', '1.6', '0.8', '8'])
+    expect(saved.cost).toEqual({
+      total: '12.9',
+      perUnit: '1.075',
+      tooLarge: false,
+      unpricedLines: 0,
+      complete: true,
+    })
+    expect(await recipeOf(cafe, cake.id)).toEqual(saved)
+    const [cost] = await costsOf(cafe, [cake.id])
+    expect(cost).toMatchObject({ yieldQty: '12', cost: { total: '12.9', perUnit: '1.075' } })
+  })
+
+  it('the yield alone is a new version, audited; the same yield writes nothing; omitted keeps it', async () => {
+    const before = await recipeOf(cafe, cake.id)
+    // Arabic-Indic digits and trailing zeros are the same yield: nothing to write.
+    const same = await cafe.run<RecipeResultDto>('recipe.save', {
+      productId: cake.id,
+      version: before.version,
+      yieldQty: '١٢.000',
+      lines,
+    })
+    expect(ok(same).data).toEqual(before)
+    // A yield of 10: 12.9 ÷ 10.
+    const ten = await cafe.run<RecipeResultDto>('recipe.save', {
+      productId: cake.id,
+      version: before.version,
+      yieldQty: '10',
+      lines,
+    })
+    const tenData = ok(ten).data
+    expect(tenData.version).toBe(before.version + 1)
+    expect(tenData.cost.perUnit).toBe('1.29')
+    const rows = await api.admin<{ entity: string; action: string; actor_user_id: string }[]>`
+      select entity, action, actor_user_id from app.audit_log
+       where request_id = ${ten.headers.get('x-request-id') ?? ''}`
+    expect(rows.map((r) => `${r.entity} ${r.action}`)).toEqual(['recipes update'])
+    expect(rows[0]?.actor_user_id).toBe(cafe.owner.user.id)
+    // A save without a yield (a line changed) keeps the recipe's.
+    const kept = ok(
+      await save(cafe, cake.id, tenData.version, [{ ...lines[0], qty: '600' }, ...lines.slice(1)]),
+    ).data
+    expect(kept.yieldQty).toBe('10')
+    expect(kept.cost.total).toBe('13.4')
+    expect(kept.cost.perUnit).toBe('1.34')
+    // Back to the cake as the owner wrote it.
+    ok(
+      await cafe.run<RecipeResultDto>('recipe.save', {
+        productId: cake.id,
+        version: kept.version,
+        yieldQty: '12',
+        lines,
+      }),
+    )
+  })
+
+  it('refuses a yield of zero or less, and more decimals than a quantity has', async () => {
+    const { version } = await recipeOf(cafe, cake.id)
+    for (const yieldQty of ['0', '-12', '0.0000001', 'twelve']) {
+      expect(
+        codeOf(await cafe.run('recipe.save', { productId: cake.id, version, yieldQty, lines })),
+        yieldQty,
+      ).toBe('validation')
+    }
+    expect((await recipeOf(cafe, cake.id)).yieldQty).toBe('12')
+  })
+
+  it('a recipe that makes one (the default) costs its total per unit, as before', async () => {
+    const tea = await product(cafe)
+    const recipe = ok(await save(cafe, tea.id, 0, [{ ...lines[2], id: newId() }])).data
+    expect(recipe.yieldQty).toBe('1')
+    expect(recipe.cost).toMatchObject({ total: '0.8', perUnit: '0.8' })
+    // No recipe yet: it makes one, with no total.
+    const empty = await recipeOf(cafe, (await product(cafe)).id)
+    expect(empty).toMatchObject({ version: 0, yieldQty: '1' })
+    expect(empty.cost).toMatchObject({ total: null, perUnit: null })
+  })
+
+  it('an employee reads the quantities and the yield, never a cost (D-179)', async () => {
+    const employee = await api.member({ id: cafe.id, owner: cafe.owner }, 'employee')
+    const result = await cafe.as<RecipeResultDto>(employee, 'recipe.get', { productId: cake.id })
+    const seen = ok(result)
+    expect(seen.data.yieldQty).toBe('12')
+    expect(seen.data.lines.map((l) => [l.qty, l.unit, l.materialName.startsWith('Flour')])).toEqual(
+      [
+        ['500', 'g', true],
+        ['4', 'piece', false],
+        ['200', 'g', false],
+        ['250', 'g', false],
+      ],
+    )
+    expect(seen.data.cost).toEqual({ unpricedLines: 0, complete: true })
+    expect(seen.meta.redacted).toEqual([
+      'cost.perUnit',
+      'cost.tooLarge',
+      'cost.total',
+      'lines.*.cost.lineCost',
+      'lines.*.cost.perBaseUnit',
+      'lines.*.cost.perUnit',
+    ])
+    expect(result.raw).not.toContain('1.075')
+    expect(result.raw).not.toContain('12.9')
+    const costs = ok(await cafe.as<ProductCostsDto>(employee, 'product.costs', { ids: [cake.id] }))
+    expect(costs.data.items[0]?.cost).toEqual({ unpricedLines: 0, complete: true })
+    // Changing it stays with "change what goes into it".
+    expect(
+      codeOf(
+        await cafe.as(employee, 'recipe.save', {
+          productId: cake.id,
+          version: seen.data.version,
+          yieldQty: '6',
+          lines,
+        }),
+      ),
+    ).toBe('forbidden')
   })
 })
 
@@ -546,9 +746,10 @@ describe('an item bought ready to sell (D-117)', () => {
       productId: water.id,
       kind: 'resale',
       unit: 'piece',
+      yieldQty: '1',
       lineCount: 1,
       basis: null,
-      cost: { total: null, unpricedLines: 1, complete: false },
+      cost: { total: null, perUnit: null, tooLarge: false, unpricedLines: 1, complete: false },
     })
     // 3 cartons of 24 at 18: 54 for 72 bottles, 0.75 a bottle.
     await shop.buy(
@@ -558,7 +759,7 @@ describe('an item bought ready to sell (D-117)', () => {
     expect(after).toMatchObject({
       kind: 'resale',
       basis: 'purchases_90_days',
-      cost: { total: '0.75', unpricedLines: 0, complete: true },
+      cost: { total: '0.75', perUnit: '0.75', tooLarge: false, unpricedLines: 0, complete: true },
     })
   })
 
@@ -784,6 +985,8 @@ describe('who sees product costs', () => {
     expect(seen.data.lines[0]?.cost).toEqual({ basis: 'purchases_90_days' })
     expect(seen.data.cost).toEqual({ unpricedLines: 0, complete: true })
     expect(seen.meta.redacted).toEqual([
+      'cost.perUnit',
+      'cost.tooLarge',
       'cost.total',
       'lines.*.cost.lineCost',
       'lines.*.cost.perBaseUnit',

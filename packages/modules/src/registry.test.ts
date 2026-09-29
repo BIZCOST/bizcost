@@ -17,7 +17,7 @@ import {
   type ModuleId,
   type ModuleManifest,
 } from './manifests'
-import { PERMISSION_CATALOG, type PermissionKey } from './permissions'
+import { keysMissingNeeds, PERMISSION_CATALOG, type PermissionKey } from './permissions'
 import { ROLE_TEMPLATE_KEYS, ROLE_TEMPLATES } from './role-templates'
 
 const byId = new Map(MODULES.map((m) => [m.id, m]))
@@ -370,7 +370,19 @@ describe('role templates', () => {
         'materials.items.view',
       ].sort(),
     )
-    expect(keysOf('employee')).toEqual(['dashboard.home.view', 'products.items.view'])
+    // The owner's answers of 2026-09-29 (D-179, D-180): what goes into each product (quantities) and
+    // the materials it names, and entering expenses to send them for approval; nothing sensitive.
+    expect(keysOf('employee')).toEqual(
+      [
+        'dashboard.home.view',
+        'products.items.view',
+        'products.recipes.view',
+        'materials.items.view',
+        'expenses.documents.view',
+        'expenses.documents.manage',
+      ].sort(),
+    )
+    expect(keysMissingNeeds(keysOf('employee'))).toEqual([])
   })
 })
 

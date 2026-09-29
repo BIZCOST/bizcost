@@ -43,14 +43,14 @@ let api: PurchasingApi
 let a: Scope
 let today: string
 let sales: Person
-let employee: Person
 
 beforeAll(async () => {
   api = new PurchasingApi()
   a = await Scope.open(api, WORKSHOP)
   today = await a.today()
+  // Sales may not see what goes into a product (Employee may since the owner's answers of
+  // 2026-09-29, D-179: its quantities, without costs).
   sales = await api.member({ id: a.id, owner: a.owner }, 'sales')
-  employee = await api.member({ id: a.id, owner: a.owner }, 'employee')
 }, 60_000)
 
 afterAll(async () => {
@@ -109,10 +109,7 @@ describe('product.costs and members who may see neither recipes nor costs', () =
       purchaseInput(today, [materialLine(cola.resaleMaterialId!, '24', '1.5', { unit: 'piece' })]),
     )
 
-    for (const [template, person] of [
-      ['sales', sales],
-      ['employee', employee],
-    ] as const) {
+    for (const [template, person] of [['sales', sales]] as const) {
       // The premise: the member may not see what goes into a product.
       expect(codeOf(await a.as(person, 'recipe.get', { productId: latte.id })), template).toBe(
         'forbidden',

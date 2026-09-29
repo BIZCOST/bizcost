@@ -9,8 +9,10 @@ import { averageBasisDto } from './purchases'
 
 // Recipes and product costs (ROADMAP.md M2 Step 4; docs/DATA_MODEL.md §6; D-115, D-117, D-146–D-150).
 // One structure for a recipe, a bill of materials and "what you use" (the screens word it by the
-// business's terminology profile). A recipe is what ONE unit of a product or service (its unit) uses:
-// materials and packaging, each in any unit or pack of the material, converted to its base unit.
+// business's terminology profile). A recipe is what it takes to make `yieldQty` units of a product or
+// service (its unit; 1 by default, a cake that makes 12 slices, D-178): materials and packaging, each
+// in any unit or pack of the material, converted to its base unit. One unit sold costs the total ÷
+// the yield.
 // Material cost comes only from purchases: each line costs its base quantity × the material's average
 // today (the D-115 basis: the 90-day purchase average, else the last purchase), computed on read,
 // never rounded (12 decimals; screens round). A material never bought has no price ("no price yet",
@@ -26,9 +28,9 @@ const quantityInput = zDecimal.refine(
 )
 
 /**
- * A line: how much of a material one unit uses, `qty` in a standard unit (`unit`: of the material's
- * dimension, or of another one through its cross factor) or in one of its packs (`packId`); exactly
- * one of the two. `id` is a client UUIDv7: lines are matched by id on every save.
+ * A line: how much of a material the recipe uses (for its yield), `qty` in a standard unit (`unit`:
+ * of the material's dimension, or of another one through its cross factor) or in one of its packs
+ * (`packId`); exactly one of the two. `id` is a client UUIDv7: lines are matched by id on every save.
  */
 export const recipeLineInput = z
   .object({
@@ -54,6 +56,11 @@ export type RecipeGetInput = z.input<typeof recipeGetInput>
 export const saveRecipeInput = z.object({
   productId: zUuid,
   version: z.int().min(0),
+  /**
+   * How many of the product's unit the recipe makes ("This recipe makes: 12"): more than zero,
+   * numeric(24,6). Omitted: the recipe keeps its own (1 for a new recipe).
+   */
+  yieldQty: quantityInput.optional(),
   lines: z
     .array(recipeLineInput)
     .max(RECIPE_LINES_MAX)
@@ -99,10 +106,24 @@ export const recipeLineDto = z.object({
 })
 export type RecipeLineDto = z.infer<typeof recipeLineDto>
 
-/** What the materials of one unit cost. */
+/** What the materials of a recipe cost, and one unit sold. */
 export const materialsCostDto = z.object({
-  /** Σ the lines that have a price, 12 decimals; null when none has one (or there are no lines). */
+  /**
+   * Σ the lines that have a price (the whole recipe, for its yield), 12 decimals; null when none has
+   * one (or there are no lines).
+   */
   total: sensitive(zDecimal.nullable(), 'cost'),
+  /**
+   * One unit sold: total ÷ the recipe's yield, divided once, 12 decimals (the total itself for a
+   * yield of 1 and for an item bought ready to sell); null with the total, and when it is too large.
+   */
+  perUnit: sensitive(zDecimal.nullable(), 'cost'),
+  /**
+   * One unit's cost does not fit a cost amount (numeric(28,12): absurd quantities or prices, or a
+   * tiny yield), so perUnit is null ("too large to work out"; D-178, D-184). `cost`: it tells how
+   * large the cost is.
+   */
+  tooLarge: sensitive(z.boolean(), 'cost'),
   /** Lines whose material has no price yet. */
   unpricedLines: z.int().min(0),
   /** True when there are lines and every one has a price. */
@@ -112,8 +133,10 @@ export type MaterialsCostDto = z.infer<typeof materialsCostDto>
 
 export const recipeDto = z.object({
   productId: zUuid,
-  /** A recipe is for one of this unit (the product's). */
+  /** The product's unit: the recipe makes `yieldQty` of it. */
   productUnit: standardUnitDto,
+  /** How many of the product's unit the recipe makes (1: its lines are what one unit uses). */
+  yieldQty: zDecimal,
   /** The recipe's version (0: none saved yet); recipe.save names it. */
   version: z.int().min(0),
   /** In the order they were saved. */
@@ -146,8 +169,10 @@ export const productCostDto = z.object({
   productId: zUuid,
   /** `recipe`: what its recipe uses; `resale`: bought ready to sell, its material's average. */
   kind: productCostKindDto,
-  /** The cost is for one of this unit (the product's). */
+  /** `cost.perUnit` is for one of this unit (the product's). */
   unit: standardUnitDto,
+  /** How many of it the recipe makes (1 without a recipe, and for an item bought ready to sell). */
+  yieldQty: zDecimal,
   /** Recipe lines (0: no recipe yet); 1 for an item bought ready to sell. */
   lineCount: z.int().min(0),
   /** For an item bought ready to sell: which average its cost is (null: never bought). */

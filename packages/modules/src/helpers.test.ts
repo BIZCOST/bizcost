@@ -194,7 +194,7 @@ describe('the dev-only preview (D-125)', () => {
     const off = resolveEnabledModules([{ key: 'materials', enabled: false }])
     const ids = (enabled: ReadonlySet<string>, can: (key: string) => boolean) =>
       buildModuleNav(enabled, can, registry).map((m) => [m.id, m.nav.map((e) => e.id)])
-    expect(ids(resolveEnabledModules([]), canFor('employee'))).toEqual([
+    expect(ids(resolveEnabledModules([]), canFor('sales'))).toEqual([
       ['dashboard', ['dashboard']],
       ['settings', ['settings']],
       ['products', ['products']],
@@ -353,6 +353,43 @@ describe('buildModuleNav', () => {
       ['expenses', 'payables'],
     ])
     expect(noPurchases.some((m) => m.id === 'purchases')).toBe(false)
+  })
+
+  it('shows "Amounts owed" to a member it owes, without its keys, once (D-181)', () => {
+    const registry = withPreviewModules(['purchases', 'expenses'])
+    const all = new Set(['purchases', 'expenses'])
+    const employee = canFor('employee')
+    const entries = (payeeIn: Set<string>, enabled: ReadonlySet<string> = all) =>
+      buildModuleNav(enabled, employee, registry, payeeIn).map((m) => [
+        m.id,
+        m.nav.map((e) => e.id),
+      ])
+    // Nothing owed: no Amounts owed (the employee has no payment keys).
+    expect(entries(new Set()).flatMap(([, ids]) => ids)).not.toContain('payables')
+    // Owed for an expense: the entry comes with Expenses, once.
+    expect(entries(new Set(['expenses']))).toContainEqual(['expenses', ['expenses', 'payables']])
+    // Owed for a purchase (no Purchases keys): after Expenses, the section the employee works in,
+    // so it never pushes it into the phone's "More" (D-184); listed once for both.
+    expect(entries(new Set(['purchases']))).toContainEqual(['expenses', ['expenses', 'payables']])
+    const both = entries(new Set(['purchases', 'expenses']))
+    expect(both).toContainEqual(['purchases', []])
+    expect(both).toContainEqual(['expenses', ['expenses', 'payables']])
+    expect(both.flatMap(([, ids]) => ids).filter((id) => id === 'payables')).toHaveLength(1)
+    // Reached by keys (a Manager), it stays with Purchases, its first module.
+    const manager = buildModuleNav(all, canFor('manager'), registry, new Set(['expenses']))
+    expect(manager.find((m) => m.id === 'purchases')?.nav.map((e) => e.id)).toContain('payables')
+    expect(manager.find((m) => m.id === 'expenses')?.nav.map((e) => e.id)).not.toContain('payables')
+    // A module turned off shows nothing for it.
+    const noExpenses = resolveEnabledModules([{ key: 'expenses', enabled: false }])
+    expect(entries(new Set(['expenses']), noExpenses).flatMap(([, ids]) => ids)).not.toContain(
+      'payables',
+    )
+    // Only the payables entries are for payees.
+    for (const manifest of registry) {
+      for (const entry of manifest.nav) {
+        if (entry.payees) expect(entry.id).toBe('payables')
+      }
+    }
   })
 })
 

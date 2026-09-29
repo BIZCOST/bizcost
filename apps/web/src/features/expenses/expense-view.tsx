@@ -30,7 +30,7 @@ import { Textarea } from '@/components/ui/textarea'
 import { Money, useBusinessDate, useMoney } from '@/features/purchasing/amounts'
 import { closedFor, nextDay } from '@/features/purchasing/books'
 import { ConfirmDialog } from '@/features/purchasing/confirm-dialog'
-import { useLocationOptions } from '@/features/purchasing/data'
+import { useLocationOptions, useRefreshOwnRecords } from '@/features/purchasing/data'
 import { Panel } from '@/features/purchasing/panel'
 import { PaymentsPanel } from '@/features/purchasing/payments-panel'
 import { Receipts } from '@/features/purchasing/receipts'
@@ -46,7 +46,10 @@ import { ExpenseStatusBadge } from './status-badge'
 // approved or rejected it, its payments (on credit or paid by an employee) and its receipts. The
 // actions are the domain's (expenseActions: the approval rules) that the member's keys allow: send
 // for approval, approve, reject (with an optional reason), finalize, reverse and correct, discard.
-// Every action asks first, saying in plain words what it changes.
+// Every action asks first, saying in plain words what it changes. A member who may not see supplier
+// prices changes only what they entered, and only while it is a draft or rejected (D-184). A draft that nobody sends for
+// approval (approval off) says it waits for someone who may finalize it, to a member who may not
+// (D-180); a final expense the member paid themselves leads to what the business owes them (D-181).
 
 type Confirm = 'submit' | 'approve' | 'reject' | 'finalize' | 'reverse' | 'correct' | 'discard'
 
@@ -62,6 +65,7 @@ function Detail({ label, children }: { label: string; children: ReactNode }) {
 export function ExpenseView({
   result,
   mine,
+  paidByMe = false,
   onEdit,
   today,
   closedThrough,
@@ -69,6 +73,8 @@ export function ExpenseView({
   result: ExpenseResultDto
   /** Whether the member entered it (unknown: undefined). */
   mine?: boolean
+  /** Whether the member paid it from their own money. */
+  paidByMe?: boolean
   /** Opens it in the editor (a rejected expense someone else entered, for a member who may fix it). */
   onEdit?: () => void
   today: string
@@ -92,6 +98,7 @@ export function ExpenseView({
   const reverse = useMutation(trpc.expense.reverse.mutationOptions())
   const correct = useMutation(trpc.expense.correct.mutationOptions())
   const discard = useMutation(trpc.expense.discard.mutationOptions())
+  const refreshOwn = useRefreshOwnRecords()
   const [confirm, setConfirm] = useState<Confirm | null>(null)
   const [confirmError, setConfirmError] = useState<I18nKey | null>(null)
   const [busy, setBusy] = useState(false)
@@ -117,6 +124,10 @@ export function ExpenseView({
   const hasTeam = context.capabilities.has_team === true
   const inApproval = expense.status === 'submitted' || expense.status === 'approved'
   const canReverse = can(context, 'expenses.documents.reverse')
+  // A member who may not see supplier prices changes only what they entered (D-184): never another
+  // member's draft, never a correction (the copy carries the amounts). The API refuses the same.
+  const seesPrices = context.visibleCategories.includes('supplier_price')
+  const mayChange = canManage && (seesPrices || mine === true)
   const listHref = `/b/${businessId}/expenses`
   // What the approval rules allow in this status (D-164), then what this member's keys allow.
   const allowed = new Set(
@@ -127,11 +138,11 @@ export function ExpenseView({
     }),
   )
   const offers = {
-    submit: allowed.has('submit') && canManage,
+    submit: allowed.has('submit') && mayChange,
     approve: allowed.has('approve') && mayApprove,
     reject: allowed.has('reject') && mayApprove,
     finalize: allowed.has('post') && canPost,
-    discard: allowed.has('discard') && canManage,
+    discard: allowed.has('discard') && mayChange,
   }
   // A final expense is reversed (or corrected) only once its payments that stand are (D-166).
   const standingPayments = (payments.data?.data.payments ?? []).filter(
@@ -169,6 +180,7 @@ export function ExpenseView({
       queryClient.invalidateQueries({ queryKey: trpc.expense.list.pathKey() }),
       queryClient.invalidateQueries({ queryKey: trpc.expensePayment.list.pathKey() }),
       queryClient.invalidateQueries({ queryKey: trpc.payable.list.pathKey() }),
+      refreshOwn(),
     ])
   }
 
@@ -298,7 +310,7 @@ export function ExpenseView({
               {t('expenses.view.edit')}
             </Button>
           ) : null}
-          {reversible && canReverse && canManage ? (
+          {reversible && canReverse && canManage && seesPrices ? (
             <Button variant="outline" onClick={() => ask('correct')}>
               <CopyIcon aria-hidden />
               {t('expenses.view.correct')}
@@ -382,7 +394,25 @@ export function ExpenseView({
           </FormAlert>
         ) : expense.status === 'draft' ? (
           <FormAlert tone="info">
-            {redacted && canManage ? t('expenses.view.draftLocked') : t('expenses.view.draftNote')}
+            {!expense.approvalRequired && !canPost
+              ? t('expenses.view.draftWaits')
+              : redacted && canManage
+                ? t('expenses.view.draftLocked')
+                : t('expenses.view.draftNote')}
+          </FormAlert>
+        ) : null}
+        {paidByMe &&
+        expense.status === 'posted' &&
+        expense.paymentMethod === 'paid_by_member' &&
+        !showsPayments ? (
+          <FormAlert tone="info">
+            {t('expenses.view.paidByYou')}{' '}
+            <Link
+              href={`/b/${businessId}/payables?to=me`}
+              className="font-medium text-primary underline-offset-4 hover:underline"
+            >
+              {t('expenses.view.owedToYouLink')}
+            </Link>
           </FormAlert>
         ) : null}
         {expense.copiedFromId ? (
@@ -510,7 +540,16 @@ export function ExpenseView({
 
         <Panel title={t('expenses.editor.receipt')} hint={t('expenses.editor.receiptHint')}>
           {/* Frozen while it is reviewed, receipts included (D-176). */}
-          <Receipts entity="expense" recordId={expense.id} canManage={canManage && !inApproval} />
+          <Receipts
+            entity="expense"
+            recordId={expense.id}
+            canManage={
+              !inApproval &&
+              (seesPrices
+                ? canManage
+                : mayChange && (expense.status === 'draft' || expense.status === 'rejected'))
+            }
+          />
         </Panel>
       </div>
 

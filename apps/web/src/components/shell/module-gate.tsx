@@ -18,14 +18,18 @@ import { useNavWording } from './use-nav-wording'
  * entry `entryId`; otherwise the "turned off" or "not open to you" state (the API refuses the same:
  * MODULE_DISABLED, FORBIDDEN), with a way to another section of the shell. Wrap each module's pages in
  * it. A page several modules share (Amounts owed) names them all: it is open through any of them.
+ * `openToEveryMember`: a page with something for every member (Amounts owed shows each member what is
+ * owed to them, D-181) is open whenever one of its modules is on, whatever the member's keys.
  */
 export function ModuleGate({
   moduleId,
   entryId,
+  openToEveryMember = false,
   children,
 }: {
   moduleId: ModuleIds
   entryId: string
+  openToEveryMember?: boolean
   children: ReactNode
 }) {
   const { t } = useTranslation()
@@ -35,7 +39,7 @@ export function ModuleGate({
   const wording = useNavWording()
   if (!context) return null
   const access = moduleAccess(context.modules, moduleId, entryId)
-  if (access === 'open') return children
+  if (access === 'open' || (access === 'forbidden' && openToEveryMember)) return children
   const back = wayBack(shellNav(context.modules, businessId, pathname, wording), moduleId)
   const backLink = back ? (
     <Button asChild variant="outline" size="lg">

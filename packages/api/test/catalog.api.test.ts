@@ -165,8 +165,10 @@ describe('the module gate', () => {
 })
 
 describe('permissions of the role templates (D-124)', () => {
+  // Employee sees materials since the owner's answers of 2026-09-29 (what goes into each product
+  // names them, D-155, D-179).
   const VIEW = {
-    materials: ['admin', 'manager', 'accountant', 'supervisor'],
+    materials: ['admin', 'manager', 'accountant', 'supervisor', 'employee'],
     products: ['admin', 'manager', 'accountant', 'sales', 'supervisor', 'employee'],
   }
   const MANAGE = ['admin', 'manager']
@@ -207,12 +209,15 @@ describe('permissions of the role templates (D-124)', () => {
     }
   })
 
-  it('the employee sees Products & Services in the nav, and Materials with no entry', async () => {
-    const context = ok(
-      await call<BusinessContextDto>(team.employee, businessId, 'business.context'),
-    )
-    const nav = Object.fromEntries(context.modules.map((m) => [m.id, m.nav.length]))
-    expect(nav).toMatchObject({ products: 1, materials: 0 })
+  it('Sales sees Products & Services in the nav, and Materials with no entry; Employee both', async () => {
+    const navOf = async (person: Person) =>
+      Object.fromEntries(
+        ok(await call<BusinessContextDto>(person, businessId, 'business.context')).modules.map(
+          (m) => [m.id, m.nav.length],
+        ),
+      )
+    expect(await navOf(team.sales)).toMatchObject({ products: 1, materials: 0 })
+    expect(await navOf(team.employee)).toMatchObject({ products: 1, materials: 1 })
   })
 })
 

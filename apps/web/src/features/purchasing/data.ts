@@ -2,8 +2,8 @@
 
 import { useTRPC } from '@bizcost/app-core'
 import type { BusinessContextDto, MaterialDto } from '@bizcost/contracts'
-import { useInfiniteQuery, useQuery } from '@tanstack/react-query'
-import { useEffect, useMemo } from 'react'
+import { useInfiniteQuery, useQuery, useQueryClient } from '@tanstack/react-query'
+import { useCallback, useEffect, useMemo } from 'react'
 import { can } from '@/features/settings/sections'
 
 // What the purchase screens read besides the purchase: the materials a line can name, the suppliers,
@@ -13,6 +13,37 @@ import { can } from '@/features/settings/sections'
 /** Whether module `id` is on for the business (released, or previewed on a local server). */
 export function hasModule(context: BusinessContextDto, id: string): boolean {
   return context.modules.some((module) => module.id === id)
+}
+
+/**
+ * Whether the member may see what the business owes others (payable.list): a kind's payments key
+ * with its module on (the amounts also need supplier prices: without them the page says so, D-160).
+ */
+export function mayListPayables(context: BusinessContextDto): boolean {
+  return (
+    (hasModule(context, 'purchases') && can(context, 'purchases.payments.view')) ||
+    (hasModule(context, 'expenses') && can(context, 'expenses.payments.view'))
+  )
+}
+
+/**
+ * After a change to an expense, a purchase or a payment: the member's own records (My expenses, an
+ * expense of theirs with its amounts, Owed to me; D-181) are read again.
+ */
+export function useRefreshOwnRecords() {
+  const trpc = useTRPC()
+  const queryClient = useQueryClient()
+  return useCallback(
+    () =>
+      Promise.all(
+        [
+          trpc.expense.mine.pathKey(),
+          trpc.expense.getMine.pathKey(),
+          trpc.payable.mine.pathKey(),
+        ].map((queryKey) => queryClient.invalidateQueries({ queryKey })),
+      ),
+    [trpc, queryClient],
+  )
 }
 
 /**

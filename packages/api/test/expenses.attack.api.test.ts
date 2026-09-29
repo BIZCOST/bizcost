@@ -521,13 +521,13 @@ describe('what running costs reveal', () => {
     ).toBe('forbidden')
   })
 
-  it('an Employee may not see or manage categories without expenses or running costs', async () => {
-    const employee = await api.member(shop, 'employee')
-    expect(codeOf(await shop.as(employee, 'costCategory.list'))).toBe('forbidden')
-    expect(codeOf(await shop.as(employee, 'costCategory.create', { id: newId(), name: 'x' }))).toBe(
+  it('a member without expenses or running costs (Sales) may not see or manage categories', async () => {
+    const sales = await api.member(shop, 'sales')
+    expect(codeOf(await shop.as(sales, 'costCategory.list'))).toBe('forbidden')
+    expect(codeOf(await shop.as(sales, 'costCategory.create', { id: newId(), name: 'x' }))).toBe(
       'forbidden',
     )
-    expect(codeOf(await shop.as(employee, 'costCategory.archive', { id: category.id }))).toBe(
+    expect(codeOf(await shop.as(sales, 'costCategory.archive', { id: category.id }))).toBe(
       'forbidden',
     )
     const listed = ok(

@@ -670,6 +670,7 @@ export function queryInputOf(path: string, tenant: Tenant): unknown {
   if (path === 'payable.list') return { party: 'supplier' }
   if (path === 'purchasePayment.list') return { purchaseId: tenant.creditPurchase.id }
   if (path === 'expense.get') return { id: tenant.expense.id }
+  if (path === 'expense.getMine') return { id: tenant.expense.id }
   if (path === 'expensePayment.list') return { expenseId: tenant.expense.id }
   if (path === 'runningCost.get') return { id: tenant.runningCost.id }
   return undefined

@@ -25,11 +25,16 @@ import { previewBaseURL } from '../stack'
 //     monthly total; a change not saved is asked about (English, desktop; Arabic, phone);
 //   - a café (VAT-registered, with a team) records an expense an employee paid from their own money,
 //     with its receipt, before VAT; it shows under that employee in Amounts owed and is paid back
-//     from there; the expense says it is paid in full (English, desktop; Arabic, phone);
-//   - a workshop with approval on: the employee enters an expense and sends it for approval (Arabic,
-//     a 375 px phone: the total stays whole next to "Send for approval"), the manager sees it waiting,
-//     approves it, then finalizes it (English, desktop); a second is rejected, and the manager stays
-//     on it, with "Edit" (D-175, D-177).
+//     from there; the expense says it is paid in full (English, desktop; Arabic, phone). The
+//     employee, whose role hides supplier prices, sees it with its amount in "My expenses", what is
+//     owed to them and then paid back in "Owed to me" (the owner's answers of 2026-09-29, D-181;
+//     Arabic, phone and desktop);
+//   - a workshop with approval on: the employee (the template, D-180) enters an expense and sends it
+//     for approval (Arabic, a 375 px phone: the total stays whole next to "Send for approval"), and
+//     still sees its amount (their own); the manager sees it waiting, approves it, then finalizes it
+//     (English, desktop); a second is rejected, the manager stays on it, with "Edit" (D-175, D-177),
+//     and it comes back to the employee's editor with its amount;
+//   - approval off: the employee's draft waits for someone who may finalize it, and says so.
 // With E2E_SHOTS_DIR set, each step leaves a screenshot there (AR/EN at 375, 390 and 1440 px).
 
 test.describe.configure({ mode: 'serial' })
@@ -387,7 +392,7 @@ test('a café: an expense an employee paid, owed to them, then paid back (Englis
   const businessId = await createBusiness(page, 'Palm Café', CAFE_ANSWERS)
   const khalidUser = await createUser('expenses-employee', { locale: 'en' })
   users.push(khalidUser)
-  const khalid = await openAs(browser, khalidUser, PHONE, 'en', 'Khalid')
+  const khalid = await openAs(browser, khalidUser, PHONE, 'ar', 'Khalid')
   await joinBusiness(page, businessId, khalid, khalidUser, 'employee')
 
   // The Expenses page, its line about costs, and a new expense.
@@ -447,6 +452,49 @@ test('a café: an expense an employee paid, owed to them, then paid back (Englis
   await expectSound(page, 'en')
   await shot(page, 'en-1440-expense-view')
 
+  // Khalid (the Employee template: no supplier prices), Arabic, phone: his own expenses open first,
+  // with their amounts, and what the business owes him (D-181).
+  await khalid.goto(`/b/${businessId}/expenses`)
+  await expect(khalid.getByRole('tab', { name: 'مصروفاتي' })).toHaveAttribute(
+    'aria-selected',
+    'true',
+  )
+  const mine = khalid.locator(`[data-mine-expense="${expenseId}"]`)
+  await expect(mine).toContainText('Fixing the coffee grinder')
+  await expect(mine).toContainText('42.00')
+  await expect(mine).toContainText('من مالك الخاص')
+  await expect(mine.locator('[data-settlement="owed"]')).toContainText('مستحق لك')
+  await expect(khalid.locator('[data-owed-to-me-card]')).toContainText('42.00')
+  await expect(khalid.locator('[data-locked]')).toHaveCount(0)
+  await expectSound(khalid, 'ar')
+  await shot(khalid, 'ar-390-my-expenses-owed')
+  // Everyone's expenses still hide the amounts (supplier prices).
+  await khalid.getByRole('tab', { name: 'كل المصروفات' }).click()
+  await expect(
+    khalid.locator(`[data-expense="${expenseId}"] [data-locked="supplier_price"]`),
+  ).toHaveCount(1)
+  // …and say where his own show theirs (D-184).
+  await expect(khalid.locator('[data-own-amounts]')).toHaveText('تظهر مبالغ مصروفاتك في مصروفاتي.')
+  // His expense itself shows its amounts, and leads to what is owed to him.
+  await khalid.goto(`/b/${businessId}/expenses/${expenseId}`)
+  await expect(khalid.locator('[data-total="total"]')).toContainText('42.00')
+  // Only the receipt's file stays locked (its name shows, D-139); no amount is.
+  await expect(khalid.locator('[data-locked]')).toHaveCount(1)
+  await expect(khalid.getByText('grinder-receipt.png')).toBeVisible()
+  await expect(khalid.getByText('دُفع هذا المصروف من مالك الخاص.')).toBeVisible()
+  await expectSound(khalid, 'ar')
+  await shot(khalid, 'ar-390-my-expense')
+  await khalid.getByRole('link', { name: 'اعرض المستحق لك' }).click()
+  await expect(khalid).toHaveURL(/\/payables\?to=me$/)
+  await expect(khalid.getByRole('heading', { level: 1 })).toHaveText('المستحقات')
+  // Only what is owed to him: no tabs of what is owed to others.
+  await expect(khalid.getByRole('tab')).toHaveCount(0)
+  await expect(khalid.locator('[data-owed-to-me-total]')).toContainText('42.00')
+  const owedRow = khalid.locator(`[data-owed-item="${expenseId}"]`)
+  await expect(owedRow.locator('[data-amount="outstanding"]')).toContainText('42.00')
+  await expectSound(khalid, 'ar')
+  await shot(khalid, 'ar-390-owed-to-me')
+
   // Amounts owed: to Khalid, the expense, with who entered it.
   await page
     .getByRole('navigation', { name: 'Main' })
@@ -464,17 +512,73 @@ test('a café: an expense an employee paid, owed to them, then paid back (Englis
   await expectSound(page, 'en')
   await shot(page, 'en-1440-payables-expense')
 
-  // Paid back, in cash, from there.
+  // Paid back in part first (20.00 of 42.00), in cash, from there.
   await owedToKhalid.getByRole('button', { name: 'Record a payment' }).click()
   const pay = page.getByRole('dialog', { name: 'Record a payment' })
   await expect(pay).toContainText(withValue('What you paid ', 'Khalid', ' back for this expense.'))
   await expect(pay.getByRole('textbox', { name: 'Amount' })).toHaveValue('42.00')
+  await pay.getByRole('textbox', { name: 'Amount' }).fill('20')
   await pay.getByRole('combobox', { name: 'How you paid' }).selectOption({ label: 'Cash' })
   await shot(page, 'en-1440-expense-payment-sheet')
   await pay.getByRole('button', { name: 'Record payment' }).click()
   await expect(page.getByText('Payment recorded.')).toBeVisible()
+  await expect(pay).toHaveCount(0)
+  await expect(owedToKhalid.locator('[data-amount="outstanding"]')).toContainText('AED 22.00')
+
+  // Khalid on a 375 px phone: partly paid back. The row keeps what it was for readable, with what
+  // is still owed and what was paid back on a line of its own (D-184).
+  await khalid.setViewportSize(SMALL_PHONE)
+  await khalid.goto(`/b/${businessId}/expenses`)
+  const partly = mine.locator('[data-settlement="owed"]')
+  await expect(partly).toContainText('مستحق لك')
+  await expect(partly).toContainText('سُدّد لك')
+  await expect(partly).toContainText('20.00')
+  await expect(partly).toContainText('42.00')
+  const [title, settlement] = await Promise.all([
+    mine.getByText('Fixing the coffee grinder').boundingBox(),
+    partly.boundingBox(),
+  ])
+  expect(title?.width ?? 0).toBeGreaterThan(150)
+  expect(settlement?.y ?? 0).toBeGreaterThanOrEqual((title?.y ?? 0) + (title?.height ?? 0))
+  expect(
+    await khalid.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth),
+  ).toBe(true)
+  await expectSound(khalid, 'ar')
+  await shot(khalid, 'ar-375-my-expenses-partly-paid')
+  await khalid.setViewportSize(PHONE)
+
+  // Then the rest (22.00).
+  await owedToKhalid.getByRole('button', { name: 'Record a payment' }).click()
+  await expect(pay.getByRole('textbox', { name: 'Amount' })).toHaveValue('22.00')
+  await pay.getByRole('combobox', { name: 'How you paid' }).selectOption({ label: 'Cash' })
+  await pay.getByRole('button', { name: 'Record payment' }).click()
+  await expect(pay).toHaveCount(0)
   await expect(
     page.getByRole('heading', { level: 2, name: 'Nothing owed to employees' }),
+  ).toBeVisible()
+
+  // Khalid sees it paid back: when and how much (each payment), and nothing owed.
+  await khalid.goto(`/b/${businessId}/payables?to=me`)
+  await expect(owedRow.locator('[data-amount="outstanding"]')).toContainText('سُدّد لك بالكامل')
+  await expect(owedRow.locator('[data-paid-back]')).toHaveCount(2)
+  await expect(owedRow.locator('[data-paid-back]').first()).toContainText('22.00')
+  await expect(owedRow.locator('[data-paid-back]').last()).toContainText('20.00')
+  await expect(owedRow.locator('[data-amount="paid"]')).toContainText('42.00')
+  await expect(khalid.locator('[data-owed-to-me-total]')).toContainText('0.00')
+  await expectSound(khalid, 'ar')
+  await shot(khalid, 'ar-390-owed-to-me-paid')
+  await khalid.setViewportSize(DESKTOP)
+  await expectSound(khalid, 'ar')
+  await shot(khalid, 'ar-1440-owed-to-me-paid')
+  await khalid.goto(`/b/${businessId}/expenses`)
+  await expect(mine.locator('[data-settlement="settled"]')).toHaveText('سُدّد لك')
+  await expectSound(khalid, 'ar')
+  await shot(khalid, 'ar-1440-my-expenses')
+  // The Amounts owed entry is his too now (the business owed him).
+  await expect(
+    khalid
+      .getByRole('navigation', { name: 'القائمة الرئيسية' })
+      .getByRole('link', { name: 'المستحقات' }),
   ).toBeVisible()
 
   // The expense: paid in full; it can't be reversed while the payment stands.
@@ -569,37 +673,10 @@ test('approval on: the employee sends an expense, the manager approves and final
   await approval.click()
   await expect(owner.getByText('Expenses now need approval.')).toBeVisible()
   await expect(approval).toBeChecked()
-  // With the starter roles, everyone who enters expenses also approves them: nothing would wait.
-  await expect(owner.locator('[data-nobody-sends]')).toContainText(
-    'Right now everyone who enters expenses also approves them',
-  )
-  await shot(owner, 'en-1440-settings-approval')
-  const roles = await callApi<
-    { id: string; templateKey: string | null; version: number; permissionKeys: string[] }[]
-  >(owner, 'role.list', {}, { businessId, query: true })
-  const employeeRole = roles.data!.find((role) => role.templateKey === 'employee')!
-  expect(
-    (
-      await callApi(
-        owner,
-        'role.updatePermissions',
-        {
-          id: employeeRole.id,
-          version: employeeRole.version,
-          permissionKeys: [
-            ...employeeRole.permissionKeys,
-            'expenses.documents.view',
-            'expenses.documents.manage',
-          ],
-        },
-        { businessId },
-      )
-    ).appCode,
-  ).toBeUndefined()
-
-  await owner.reload()
-  await expect(owner.getByRole('switch', { name: 'Expenses need approval' })).toBeChecked()
+  // The Employee template enters expenses without approving them (the owner's answer of 2026-09-29,
+  // D-180): what is sent has someone to approve it, so nothing warns that nobody would send.
   await expect(owner.locator('[data-nobody-sends]')).toHaveCount(0)
+  await shot(owner, 'en-1440-settings-approval')
 
   const employeeUser = await createUser('expenses-sender', { locale: 'en' })
   const managerUser = await createUser('expenses-approver', { locale: 'en' })
@@ -614,8 +691,7 @@ test('approval on: the employee sends an expense, the manager approves and final
   await employee.goto(`/b/${businessId}/expenses/new`)
   await expect(employee.getByRole('heading', { level: 1 })).toHaveText('مصروف جديد')
   await expect(employee.getByRole('button', { name: 'اعتمد نهائيًا' })).toHaveCount(0)
-  // Their role won't show the amount once it's sent (D-165): said before they send it.
-  await expect(employee.getByText('بعد إرساله لن يعرض دورك مبلغه.')).toBeVisible()
+  await expect(employee.getByText('أرسله للموافقة', { exact: false })).toBeVisible()
   await employee.getByRole('textbox', { name: 'المبلغ' }).fill('75')
   await employee
     .getByRole('combobox', { name: 'الفئة', exact: true })
@@ -633,8 +709,9 @@ test('approval on: the employee sends an expense, the manager approves and final
   await send.getByRole('button', { name: 'أرسل', exact: true }).click()
   await expect(employee.getByRole('heading', { level: 1 })).toHaveText(/^مصروف /)
   await expect(employee.locator('[data-status="submitted"]').first()).toHaveText('بانتظار الموافقة')
-  // An employee sees no amounts (supplier prices): a lock in their place.
-  await expect(employee.locator('[data-locked="supplier_price"]').first()).toBeVisible()
+  // Their role hides supplier prices, but this one is their own: they see its amount (D-181).
+  await expect(employee.locator('[data-locked]')).toHaveCount(0)
+  await expect(employee.locator('[data-total="total"]')).toContainText('75.00')
   await expectSound(employee, 'ar')
   await shot(employee, 'ar-375-expense-submitted')
   const expenseId = employee.url().split('/').at(-1)!
@@ -738,8 +815,13 @@ test('approval on: the employee sends an expense, the manager approves and final
   ).toBeVisible()
   await shot(manager, 'en-1440-expense-rejected-reviewer-edit')
   await employee.reload()
+  // It comes back to them to change: their own editor, with its amount and the reason.
+  await expect(employee.getByRole('heading', { level: 1 })).toHaveText('مصروف مرفوض')
   await expect(employee.locator('[data-status="rejected"]').first()).toHaveText('مرفوض')
-  await expect(employee.getByText('السبب: Please add the receipt')).toBeVisible()
+  await expect(
+    employee.getByRole('alert').filter({ hasText: 'Please add the receipt' }),
+  ).toBeVisible()
+  await expect(employee.getByRole('textbox', { name: 'المبلغ' })).toHaveValue(/^30(?:\.0+)?$/)
   await expectSound(employee, 'ar')
   await shot(employee, 'ar-375-expense-rejected')
   await manager.setViewportSize(PHONE)
@@ -766,4 +848,43 @@ test('approval on: the employee sends an expense, the manager approves and final
   await expectWholeTotal(employee, '12,345.67')
   await expectSound(employee, 'en')
   await shot(employee, 'en-375-expense-submit-editor')
+
+  // Approval off: the employee may not finalize, so their draft waits for someone who may; the
+  // editor and the saved draft say so (D-180).
+  await owner.goto(`/b/${businessId}/settings/approval`)
+  await owner.getByRole('switch', { name: 'Expenses need approval' }).click()
+  await expect(owner.getByRole('switch', { name: 'Expenses need approval' })).not.toBeChecked()
+  await employee.reload()
+  await expect(
+    employee.getByText('someone who may finalize expenses will finalize it', { exact: false }),
+  ).toBeVisible()
+  await expect(employee.getByRole('button', { name: 'Send for approval' })).toHaveCount(0)
+  await expect(employee.getByRole('button', { name: 'Finalize' })).toHaveCount(0)
+  await employee.getByRole('textbox', { name: 'Amount' }).fill('18')
+  await employee
+    .getByRole('combobox', { name: 'Category', exact: true })
+    .selectOption({ label: 'Other' })
+  await employee.getByRole('combobox', { name: 'How it was paid' }).selectOption({ label: 'Cash' })
+  await employee.getByRole('button', { name: 'Save draft' }).click()
+  await expect(employee.getByText('Draft saved.')).toBeVisible()
+  await expect(employee.getByRole('heading', { level: 1 })).toHaveText('Draft expense')
+  // Saved, it says it waits (not "Save it" again, D-184).
+  await expect(
+    employee.getByText('This draft waits for someone who may finalize expenses.', { exact: false }),
+  ).toBeVisible()
+  await expect(employee.getByText('Save it:', { exact: false })).toHaveCount(0)
+  await expectSound(employee, 'en')
+  await shot(employee, 'en-375-expense-draft-waits')
+  // Who may finalize it hears that a draft of the team waits for them, and finds it (D-184).
+  await owner.goto(`/b/${businessId}/expenses`)
+  await expect(owner.locator('[data-drafts-waiting]')).toHaveText(
+    'Drafts entered by your team are waiting for you to finalize them.',
+  )
+  await owner.getByRole('link', { name: 'Show them' }).click()
+  await expect(owner).toHaveURL(/status=draft/)
+  await expect(owner.locator('[data-drafts-waiting]')).toHaveCount(0)
+  await expect(owner.getByRole('list', { name: 'Expenses' })).toContainText('Other')
+  await expectSound(owner, 'en')
+  await shot(owner, 'en-1440-expenses-drafts-waiting')
+  await setLanguage(employee, 'ar')
 })

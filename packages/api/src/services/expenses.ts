@@ -49,8 +49,9 @@ import { assertPostable, isoOf, lockPostingBusiness, reversalDateOf } from './st
 
 // Expenses (ROADMAP.md M2 Step 5; PRODUCT.md §4 rule 13; DATA_MODEL.md §6; D-114, D-116, D-164–D-166).
 // Module `expenses`: expenses.documents.view to read, .manage to save, discard and send drafts for
-// approval, .approve to approve or reject, .post to finalize, .reverse to reverse (and with .manage,
-// correct); the router checks them. An expense is one amount in one category (shared with running
+// approval (a member who may not see supplier prices: only the ones they entered, D-184), .approve to
+// approve or reject, .post to finalize, .reverse to reverse (and with .manage, correct, seeing supplier
+// prices); the router checks the keys. An expense is one amount in one category (shared with running
 // costs, D-116), with the document it came with (independent of how it was paid) and an optional
 // supplier; the amount is typed before VAT or with its VAT (D-157) and its net, VAT and total are
 // computed on every save (computeExpense: the purchase line's maths). How it was paid is required,
@@ -94,6 +95,18 @@ function approvalRequired(ctx: BusinessCtx, setting: boolean): boolean {
  */
 function assertSeesWhatIsReviewed(ctx: BusinessCtx) {
   assertQueryable(ctx, [{ name: 'total', category: 'supplier_price' }])
+}
+
+/**
+ * A member who may not see supplier prices changes only the expenses they entered themselves (the
+ * owner's answer A3: an employee enters their own expenses and sends them for approval; D-180, D-184):
+ * never another member's draft or rejected expense, whose amounts they cannot see. FORBIDDEN
+ * otherwise, before anything is changed.
+ */
+function assertMayChange(ctx: BusinessCtx, head: HeadRecord) {
+  if (!ctx.access.visibleCategories.has('supplier_price') && !head.entered_by_me) {
+    throw new AppError('forbidden')
+  }
 }
 
 /** The member who holds `userColumn` (an auth user id) in the business, as `memberNameDto`. */
@@ -275,6 +288,9 @@ interface ListRecord extends Record<string, unknown> {
 export async function listExpenses(ctx: BusinessCtx, input: ListInput): Promise<ExpenseListDto> {
   const conditions = [sql`e.business_id = ${ctx.businessId}`, sql`e.deleted_at is null`]
   if (input.status !== 'all') conditions.push(sql`e.status = ${input.status}`)
+  if (input.enteredBy === 'others') {
+    conditions.push(sql`e.created_by is distinct from app.current_user_id()`)
+  }
   if (input.categoryId) conditions.push(sql`e.category_id = ${input.categoryId}`)
   if (input.supplierId) conditions.push(sql`e.supplier_id = ${input.supplierId}`)
   if (input.from) conditions.push(sql`e.business_date >= ${input.from}::date`)
@@ -443,6 +459,8 @@ interface HeadRecord extends Record<string, unknown> {
   vat_rate: string
   approved_at: Date | string | null
   rejected_at: Date | string | null
+  /** The caller entered it (created_by). */
+  entered_by_me: boolean
 }
 
 /** The expense row, locked FOR UPDATE; NOT_FOUND when not live. */
@@ -452,7 +470,8 @@ async function lockExpense(tx: Tx, businessId: string, id: string): Promise<Head
            e.location_id, e.document_type, e.payment_method, e.paid_by_member_id,
            e.prices_include_vat, e.vat_not_reclaimable, trim(e.currency) as currency,
            trim_scale(e.amount)::text as amount, trim_scale(e.vat_rate)::text as vat_rate,
-           e.approved_at, e.rejected_at
+           e.approved_at, e.rejected_at,
+           coalesce(e.created_by = app.current_user_id(), false) as entered_by_me
       from app.expenses e
      where e.business_id = ${businessId} and e.id = ${id} and e.deleted_at is null
        for update
@@ -506,12 +525,14 @@ async function setColumns(
 
 /**
  * `expense.update`: the whole draft (or rejected expense, which becomes a draft again), `version` as
- * read. EXPENSE_IN_APPROVAL while it is sent for approval, DOCUMENT_POSTED once final.
+ * read. EXPENSE_IN_APPROVAL while it is sent for approval, DOCUMENT_POSTED once final; FORBIDDEN for
+ * another member's expense when the caller may not see supplier prices (assertMayChange).
  */
 export function updateExpense(ctx: BusinessCtx, input: UpdateInput): Promise<ExpenseResultDto> {
   const { id, version, ...fields } = input
   return ctx.tx(async (tx) => {
     const head = await lockExpense(tx, ctx.businessId, id)
+    assertMayChange(ctx, head)
     const transition = transitionOf(ctx, 'update', head, false)
     assertVersion(head, version)
     const values = await prepareDraft(tx, ctx, fields, head.category_id)
@@ -523,11 +544,12 @@ export function updateExpense(ctx: BusinessCtx, input: UpdateInput): Promise<Exp
 /**
  * `expense.discard`: a draft (or rejected expense) is taken out (soft-deleted); never one sent for
  * approval or final. Its receipts go with it: taken off in the same transaction, their files removed
- * after it.
+ * after it. FORBIDDEN for another member's expense when the caller may not see supplier prices.
  */
 export async function discardExpense(ctx: BusinessCtx, input: VersionInput): Promise<OkDto> {
   const files = await ctx.tx(async (tx) => {
     const head = await lockExpense(tx, ctx.businessId, input.id)
+    assertMayChange(ctx, head)
     transitionOf(ctx, 'discard', head, false)
     assertVersion(head, input.version)
     const paths = await detachAll(tx, ctx.businessId, 'expense', input.id)
@@ -545,12 +567,14 @@ export async function discardExpense(ctx: BusinessCtx, input: VersionInput): Pro
 /**
  * `expense.submit`: a draft (or rejected expense) is sent for approval, `version` as read.
  * APPROVAL_OFF when the business does not require approval; FUTURE_DATE for a day after today and
- * BOOKS_CLOSED for one on or before the books-closed date (it could not be finalized). Idempotent:
- * an expense already sent (or approved) is returned as it is.
+ * BOOKS_CLOSED for one on or before the books-closed date (it could not be finalized); FORBIDDEN for
+ * another member's expense when the caller may not see supplier prices. Idempotent: an expense
+ * already sent (or approved) is returned as it is.
  */
 export function submitExpense(ctx: BusinessCtx, input: VersionInput): Promise<ExpenseResultDto> {
   return ctx.tx(async (tx) => {
     const head = await lockExpense(tx, ctx.businessId, input.id)
+    assertMayChange(ctx, head)
     const setting = await lockApprovalSetting(tx, ctx.businessId)
     const transition = transitionOf(ctx, 'submit', head, setting)
     if (transition.changes) {
@@ -731,9 +755,12 @@ export function reverseExpense(ctx: BusinessCtx, input: IdInput): Promise<Expens
  * `expense.correct` (reverse + a new draft copy, as purchase.correct): reverses the expense (when
  * still posted) and opens a copy of it as a new draft with the client's `newId`, in one transaction.
  * Idempotent on `newId`: the same call again returns the copy; an id used otherwise is CONFLICT. An
- * expense not final cannot be corrected (DOCUMENT_NOT_POSTED): it is edited.
+ * expense not final cannot be corrected (DOCUMENT_NOT_POSTED): it is edited. FORBIDDEN for a member
+ * who may not see supplier prices, before anything is read: the copy carries the expense's amounts,
+ * which the one who corrects it goes on to edit (D-184; as reviewing, D-175).
  */
 export function correctExpense(ctx: BusinessCtx, input: CorrectInput): Promise<ExpenseResultDto> {
+  assertSeesWhatIsReviewed(ctx)
   return ctx.tx(async (tx) => {
     // The expense first (the reversal's lock): two corrections wait for each other here, before
     // either inserts a copy that names it.

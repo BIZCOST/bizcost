@@ -132,12 +132,14 @@ export default tseslint.config(
     rules: { 'no-restricted-syntax': ['error', ...NO_FLOAT_MONEY] },
   },
   // Tenant context only through withTenantTx() (docs/ARCHITECTURE.md §Tenancy & security). Tests may
-  // switch roles or run `set constraints` on purpose.
+  // switch roles or run `set constraints` on purpose, and the local test-data cleanup sets
+  // session_replication_role (local stack only, as postgres; D-182).
   {
     files: ['packages/**/*.ts', 'apps/**/*.{ts,tsx}'],
     ignores: [
       'packages/config/**',
       'packages/db/src/tenant.ts',
+      'packages/api/demo/clean-test-data.ts',
       '**/*.test.ts',
       '**/*.test.tsx',
       '**/test/**',

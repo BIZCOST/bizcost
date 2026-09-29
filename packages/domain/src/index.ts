@@ -97,9 +97,12 @@ export {
   type WacStep,
 } from './costing/wac'
 export { costRatio } from './costing/cost-ratio'
-// Product cost from its recipe: Σ base quantity × the material's average (D-115), never rounded.
+// Product cost from its recipe: Σ base quantity × the material's average (D-115), never rounded;
+// one unit sold is the total ÷ the recipe's yield (D-178).
 export {
   costOfQty,
+  costPerUnit,
+  unitCostOf,
   rollUpRecipe,
   type CostBasis,
   type RecipeCost,

@@ -750,12 +750,15 @@ test('an employee whose role shows no costs sees locks instead of prices', async
   const accepted = await callApi(page, 'invitation.accept', { token })
   expect(accepted.appCode).toBeUndefined()
 
-  // Materials: the average and the last price are locked, never 0; the day still shows.
+  // Materials: no cost on the rows, never 0; one note says costs are hidden (D-184).
   await page.goto(`/b/${businessId}/materials`)
   const milk = materialRow(page, 'Ingredients & supplies', 'Milk')
-  await expect(milk.locator('[data-locked="cost"]')).toHaveCount(1)
-  await expect(milk.locator('[data-locked="supplier_price"]')).toHaveCount(1)
+  await expect(page.locator('[data-costs-hidden]')).toHaveText(
+    'You can see names, units and packs. Costs are hidden for your role.',
+  )
+  await expect(milk.locator('[data-locked]')).toHaveCount(0)
   await expect(milk).not.toContainText('AED')
+  await expect(milk).not.toContainText('Average cost')
   await expectSound(page, 'en')
   await shot(page, 'en-1440-employee-materials')
 
@@ -797,8 +800,8 @@ test('an employee whose role shows no costs sees locks instead of prices', async
   await page.setViewportSize({ width: 390, height: 844 })
   await page.goto(`/b/${businessId}/materials`)
   const milkAr = materialRow(page, 'المكونات والمستلزمات', 'Milk')
-  await expect(milkAr.locator('[data-locked="cost"]')).toHaveCount(1)
-  await expect(milkAr.locator('[data-locked="cost"]')).toContainText('مخفي')
+  await expect(page.locator('[data-costs-hidden]')).toContainText('التكاليف مخفية لدورك.')
+  await expect(milkAr.locator('[data-locked]')).toHaveCount(0)
   await expect(milkAr).not.toContainText('د.إ.')
   await expectSound(page, 'ar')
   await shot(page, 'ar-390-employee-materials')

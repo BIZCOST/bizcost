@@ -27,6 +27,8 @@ import { useLocale } from '@/lib/i18n/client'
 import { useBusinessContext } from '@/lib/trpc/client'
 import { cn } from '@/lib/utils'
 import { Money, useBusinessDate } from './amounts'
+import { mayListPayables } from './data'
+import { OwedToMeList } from './owed-to-me'
 import { PaymentSheet, type OwedAmounts, type OwedDocument } from './payment-sheet'
 
 // Amounts owed (the owner's request of 2026-09-29; a nav entry of Purchases and of Expenses, listed
@@ -38,25 +40,38 @@ import { PaymentSheet, type OwedAmounts, type OwedDocument } from './payment-she
 // payment ("Record a payment"). A member sees the kinds whose payments they may see (payable.list).
 // The amounts are supplier prices: a member who may not see them is told so (payable.list refuses).
 // payable.list comes a page of suppliers or members at a time ("Show more"), each with its oldest
-// purchases and expenses still owed.
+// purchases and expenses still owed. A third tab, "Owed to me" (the owner's answers of 2026-09-29,
+// D-181), lists what the business owes the member for what they paid themselves and what it paid
+// them back; the page is open to every member while Purchases or Expenses is on, and a member who
+// may not list what is owed to others sees only that.
 
 /** The modules whose documents are owed here: the page is open through either (D-166). */
 const PAYABLES_MODULES = ['purchases', 'expenses'] as const
 
-const TABS: readonly { party: PayablePartyDto; param: string | null }[] = [
-  { party: 'supplier', param: null },
-  { party: 'member', param: 'employees' },
+/** A tab: to suppliers, to employees, or to the member themselves. */
+type PayablesTab = PayablePartyDto | 'me'
+
+const TABS: readonly { tab: PayablesTab; param: string | null }[] = [
+  { tab: 'supplier', param: null },
+  { tab: 'member', param: 'employees' },
+  { tab: 'me', param: 'me' },
 ]
 
-function useParty(): [PayablePartyDto, (party: PayablePartyDto) => void] {
+/** The tab in the address (`?to=employees`, `?to=me`); only "Owed to me" without the list. */
+function useTab(canList: boolean): [PayablesTab, (tab: PayablesTab) => void] {
   const router = useRouter()
   const pathname = usePathname()
   const params = useSearchParams()
-  const party: PayablePartyDto = params.get('to') === 'employees' ? 'member' : 'supplier'
+  const to = params.get('to')
+  const tab: PayablesTab = !canList
+    ? 'me'
+    : (TABS.find((entry) => entry.param !== null && entry.param === to)?.tab ?? 'supplier')
   return [
-    party,
-    (next) =>
-      router.replace(next === 'member' ? `${pathname}?to=employees` : pathname, { scroll: false }),
+    tab,
+    (next) => {
+      const param = TABS.find((entry) => entry.tab === next)?.param
+      router.replace(param ? `${pathname}?to=${param}` : pathname, { scroll: false })
+    },
   ]
 }
 
@@ -240,12 +255,19 @@ function Payables() {
   const trpc = useTRPC()
   const { businessId } = useParams<{ businessId: string }>()
   const { data: context } = useBusinessContext()
-  const [party, setParty] = useParty()
+  // What is owed to others needs its keys (and supplier prices, or its tabs say they are hidden);
+  // anyone else sees only "Owed to me".
+  const canList = context !== undefined && mayListPayables(context)
+  const [tab, setTab] = useTab(canList)
+  const party: PayablePartyDto = tab === 'member' ? 'member' : 'supplier'
   const seesAmounts = context?.visibleCategories.includes('supplier_price') === true
   const list = useInfiniteQuery(
     trpc.payable.list.infiniteQueryOptions(
       { party },
-      { getNextPageParam: (page) => page.data.nextCursor, enabled: seesAmounts },
+      {
+        getNextPageParam: (page) => page.data.nextCursor,
+        enabled: seesAmounts && canList && tab !== 'me',
+      },
     ),
   )
   const books = useQuery(trpc.books.get.queryOptions())
@@ -283,40 +305,48 @@ function Payables() {
     <PageContainer>
       <header className="mb-6">
         <h1 className="text-2xl font-semibold tracking-tight sm:text-3xl">{title}</h1>
-        <p className="mt-1.5 max-w-2xl text-muted-foreground">{t('purchasing.payables.intro')}</p>
+        <p className="mt-1.5 max-w-2xl text-muted-foreground">
+          {canList ? t('purchasing.payables.intro') : t('purchasing.payables.mine.intro')}
+        </p>
       </header>
+      {canList ? (
+        <div
+          role="tablist"
+          aria-label={title}
+          className="mb-5 grid grid-cols-3 gap-1 rounded-lg bg-muted p-1 sm:inline-grid sm:min-w-[32rem]"
+        >
+          {TABS.map((entry) => (
+            <button
+              key={entry.tab}
+              type="button"
+              role="tab"
+              id={`${tabsId}-${entry.tab}`}
+              aria-selected={tab === entry.tab}
+              aria-controls={`${tabsId}-panel`}
+              onClick={() => setTab(entry.tab)}
+              className={cn(
+                'flex min-h-11 items-center justify-center rounded-md px-2 text-center text-sm font-medium text-muted-foreground transition-colors outline-none focus-visible:ring-3 focus-visible:ring-ring',
+                tab === entry.tab && 'bg-card text-foreground shadow-sm',
+              )}
+            >
+              {entry.tab === 'supplier'
+                ? t('purchasing.payables.toSuppliers')
+                : entry.tab === 'member'
+                  ? t('purchasing.payables.toEmployees')
+                  : t('purchasing.payables.toMe')}
+            </button>
+          ))}
+        </div>
+      ) : null}
       <div
-        role="tablist"
-        aria-label={title}
-        className="mb-5 grid grid-cols-2 gap-1 rounded-lg bg-muted p-1 sm:inline-grid sm:min-w-96"
-      >
-        {TABS.map((tab) => (
-          <button
-            key={tab.party}
-            type="button"
-            role="tab"
-            id={`${tabsId}-${tab.party}`}
-            aria-selected={party === tab.party}
-            aria-controls={`${tabsId}-panel`}
-            onClick={() => setParty(tab.party)}
-            className={cn(
-              'flex min-h-11 items-center justify-center rounded-md px-3 text-sm font-medium text-muted-foreground transition-colors outline-none focus-visible:ring-3 focus-visible:ring-ring',
-              party === tab.party && 'bg-card text-foreground shadow-sm',
-            )}
-          >
-            {tab.party === 'supplier'
-              ? t('purchasing.payables.toSuppliers')
-              : t('purchasing.payables.toEmployees')}
-          </button>
-        ))}
-      </div>
-      <div
-        role="tabpanel"
+        role={canList ? 'tabpanel' : undefined}
         id={`${tabsId}-panel`}
-        aria-labelledby={`${tabsId}-${party}`}
+        aria-labelledby={canList ? `${tabsId}-${tab}` : undefined}
         className="space-y-4"
       >
-        {!seesAmounts ? (
+        {tab === 'me' ? (
+          <OwedToMeList />
+        ) : !seesAmounts ? (
           <ListEmpty
             icon={LockKeyholeIcon}
             title={t('purchasing.payables.lockedTitle')}
@@ -392,10 +422,13 @@ function Payables() {
   )
 }
 
-/** Amounts owed, inside the gate of the modules that share it (Purchases, Expenses; D-166). */
+/**
+ * Amounts owed, inside the gate of the modules that share it (Purchases, Expenses; D-166): open to
+ * every member while either is on, since each sees at least what is owed to them (D-181).
+ */
 export function PayablesPage() {
   return (
-    <ModuleGate moduleId={PAYABLES_MODULES} entryId="payables">
+    <ModuleGate moduleId={PAYABLES_MODULES} entryId="payables" openToEveryMember>
       <Payables />
     </ModuleGate>
   )

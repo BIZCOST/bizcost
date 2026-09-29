@@ -56,9 +56,12 @@ import {
 interface OracleEntry {
   /** The permission the procedure needs; templates without it get FORBIDDEN (none: every member). */
   permission?: PermissionKey
-  /** Input of the call, or a function preparing a fresh one (as the owner) for each call. */
+  /**
+   * Input of the call, or a function preparing a fresh one for each call (as the owner, or as the
+   * member of `template` where only one's own record may be changed, D-184).
+   */
   input?: unknown
-  prepare?: () => Promise<unknown>
+  prepare?: (template: RoleTemplateKey) => Promise<unknown>
   /** The values the call returns in each category (each must be in the answer when visible). */
   valuesOf: Partial<Record<SensitivityCategory, readonly string[]>>
 }
@@ -94,10 +97,28 @@ const EXPENSE_LEFT = '62.32'
 const RUNNING = '7321.09'
 const RUNNING_MONTHLY = '31724.723333333333'
 const EXPENSE = { supplier_price: [EXPENSE_NET, EXPENSE_TOTAL] }
+// A member's own records (D-181): each non-owner member paid one expense from their own money, with
+// an amount only they may read through the procedures of their own records.
+const OWN_AMOUNT: Record<Exclude<RoleTemplateKey, 'owner'>, string> = {
+  admin: '71.13',
+  manager: '72.23',
+  accountant: '73.33',
+  sales: '74.43',
+  supervisor: '75.53',
+  employee: '76.63',
+}
+/** An expense of the owner's that members who may correct it correct (D-184): never theirs to read. */
+const CORRECTED_AMOUNT = '97.19'
+/**
+ * The amounts of the owner's purchases and expenses that cannot be read inside a timestamp (more
+ * than 59, so never "…:41.17…" seconds): expense.getMine returns timestamps.
+ */
+const OWNERS_AMOUNTS = [LINE_TOTAL, OWED_TOTAL, OWED_LEFT, EXPENSE_NET, EXPENSE_TOTAL, EXPENSE_LEFT]
 
 let api: Api
 let businessId: string
 const members = new Map<RoleTemplateKey, Person>()
+const memberIds = new Map<Exclude<RoleTemplateKey, 'owner'>, string>()
 let material: MaterialDto
 let supplier: SupplierDto
 let purchase: PurchaseDto
@@ -111,6 +132,7 @@ let category: CostCategoryDto
 let spent: ExpenseDto
 let owedExpense: ExpenseDto
 let running: RunningCostDto
+const ownExpenses = new Map<RoleTemplateKey, string>()
 
 /** Calls a procedure as the owner (fixture set-up). */
 async function asOwner<T>(path: string, type: 'query' | 'mutation', input?: unknown): Promise<T> {
@@ -246,6 +268,27 @@ function expenseInput(extra: object = {}) {
 async function newExpenseDraft(extra: object = {}): Promise<ExpenseDto> {
   return (await asOwner<{ data: ExpenseDto }>('expense.create', 'mutation', expenseInput(extra)))
     .data
+}
+
+/**
+ * A draft the member of `template` entered themselves when they may enter expenses (a member who may
+ * not see supplier prices changes only their own, D-184), else the owner's.
+ */
+async function newOwnExpenseDraft(
+  template: RoleTemplateKey,
+): Promise<{ id: string; version: number }> {
+  if (template === 'owner' || !holds(template, 'expenses.documents.manage')) {
+    return newExpenseDraft()
+  }
+  const result = await callProcedure<{ data: ExpenseDto }>(
+    api.handler,
+    { path: 'expense.create', type: 'mutation' },
+    members.get(template)!.token,
+    { businessId, input: expenseInput() },
+  )
+  expect(result.error, result.raw).toBeUndefined()
+  // A member who may not see supplier prices gets it back without its amounts: its id and version.
+  return { id: result.data!.data.id, version: result.data!.data.version }
 }
 
 async function newExpensePosted(extra: object = {}): Promise<ExpenseDto> {
@@ -437,16 +480,16 @@ const PRODUCTION_ORACLE: Record<string, OracleEntry> = {
   },
   'expense.update': {
     permission: 'expenses.documents.manage',
-    prepare: async () => {
-      const draft = await newExpenseDraft()
+    prepare: async (template) => {
+      const draft = await newOwnExpenseDraft(template)
       return { ...expenseInput(), id: draft.id, version: draft.version }
     },
     valuesOf: EXPENSE,
   },
   'expense.submit': {
     permission: 'expenses.documents.manage',
-    prepare: async () => {
-      const draft = await newExpenseDraft()
+    prepare: async (template) => {
+      const draft = await newOwnExpenseDraft(template)
       return { id: draft.id, version: draft.version }
     },
     valuesOf: EXPENSE,
@@ -609,7 +652,7 @@ beforeAll(async () => {
   for (const template of ROLE_TEMPLATE_KEYS.filter((key) => key !== 'owner')) {
     const person = await api.newPerson()
     // The business's own template role, as Smart Setup copied it (an accepted invitation's way).
-    await join(api.db, owner.user, businessId, person.user, template)
+    memberIds.set(template, await join(api.db, owner.user, businessId, person.user, template))
     members.set(template, person)
   }
   today = (await asOwner<BooksDto>('books.get', 'query')).today
@@ -695,10 +738,166 @@ beforeAll(async () => {
   running = (
     await asOwner<{ data: RunningCostDto }>('runningCost.create', 'mutation', runningInput())
   ).data
+  // Each member's own record (D-181): an expense the owner entered, paid by the member from their own
+  // money, final and owed to them, with an amount no one else has.
+  for (const [template, memberId] of memberIds) {
+    const own = await newExpensePosted({
+      amount: OWN_AMOUNT[template],
+      vatRate: '0',
+      paymentMethod: 'paid_by_member',
+      paidByMemberId: memberId,
+    })
+    ownExpenses.set(template, own.id)
+  }
 }, 90_000)
 
 afterAll(async () => {
   await api.close()
+})
+
+// ---------------------------------------------------------------------------------------------------
+// A member's own records (the owner's answers of 2026-09-29, A4; D-181)
+// ---------------------------------------------------------------------------------------------------
+//
+// Procedures that return the caller's OWN amounts without sensitivity tags (their outputs are not
+// redacted, so the oracle above does not see them): "My expenses" (expense.mine, expense.getMine)
+// and "Owed to me" (payable.mine). Each is held to "your own amounts only": called by a member holding
+// each template, the answer carries that member's own amount (when the template may use the
+// procedure; FORBIDDEN otherwise, with nothing) and never another member's, nor any amount of the
+// owner's purchases and expenses. A new procedure named like them (`.mine`, `.getMine`) fails the
+// first test until it is classified here.
+
+interface OwnEntry {
+  /** The permission the procedure needs; templates without it get FORBIDDEN (none: every member). */
+  permission?: PermissionKey
+  /** The input for a member (their own record's id where it takes one). */
+  input: (template: RoleTemplateKey) => unknown
+}
+
+const OWN_ORACLE: Record<string, OwnEntry> = {
+  'expense.mine': { permission: 'expenses.documents.view', input: () => ({ limit: 100 }) },
+  'expense.getMine': {
+    permission: 'expenses.documents.view',
+    input: (template) => ({ id: ownExpenses.get(template) ?? spent.id }),
+  },
+  'payable.mine': { input: () => ({ limit: 100 }) },
+}
+
+/**
+ * The amounts that are not `template`'s own: the owner's and every other member's. The owner entered
+ * every record of the fixture, so they are all the owner's own (and the owner sees every amount).
+ * These cases run before the oracle above, whose calls add records of the members' own.
+ */
+function othersAmounts(template: RoleTemplateKey): string[] {
+  if (template === 'owner') return []
+  const members = Object.entries(OWN_AMOUNT)
+    .filter(([key]) => key !== template)
+    .map(([, amount]) => amount)
+  return [...members, ...OWNERS_AMOUNTS]
+}
+
+describe('the procedures of a member’s own records return only their own amounts (D-181)', () => {
+  it('every procedure of own records is classified, and none outputs a sensitive() field', () => {
+    const own = Object.keys(appRouter._def.procedures).filter((path) =>
+      /\.(?:mine|getMine)$/.test(path),
+    )
+    expect(own.sort(), 'a procedure of own records: add it to OWN_ORACLE').toEqual(
+      Object.keys(OWN_ORACLE).sort(),
+    )
+    const sensitive = sensitiveProcedures(appRouter)
+    for (const path of own) expect(sensitive.has(path), path).toBe(false)
+  })
+
+  const OWN_CASES = Object.keys(OWN_ORACLE).flatMap((path) =>
+    ROLE_TEMPLATE_KEYS.map((template) => [path, template] as const),
+  )
+
+  it.each(OWN_CASES)('%s as %s: their own amount, never anyone else’s', async (path, template) => {
+    const entry = OWN_ORACLE[path]
+    const person = members.get(template)
+    const procedure = proceduresOf(oracleRouter).find((p) => p.path === path)
+    if (!entry || !person || !procedure) throw new Error(`no fixture for ${path} as ${template}`)
+    const result = await callProcedure(api.handler, procedure, person.token, {
+      businessId,
+      input: entry.input(template),
+    })
+    for (const value of othersAmounts(template)) {
+      expect(result.raw.includes(value), `someone else’s ${value}`).toBe(false)
+    }
+    if (!holds(template, entry.permission)) {
+      expect(result.error?.data.appCode, result.raw).toBe('forbidden')
+      return
+    }
+    expect(result.error, result.raw).toBeUndefined()
+    if (template !== 'owner') {
+      expect(result.raw.includes(OWN_AMOUNT[template]), 'their own amount').toBe(true)
+    }
+  })
+
+  it('a copy made by correcting the owner’s expense is not the corrector’s own (D-184)', async () => {
+    let corrections = 0
+    for (const template of ROLE_TEMPLATE_KEYS.filter((key) => key !== 'owner')) {
+      const person = members.get(template)!
+      const original = await newExpensePosted({ amount: CORRECTED_AMOUNT, vatRate: '0' })
+      const copyId = newId()
+      const corrected = await callProcedure(
+        api.handler,
+        { path: 'expense.correct', type: 'mutation' },
+        person.token,
+        { businessId, input: { id: original.id, newId: copyId } },
+      )
+      if (!holds(template, 'expenses.documents.reverse')) {
+        expect(corrected.error?.data.appCode, corrected.raw).toBe('forbidden')
+        continue
+      }
+      // A member who may correct sees supplier prices (the API refuses the others, D-184).
+      expect(corrected.error, corrected.raw).toBeUndefined()
+      corrections += 1
+      const one = await callProcedure(
+        api.handler,
+        { path: 'expense.getMine', type: 'query' },
+        person.token,
+        { businessId, input: { id: copyId } },
+      )
+      expect(one.error?.data.appCode, `${template}: ${one.raw}`).toBe('not_found')
+      expect(one.raw.includes(CORRECTED_AMOUNT), `${template}: ${one.raw}`).toBe(false)
+      const list = await callProcedure(
+        api.handler,
+        { path: 'expense.mine', type: 'query' },
+        person.token,
+        { businessId, input: { limit: 100 } },
+      )
+      expect(list.error, list.raw).toBeUndefined()
+      expect(list.raw.includes(copyId), `${template}: ${list.raw}`).toBe(false)
+      expect(list.raw.includes(CORRECTED_AMOUNT), `${template}: ${list.raw}`).toBe(false)
+    }
+    // Admin and Manager corrected one each.
+    expect(corrections).toBe(2)
+  })
+
+  it('expense.getMine of anyone else’s expense is NOT_FOUND, with nothing of it', async () => {
+    for (const template of ROLE_TEMPLATE_KEYS.filter((key) => key !== 'owner')) {
+      const person = members.get(template)!
+      const others = [
+        spent.id,
+        ...[...ownExpenses].filter(([key]) => key !== template).map(([, id]) => id),
+      ]
+      for (const id of others) {
+        const result = await callProcedure(
+          api.handler,
+          { path: 'expense.getMine', type: 'query' },
+          person.token,
+          { businessId, input: { id } },
+        )
+        expect(['not_found', 'forbidden'], `${template}: ${result.raw}`).toContain(
+          result.error?.data.appCode,
+        )
+        for (const value of othersAmounts(template)) {
+          expect(result.raw.includes(value), `${template} ${value}`).toBe(false)
+        }
+      }
+    }
+  })
 })
 
 const ORACLE = { ...PRODUCTION_ORACLE, ...TEST_ORACLE }
@@ -714,7 +913,7 @@ describe('each role template receives exactly the categories it may see', () => 
     const procedure = proceduresOf(oracleRouter).find((p) => p.path === path)
     if (!entry || !person || !procedure) throw new Error(`no fixture for ${path} as ${template}`)
     const visible = new Set(VISIBLE_TO[template])
-    const input = entry.prepare ? await entry.prepare() : entry.input
+    const input = entry.prepare ? await entry.prepare(template) : entry.input
 
     const result = await callProcedure<{ meta: { redacted: string[] } }>(
       api.handler,

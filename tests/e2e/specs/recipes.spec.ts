@@ -24,9 +24,12 @@ import { previewBaseURL } from '../stack'
 // and costed at its average; the straw says "no price yet" (never 0) and the total, AED 2.97, says
 // it is incomplete; a line moved down stays there once saved. The API worked out 2.967034632035;
 // once the straws are bought it is 3.002034632035, shown AED 3.00. The same screens in English on a
-// desktop and a phone. An employee allowed to see recipes sees the quantities and locks. A shop adds
-// an item bought ready to sell (English, desktop), buys it in cartons through the purchase editor,
-// and its cost is what one piece cost; in Arabic on a phone, "Goods" adds one the same way.
+// desktop and a phone. A chocolate cake whose recipe makes 12 slices: the whole cake costs AED 12.90
+// and one slice AED 1.08 (1.075 exactly), in the recipe and in the list (the owner's answer of
+// 2026-09-29, D-178). An employee sees the quantities, what the cake makes and locks, by the
+// template (D-179). A shop adds an item bought ready to sell (English, desktop), buys it in cartons
+// through the purchase editor, and its cost is what one piece cost; in Arabic on a phone, "Goods"
+// adds one the same way.
 
 test.describe.configure({ mode: 'serial' })
 
@@ -66,7 +69,15 @@ const LATTE = ['حبوب القهوة', 'حليب', 'حليب مكثف', 'كوب
 const users: TestUser[] = []
 const contexts: BrowserContext[] = []
 let cafe:
-  { page: Page; businessId: string; latteId: string; straw: string; strawPack: string } | undefined
+  | {
+      page: Page
+      businessId: string
+      latteId: string
+      straw: string
+      strawPack: string
+      cakeId?: string
+    }
+  | undefined
 
 test.afterAll(async () => {
   for (const context of contexts) await context.close()
@@ -171,7 +182,14 @@ async function recipeOf(page: Page, businessId: string, productId: string) {
     callApi<{
       data: {
         lines: { materialName: string }[]
-        cost: { total: string; unpricedLines: number; complete: boolean }
+        yieldQty: string
+        cost: {
+          total: string
+          perUnit: string
+          tooLarge: boolean
+          unpricedLines: number
+          complete: boolean
+        }
       }
     }>(page, 'recipe.get', { productId }, { businessId, query: true }),
     'recipe.get',
@@ -314,12 +332,20 @@ test('Arabic, phone: a café writes the Spanish Latte recipe from its purchases'
   // Saved in the order it was left in; the API's total is exact (never rounded before the screen).
   const saved = await recipeOf(page, businessId, latteId)
   expect(saved.data.lines.map((line) => line.materialName)).toEqual(LATTE)
-  expect(saved.data.cost).toEqual({ total: '2.967034632035', unpricedLines: 1, complete: false })
+  expect(saved.data.cost).toEqual({
+    total: '2.967034632035',
+    perUnit: '2.967034632035',
+    tooLarge: false,
+    unpricedLines: 1,
+    complete: false,
+  })
 
   // The straws are bought (a pack of 200 at 7): complete, 3.002034632035, shown 3.00.
   await buy(page, businessId, [{ materialId: straw, qty: '1', packId: strawPack, unitPrice: '7' }])
   expect((await recipeOf(page, businessId, latteId)).data.cost).toEqual({
     total: '3.002034632035',
+    perUnit: '3.002034632035',
+    tooLarge: false,
     unpricedLines: 0,
     complete: true,
   })
@@ -437,38 +463,130 @@ test('English, desktop and phone: the owner reads the latte and its cost', async
   await setLanguage(page, 'ar')
 })
 
-test('Arabic, phone: an employee allowed to see recipes sees the quantities and locks', async ({
+test('Arabic, phone and desktop: a cake recipe that makes 12 slices costs a slice', async () => {
+  test.setTimeout(600_000)
+  if (!cafe) throw new Error('the first test makes the café')
+  const { page, businessId } = cafe
+  await page.setViewportSize(PHONE)
+  // A 10 kg sack of flour at 50, a tray of 30 eggs at 12, 1 kg of sugar at 4 and of butter at 32.
+  const flour = await material(page, businessId, 'طحين', 'kg')
+  const eggs = await material(page, businessId, 'بيض', 'piece')
+  const sugar = await material(page, businessId, 'سكر', 'kg')
+  const butter = await material(page, businessId, 'زبدة', 'kg')
+  await buy(page, businessId, [
+    { materialId: flour, qty: '10', unit: 'kg', unitPrice: '5' },
+    { materialId: eggs, qty: '30', unit: 'piece', unitPrice: '0.4' },
+    { materialId: sugar, qty: '1', unit: 'kg', unitPrice: '4' },
+    { materialId: butter, qty: '1', unit: 'kg', unitPrice: '32' },
+  ])
+  const cakeId = randomUUID()
+  await ok(
+    callApi(
+      page,
+      'product.create',
+      { id: cakeId, name: 'قطعة كيك شوكولاتة', type: 'product', unit: 'piece', defaultPrice: '9' },
+      { businessId },
+    ),
+    'product.create',
+  )
+  cafe.cakeId = cakeId
+
+  await page.goto(`/b/${businessId}/products`)
+  const row = page.getByRole('main').locator('li').filter({ hasText: 'قطعة كيك شوكولاتة' })
+  await row.getByRole('button', { name: 'الوصفة', exact: true }).click()
+  const sheet = page.getByRole('dialog')
+  // What the recipe makes comes first: 1 until the owner says more.
+  const makes = sheet.getByRole('textbox', { name: 'الوصفة تكفي' })
+  await expect(makes).toHaveValue('1')
+  // Two: the dual, «لكل قطعتين», never «لكل 2 قطعة».
+  await makes.fill('2')
+  await expect(sheet).toContainText('الكميات لكل قطعتين')
+  await makes.fill('١٢')
+  await expect(sheet.locator('[data-recipe-yield]')).toContainText('قطعة')
+  await expect(sheet).toContainText('الكميات لكل 12 قطعة')
+  const add = sheet.getByRole('button', { name: 'أضف مكوّنًا أو مستلزمًا' })
+  const lines = sheet.locator('[data-recipe-line]')
+  const cake = [
+    ['طحين', '500'],
+    ['بيض', '4'],
+    ['سكر', '200'],
+    ['زبدة', '250'],
+  ] as const
+  for (const [index, [name, qty]] of cake.entries()) {
+    await add.click()
+    await lines.nth(index).getByLabel('المكوّن أو المستلزم').selectOption({ label: name })
+    await lines.nth(index).getByLabel('الكمية').fill(qty)
+  }
+  // Each quantity is for the whole cake.
+  await expect(lines.nth(0).getByText('الكمية لكل 12 قطعة')).toBeVisible()
+  await expect(lines.nth(0).locator('[data-line-cost]')).toContainText('2.50')
+  await expect(lines.nth(3).locator('[data-line-cost]')).toContainText('8.00')
+  // The whole cake, and one slice: 12.90 ÷ 12 = 1.075, shown 1.08.
+  await page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur())
+  await expect(sheet.locator('[data-recipe-total]')).toHaveText(/^‏?12\.90\sد\.إ\.‏?$/)
+  await expect(sheet.locator('[data-recipe-per-unit]')).toHaveText(/^‏?1\.08\sد\.إ\.‏?$/)
+  // The whole recipe says what it makes; one slice is named as the Products list names it.
+  await expect(sheet.getByText('تكلفة الوصفة كاملة (12 قطعة)')).toBeVisible()
+  await expect(sheet.getByText('تكلفة الوصفة لكل قطعة')).toBeVisible()
+  await expectSound(page, 'ar')
+  await shot(page, 'ar-390-cake-makes-12')
+  await sheet.getByRole('button', { name: 'احفظ التغييرات' }).click()
+  await expect(page.getByText('تم الحفظ.')).toBeVisible()
+  await expect(sheet).toHaveCount(0)
+
+  // The list: what one slice costs.
+  const cost = row.locator('[data-product-cost]')
+  await expect(cost).toContainText('1.08')
+  await expect(cost).toContainText('لكل قطعة')
+  await expect(cost).not.toContainText('12.90')
+  // The API keeps it exact.
+  const saved = await recipeOf(page, businessId, cakeId)
+  expect(saved.data.yieldQty).toBe('12')
+  expect(saved.data.cost).toEqual({
+    total: '12.9',
+    perUnit: '1.075',
+    tooLarge: false,
+    unpricedLines: 0,
+    complete: true,
+  })
+
+  // A desktop: the same recipe, saved.
+  await page.setViewportSize(DESKTOP)
+  await row.getByRole('button', { name: 'الوصفة', exact: true }).click()
+  await expect(sheet.getByRole('textbox', { name: 'الوصفة تكفي' })).toHaveValue('12')
+  await expect(sheet.locator('[data-recipe-per-unit]')).toHaveText(/^‏?1\.08\sد\.إ\.‏?$/)
+  await expectSound(page, 'ar')
+  await shot(page, 'ar-1440-cake-makes-12')
+  await sheet.getByRole('button', { name: 'إلغاء' }).click()
+  await expect(sheet).toHaveCount(0)
+  await expectSound(page, 'ar')
+  await shot(page, 'ar-1440-products-cake')
+  await page.setViewportSize(PHONE)
+})
+
+test('Arabic, phone and desktop: an employee sees the quantities and locks (the template)', async ({
   browser,
 }) => {
   test.setTimeout(600_000)
   if (!cafe) throw new Error('the first test makes the café')
   const { page: ownerPage, businessId } = cafe
+  // The Employee template sees what goes into each product and its materials, never a cost (the
+  // owner's answer of 2026-09-29, D-179): no change to the role is needed.
   const roles = await ok(
-    callApi<
-      { id: string; templateKey: string | null; permissionKeys: string[]; version: number }[]
-    >(ownerPage, 'role.list', {}, { businessId, query: true }),
+    callApi<{ id: string; templateKey: string | null; permissionKeys: string[] }[]>(
+      ownerPage,
+      'role.list',
+      {},
+      { businessId, query: true },
+    ),
     'role.list',
   )
   const employeeRole = roles.find((role) => role.templateKey === 'employee')
   if (!employeeRole) throw new Error('no Employee role')
-  await ok(
-    callApi(
-      ownerPage,
-      'role.updatePermissions',
-      {
-        id: employeeRole.id,
-        version: employeeRole.version,
-        // Seeing what goes into each product needs seeing its materials too (D-155).
-        permissionKeys: [
-          ...employeeRole.permissionKeys,
-          'materials.items.view',
-          'products.recipes.view',
-        ],
-      },
-      { businessId },
-    ),
-    'role.updatePermissions',
+  expect(employeeRole.permissionKeys).toEqual(
+    expect.arrayContaining(['products.recipes.view', 'materials.items.view']),
   )
+  expect(employeeRole.permissionKeys.some((key) => key.startsWith('data.'))).toBe(false)
   const employee = await createUser('recipes-employee')
   users.push(employee)
   await ok(
@@ -491,6 +609,9 @@ test('Arabic, phone: an employee allowed to see recipes sees the quantities and 
   await row.getByRole('button', { name: 'الوصفة', exact: true }).click()
   const sheet = page.getByRole('dialog')
   await expect(sheet).toContainText('يمكنك رؤية الكميات. التكاليف مخفية لدورك.')
+  // No "costs come from your purchases" to a member who sees no cost and buys nothing.
+  await expect(sheet).toContainText('الكميات لكل قطعة.')
+  await expect(sheet).not.toContainText('تأتي التكاليف من مشترياتك')
   await expect(sheet.locator('[data-recipe-line]')).toHaveCount(6)
   await expect(sheet.locator('[data-recipe-line]').first()).toContainText('18 غرام')
   // A lock on each line and on the total, and no amount anywhere.
@@ -499,6 +620,25 @@ test('Arabic, phone: an employee allowed to see recipes sees the quantities and 
   await expect(sheet.getByRole('button', { name: 'احفظ التغييرات' })).toHaveCount(0)
   await expectSound(page, 'ar')
   await shot(page, 'ar-390-employee-recipe')
+  await sheet.getByRole('button', { name: 'إغلاق' }).last().click()
+  await expect(sheet).toHaveCount(0)
+  // The cake: what it makes, its quantities, and locks (no amount).
+  const cakeRow = page.getByRole('main').locator('li').filter({ hasText: 'قطعة كيك شوكولاتة' })
+  await expect(cakeRow.locator('[data-locked="cost"]')).toHaveCount(1)
+  await cakeRow.getByRole('button', { name: 'الوصفة', exact: true }).click()
+  await expect(sheet.locator('[data-recipe-makes]')).toHaveText('الوصفة تكفي 12 قطعة.')
+  await expect(sheet.locator('[data-recipe-line]')).toHaveCount(4)
+  await expect(sheet.locator('[data-recipe-line]').first()).toContainText('500 غرام')
+  await expect(sheet.locator('[data-locked="cost"]')).toHaveCount(6)
+  await expect(sheet).not.toContainText('د.إ')
+  await expectSound(page, 'ar')
+  await shot(page, 'ar-390-employee-cake-recipe')
+  await page.setViewportSize(DESKTOP)
+  await expectSound(page, 'ar')
+  await shot(page, 'ar-1440-employee-cake-recipe')
+  await sheet.getByRole('button', { name: 'إغلاق' }).last().click()
+  await expectSound(page, 'ar')
+  await shot(page, 'ar-1440-employee-products')
   // The API refuses what the screen doesn't offer.
   expect(
     (

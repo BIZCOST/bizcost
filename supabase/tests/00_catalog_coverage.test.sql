@@ -470,7 +470,7 @@ select is_empty(
          ('attachments', 'entity'), ('attachments', 'entity_id'), ('attachments', 'path'),
          ('attachments', 'file_name'), ('attachments', 'content_type'), ('attachments', 'size_bytes'),
          ('products_services', 'resale_material_id'),
-         ('recipes', 'product_id'),
+         ('recipes', 'product_id'), ('recipes', 'yield_qty'),
          ('recipe_lines', 'recipe_id'), ('recipe_lines', 'position'), ('recipe_lines', 'material_id'),
          ('recipe_lines', 'qty'), ('recipe_lines', 'unit'), ('recipe_lines', 'pack_id'),
          ('recipe_lines', 'base_qty'),

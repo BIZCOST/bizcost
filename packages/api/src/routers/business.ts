@@ -15,8 +15,15 @@ import {
   type BusinessContextDto,
 } from '@bizcost/contracts'
 import { can, SENSITIVITY_CATEGORIES } from '@bizcost/domain'
-import { buildModuleNav, MODULES, type ModuleManifest } from '@bizcost/modules'
+import {
+  buildModuleNav,
+  isModuleActive,
+  MODULES,
+  visibleNav,
+  type ModuleManifest,
+} from '@bizcost/modules'
 import type { BusinessAccess } from '../access'
+import type { BusinessCtx } from '../business-context'
 import {
   getProfile,
   logoUploadUrl,
@@ -26,13 +33,19 @@ import {
   updateProfile,
 } from '../services/business-profile'
 import { customize, getCustomization } from '../services/customize'
+import { payeeModules } from '../services/mine'
 import { createFromSetup } from '../services/setup'
 import { authedProcedure, businessProcedure, requirePermission, router } from '../trpc'
 
-/** `modules` is the server's registry (ctx.modules: with the dev-only preview, D-125). */
+/**
+ * `modules` is the server's registry (ctx.modules: with the dev-only preview, D-125); `payeeIn` the
+ * modules in which the business owes (or paid back) the member for something they paid themselves
+ * (their "Owed to me" entry, D-181).
+ */
 export function toBusinessContext(
   access: BusinessAccess,
   modules: readonly ModuleManifest[] = MODULES,
+  payeeIn: ReadonlySet<string> = new Set(),
 ): BusinessContextDto {
   const { effective, locationScope } = access
   return {
@@ -42,12 +55,33 @@ export function toBusinessContext(
       ? { all: true }
       : { all: false, ids: [...locationScope.ids].sort() },
     visibleCategories: SENSITIVITY_CATEGORIES.filter((c) => access.visibleCategories.has(c)),
-    modules: [...buildModuleNav(access.enabledModules, (key) => can(effective, key), modules)],
+    modules: [
+      ...buildModuleNav(access.enabledModules, (key) => can(effective, key), modules, payeeIn),
+    ],
     terminologyProfile: access.terminologyProfile,
     currency: access.currency,
     capabilities: { ...access.capabilities },
     permissionsVersion: access.permissionsVersion,
   }
+}
+
+/**
+ * The active modules (Purchases, Expenses) with an entry for payees that the member does not already
+ * reach by their keys through any module (Amounts owed is one page, D-166): only for those does
+ * business.context look for what the member paid themselves (D-181).
+ */
+function payeeCandidates(ctx: BusinessCtx): Set<'purchases' | 'expenses'> {
+  const byKeys = (key: string) => can(ctx.access.effective, key)
+  const active = ctx.modules.filter((m) => isModuleActive(m, ctx.access.enabledModules))
+  const reached = new Set(active.flatMap((m) => visibleNav(m, byKeys).map((e) => e.id)))
+  const candidates = new Set<'purchases' | 'expenses'>()
+  for (const manifest of active) {
+    if (manifest.id !== 'purchases' && manifest.id !== 'expenses') continue
+    if (manifest.nav.some((e) => e.payees === true && !reached.has(e.id))) {
+      candidates.add(manifest.id)
+    }
+  }
+  return candidates
 }
 
 const viewBusiness = businessProcedure.use(requirePermission('settings.business.view'))
@@ -63,7 +97,9 @@ export const businessRouter = router({
    */
   context: businessProcedure
     .output(businessContextDto)
-    .query(({ ctx }) => toBusinessContext(ctx.access, ctx.modules)),
+    .query(async ({ ctx }) =>
+      toBusinessContext(ctx.access, ctx.modules, await payeeModules(ctx, payeeCandidates(ctx))),
+    ),
   /**
    * `business.createFromSetup` (authed, outside any business): Smart Setup's confirm step. The server
    * recomputes recommend() from the answers and applies the review adjustments within their rules,

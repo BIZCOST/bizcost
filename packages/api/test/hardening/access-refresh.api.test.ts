@@ -1,9 +1,11 @@
 import {
   API_MAX_BATCH_SIZE,
   type BusinessContextDto,
+  type ExpenseDto,
   type MeDto,
   type RoleDto,
 } from '@bizcost/contracts'
+import { newId } from '@bizcost/domain'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { appRouter } from '../../src'
 import { batch, query } from '../helpers'
@@ -36,6 +38,8 @@ let api: Api
 let A: Tenant
 let B: Tenant
 let both: Person
+/** An expense `both` entered in each business: what expense.getMine opens for them (D-181). */
+const theirs = new Map<string, string>()
 
 beforeAll(async () => {
   api = openApi()
@@ -44,7 +48,32 @@ beforeAll(async () => {
   both = await api.newPerson()
   await join(api.db, A.owner.user, A.id, both.user, 'admin')
   await join(api.db, B.owner.user, B.id, both.user, 'admin')
+  for (const tenant of [A, B]) {
+    const created = await callProcedure<{ data: ExpenseDto }>(
+      api.handler,
+      { path: 'expense.create', type: 'mutation' },
+      both.token,
+      {
+        businessId: tenant.id,
+        input: {
+          id: newId(),
+          categoryId: tenant.category.id,
+          businessDate: tenant.expense.businessDate,
+          documentType: 'no_invoice',
+          paymentMethod: 'cash',
+          amount: '12.34',
+        },
+      },
+    )
+    expect(created.error, created.raw).toBeUndefined()
+    theirs.set(tenant.id, created.data!.data.id)
+  }
 }, 120_000)
+
+/** A query's input for `both` in `tenant`: their own expense for expense.getMine. */
+function inputOf(path: string, tenant: Tenant): unknown {
+  return path === 'expense.getMine' ? { id: theirs.get(tenant.id) } : queryInputOf(path, tenant)
+}
 
 afterAll(async () => {
   await api.close()
@@ -165,7 +194,7 @@ describe('no cache leak between businesses (one API instance, one account in two
         {
           token: person.token,
           businessId: tenant.id,
-          inputs: chunk.map((p) => queryInputOf(p.path, tenant)),
+          inputs: chunk.map((p) => inputOf(p.path, tenant)),
         },
       )
       statuses.push(answer.status)
@@ -183,7 +212,7 @@ describe('no cache leak between businesses (one API instance, one account in two
         for (const procedure of QUERIES) {
           const result = await callProcedure(api.handler, procedure, both.token, {
             businessId: own.id,
-            input: queryInputOf(procedure.path, own),
+            input: inputOf(procedure.path, own),
           })
           expect(result.error, `${procedure.path} in ${own.label}: ${result.raw}`).toBeUndefined()
           expect(leaksOf(result.raw, other), `${procedure.path} in ${own.label}`).toEqual([])

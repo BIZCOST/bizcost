@@ -17,6 +17,7 @@ import {
   newId,
   rollUpRecipe,
   STANDARD_UNITS,
+  unitCostOf,
   type Dimension,
   type Quantity,
   type StandardUnit,
@@ -35,9 +36,10 @@ import {
 import { baseQtyOf, loadMaterials } from './purchase-materials'
 import { lockMaterials, uuidArray } from './stock'
 
-// Recipes and product cost (ROADMAP.md M2 Step 4; DATA_MODEL.md §6; D-115, D-117, D-146–D-150). One
-// structure for a recipe, a bill of materials and "what you use": what ONE unit of a product or service
-// uses, each line a material and a quantity in any unit or pack of it, kept as typed and in the
+// Recipes and product cost (ROADMAP.md M2 Step 4; DATA_MODEL.md §6; D-115, D-117, D-146–D-150, D-178).
+// One structure for a recipe, a bill of materials and "what you use": what it takes to make its
+// `yield_qty` units of a product or service (1 by default: what ONE unit uses; a cake that makes 12
+// slices), each line a material and a quantity in any unit or pack of it, kept as typed and in the
 // material's base unit. Module `products` (and `materials`: lines are materials), products.recipes.view
 // to read and products.recipes.manage to write (the router checks them). A save names the recipe's
 // version (0 before its first save; CONFLICT otherwise); lines are matched by their client ids, and
@@ -46,9 +48,10 @@ import { lockMaterials, uuidArray } from './stock'
 //
 // Cost, computed on read (D-115, D-138): each line's base quantity × its material's average today,
 // the one material.costs shows (costRecordsOf, averageBasisOf), an exact product divided once and
-// rounded once to 12 decimals by the domain (rollUpRecipe); never rounded to the currency. A material
-// never bought has no price (null, never 0), and the total says it is incomplete. Every cost is
-// `cost` (the redact middleware removes it for members who may not see it).
+// rounded once to 12 decimals by the domain (rollUpRecipe); never rounded to the currency. One unit
+// sold costs the total ÷ the yield (`perUnit`, one more division, 12 decimals). A material never
+// bought has no price (null, never 0), and the total says it is incomplete. Every cost is `cost` (the
+// redact middleware removes it for members who may not see it).
 //
 // Locks: a save locks the recipe's row (its version), then its materials FOR SHARE by ascending id
 // (lock 3 of postings, D-135), before it reads their units: a material's change of units or dimension
@@ -101,9 +104,23 @@ async function recipeProduct(tx: Tx, businessId: string, id: string): Promise<Pr
   return product
 }
 
-async function findRecipe(tx: Tx, businessId: string, productId: string) {
+interface RecipeRow {
+  readonly id: string
+  readonly version: number
+  /** How many of the product's unit it makes, without trailing zeros. */
+  readonly yieldQty: string
+}
+
+/** The recipe's yield as a plain decimal string ("12", not "12.000000"). */
+const yieldOf = sql<string>`trim_scale(${recipes.yieldQty})::text`
+
+async function findRecipe(
+  tx: Tx,
+  businessId: string,
+  productId: string,
+): Promise<RecipeRow | undefined> {
   const [row] = await tx
-    .select({ id: recipes.id, version: recipes.version })
+    .select({ id: recipes.id, version: recipes.version, yieldQty: yieldOf })
     .from(recipes)
     .where(
       and(
@@ -162,7 +179,7 @@ async function recipeDtoOf(
   tx: Tx,
   businessId: string,
   product: ProductInfo,
-  recipe: { id: string; version: number } | undefined,
+  recipe: RecipeRow | undefined,
 ): Promise<RecipeDto> {
   const lines = recipe ? await linesOf(tx, businessId, recipe.id) : []
   const bases = await basesOf(
@@ -172,10 +189,15 @@ async function recipeDtoOf(
   )
   const window = await averageWindowOf(tx, businessId)
   const basisOf = (line: LineRecord) => bases.get(line.material_id)?.basis ?? null
-  const rolled = rollUpRecipe(lines.map((l) => ({ baseQty: l.base_qty, basis: basisOf(l) })))
+  const yieldQty = recipe?.yieldQty ?? '1'
+  const rolled = rollUpRecipe(
+    lines.map((l) => ({ baseQty: l.base_qty, basis: basisOf(l) })),
+    yieldQty,
+  )
   return {
     productId: product.id,
     productUnit: product.unit,
+    yieldQty,
     version: recipe?.version ?? 0,
     lines: lines.map((line, i): RecipeLineDto => {
       const basis = basisOf(line)
@@ -202,7 +224,13 @@ async function recipeDtoOf(
             : null,
       }
     }),
-    cost: { total: rolled.total, unpricedLines: rolled.unpriced, complete: rolled.complete },
+    cost: {
+      total: rolled.total,
+      perUnit: rolled.perUnit,
+      tooLarge: rolled.tooLarge,
+      unpricedLines: rolled.unpriced,
+      complete: rolled.complete,
+    },
     averageFrom: window.from,
     averageTo: window.to,
   }
@@ -253,9 +281,9 @@ function sameLine(a: WantedLine, b: StoredLine): boolean {
  * changed since (or was made meanwhile); NOT_FOUND for a product or a material that is not one of the
  * business; VALIDATION for an item bought ready to sell, or a line whose unit is not one of its
  * material's (a pack of another material, another dimension without a conversion) or whose quantity
- * in base units is 0 or too large. A line id used anywhere else is CONFLICT. A save that changes
- * nothing (the same lines, in the same order and units) writes nothing: the version stays and no audit
- * row is added.
+ * in base units is 0 or too large. A line id used anywhere else is CONFLICT. `yieldQty` omitted keeps
+ * the recipe's (1 for a new one). A save that changes nothing (the same yield and lines, in the same
+ * order and units) writes nothing: the version stays and no audit row is added.
  */
 export function saveRecipe(ctx: BusinessCtx, input: SaveInput): Promise<RecipeResultDto> {
   const businessId = ctx.businessId
@@ -265,17 +293,25 @@ export function saveRecipe(ctx: BusinessCtx, input: SaveInput): Promise<RecipeRe
     // The recipe's row: made by its first save, then versioned (touch_row adds 1 on every save that
     // changes something). Its lock comes first (FOR NO KEY UPDATE, as the UPDATE takes it).
     let recipeId: string
+    // The yield as stored before this save (for a new recipe, the default 1), and as it is wanted.
+    let storedYield: string
     if (input.version === 0) {
       const [made] = await tx
         .insert(recipes)
-        .values({ id: newId(), businessId, productId: product.id })
+        .values({
+          id: newId(),
+          businessId,
+          productId: product.id,
+          yieldQty: input.yieldQty ?? '1',
+        })
         .onConflictDoNothing({ target: [recipes.businessId, recipes.productId] })
         .returning({ id: recipes.id })
       if (!made) throw new AppError('conflict')
       recipeId = made.id
+      storedYield = '1'
     } else {
       const [row] = await tx
-        .select({ id: recipes.id, version: recipes.version })
+        .select({ id: recipes.id, version: recipes.version, yieldQty: yieldOf })
         .from(recipes)
         .where(
           and(
@@ -287,7 +323,10 @@ export function saveRecipe(ctx: BusinessCtx, input: SaveInput): Promise<RecipeRe
         .for('no key update')
       if (!row || row.version !== input.version) throw new AppError('conflict')
       recipeId = row.id
+      storedYield = row.yieldQty
     }
+    const wantedYield = input.yieldQty ?? storedYield
+    const yieldChanged = compareDecimal(wantedYield, storedYield) !== 0
 
     // Its materials, locked FOR SHARE by ascending id before their units are read (D-145, D-148).
     const materialIds = input.lines.map((line) => line.materialId)
@@ -334,14 +373,19 @@ export function saveRecipe(ctx: BusinessCtx, input: SaveInput): Promise<RecipeRe
       return before !== undefined && !sameLine(line, before)
     })
     const removed = stored.filter((line) => !keep.has(line.id)).map((line) => line.id)
-    if (added.length + changed.length + removed.length === 0 && input.version !== 0) {
-      const recipe = { id: recipeId, version: input.version }
+    if (
+      added.length + changed.length + removed.length === 0 &&
+      !yieldChanged &&
+      input.version !== 0
+    ) {
+      const recipe = { id: recipeId, version: input.version, yieldQty: storedYield }
       return { data: await recipeDtoOf(tx, businessId, product, recipe), meta: { redacted: [] } }
     }
     if (input.version !== 0) {
+      // One new version of the recipe per save that changes something (its yield, or its lines).
       await tx
         .update(recipes)
-        .set({ updatedAt: sql`now()` })
+        .set(yieldChanged ? { yieldQty: wantedYield } : { updatedAt: sql`now()` })
         .where(and(eq(recipes.businessId, businessId), eq(recipes.id, recipeId)))
     }
     // A line that now names another material leaves its old one first, with the lines taken out,
@@ -397,7 +441,15 @@ export function saveRecipe(ctx: BusinessCtx, input: SaveInput): Promise<RecipeRe
       )
     }
     const recipe = await findRecipe(tx, businessId, product.id)
-    return { data: await recipeDtoOf(tx, businessId, product, recipe), meta: { redacted: [] } }
+    const saved = await recipeDtoOf(tx, businessId, product, recipe)
+    // A yield so small that one unit's cost would not fit a cost amount is refused, and the whole save
+    // with it (D-178): what one unit costs is what the product's cost is made of.
+    if (yieldChanged && saved.cost.tooLarge) {
+      throw new AppError('validation', {
+        message: 'yieldQty: too small for what this recipe costs',
+      })
+    }
+    return { data: saved, meta: { redacted: [] } }
   })
 }
 
@@ -496,9 +548,9 @@ async function productNamesOf(
 
 /**
  * `product.costs`: what the materials of one unit of each product cost today. A recipe: the roll-up
- * of its lines (none yet: no total). Bought ready to sell: its material's average for one unit (the
- * product's unit is always the material's, D-117). NOT_FOUND unless every id is a product or service
- * of this business.
+ * of its lines (none yet: no total), and one unit its total ÷ its yield (D-178). Bought ready to sell:
+ * its material's average for one unit (the product's unit is always the material's, D-117). NOT_FOUND
+ * unless every id is a product or service of this business.
  */
 export function productCosts(ctx: BusinessCtx, input: CostsInput): Promise<ProductCostsDto> {
   const businessId = ctx.businessId
@@ -518,6 +570,20 @@ export function productCosts(ctx: BusinessCtx, input: CostsInput): Promise<Produ
         ),
       )
     if (products.length !== input.ids.length) throw new AppError('not_found')
+    const yields = new Map(
+      (
+        await tx
+          .select({ productId: recipes.productId, yieldQty: yieldOf })
+          .from(recipes)
+          .where(
+            and(
+              eq(recipes.businessId, businessId),
+              inArray(recipes.productId, input.ids),
+              isNull(recipes.deletedAt),
+            ),
+          )
+      ).map((row) => [row.productId, row.yieldQty] as const),
+    )
     const lines = (await tx.execute(sql`
       select r.product_id, l.material_id, trim_scale(l.base_qty)::text as base_qty
         from app.recipes r
@@ -547,25 +613,40 @@ export function productCosts(ctx: BusinessCtx, input: CostsInput): Promise<Produ
           productId: id,
           kind: 'resale',
           unit: product.unit,
+          yieldQty: '1',
           lineCount: 1,
           basis: basis?.basis ?? null,
-          cost: { total, unpricedLines: total === null ? 1 : 0, complete: total !== null },
+          cost: {
+            total,
+            ...unitCostOf(total),
+            unpricedLines: total === null ? 1 : 0,
+            complete: total !== null,
+          },
         }
       }
       const own = lines.filter((line) => line.product_id === id)
+      const yieldQty = yields.get(id) ?? '1'
       const rolled = rollUpRecipe(
         own.map((line) => ({
           baseQty: line.base_qty,
           basis: bases.get(line.material_id)?.basis ?? null,
         })),
+        yieldQty,
       )
       return {
         productId: id,
         kind: 'recipe',
         unit: product.unit,
+        yieldQty,
         lineCount: own.length,
         basis: null,
-        cost: { total: rolled.total, unpricedLines: rolled.unpriced, complete: rolled.complete },
+        cost: {
+          total: rolled.total,
+          perUnit: rolled.perUnit,
+          tooLarge: rolled.tooLarge,
+          unpricedLines: rolled.unpriced,
+          complete: rolled.complete,
+        },
       }
     })
     return { data: { items }, meta: { redacted: [] } }

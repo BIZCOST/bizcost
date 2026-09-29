@@ -159,6 +159,11 @@ export const expenseListInput = z
   .object({
     /** Default: every expense that was not discarded. `submitted`: waiting for approval. */
     status: z.enum(['all', ...EXPENSE_STATUSES]).default('all'),
+    /**
+     * Default: whoever entered it. `others`: only those another member entered (with approval off,
+     * who may finalize hears that drafts of the team wait for them, D-184).
+     */
+    enteredBy: z.enum(['anyone', 'others']).default('anyone'),
     categoryId: zUuid.optional(),
     supplierId: zUuid.optional(),
     /** Business days from and to (both included). */

@@ -85,28 +85,46 @@ export function sniffAttachmentType(bytes: Uint8Array): AttachmentContentType | 
  * sees) and other attaches to it wait, or this waits for them and then finds a discarded record. With
  * `change` (a file added or taken off), an expense sent for approval or approved is refused
  * (EXPENSE_IN_APPROVAL): what the approver looks at, its receipts included, is what is approved
- * (D-164, D-176).
+ * (D-164, D-176). With `ownOnly` too (a member who may not see supplier prices), an expense's files
+ * change only on an expense the caller entered, while it is a draft or rejected (FORBIDDEN otherwise,
+ * D-184): never another member's, never a final one's.
  */
 async function assertRecord(
   tx: Tx,
   businessId: string,
   entity: AttachmentEntity,
   id: string,
-  { lock = false, change = false }: { lock?: boolean; change?: boolean } = {},
+  {
+    lock = false,
+    change = false,
+    ownOnly = false,
+  }: { lock?: boolean; change?: boolean; ownOnly?: boolean } = {},
 ) {
   // The attachments table's trigger checks the same (DATA_MODEL.md §6).
   const table = RECORD_TABLES[entity]
   if (!table) throw new AppError('not_found')
   const [row] = (await tx.execute(sql`
-    select r.id, r.status from ${table} r
+    select r.id, r.status, coalesce(r.created_by = app.current_user_id(), false) as mine
+      from ${table} r
      where r.business_id = ${businessId} and r.id = ${id} and r.deleted_at is null
      ${lock ? sql`for no key update` : sql``}
-  `)) as unknown as { id: string; status: string }[]
+  `)) as unknown as { id: string; status: string; mine: boolean }[]
   if (!row) throw new AppError('not_found')
   if (change && entity === 'expense' && (row.status === 'submitted' || row.status === 'approved')) {
     throw new AppError('expense_in_approval')
   }
+  if (
+    change &&
+    ownOnly &&
+    entity === 'expense' &&
+    (!row.mine || (row.status !== 'draft' && row.status !== 'rejected'))
+  ) {
+    throw new AppError('forbidden')
+  }
 }
+
+/** Whether the caller changes only their own expenses' files (no supplier prices, D-184). */
+const ownOnly = (ctx: BusinessCtx) => !ctx.access.visibleCategories.has('supplier_price')
 
 async function countOn(tx: Tx, businessId: string, entity: AttachmentEntity, id: string) {
   const [row] = (await tx.execute(sql`
@@ -157,7 +175,10 @@ export async function attachmentUploadUrl(
 ): Promise<AttachmentUploadUrlDto> {
   const path = `${ctx.businessId}/${input.entity}/${newId()}.${EXTENSION_OF[input.contentType]}`
   const expired = await ctx.tx(async (tx) => {
-    await assertRecord(tx, ctx.businessId, input.entity, input.entityId, { change: true })
+    await assertRecord(tx, ctx.businessId, input.entity, input.entityId, {
+      change: true,
+      ownOnly: ownOnly(ctx),
+    })
     if (
       (await countOn(tx, ctx.businessId, input.entity, input.entityId)) >=
       ATTACHMENTS_PER_RECORD_MAX
@@ -286,7 +307,10 @@ export async function addAttachment(
   const match = attachmentPathPattern(ctx.businessId, input.entity).exec(input.path)
   if (!match) throw new AppError('validation', { message: 'path: not an attachment path here' })
   const [upload] = await ctx.tx(async (tx) => {
-    await assertRecord(tx, ctx.businessId, input.entity, input.entityId, { change: true })
+    await assertRecord(tx, ctx.businessId, input.entity, input.entityId, {
+      change: true,
+      ownOnly: ownOnly(ctx),
+    })
     return tx
       .select({ status: fileUploads.status, purpose: fileUploads.purpose })
       .from(fileUploads)
@@ -340,6 +364,7 @@ export async function addAttachment(
     await assertRecord(tx, ctx.businessId, input.entity, input.entityId, {
       lock: true,
       change: true,
+      ownOnly: ownOnly(ctx),
     })
     if (
       (await countOn(tx, ctx.businessId, input.entity, input.entityId)) >=
@@ -425,6 +450,7 @@ export async function removeAttachment(
     await assertRecord(tx, ctx.businessId, found.entity, found.entityId, {
       lock: true,
       change: true,
+      ownOnly: ownOnly(ctx),
     })
     const [row] = await tx
       .update(attachments)

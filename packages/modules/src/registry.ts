@@ -121,6 +121,7 @@ function permitted<T extends { readonly permission?: string }>(entries: readonly
   return entries.filter((e) => e.permission === undefined || can(e.permission))
 }
 
+/** The nav entries of a module the member may use by their keys (payees: buildModuleNav, D-181). */
 export function visibleNav(manifest: ModuleManifest, can: Can): readonly NavEntry[] {
   return permitted(manifest.nav, can)
 }
@@ -138,7 +139,7 @@ export function isModuleVisible(
   return isModuleActive(manifest, enabledKeys) && visibleNav(manifest, can).length > 0
 }
 
-/** The wire shape of a nav entry (without its permission key). */
+/** The wire shape of a nav entry (without its permission key or who else it is for). */
 function toNavDto({ id, labelKey, path, icon, group }: NavEntry): NavEntryDto {
   return { id, labelKey, path, icon, group }
 }
@@ -153,25 +154,44 @@ function toActionDto({ id, labelKey, path, icon }: QuickAction): QuickActionDto 
  * member may use (the `modules` part of business.context), in manifest order. `manifests` is the
  * registry; tests pass their own (e.g. a module released later) to show the shell follows the data.
  * A page that several modules share ("Amounts owed": purchases and expenses, D-166) is listed once,
- * by the first of them the member may use it through.
+ * by the first of them the member may use it through. `payeeIn` holds the modules in which the
+ * business owes (or paid back) the member for something they paid from their own money: their
+ * entries for payees show too (D-181). Such a page, reached only as a payee, comes after every entry
+ * the member reaches by their keys, under the last module that shares it: it is seldom opened, and
+ * must not push a section they work in (an employee's Expenses) into the phone's "More" (D-184).
  */
 export function buildModuleNav(
   enabledKeys: ReadonlySet<string>,
   can: Can,
   manifests: readonly ModuleManifest[] = MODULES,
+  payeeIn: ReadonlySet<string> = new Set(),
 ): readonly EnabledModuleDto[] {
+  const active = manifests.filter((m) => isModuleActive(m, enabledKeys))
+  // First what the member reaches by their keys: a shared page once, by its first module.
   const listed = new Set<string>()
-  return manifests
-    .filter((m) => isModuleActive(m, enabledKeys))
-    .map((m) => ({
-      id: m.id,
-      nav: visibleNav(m, can)
-        .filter((entry) => {
-          if (listed.has(entry.path)) return false
-          listed.add(entry.path)
-          return true
-        })
-        .map(toNavDto),
-      quickActions: visibleQuickActions(m, can).map(toActionDto),
-    }))
+  const byKeys = active.map((m) =>
+    visibleNav(m, can).filter((entry) => {
+      if (listed.has(entry.path)) return false
+      listed.add(entry.path)
+      return true
+    }),
+  )
+  // Then the pages for payees not reached by keys, where the member is owed through one of the
+  // modules that share it: each under the last active module that has it.
+  const lastOf = new Map<string, { entry: NavEntry; at: number }>()
+  const owed = new Set<string>()
+  active.forEach((m, at) => {
+    for (const entry of m.nav) {
+      if (entry.payees !== true || listed.has(entry.path)) continue
+      lastOf.set(entry.path, { entry, at })
+      if (payeeIn.has(m.id)) owed.add(entry.path)
+    }
+  })
+  const payeeOnly = active.map((): NavEntry[] => [])
+  for (const [path, { entry, at }] of lastOf) if (owed.has(path)) payeeOnly[at]?.push(entry)
+  return active.map((m, at) => ({
+    id: m.id,
+    nav: [...(byKeys[at] ?? []), ...(payeeOnly[at] ?? [])].map(toNavDto),
+    quickActions: visibleQuickActions(m, can).map(toActionDto),
+  }))
 }

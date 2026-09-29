@@ -41,5 +41,6 @@ BizCost is a multi-tenant SaaS for cost intelligence, profit intelligence and us
 - Disk space: keep ≥ 10 GB free on C:. Build the web app with `NEXT_DIST_DIR=.next/<folder>` and delete that folder afterwards; never touch `apps/web/.next/dev` (the owner's dev server).
 - `pnpm check` — typecheck + lint + test (all packages, via Turborepo). Must pass before every commit.
 - `pnpm db:reset` / `pnpm db:test` (pgTAP + DB integration) / `pnpm api:test` (API integration) — need the local Supabase stack.
+- `pnpm dev:clean-test-data` — removes the users and businesses the test suites left in the LOCAL database (audit rows, ledger and files included), then VACUUM; `--dry-run` lists first, `--full` gives the space back to the disk. Local stack only; never the owner's or demo accounts (D-182).
 - `pnpm format` / `pnpm format:check` — Prettier.
 - `pnpm --filter @bizcost/domain test` — run one package's task.

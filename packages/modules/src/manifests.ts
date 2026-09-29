@@ -54,6 +54,12 @@ export type ModuleAvailability = 'released' | 'planned'
  */
 export interface NavEntry extends NavEntryDto {
   readonly permission?: string
+  /**
+   * Also shown, whatever the member's keys, to a member the business owes (or paid back) for
+   * something they paid from their own money in this module: "Owed to me" on Amounts owed (the
+   * owner's answers of 2026-09-29, D-181). The page then shows them their own records only.
+   */
+  readonly payees?: true
 }
 
 export interface QuickAction extends QuickActionDto {
@@ -248,6 +254,7 @@ const PURCHASES = {
       icon: 'hand-coins',
       group: 'main',
       permission: 'purchases.payments.view',
+      payees: true,
     },
   ],
   quickActions: [],
@@ -293,6 +300,7 @@ const EXPENSES = {
       icon: 'hand-coins',
       group: 'main',
       permission: 'expenses.payments.view',
+      payees: true,
     },
   ],
   quickActions: [],

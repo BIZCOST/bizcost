@@ -456,6 +456,17 @@
     "emptyEmployees": "Nothing owed to employees",
     "emptyEmployeesBody": "Purchases and expenses an employee paid from their own money show here until you pay them back.",
     "lockedTitle": "Amounts are hidden",
-    "locked": "Your role doesn't show supplier prices, so amounts owed can't be shown."
+    "locked": "Your role doesn't show supplier prices, so amounts owed can't be shown.",
+    "toMe": "Owed to me",
+    "mine": {
+      "intro": "What the business owes you for what you paid from your own money, and what it paid back.",
+      "total": "Owed to you",
+      "paidBack": "Paid back so far",
+      "empty": "Nothing is owed to you",
+      "emptyBody": "What's paid for the business from your own money shows here until it's paid back to you.",
+      "paidBackOn": "Paid back on {{date}}: {{amount}}",
+      "settled": "Paid back in full",
+      "supplier": "From {{name}}"
+    }
   }
 }

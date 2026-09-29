@@ -98,6 +98,7 @@ describe('the saved recipe', () => {
   const recipe: RecipeDto = {
     productId: 'p',
     productUnit: 'piece',
+    yieldQty: '1',
     version: 2,
     lines: [
       {
@@ -115,7 +116,7 @@ describe('the saved recipe', () => {
         cost: null,
       },
     ],
-    cost: { total: null, unpricedLines: 1, complete: false },
+    cost: { total: null, tooLarge: false, unpricedLines: 1, complete: false },
     averageFrom: '2026-07-02',
     averageTo: '2026-09-29',
   }
@@ -158,6 +159,7 @@ describe('moving a line', () => {
     const recipe: RecipeDto = {
       productId: 'p',
       productUnit: 'piece',
+      yieldQty: '1',
       version: 1,
       lines: [MILK, BEANS].map((material, i) => ({
         id: `line-${i}`,
@@ -173,7 +175,7 @@ describe('moving a line', () => {
         baseQty: '1000',
         cost: null,
       })),
-      cost: { total: null, unpricedLines: 2, complete: false },
+      cost: { total: null, tooLarge: false, unpricedLines: 2, complete: false },
       averageFrom: '2026-07-02',
       averageTo: '2026-09-29',
     }

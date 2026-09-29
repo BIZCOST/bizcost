@@ -118,8 +118,15 @@ function MaterialsList() {
     nothingInUse,
     everything.isFetching ? undefined : everything.data,
   )
-  // Costs come from purchases: shown while the business uses Purchases.
-  const withCosts = context?.modules.some((module) => module.id === 'purchases') === true
+  // Costs come from purchases: shown while the business uses Purchases, to a member who may see
+  // costs or supplier prices. The others (an employee who reads recipes, D-179) get one note instead
+  // of a lock on every row.
+  const usesPurchases = context?.modules.some((module) => module.id === 'purchases') === true
+  const seesAnyCost =
+    context?.visibleCategories.some(
+      (category) => category === 'cost' || category === 'supplier_price',
+    ) === true
+  const withCosts = usesPurchases && seesAnyCost
   const costs = useMaterialCosts(list.data?.pages ?? [], withCosts)
   const archive = useMutation(trpc.material.archive.mutationOptions())
   const unarchive = useMutation(trpc.material.unarchive.mutationOptions())
@@ -187,6 +194,11 @@ function MaterialsList() {
           ) : null
         }
       />
+      {usesPurchases && !seesAnyCost && !firstTime ? (
+        <p data-costs-hidden className="-mt-3 mb-4 text-sm text-muted-foreground">
+          {t('catalog.materials.costsHidden')}
+        </p>
+      ) : null}
       {firstTime ? null : <ListToolbar search={search} status={status} onChange={set} />}
       <ListBody
         query={list}

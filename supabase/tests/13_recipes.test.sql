@@ -1,14 +1,16 @@
--- pgTAP: Recipes and items bought ready to sell (M2 Step 4; docs/DATA_MODEL.md §6, D-117, D-146–D-151).
+-- pgTAP: Recipes and items bought ready to sell (M2 Step 4; docs/DATA_MODEL.md §6, D-117, D-146–D-151,
+-- and the recipe's yield of the owner's answers of 2026-09-29, D-178).
 -- Two businesses, each with its owner. As bizcost_api, like the API: the rows of each business are
 -- invisible to the other; composite FKs refuse a recipe of another business's product, a line of
 -- another business's material or recipe, and a pack of another material; the CHECKs hold a line's
 -- shape; one live line per material; an item bought ready to sell is a product (not a service), one
 -- per material, and never changes its material (keep_resale_link); a material a live recipe line names
--- keeps its kind of measure (keep_dimension); the audit trigger runs. RLS, the policy, the triggers
+-- keeps its kind of measure (keep_dimension); a recipe makes 1 unit unless it says more (yield_qty,
+-- more than zero, versioned and audited); the audit trigger runs. RLS, the policy, the triggers
 -- and the grants of every tenant table are also checked generically by 00_catalog_coverage, 01_grants
 -- and 03_rls_initplan.
 begin;
-select plan(26);
+select plan(32);
 
 do $$
 begin
@@ -247,6 +249,49 @@ select is(
               and entity in ('recipes', 'recipe_lines')) as e),
   'recipe_lines,recipes',
   'writes of the recipe tables are in the audit log, with their actor'
+);
+
+-- 9. What a recipe makes (6) -------------------------------------------------------------------
+
+select col_type_is('app', 'recipes', 'yield_qty', 'numeric(24,6)',
+                   'recipes.yield_qty is numeric(24,6): how many of the product''s unit it makes');
+
+select is(
+  pg_temp.api_value('user A', 'biz A', $$
+    select trim_scale(yield_qty)::text || '/' || version from app.recipes
+     where id = pg_temp.id('recipe A') $$),
+  '1/1',
+  'a recipe makes one unit unless it says more'
+);
+
+select is(
+  pg_temp.state_of(pg_temp.api_exec('user A', 'biz A', v.stmt)),
+  '23514',
+  v.what
+)
+  from (values
+    ($$ update app.recipes set yield_qty = 0 where id = pg_temp.id('recipe A') $$,
+     'a recipe that makes nothing is refused (recipes_yield_qty_check)'),
+    ($$ update app.recipes set yield_qty = -12 where id = pg_temp.id('recipe A') $$,
+     'a negative yield is refused')
+  ) as v(stmt, what);
+
+select is(
+  pg_temp.api_value('user A', 'biz A', $$
+    with changed as (
+      update app.recipes set yield_qty = 12 where id = pg_temp.id('recipe A') returning version)
+    select version::text from changed $$),
+  '2',
+  'a new yield is a new version of the recipe'
+);
+
+select is(
+  (select count(*)::int from app.audit_log
+    where business_id = pg_temp.id('biz A') and entity = 'recipes' and action = 'update'
+      and entity_id = pg_temp.id('recipe A') and actor_user_id = pg_temp.id('user A')
+      and changes::text like '%yield_qty%'),
+  1,
+  'the new yield is in the audit log, with its actor'
 );
 
 select * from finish();

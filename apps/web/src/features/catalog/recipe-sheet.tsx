@@ -9,7 +9,15 @@ import {
   type RecipeDto,
   type RecipeLineDto,
 } from '@bizcost/contracts'
-import { newId, sumDecimals, type Quantity, type TerminologyProfile } from '@bizcost/domain'
+import {
+  compareDecimal,
+  costPerUnit,
+  newId,
+  sumDecimals,
+  unitCostOf,
+  type Quantity,
+  type TerminologyProfile,
+} from '@bizcost/domain'
 import type { I18nKey } from '@bizcost/i18n'
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
@@ -61,7 +69,7 @@ import { useLocale, useTerminology } from '@/lib/i18n/client'
 import { useBusinessContext } from '@/lib/trpc/client'
 import { cn } from '@/lib/utils'
 import { listOfNames } from './names'
-import { withLatinDigits, type FieldError } from './numbers'
+import { readQuantity, withLatinDigits, type FieldError } from './numbers'
 import {
   checkRecipe,
   isSaved,
@@ -76,15 +84,17 @@ import { PackChainText, useFormatQuantity, useUnitQuantity } from './unit-parts'
 import { NBSP, UNITS_BY_DIMENSION, type ChainStep } from './units'
 
 // What goes into a product or service (M2 Step 4; D-115, D-146): "Recipe / الوصفة" for food,
-// "Materials used / المواد المستخدمة" otherwise. A line per material, packaging included: the
-// quantity one unit uses, in any unit or pack of the material ("200 ml = 0.2 L" as it is typed), and
-// what it costs at the material's average, rounded only here. A material never bought says "No price
-// yet", never 0, and the total says the recipe is incomplete, naming what has no price. Each line's
-// menu moves it up or down (the recipe keeps its order) or takes it out. The total stays in view at
-// the bottom, and says how a material gets a price. Members who may see recipes but not costs see the
-// quantities and a lock; members who may not change it read it, in the same words. A save names the
-// version it read (a clash says so); a save that changes nothing only closes, and closing with
-// changes not saved asks first.
+// "Materials used / المواد المستخدمة" otherwise. First what it makes ("This recipe makes: 12
+// pieces", «الوصفة تكفي: 12 قطعة»; 1 by default, D-178), then a line per material, packaging
+// included: the quantity the recipe uses, in any unit or pack of the material ("200 ml = 0.2 L" as it
+// is typed), and what it costs at the material's average, rounded only here. A material never bought
+// says "No price yet", never 0, and the total says the recipe is incomplete, naming what has no
+// price. Each line's menu moves it up or down (the recipe keeps its order) or takes it out. The total
+// stays in view at the bottom with, for a recipe that makes more than one, what one unit sold costs
+// (the total ÷ what it makes, as it is typed), and says how a material gets a price. Members who may
+// see recipes but not costs see the quantities and a lock; members who may not change it read it, in
+// the same words. A save names the version it read (a clash says so); a save that changes nothing
+// only closes, and closing with changes not saved asks first.
 
 /** Problems that only say something is missing: shown once the person tries to save. */
 const MISSING: ReadonlySet<I18nKey> = new Set<I18nKey>([
@@ -480,6 +490,8 @@ export function RecipeSheet({
   const { businessId } = useParams<{ businessId: string }>()
   const { data: context } = useBusinessContext()
   const money = useMoney()
+  const format = useFormatQuantity()
+  const unitQuantity = useUnitQuantity()
   const seesCosts = context?.visibleCategories.includes('cost') === true
   const seesMaterials = context !== undefined && can(context, 'materials.items.view')
   const canEdit = context !== undefined && seesMaterials && can(context, 'products.recipes.manage')
@@ -487,12 +499,24 @@ export function RecipeSheet({
   const { materials, ready, error: materialsError } = useAllMaterials(seesMaterials)
   const save = useMutation(trpc.recipe.save.mutationOptions())
   const [edited, setEdited] = useState<RecipeLineDraft[] | null>(null)
+  // What the recipe makes, as typed (null: as saved).
+  const [yieldEdited, setYieldEdited] = useState<string | null>(null)
   const [submitted, setSubmitted] = useState(false)
   const [serverError, setServerError] = useState<I18nKey | null>(null)
+  const yieldId = useId()
+  const yieldHintId = useId()
   const saved: RecipeDto | undefined = recipe.data?.data
   const lines = useMemo(() => edited ?? (saved ? recipeDraft(saved) : []), [edited, saved])
   const check = useMemo(() => checkRecipe(lines, materials), [lines, materials])
-  const dirty = saved !== undefined && edited !== null && !isSaved(edited, saved)
+  const savedYield = saved?.yieldQty ?? '1'
+  const yieldText = yieldEdited ?? savedYield
+  const yieldRead = readQuantity(yieldText)
+  // What the screen divides by: as typed while it reads, else as saved.
+  const yieldQty = yieldRead.ok ? yieldRead.value : savedYield
+  const yieldChanged =
+    yieldEdited !== null && (!yieldRead.ok || compareDecimal(yieldRead.value, savedYield) !== 0)
+  const dirty =
+    saved !== undefined && ((edited !== null && !isSaved(edited, saved)) || yieldChanged)
 
   // The averages of the materials on the lines, for the costs shown as the recipe is typed.
   const materialIds = [...new Set(lines.map((l) => l.materialId).filter(Boolean))].sort()
@@ -534,36 +558,62 @@ export function RecipeSheet({
       )
     : (saved?.lines ?? []).filter((line) => !line.cost).map((line) => line.materialName)
   let total: ReactNode
-  if (!seesCosts) total = <Locked category="cost" />
-  else {
+  // One unit sold, for a recipe that makes more than one (D-178): the total ÷ what it makes.
+  let perUnit: ReactNode
+  if (!seesCosts) {
+    total = <Locked category="cost" />
+    perUnit = <Locked category="cost" />
+  } else {
     const priced = costs.flatMap((cost) => (cost.kind === 'priced' ? [cost.amount] : []))
     const amount =
       !dirty || !canEdit ? saved?.cost.total : priced.length > 0 ? sumDecimals(priced) : null
-    total =
-      amount === undefined ? (
+    const show = (
+      value: string | null | undefined,
+      data: Record<string, string>,
+      tooLarge = false,
+    ) =>
+      value === undefined ? (
         <Locked category="cost" />
-      ) : amount === null ? (
-        <span className="text-muted-foreground">{t('catalog.recipes.noTotal')}</span>
+      ) : value === null ? (
+        <span className="text-muted-foreground">
+          {tooLarge ? t('catalog.recipes.tooLarge') : t('catalog.recipes.noTotal')}
+        </span>
       ) : (
-        <bdi data-recipe-total className="tabular-nums">
-          {money(amount).replaceAll(' ', NBSP)}
+        <bdi {...data} className="tabular-nums">
+          {money(value).replaceAll(' ', NBSP)}
         </bdi>
       )
+    total = show(amount, { 'data-recipe-total': '' })
+    // As saved, or as typed (a cost per unit too large to work out says so, as the API does).
+    const typed =
+      !dirty || !canEdit || amount === null || amount === undefined
+        ? null
+        : unitCostOf(costPerUnit(amount, yieldQty))
+    perUnit = typed
+      ? show(typed.perUnit, { 'data-recipe-per-unit': '' }, typed.tooLarge)
+      : show(
+          !dirty || !canEdit ? saved?.cost.perUnit : amount,
+          { 'data-recipe-per-unit': '' },
+          !dirty || !canEdit ? saved?.cost.tooLarge : false,
+        )
   }
+  const makesMore = compareDecimal(yieldQty, '1') !== 0
 
   /** Saves the recipe; true once saved (the sheet says what went wrong otherwise). */
   async function saveRecipe(): Promise<boolean> {
     if (!saved || save.isPending) return false
     setSubmitted(true)
     setServerError(null)
-    if (!check.lines) return false
+    if (!check.lines || !yieldRead.ok) return false
     try {
       const result = await save.mutateAsync({
         productId: product.id,
         version: saved.version,
+        yieldQty: yieldRead.value,
         lines: check.lines,
       })
       queryClient.setQueryData(trpc.recipe.get.queryKey({ productId: product.id }), result)
+      setYieldEdited(null)
       await queryClient.invalidateQueries({ queryKey: trpc.product.costs.pathKey() })
       toast.success(t('catalog.recipes.saved'))
       return true
@@ -601,7 +651,18 @@ export function RecipeSheet({
     canEdit && ready && [...materials.values()].every((m) => m.archivedAt !== null)
   const busy = save.isPending
   const title = term('catalog.recipes.title', profile)
-  const per = t(`units.per.${product.unit}`)
+  // One unit sold: "per piece". The lines are for what the recipe makes: "for 12 pieces" (D-178).
+  const perOne = t(`units.per.${product.unit}`)
+  const per = makesMore
+    ? t(`units.forQty.${product.unit}`, { count: Number(yieldQty), value: format(yieldQty) })
+    : perOne
+  const yieldError = submitted || yieldText.trim() !== '' ? shownYieldError() : undefined
+  /** What is wrong with what the recipe makes, as typed. */
+  function shownYieldError(): string | undefined {
+    return yieldRead.ok ? undefined : t(yieldRead.error.key, yieldRead.error.values)
+  }
+  /** The unit after the box, as many as typed: "pieces", «قطعة». */
+  const yieldUnit = unitQuantity(yieldQty, product.unit).replace(format(yieldQty), '').trim()
   // A tap beside the sheet, Escape, × or Cancel: changes not saved are only dropped once confirmed.
   const requestClose = () => {
     if (busy) return
@@ -623,9 +684,11 @@ export function RecipeSheet({
             <SheetTitle>
               <bdi>{product.name}</bdi>
             </SheetTitle>
-            {/* Visible on phones too: the lines are for ONE unit sold. */}
+            {/* Visible on phones too: what the lines are for (one unit sold, or what it makes). */}
             <SheetDescription className="max-sm:not-sr-only">
-              {t('catalog.recipes.description', { per })}
+              {seesCosts
+                ? t('catalog.recipes.description', { per })
+                : t('catalog.recipes.descriptionNoCosts', { per })}
             </SheetDescription>
           </SheetHeader>
           <SheetBody className="space-y-4">
@@ -647,6 +710,36 @@ export function RecipeSheet({
               <FormAlert tone="error">{t(apiErrorKey(materialsError))}</FormAlert>
             ) : canEdit ? (
               <>
+                {/* What the recipe makes (D-178): the lines are for that many of what is sold. */}
+                <div data-recipe-yield className="rounded-xl border bg-background/60 p-3">
+                  <label htmlFor={yieldId} className="block text-sm font-medium">
+                    {term('catalog.recipes.yield', profile)}
+                  </label>
+                  <div className="mt-1.5 flex items-center gap-2">
+                    <Input
+                      id={yieldId}
+                      aria-invalid={Boolean(yieldError)}
+                      aria-describedby={yieldHintId}
+                      inputMode="decimal"
+                      dir="ltr"
+                      autoComplete="off"
+                      spellCheck={false}
+                      value={yieldText}
+                      onChange={(event) => setYieldEdited(event.target.value)}
+                      onBlur={() => setYieldEdited(withLatinDigits(yieldText))}
+                      className="w-28 tabular-nums rtl:text-end"
+                    />
+                    <span className="min-w-0 text-sm text-muted-foreground">{yieldUnit}</span>
+                  </div>
+                  <p id={yieldHintId} className="mt-1.5 text-xs text-muted-foreground">
+                    {yieldError ? (
+                      <span role="alert" className="block text-sm text-destructive">
+                        {yieldError}
+                      </span>
+                    ) : null}
+                    {term('catalog.recipes.yieldHint', profile, { per: perOne })}
+                  </p>
+                </div>
                 {noMaterials ? (
                   <FormAlert tone="info">
                     {term('catalog.recipes.noMaterials', profile)}{' '}
@@ -708,16 +801,25 @@ export function RecipeSheet({
                 )}
               </>
             ) : saved && saved.lines.length > 0 ? (
-              <ul className="divide-y rounded-xl border">
-                {saved.lines.map((line) => (
-                  <LineView
-                    key={line.id}
-                    line={line}
-                    material={materials.get(line.materialId)}
-                    cost={savedCostOf(line, seesCosts)}
-                  />
-                ))}
-              </ul>
+              <>
+                {makesMore ? (
+                  <p data-recipe-makes className="text-sm font-medium">
+                    {term('catalog.recipes.makes', profile, {
+                      qty: unitQuantity(yieldQty, product.unit),
+                    })}
+                  </p>
+                ) : null}
+                <ul className="divide-y rounded-xl border">
+                  {saved.lines.map((line) => (
+                    <LineView
+                      key={line.id}
+                      line={line}
+                      material={materials.get(line.materialId)}
+                      cost={savedCostOf(line, seesCosts)}
+                    />
+                  ))}
+                </ul>
+              </>
             ) : (
               <p className="text-sm text-muted-foreground">{t('catalog.recipes.viewerEmpty')}</p>
             )}
@@ -733,10 +835,29 @@ export function RecipeSheet({
               data-recipe-footer
               className="shrink-0 space-y-1 border-t bg-popover px-5 pt-3 sm:px-6"
             >
-              <p className="flex items-baseline justify-between gap-3 text-base font-semibold">
-                <span>{term('catalog.recipes.total', profile)}</span>
-                {total}
-              </p>
+              {makesMore ? (
+                <>
+                  {/* The whole recipe names what it makes; one unit sold leads, as the Products
+                      list shows it ("Recipe cost: AED 1.45 per piece"). */}
+                  <p className="flex items-baseline justify-between gap-3 text-sm font-medium">
+                    <span>
+                      {term('catalog.recipes.totalWhole', profile, {
+                        qty: unitQuantity(yieldQty, product.unit),
+                      })}
+                    </span>
+                    {total}
+                  </p>
+                  <p className="flex items-baseline justify-between gap-3 text-base font-semibold">
+                    <span>{term('catalog.recipes.perUnitCost', profile, { per: perOne })}</span>
+                    {perUnit}
+                  </p>
+                </>
+              ) : (
+                <p className="flex items-baseline justify-between gap-3 text-base font-semibold">
+                  <span>{term('catalog.recipes.total', profile)}</span>
+                  {total}
+                </p>
+              )}
               {seesCosts && unpricedNames.length > 0 ? (
                 <p data-incomplete className="text-sm text-warning">
                   {t('catalog.recipes.incomplete', {

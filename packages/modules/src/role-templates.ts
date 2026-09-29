@@ -8,7 +8,8 @@ import { PERMISSION_CATALOG, type PermissionKey } from './permissions'
 // catalog_security migration of M2 Step 2 did so for the products and materials keys, D-124, and
 // purchasing_security for the suppliers and purchases keys of M2 Step 3, recipes_security for the
 // recipe keys of M2 Step 4, purchasing_payments_security for the payment keys of 2026-09-29,
-// expenses_security for the expenses and running-costs keys of M2 Step 5).
+// expenses_security for the expenses and running-costs keys of M2 Step 5, owners_answers_access for
+// the Employee keys of the owner's answers of 2026-09-29).
 
 export const ROLE_TEMPLATE_KEYS = [
   OWNER_TEMPLATE_KEY,
@@ -104,10 +105,20 @@ export const ROLE_TEMPLATES: readonly RoleTemplate[] = [
       'materials.items.view',
     ],
   },
+  // The owner's answers of 2026-09-29 (D-179, D-180): an employee sees what goes into each product
+  // (quantities; costs stay locked) and the materials it names, and enters expenses and sends them for
+  // approval. No sensitive key.
   {
     key: 'employee',
     allPermissions: false,
-    permissionKeys: ['dashboard.home.view', 'products.items.view'],
+    permissionKeys: [
+      'dashboard.home.view',
+      'products.items.view',
+      'products.recipes.view',
+      'materials.items.view',
+      'expenses.documents.view',
+      'expenses.documents.manage',
+    ],
   },
 ]
 

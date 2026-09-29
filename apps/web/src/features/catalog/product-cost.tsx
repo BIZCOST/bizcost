@@ -11,11 +11,12 @@ import { useTerminology } from '@/lib/i18n/client'
 import { NBSP } from './units'
 
 // What one unit of each product costs in materials, in the Products list (M2 Step 4; D-115, D-117):
-// its recipe's materials at their average ("Recipe cost: AED 3.00 per piece", then an "incomplete"
-// tag while one has no price yet, which wraps whole and leaves no separator at a line's end), "No recipe yet" before anything goes into it, or, bought ready to sell, what
-// it costs to buy ("Cost: AED 0.50 per piece"). Never 0 for a price that isn't known: "no price
-// yet". Rounded only here; the API keeps 12 decimals. The amounts are `cost`: a member who may not
-// see them sees a lock.
+// its recipe's materials at their average, divided by what the recipe makes (D-178: a cake that
+// makes 12 slices costs its total ÷ 12 a slice): "Recipe cost: AED 3.00 per piece", then an
+// "incomplete" tag while one has no price yet, which wraps whole and leaves no separator at a line's
+// end; "No recipe yet" before anything goes into it; or, bought ready to sell, what it costs to buy
+// ("Cost: AED 0.50 per piece"). Never 0 for a price that isn't known: "no price yet". Rounded only
+// here; the API keeps 12 decimals. The amounts are `cost`: a member who may not see them sees a lock.
 
 /** The material costs of the products of each loaded page of the list (product.costs takes a page). */
 export function useProductCosts(
@@ -55,12 +56,18 @@ export function ProductCostLine({
       </span>
     )
   }
-  const total = cost.cost.total
+  // One unit sold: the recipe's total ÷ what it makes (the total itself when it makes one).
+  const total = cost.cost.perUnit
   const amount =
     total === undefined ? (
       <Locked category="cost" />
     ) : total === null ? (
-      t('catalog.products.cost.noPrice')
+      // Null: never bought ("no price yet"), or too large to work out (absurd amounts, D-178).
+      cost.cost.tooLarge ? (
+        t('catalog.recipes.tooLarge')
+      ) : (
+        t('catalog.products.cost.noPrice')
+      )
     ) : (
       // For one unit sold, as the price is: "AED 3.00 per piece".
       <span className="whitespace-nowrap">

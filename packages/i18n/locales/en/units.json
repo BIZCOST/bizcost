@@ -62,6 +62,27 @@
     "h_one": "{{value}} hour",
     "h_other": "{{value}} hours"
   },
+  "forQty": {
+    "mg": "for {{value}} mg",
+    "g": "for {{value}} g",
+    "kg": "for {{value}} kg",
+    "ml": "for {{value}} ml",
+    "l": "for {{value}} L",
+    "piece_one": "for {{value}} piece",
+    "piece_other": "for {{value}} pieces",
+    "mm": "for {{value}} mm",
+    "cm": "for {{value}} cm",
+    "m": "for {{value}} m",
+    "mm2": "for {{value}} mm²",
+    "cm2": "for {{value}} cm²",
+    "m2": "for {{value}} m²",
+    "s_one": "for {{value}} second",
+    "s_other": "for {{value}} seconds",
+    "min_one": "for {{value}} minute",
+    "min_other": "for {{value}} minutes",
+    "h_one": "for {{value}} hour",
+    "h_other": "for {{value}} hours"
+  },
   "per": {
     "mg": "per mg",
     "g": "per g",

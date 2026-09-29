@@ -12,7 +12,8 @@
     "test": "vitest run",
     "test:api": "vitest run --config vitest.api.config.ts",
     "demo:seed": "tsx --conditions=react-server demo/seed.ts",
-    "demo:reset": "tsx --conditions=react-server demo/reset.ts"
+    "demo:reset": "tsx --conditions=react-server demo/reset.ts",
+    "dev:clean-test-data": "tsx demo/clean-test-data.ts"
   },
   "dependencies": {
     "@bizcost/contracts": "workspace:*",

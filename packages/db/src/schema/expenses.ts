@@ -130,6 +130,8 @@ export const expenses = tenantTable(
     index('expenses_category_idx').on(t.businessId, t.categoryId),
     index('expenses_supplier_idx').on(t.businessId, t.supplierId),
     index('expenses_paid_by_member_idx').on(t.businessId, t.paidByMemberId),
+    // A member's own expenses ("My expenses", D-181): the ones they entered.
+    index('expenses_created_by_idx').on(t.businessId, t.createdBy),
     check(
       'expenses_document_type_check',
       sql`document_type in (${quoted(PURCHASE_DOCUMENT_TYPES)})`,

@@ -1113,7 +1113,7 @@ describe('running costs (D-116)', () => {
 // ---------------------------------------------------------------------------------------------------
 
 describe('who may see and do what', () => {
-  it('the templates: Accountant sees, Sales and Employee see nothing; amounts hidden without prices', async () => {
+  it('the templates: Accountant sees; Employee enters and sends, without amounts; Sales sees nothing', async () => {
     const accountant = await api.member(shop, 'accountant')
     const employee = await api.member(shop, 'employee')
     const sales = await api.member(shop, 'sales')
@@ -1126,16 +1126,35 @@ describe('who may see and do what', () => {
     expect(
       codeOf(await shop.as(accountant, 'costCategory.create', { id: newId(), name: 'Mine' })),
     ).toBe('forbidden')
-    for (const person of [employee, sales]) {
-      for (const path of [
-        'expense.list',
-        'runningCost.list',
-        'costCategory.list',
-        'payable.list',
-      ]) {
-        const input = path === 'payable.list' ? { party: 'supplier' } : undefined
-        expect(codeOf(await shop.as(person, path, input)), path).toBe('forbidden')
-      }
+    for (const path of ['expense.list', 'runningCost.list', 'costCategory.list', 'payable.list']) {
+      const input = path === 'payable.list' ? { party: 'supplier' } : undefined
+      expect(codeOf(await shop.as(sales, path, input)), path).toBe('forbidden')
+    }
+    // The owner's answers of 2026-09-29 (D-180): an employee sees the expenses (amounts locked),
+    // enters them and sends them for approval; never approves, finalizes, reverses or pays them, and
+    // sees neither running costs nor what the business owes others.
+    const seen = ok(await shop.as<Envelope<ExpenseListDto['data']>>(employee, 'expense.list'))
+    expect(seen.meta.redacted).toEqual(['items.*.total'])
+    ok(await shop.as(employee, 'costCategory.list'))
+    const entered = ok(
+      await shop.as<Envelope<ExpenseDto>>(
+        employee,
+        'expense.create',
+        shop.expenseInput(rent.id, today),
+      ),
+    )
+    expect(entered.meta.redacted).toContain('total')
+    const version = { id: entered.data.id, version: entered.data.version }
+    for (const [path, input] of [
+      ['runningCost.list', undefined],
+      ['payable.list', { party: 'member' }],
+      ['expense.post', version],
+      ['expense.approve', version],
+      ['expense.reverse', { id: entered.data.id }],
+      ['expensePayment.list', { expenseId: entered.data.id }],
+      ['expense.updateSettings', { approval: true }],
+    ] as const) {
+      expect(codeOf(await shop.as(employee, path, input)), path).toBe('forbidden')
     }
     // An Employee allowed to see expenses sees them without amounts (a lock, never a 0).
     const viewer = await api.person()

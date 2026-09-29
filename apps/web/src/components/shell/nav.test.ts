@@ -194,10 +194,17 @@ describe('the modules being built (M2 Step 2), in the dev-only preview', () => {
     ])
     expect(active(items)).toBe('materials')
     for (const item of items) expect(navIcon(item.icon)).not.toBe(FALLBACK_NAV_ICON)
-    // An employee sees Products & Services, not Materials (PRODUCT.md §8).
+    // Sales sees Products & Services, not Materials; an employee both, since what goes into a
+    // product names its materials (PRODUCT.md §8, D-179).
+    expect(labels(shellNav(buildModuleNav(on, canFor('sales'), registry), ID, ROOT))).toEqual([
+      'dashboard',
+      'products',
+      'settings',
+    ])
     expect(labels(shellNav(buildModuleNav(on, canFor('employee'), registry), ID, ROOT))).toEqual([
       'dashboard',
       'products',
+      'materials',
       'settings',
     ])
     // Released code: not there, whatever the business chose.
@@ -273,9 +280,46 @@ describe('a page two modules share: Amounts owed (Purchases and Expenses, D-166)
     expect(
       moduleAccess(buildModuleNav(both, canFor('employee'), registry), shared, 'payables'),
     ).toBe('forbidden')
+    // Unless the business owes them for something they paid themselves: "Owed to me" (D-181).
+    const owedTo = buildModuleNav(both, canFor('employee'), registry, new Set(['expenses']))
+    expect(moduleAccess(owedTo, shared, 'payables')).toBe('open')
+    expect(labels(shellNav(owedTo, ID, ROOT)).filter((id) => id === 'payables')).toHaveLength(1)
     // Its states lead to a section of neither module.
     expect(wayBack(items, shared)?.id).toBe('dashboard')
     for (const item of items) expect(navIcon(item.icon)).not.toBe(FALLBACK_NAV_ICON)
+  })
+
+  it('owed for a purchase, an employee keeps Expenses in the phone bar; Amounts owed goes to More (D-184)', () => {
+    const on = new Set(['products', 'materials', 'suppliers', 'purchases', 'expenses'])
+    const catalog = withPreviewModules([
+      'products',
+      'materials',
+      'suppliers',
+      'purchases',
+      'expenses',
+    ])
+    const before = shellNav(buildModuleNav(on, canFor('employee'), catalog), ID, ROOT)
+    expect(labels(before)).toEqual(['dashboard', 'products', 'materials', 'expenses', 'settings'])
+    const owedTo = buildModuleNav(on, canFor('employee'), catalog, new Set(['purchases']))
+    const items = shellNav(owedTo, ID, ROOT)
+    // After everything the employee reaches by their keys, open through either module.
+    expect(labels(items)).toEqual([
+      'dashboard',
+      'products',
+      'materials',
+      'expenses',
+      'payables',
+      'settings',
+    ])
+    expect(moduleAccess(owedTo, shared, 'payables')).toBe('open')
+    const bar = bottomTabs(items, [])
+    expect(bar.tabs.map((item) => item.id)).toEqual([
+      'dashboard',
+      'products',
+      'materials',
+      'expenses',
+    ])
+    expect(bar.more.map((item) => item.id)).toEqual(['payables', 'settings'])
   })
 })
 

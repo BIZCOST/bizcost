@@ -1,5 +1,5 @@
 import { exactProduct, plain, roundHalfUp, toDec } from '../numbers/decimal'
-import { COST_SCALE, type CostAmount } from '../numbers/kinds'
+import { checkDecimal, COST_SCALE, type CostAmount } from '../numbers/kinds'
 
 // What a product's materials cost (ROADMAP.md M2 Step 4; D-115): each line of its recipe is a base
 // quantity (the line's quantity in the material's base unit, D-108) × the material's average cost
@@ -10,6 +10,11 @@ import { COST_SCALE, type CostAmount } from '../numbers/kinds'
 // A material never bought has no average: its line has no cost ("no price yet", never 0), and the
 // total is the sum of the lines that have one, marked incomplete. An item bought ready to sell (D-117)
 // costs its material's average for one unit sold: costOfQty(base units in one unit, basis).
+// A recipe makes `yieldQty` units of its product (1 by default; a cake recipe that makes 12 slices,
+// D-178): its lines are what the whole recipe uses, and one unit sold costs the total ÷ the yield,
+// divided once and rounded once to 12 decimals (costPerUnit), never rounded to the currency. One
+// unit's cost that does not fit a cost amount (numeric(28,12): absurd quantities or prices, or a tiny
+// yield) is not worked out: null, and the recipe says it is too large (tooLarge).
 
 /** The sums a material's average is made of: Σ value ÷ Σ base quantity (D-115). */
 export interface CostBasis {
@@ -45,14 +50,51 @@ export interface RecipeCost {
   readonly lines: readonly (CostAmount | null)[]
   /** Σ the lines that have a cost (exact); null when none has one (an empty recipe included). */
   readonly total: CostAmount | null
+  /**
+   * What one unit the recipe makes costs: total ÷ yield (costPerUnit); null with the total, and when
+   * it does not fit a cost amount (tooLarge).
+   */
+  readonly perUnit: CostAmount | null
+  /** One unit's cost does not fit a cost amount (numeric(28,12)), so perUnit is null. */
+  readonly tooLarge: boolean
   /** How many lines have no price yet. */
   readonly unpriced: number
   /** True when the recipe has lines and every one has a cost. */
   readonly complete: boolean
 }
 
-/** The cost of a recipe's materials: each line costOfQty, the total their exact sum. */
-export function rollUpRecipe(lines: readonly RecipeCostLine[]): RecipeCost {
+/**
+ * What one of the `yieldQty` units a recipe makes costs: `total` ÷ `yieldQty`, one division rounded
+ * half away from zero to 12 decimals (a yield of 1 gives the total itself). Null when there is no
+ * total. Throws RangeError for a yield that is not more than zero.
+ */
+export function costPerUnit(total: string | null, yieldQty: string): CostAmount | null {
+  const divisor = toDec(yieldQty)
+  if (!divisor.gt(0)) throw new RangeError(`A yield must be more than zero: "${yieldQty}"`)
+  if (total === null) return null
+  return plain(roundHalfUp(toDec(total).dividedBy(divisor), COST_SCALE)) as CostAmount
+}
+
+/**
+ * One unit's cost as a cost amount, or null (with tooLarge) when it does not fit numeric(28,12): what
+ * a product's cost per unit may be (D-178). Null in, null out.
+ */
+export function unitCostOf(perUnit: string | null): {
+  perUnit: CostAmount | null
+  tooLarge: boolean
+} {
+  if (perUnit === null) return { perUnit: null, tooLarge: false }
+  return checkDecimal(perUnit, 'costAmount') === null
+    ? { perUnit: perUnit as CostAmount, tooLarge: false }
+    : { perUnit: null, tooLarge: true }
+}
+
+/**
+ * The cost of a recipe's materials: each line costOfQty, the total their exact sum, and one of the
+ * `yieldQty` units it makes (default 1) the total ÷ the yield (unitCostOf: null, tooLarge, when it
+ * does not fit a cost amount).
+ */
+export function rollUpRecipe(lines: readonly RecipeCostLine[], yieldQty = '1'): RecipeCost {
   const costs = lines.map((line) => (line.basis ? costOfQty(line.baseQty, line.basis) : null))
   const priced = costs.filter((cost): cost is CostAmount => cost !== null)
   const total =
@@ -60,5 +102,11 @@ export function rollUpRecipe(lines: readonly RecipeCostLine[]): RecipeCost {
       ? null
       : (plain(priced.reduce((sum, cost) => sum.plus(toDec(cost)), toDec('0'))) as CostAmount)
   const unpriced = costs.length - priced.length
-  return { lines: costs, total, unpriced, complete: costs.length > 0 && unpriced === 0 }
+  return {
+    lines: costs,
+    total,
+    ...unitCostOf(costPerUnit(total, yieldQty)),
+    unpriced,
+    complete: costs.length > 0 && unpriced === 0,
+  }
 }

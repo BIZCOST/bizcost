@@ -34,7 +34,12 @@ import type { FieldError } from '@/features/catalog/numbers'
 import { useBusinessDate, useMoney } from '@/features/purchasing/amounts'
 import { closedFor, firstOpenDay } from '@/features/purchasing/books'
 import { ConfirmDialog } from '@/features/purchasing/confirm-dialog'
-import { hasModule, useLocationOptions, useSupplierOptions } from '@/features/purchasing/data'
+import {
+  hasModule,
+  useLocationOptions,
+  useRefreshOwnRecords,
+  useSupplierOptions,
+} from '@/features/purchasing/data'
 import { Panel } from '@/features/purchasing/panel'
 import { MoneyInput, VatModeChoice, VatSelect } from '@/features/purchasing/purchase-lines'
 import {
@@ -70,8 +75,10 @@ import { ExpenseStatusBadge } from './status-badge'
 // needs the supplier, paid by an employee names who), what it was for and a photo of the receipt;
 // the rest under "More details". "Save draft" keeps it without counting it. With approval on (a team
 // and the business's setting), a member who may not approve sends it for approval; otherwise
-// "Finalize" (expenses.documents.post) saves and posts it after a confirmation. Leaving with changes
-// not saved asks first (D-161).
+// "Finalize" (expenses.documents.post) saves and posts it after a confirmation; with approval off, a
+// member who may not finalize saves a draft that waits for someone who may, and is told so (D-180).
+// A member who may not see supplier prices still works on their own expense with its amounts
+// (expense.getMine, D-181). Leaving with changes not saved asks first (D-161).
 
 const NEW_SUPPLIER = '__new-supplier__'
 
@@ -110,9 +117,8 @@ export function ExpenseEditor({
   const finalizeOffered =
     approvalRequired !== undefined && canPost && (!approvalRequired || mayApprove)
   const submitOffered = approvalRequired === true && !finalizeOffered
-  // A member who may not see supplier prices types the amount, then no longer sees it (D-165).
-  const hiddenOnceSent =
-    submitOffered && context !== undefined && !context.visibleCategories.includes('supplier_price')
+  // Approval off and no right to finalize: the draft waits for someone who may (D-180).
+  const waitsForPoster = approvalRequired === false && !canPost
   const canAddSupplier =
     context !== undefined &&
     hasModule(context, 'suppliers') &&
@@ -127,6 +133,7 @@ export function ExpenseEditor({
   const post = useMutation(trpc.expense.post.mutationOptions())
   const submit = useMutation(trpc.expense.submit.mutationOptions())
   const discard = useMutation(trpc.expense.discard.mutationOptions())
+  const refreshOwn = useRefreshOwnRecords()
 
   const [expenseId] = useState(() => expense?.id ?? newId())
   // The saved version (null until the first save of a new expense).
@@ -262,6 +269,7 @@ export function ExpenseEditor({
       }
     }
     void queryClient.invalidateQueries({ queryKey: trpc.expense.list.pathKey() })
+    void refreshOwn()
     return result
   }
 
@@ -357,6 +365,7 @@ export function ExpenseEditor({
       queryClient.setQueryData(trpc.expense.get.queryKey({ id: expenseId }), next)
       void queryClient.invalidateQueries({ queryKey: trpc.expense.list.pathKey() })
       void queryClient.invalidateQueries({ queryKey: trpc.payable.list.pathKey() })
+      void refreshOwn()
       toast.success(
         t(action === 'finalize' ? 'expenses.confirm.finalized' : 'expenses.confirm.submitted'),
       )
@@ -391,6 +400,7 @@ export function ExpenseEditor({
       setBaseline(draft)
       setPending([])
       void queryClient.invalidateQueries({ queryKey: trpc.expense.list.pathKey() })
+      void refreshOwn()
       toast.success(
         t(rejected ? 'expenses.confirm.discardedRejected' : 'expenses.confirm.discarded'),
       )
@@ -447,8 +457,14 @@ export function ExpenseEditor({
             )}
           </div>
           <p className="mt-1.5 max-w-2xl text-muted-foreground">
-            {submitOffered ? t('expenses.editor.introApproval') : t('expenses.editor.intro')}
-            {hiddenOnceSent ? <> {t('expenses.editor.hiddenAfterSend')}</> : null}
+            {submitOffered
+              ? t('expenses.editor.introApproval')
+              : waitsForPoster
+                ? // Once saved, it says it waits (not "save it" again, D-184).
+                  version === null
+                  ? t('expenses.editor.introWaits')
+                  : t('expenses.view.draftWaits')
+                : t('expenses.editor.intro')}
           </p>
         </div>
         {version === null ? null : (

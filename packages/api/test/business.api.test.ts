@@ -269,7 +269,19 @@ describe('business.context', () => {
     const result = await query<ContextResult>(handler, 'business.context', as('staff'))
     expect(result.data).toMatchObject({
       roleTemplateKey: 'employee',
-      permissions: { all: false, keys: ['dashboard.home.view', 'products.items.view'] },
+      permissions: {
+        all: false,
+        // The owner's answers of 2026-09-29 (D-179, D-180): recipes (quantities) and their
+        // materials, and entering expenses; nothing sensitive.
+        keys: [
+          'dashboard.home.view',
+          'expenses.documents.manage',
+          'expenses.documents.view',
+          'materials.items.view',
+          'products.items.view',
+          'products.recipes.view',
+        ],
+      },
       locationScope: { all: false, ids: [branchId] },
       visibleCategories: [],
     })

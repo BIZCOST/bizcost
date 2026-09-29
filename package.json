@@ -19,6 +19,7 @@
     "e2e": "pnpm --filter @bizcost/e2e e2e",
     "demo:seed": "pnpm --filter @bizcost/api demo:seed",
     "demo:reset": "pnpm --filter @bizcost/api demo:reset",
+    "dev:clean-test-data": "pnpm --filter @bizcost/api dev:clean-test-data",
     "auth:signing-key": "node -e \"const fs=require('node:fs');const f='supabase/signing_keys.json';if(fs.existsSync(f)){console.error(f+' already exists (delete it to rotate the local key)');process.exit(1)}fs.writeFileSync(f,'[]')\" && supabase gen signing-key --algorithm ES256 --yes",
     "docker:start": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/start-docker.ps1"
   },

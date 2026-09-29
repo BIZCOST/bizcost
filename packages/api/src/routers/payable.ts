@@ -1,4 +1,6 @@
 import {
+  minePayableListDto,
+  minePayableListInput,
   payableListDto,
   payableListInput,
   purchasePaymentsDto,
@@ -8,6 +10,7 @@ import {
   type PayableKindDto,
 } from '@bizcost/contracts'
 import type { BusinessCtx } from '../business-context'
+import { listMinePayables } from '../services/mine'
 import {
   listPayables,
   listPurchasePayments,
@@ -50,6 +53,27 @@ function payableKinds(ctx: BusinessCtx): PayableKindDto[] {
 const viewPayables = businessProcedure.use(
   requireAnyAccess(PAYABLE_ACCESS.purchase, PAYABLE_ACCESS.expense),
 )
+
+/**
+ * "Owed to me" (D-181): what the business owes the caller for what they paid from their own money.
+ * Every member, with the module of each kind on (MODULE_DISABLED when neither is): the rows are the
+ * caller's own, so no permission key and no supplier prices are needed.
+ */
+const OWN_PAYABLE_MODULES: Readonly<Record<PayableKindDto, ModuleAccessPair>> = {
+  purchase: ['purchases'],
+  expense: ['expenses'],
+}
+
+/** The kinds of document whose module is on. */
+function ownPayableKinds(ctx: BusinessCtx): PayableKindDto[] {
+  return (Object.keys(OWN_PAYABLE_MODULES) as PayableKindDto[]).filter((kind) =>
+    passes(ctx, OWN_PAYABLE_MODULES[kind]),
+  )
+}
+
+const viewOwnPayables = businessProcedure.use(
+  requireAnyAccess(OWN_PAYABLE_MODULES.purchase, OWN_PAYABLE_MODULES.expense),
+)
 const viewPayments = viewPurchases.use(requirePermission('purchases.payments.view'))
 const recordPayments = viewPayments.use(requirePermission('purchases.payments.record'))
 
@@ -59,6 +83,11 @@ export const payableRouter = router({
     .input(payableListInput)
     .output(payableListDto)
     .query(({ ctx, input }) => listPayables(ctx, input, payableKinds(ctx))),
+  /** `payable.mine` ("Owed to me"): the caller's own, with what was paid back (D-181). */
+  mine: viewOwnPayables
+    .input(minePayableListInput)
+    .output(minePayableListDto)
+    .query(({ ctx, input }) => listMinePayables(ctx, input, ownPayableKinds(ctx))),
 })
 
 export const purchasePaymentRouter = router({

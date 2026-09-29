@@ -951,6 +951,22 @@ const PROBES: Record<string, Probe> = {
     reason: 'looked up in the x-business-id business',
     variants: (victim) => [{ input: { id: victim.expense.id }, own: ['not_found'] }],
   },
+  // A member's own records (D-181): filtered on the caller in the x-business-id business.
+  'expense.mine': {
+    base: 'business',
+    reason: `${NO_ROWS}: only the expenses the caller entered or paid there`,
+    variants: () => [{ input: {} }, { input: { limit: 1 } }],
+  },
+  'expense.getMine': {
+    base: 'business',
+    reason: 'looked up in the x-business-id business, among the caller’s own expenses',
+    variants: (victim) => [{ input: { id: victim.expense.id }, own: ['not_found'] }],
+  },
+  'payable.mine': {
+    base: 'business',
+    reason: `${NO_ROWS}: only what the caller paid there from their own money`,
+    variants: () => [{ input: {} }],
+  },
   'expense.payers': { base: 'business', reason: `${NO_ROWS}: its own active members` },
   'expense.settings': { base: 'business', reason: NO_ROWS },
   'expense.updateSettings': {

@@ -17,6 +17,8 @@
     "approvalChange": "Change",
     "waiting": "Expenses are waiting for your approval.",
     "showWaiting": "Show them",
+    "draftsWaiting": "Drafts entered by your team are waiting for you to finalize them.",
+    "ownAmounts": "Your own expenses show their amounts in {{tab}}.",
     "enteredBy": "by {{name}}",
     "booksClosed": "The books are closed up to {{date}}. Nothing dated on or before it can be finalized or reversed.",
     "empty": {
@@ -41,6 +43,10 @@
       "clear": "Clear filters",
       "noMatches": "No expenses match these filters.",
       "noMatchesHint": "Change the filters or clear them."
+    },
+    "tabs": {
+      "all": "All expenses",
+      "mine": "My expenses"
     }
   },
   "editor": {
@@ -88,11 +94,11 @@
     "savedNotSent": "Saved as a draft, not sent: {{reason}}",
     "savedNotFinalized": "Saved as a draft, not finalized: {{reason}}",
     "vatNotReclaimableHint": "Turn this on if you can't get this VAT back. It then counts in what this expense cost the business.",
-    "hiddenAfterSend": "Once it's sent, your role won't show its amount.",
     "errors": {
       "category": "Choose a category.",
       "categoryGone": "This category isn't in your list any more. Choose another."
-    }
+    },
+    "introWaits": "A draft changes nothing. Save it: someone who may finalize expenses will finalize it, and then it counts in the business's expenses."
   },
   "view": {
     "pageTitle": "Expense",
@@ -124,7 +130,10 @@
     "edit": "Edit",
     "correct": "Correct",
     "reverse": "Reverse",
-    "reverseFirst": "To reverse this expense, reverse its payments first."
+    "reverseFirst": "To reverse this expense, reverse its payments first.",
+    "draftWaits": "This draft waits for someone who may finalize expenses. It changes nothing until then.",
+    "paidByYou": "You paid this from your own money.",
+    "owedToYouLink": "See what's owed to you"
   },
   "confirm": {
     "finalizeTitle": "Finalize this expense?",
@@ -263,5 +272,21 @@
       "removing": "Removing…",
       "removed": "{{name}} removed."
     }
+  },
+  "mine": {
+    "intro": "Expenses you entered or paid from your own money, with their amounts.",
+    "emptyTitle": "No expenses of yours yet",
+    "emptyBody": "They show here once you enter an expense or pay for something from your own money.",
+    "paidByYou": "Paid by you",
+    "owed": "Owed to you: {{amount}}",
+    "paidBack": "Paid back to you",
+    "partlyPaidBack": "Paid back {{paid}} of {{total}}",
+    "stillOwed": "Still owed: {{amount}}",
+    "paid": "Paid in full",
+    "owedTitle": "Owed to you",
+    "owedCount_one": "{{count}} purchase or expense not paid back yet",
+    "owedCount_other": "{{count}} purchases and expenses not paid back yet",
+    "paidBackSoFar": "Paid back so far: {{amount}}",
+    "details": "Details"
   }
 }

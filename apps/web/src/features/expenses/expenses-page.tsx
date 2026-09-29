@@ -16,7 +16,7 @@ import {
 } from 'lucide-react'
 import Link from 'next/link'
 import { useParams, usePathname, useRouter, useSearchParams } from 'next/navigation'
-import { useEffect, useId, useRef, useState } from 'react'
+import { useEffect, useId, useRef, useState, type ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
 import { FormAlert } from '@/components/form/form-alert'
 import { isolate } from '@/components/form/use-message'
@@ -46,6 +46,7 @@ import {
   writeExpenseFilters,
   type ExpenseFilters,
 } from './expense-filters'
+import { MineExpenses } from './mine-expenses'
 import { ExpenseStatusBadge } from './status-badge'
 
 // Expenses (M2 Step 5; PRODUCT.md §4 rule 13, D-164, D-168): the business's expenses, newest day
@@ -53,11 +54,79 @@ import { ExpenseStatusBadge } from './status-badge'
 // number, the supplier's or the category's name). A row opens the expense: a draft in its editor,
 // anything else as it was recorded. The page says in one line that product costs use the regular
 // running costs while expenses count in real profit (D-116). With approval on, it says so, and an
-// approver is told when expenses wait for them. Everyone with expenses.documents.view sees the list;
+// approver is told when expenses wait for them; with approval off, a member who may finalize is told
+// when drafts the team entered wait for them (D-184). Everyone with expenses.documents.view sees the list;
 // expenses.documents.manage adds expenses and categories. Totals are supplier prices: a member who
-// may not see them sees a lock (redaction, D-165).
+// may not see them sees a lock (redaction, D-165). In a business with a team, "My expenses" lists
+// the member's own with their amounts and what is owed to them (D-181); it is where a member who may
+// not see supplier prices lands.
 
 const SEARCH_DELAY_MS = 300
+
+/** The two lists: every expense, or the member's own (`?view=mine` / `?view=all`). */
+type ExpensesView = 'all' | 'mine'
+
+function useView(fallback: ExpensesView): [ExpensesView, (view: ExpensesView) => void] {
+  const router = useRouter()
+  const pathname = usePathname()
+  const params = useSearchParams()
+  const asked = params.get('view')
+  const view: ExpensesView = asked === 'mine' || asked === 'all' ? asked : fallback
+  return [
+    view,
+    (next) => {
+      // The filters of "All expenses" stay in the address.
+      const query = new URLSearchParams(params.toString())
+      if (next === fallback) query.delete('view')
+      else query.set('view', next)
+      router.replace(query.size > 0 ? `${pathname}?${query}` : pathname, { scroll: false })
+    },
+  ]
+}
+
+/** "All expenses" / "My expenses", above the list. */
+function ViewTabs({
+  view,
+  onChange,
+  children,
+}: {
+  view: ExpensesView
+  onChange: (view: ExpensesView) => void
+  children: ReactNode
+}) {
+  const { t } = useTranslation()
+  const id = useId()
+  return (
+    <>
+      <div
+        role="tablist"
+        aria-label={t('common.nav.expenses')}
+        className="mb-4 grid grid-cols-2 gap-1 rounded-lg bg-muted p-1 sm:inline-grid sm:min-w-96"
+      >
+        {(['all', 'mine'] as const).map((tab) => (
+          <button
+            key={tab}
+            type="button"
+            role="tab"
+            id={`${id}-${tab}`}
+            aria-selected={view === tab}
+            aria-controls={`${id}-panel`}
+            onClick={() => onChange(tab)}
+            className={cn(
+              'flex min-h-11 items-center justify-center rounded-md px-3 text-sm font-medium text-muted-foreground transition-colors outline-none focus-visible:ring-3 focus-visible:ring-ring',
+              view === tab && 'bg-card text-foreground shadow-sm',
+            )}
+          >
+            {t(`expenses.list.tabs.${tab}`)}
+          </button>
+        ))}
+      </div>
+      <div role="tabpanel" id={`${id}-panel`} aria-labelledby={`${id}-${view}`}>
+        {children}
+      </div>
+    </>
+  )
+}
 
 function useFilters() {
   const router = useRouter()
@@ -326,17 +395,34 @@ function ExpensesList() {
   const { data: context } = useBusinessContext()
   const { filters, set } = useFilters()
   const settings = useExpenseSettings(context)
-  const list = useInfiniteQuery(
-    trpc.expense.list.infiniteQueryOptions(listInput(filters), {
+  // With a team, a member's own expenses have their own list; one who may not see supplier prices
+  // lands there, since it shows their amounts (D-181).
+  const hasTeam = context?.capabilities.has_team === true
+  const seesAmounts = context?.visibleCategories.includes('supplier_price') === true
+  const [view, setView] = useView(hasTeam && !seesAmounts ? 'mine' : 'all')
+  const showsMine = hasTeam && view === 'mine'
+  const list = useInfiniteQuery({
+    ...trpc.expense.list.infiniteQueryOptions(listInput(filters), {
       getNextPageParam: (page) => page.data.nextCursor,
       placeholderData: keepPreviousData,
     }),
-  )
+    enabled: !showsMine,
+  })
   const mayApprove = context ? mayReviewExpenses(context) : false
   // An approver hears when expenses wait for them (one row is enough to know).
   const waiting = useQuery({
     ...trpc.expense.list.queryOptions({ status: 'submitted', limit: 1 }),
     enabled: mayApprove && filters.status !== 'submitted',
+  })
+  // With approval off, who may finalize hears when drafts the team entered wait for them (D-184).
+  const mayFinalize = context !== undefined && can(context, 'expenses.documents.post')
+  const draftsWait = useQuery({
+    ...trpc.expense.list.queryOptions({ status: 'draft', enteredBy: 'others', limit: 1 }),
+    enabled:
+      hasTeam &&
+      mayFinalize &&
+      settings.data?.approvalRequired === false &&
+      filters.status !== 'draft',
   })
   const books = useQuery(trpc.books.get.queryOptions())
   const [categoriesOpen, setCategoriesOpen] = useState(false)
@@ -345,11 +431,14 @@ function ExpensesList() {
   const items = list.data?.pages.flatMap((page) => page.data.items) ?? []
   const filtered = isFiltered(filters)
   // No expense at all yet: only the first-time card and its one "New expense" (as D-132).
-  const firstTime = !filtered && list.isSuccess && !list.isPlaceholderData && items.length === 0
+  const firstTime =
+    !showsMine && !filtered && list.isSuccess && !list.isPlaceholderData && items.length === 0
   const base = `/b/${businessId}/expenses`
   const title = t('common.nav.expenses')
   const approvalRequired = settings.data?.approvalRequired === true
   const hasWaiting = (waiting.data?.data.items.length ?? 0) > 0
+  const hasDraftsWaiting =
+    settings.data?.approvalRequired === false && (draftsWait.data?.data.items.length ?? 0) > 0
   const mayChangeApproval = isSectionVisible(context, 'approval')
   // "Approval is on" is for those who send expenses, and for who may change it (with "Change"); an
   // approver hears only that expenses wait for them (a phone keeps room for the list).
@@ -413,69 +502,118 @@ function ExpensesList() {
           </button>
         </FormAlert>
       ) : null}
+      {hasDraftsWaiting && filters.status !== 'draft' ? (
+        <FormAlert tone="info" className="mb-4">
+          <span data-drafts-waiting>{t('expenses.list.draftsWaiting')}</span>{' '}
+          {/* Every expense, drafts only (from "My expenses" too). */}
+          <Link
+            href={`${base}?${hasTeam ? 'view=all&' : ''}status=draft`}
+            scroll={false}
+            className="font-medium text-primary underline-offset-4 hover:underline"
+          >
+            {t('expenses.list.showWaiting')}
+          </Link>
+        </FormAlert>
+      ) : null}
       {books.data?.closedThrough ? (
         <FormAlert tone="info" className="mb-4">
           {t('expenses.list.booksClosed', { date: businessDate(books.data.closedThrough) })}
         </FormAlert>
       ) : null}
-      {firstTime ? null : <FilterBar filters={filters} onChange={set} />}
-      {list.isPending ? (
-        <ListSkeleton />
-      ) : list.isError && !list.data ? (
-        <LoadError error={list.error} onRetry={() => void list.refetch()} />
-      ) : items.length === 0 ? (
-        filtered ? (
-          <ListEmpty
-            icon={SearchXIcon}
-            title={t('expenses.list.filters.noMatches')}
-            body={t('expenses.list.filters.noMatchesHint')}
-          />
-        ) : (
-          <ListEmpty
-            icon={ReceiptIcon}
-            title={t('expenses.list.empty.title')}
-            body={canManage ? t('expenses.list.empty.body') : t('expenses.list.empty.viewer')}
-          >
-            {newButton}
-          </ListEmpty>
-        )
+      {hasTeam ? (
+        <ViewTabs view={view} onChange={setView}>
+          {showsMine ? <MineExpenses base={base} /> : allExpenses()}
+        </ViewTabs>
       ) : (
-        <div className="space-y-4">
-          {list.data?.pages.some((page) => page.meta.redacted.length > 0) ? (
-            <p className="text-sm text-muted-foreground">{t('common.locked.note')}</p>
-          ) : null}
-          <ul
-            aria-label={title}
-            className="divide-y overflow-hidden rounded-2xl bg-card shadow-sm ring-1 ring-foreground/[0.06]"
-          >
-            {items.map((expense) => (
-              <li key={expense.id}>
-                <ExpenseRow
-                  expense={expense}
-                  href={`${base}/${expense.id}`}
-                  showEnteredBy={context.capabilities.has_team === true}
-                />
-              </li>
-            ))}
-          </ul>
-          {list.isError ? (
-            <LoadError error={list.error} onRetry={() => void list.fetchNextPage()} />
-          ) : list.hasNextPage ? (
-            <div className="flex justify-center">
-              <Button
-                variant="outline"
-                disabled={list.isFetchingNextPage}
-                onClick={() => void list.fetchNextPage()}
-              >
-                {list.isFetchingNextPage ? t('status.loading') : t('catalog.list.showMore')}
-              </Button>
-            </div>
-          ) : null}
-        </div>
+        allExpenses()
       )}
       {categoriesOpen ? <CategoriesSheet onClose={() => setCategoriesOpen(false)} /> : null}
     </PageContainer>
   )
+
+  /** "Your own expenses show their amounts in [My expenses]." (D-184), the tab name a button. */
+  function ownAmountsNote() {
+    const [before, after] = t('expenses.list.ownAmounts', { tab: ' ' }).split(' ')
+    return (
+      <span data-own-amounts>
+        {before}
+        <button
+          type="button"
+          onClick={() => setView('mine')}
+          className="font-medium text-primary underline-offset-4 hover:underline"
+        >
+          {t('expenses.list.tabs.mine')}
+        </button>
+        {after}
+      </span>
+    )
+  }
+
+  /** Every expense: the filters and the list (the first-time card before any). */
+  function allExpenses() {
+    return (
+      <>
+        {firstTime ? null : <FilterBar filters={filters} onChange={set} />}
+        {list.isPending ? (
+          <ListSkeleton />
+        ) : list.isError && !list.data ? (
+          <LoadError error={list.error} onRetry={() => void list.refetch()} />
+        ) : items.length === 0 ? (
+          filtered ? (
+            <ListEmpty
+              icon={SearchXIcon}
+              title={t('expenses.list.filters.noMatches')}
+              body={t('expenses.list.filters.noMatchesHint')}
+            />
+          ) : (
+            <ListEmpty
+              icon={ReceiptIcon}
+              title={t('expenses.list.empty.title')}
+              body={canManage ? t('expenses.list.empty.body') : t('expenses.list.empty.viewer')}
+            >
+              {newButton}
+            </ListEmpty>
+          )
+        ) : (
+          <div className="space-y-4">
+            {list.data?.pages.some((page) => page.meta.redacted.length > 0) ? (
+              <p className="text-sm text-muted-foreground">
+                {t('common.locked.note')}
+                {hasTeam && !seesAmounts ? <> {ownAmountsNote()}</> : null}
+              </p>
+            ) : null}
+            <ul
+              aria-label={title}
+              className="divide-y overflow-hidden rounded-2xl bg-card shadow-sm ring-1 ring-foreground/[0.06]"
+            >
+              {items.map((expense) => (
+                <li key={expense.id}>
+                  <ExpenseRow
+                    expense={expense}
+                    href={`${base}/${expense.id}`}
+                    showEnteredBy={hasTeam}
+                  />
+                </li>
+              ))}
+            </ul>
+            {list.isError ? (
+              <LoadError error={list.error} onRetry={() => void list.fetchNextPage()} />
+            ) : list.hasNextPage ? (
+              <div className="flex justify-center">
+                <Button
+                  variant="outline"
+                  disabled={list.isFetchingNextPage}
+                  onClick={() => void list.fetchNextPage()}
+                >
+                  {list.isFetchingNextPage ? t('status.loading') : t('catalog.list.showMore')}
+                </Button>
+              </div>
+            ) : null}
+          </div>
+        )}
+      </>
+    )
+  }
 }
 
 /** The Expenses page: the list inside the module's gate (turned off, or not open to the member). */

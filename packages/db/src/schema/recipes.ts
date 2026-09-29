@@ -16,11 +16,12 @@ import { materials, materialUnits, productsServices } from './catalog'
 
 // Recipes (M2 Step 4; docs/DATA_MODEL.md §6, D-146): ONE structure for a recipe (food), a bill of
 // materials (makers, workshops, factories) and "what you use" (services); only the wording changes
-// with the terminology profile. A recipe is what ONE unit of a product or service (its `unit`) uses:
-// materials, packaging included, each in any unit or pack of the material (a unit of another
-// dimension through its cross factor). Material cost is never typed here: it comes from purchases
-// (the material's average, D-115), computed on read. An item bought ready to sell has no recipe
-// (D-117).
+// with the terminology profile. A recipe is what it takes to make `yield_qty` units of a product or
+// service (its `unit`; 1 by default, e.g. a cake recipe that makes 12 slices, D-178): materials,
+// packaging included, each in any unit or pack of the material (a unit of another dimension through
+// its cross factor). Material cost is never typed here: it comes from purchases (the material's
+// average, D-115), computed on read; one unit sold costs the recipe's total ÷ its yield. An item
+// bought ready to sell has no recipe (D-117).
 
 const STANDARD_UNIT_LIST = sql.raw(
   Object.keys(STANDARD_UNITS)
@@ -33,21 +34,25 @@ const quantity = (name: string) => numeric(name, { precision: 24, scale: 6 })
 /**
  * The recipe of a product or service: at most one per product, made at its first save. Its
  * `version` is the recipe's (a save names the version it read: CONFLICT otherwise), apart from the
- * product's, so editing the price and the recipe never collide.
+ * product's, so editing the price and the recipe never collide. `yield_qty` is how many of the
+ * product's unit the recipe makes (more than zero; 1 by default, when the lines are what one unit
+ * uses), saved, versioned and audited with the recipe (D-178).
  */
 export const recipes = tenantTable(
   'recipes',
   {
     productId: uuid('product_id').notNull(),
+    yieldQty: quantity('yield_qty').notNull().default('1'),
   },
   (t) => [
     tenantRef('recipes_product_fk', [t.businessId, t.productId], productsServices),
     unique('recipes_product_key').on(t.businessId, t.productId),
+    check('recipes_yield_qty_check', sql`yield_qty > 0`),
   ],
 )
 
 /**
- * A line of a recipe: a material and how much of it one unit uses, as typed (`qty` in `unit`, a
+ * A line of a recipe: a material and how much of it the whole recipe uses (for its yield), as typed (`qty` in `unit`, a
  * standard unit, or in `pack_id`, one of the material's packs), and `base_qty`, the same in the
  * material's base unit (g, ml, piece…), worked out by the units engine when the line is saved and
  * again whenever the material's units change (the API refuses a change that would leave a line
