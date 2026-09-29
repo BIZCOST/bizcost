@@ -313,6 +313,7 @@ describe('drafts and posting', () => {
         version: draft.version,
         businessDate: today,
         documentType: 'no_invoice',
+        paymentMethod: 'cash',
         reference: 'INV-7',
         lines: [line(milk.id, '6', '6'), line(milk.id, '1', '2')],
       }),
@@ -325,6 +326,7 @@ describe('drafts and posting', () => {
           version: draft.version,
           businessDate: today,
           documentType: 'no_invoice',
+          paymentMethod: 'cash',
         }),
       ),
     ).toBe('conflict')
@@ -347,7 +349,13 @@ describe('drafts and posting', () => {
     for (const [path, input] of [
       [
         'purchase.update',
-        { id: draft.id, version: posted.version, businessDate: today, documentType: 'no_invoice' },
+        {
+          id: draft.id,
+          version: posted.version,
+          businessDate: today,
+          documentType: 'no_invoice',
+          paymentMethod: 'cash',
+        },
       ],
       ['purchase.discard', { id: draft.id, version: posted.version }],
     ] as const) {

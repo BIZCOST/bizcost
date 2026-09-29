@@ -21,6 +21,8 @@ import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
 import { FormAlert } from '@/components/form/form-alert'
 import { TextField } from '@/components/form/text-field'
+import { sameData } from '@/components/form/unsaved'
+import { useUnsavedChanges } from '@/components/form/unsaved-changes'
 import { isolate } from '@/components/form/use-message'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -240,12 +242,14 @@ export function ProductSheet({
   const create = useMutation(trpc.product.create.mutationOptions())
   const update = useMutation(trpc.product.update.mutationOptions())
   const [newProductId] = useState(() => newId())
-  const [draft, setDraft] = useState<ProductDraft>(() => productDraft(product))
+  const [initialDraft] = useState<ProductDraft>(() => productDraft(product))
+  const [draft, setDraft] = useState<ProductDraft>(initialDraft)
   const [newMaterialId] = useState(() => newId())
   // A new product bought ready to sell, and the packs it is bought in (its material's).
-  const [resale, setResale] = useState(
+  const [initialResale] = useState(
     () => !product && (resaleMode === 'only' || (resaleMode === 'offered' && profile === 'retail')),
   )
+  const [resale, setResale] = useState(initialResale)
   const [units, setUnits] = useState<Pick<MaterialDraft, 'packs' | 'crossFactors'>>({
     packs: [],
     crossFactors: [],
@@ -285,9 +289,9 @@ export function ProductSheet({
   const focusFirstError = () =>
     setTimeout(() => form.current?.querySelector<HTMLElement>('[aria-invalid="true"]')?.focus())
 
-  async function submit(event: FormEvent) {
-    event.preventDefault()
-    if (busy) return
+  /** Saves the product; true once saved (the form says what went wrong otherwise). */
+  async function save(): Promise<boolean> {
+    if (busy) return false
     setSubmitted(true)
     setServerError(null)
     const { fields } = check
@@ -298,7 +302,7 @@ export function ProductSheet({
       (!product && isResale && !resaleUnits)
     ) {
       focusFirstError()
-      return
+      return false
     }
     try {
       const saved = product
@@ -324,14 +328,28 @@ export function ProductSheet({
           ? [queryClient.invalidateQueries({ queryKey: trpc.material.list.pathKey() })]
           : []),
       ])
-      onClose()
+      return true
     } catch (error) {
       const code = apiErrorCode(error)
       if (code === 'name_taken') {
         setTakenName(fields.name.toLowerCase())
         focusFirstError()
       } else setServerError(code === 'conflict' ? 'catalog.form.conflict' : apiErrorKey(error))
+      return false
     }
+  }
+
+  // Leaving with changes not saved asks first (the owner's request of 2026-09-29).
+  const dirty =
+    !sameData(draft, initialDraft) ||
+    resale !== initialResale ||
+    units.packs.length > 0 ||
+    units.crossFactors.length > 0
+  const guard = useUnsavedChanges({ dirty, save, close: onClose })
+
+  async function submit(event: FormEvent) {
+    event.preventDefault()
+    if (await save()) onClose()
   }
 
   const hasShownErrors =
@@ -341,7 +359,7 @@ export function ProductSheet({
       (!product && isResale && unitsCheck.fields === null))
 
   return (
-    <Sheet open onOpenChange={(open) => !open && !busy && onClose()}>
+    <Sheet open onOpenChange={(open) => !open && !busy && guard.requestLeave(onClose)}>
       <SheetContent closeLabel={t('actions.close')}>
         <form
           ref={form}
@@ -550,7 +568,12 @@ export function ProductSheet({
             />
           </SheetBody>
           <SheetFooter>
-            <Button type="button" variant="outline" disabled={busy} onClick={onClose}>
+            <Button
+              type="button"
+              variant="outline"
+              disabled={busy}
+              onClick={() => guard.requestLeave(onClose)}
+            >
               {t('actions.cancel')}
             </Button>
             <Button type="submit" disabled={busy}>

@@ -40,7 +40,8 @@ export const APP_ERROR_CODES = [
   'only_location_of_products',
   /**
    * Another material, or another product or service, of the business already has this name (archived
-   * ones included; names are compared ignoring case).
+   * ones included; names are compared ignoring case, and material names also ignoring spaces, Arabic
+   * letter forms, marks and the kind of digits: nameKey in @bizcost/domain).
    */
   'name_taken',
   /** An uploaded file is missing, too large or not an allowed type (logo: PNG, JPEG or WebP, 2 MB). */
@@ -74,6 +75,12 @@ export const APP_ERROR_CODES = [
    * converts to the material's base unit (the recipe is changed first).
    */
   'unit_in_use',
+  /** Posting a purchase that does not say how it was paid (a draft saved before it was required). */
+  'payment_method_required',
+  /** Reversing a purchase that has payments recorded on it: they are reversed first. */
+  'purchase_has_payments',
+  /** A payment of more than is still owed on the purchase. */
+  'exceeds_outstanding',
   'internal',
 ] as const
 export type AppErrorCode = (typeof APP_ERROR_CODES)[number]
@@ -94,7 +101,9 @@ export interface AppErrorData {
   i18nKey: AppErrorI18nKey
   /**
    * What the refusal is about, by name, only when the caller may see those records: UNIT_IN_USE names
-   * the products whose recipes use the pack or conversion (at most 5). Absent otherwise.
+   * the products whose recipes use the pack or conversion (at most 5); NAME_TAKEN from
+   * `material.create` or `material.quickCreate` names the material that already has the name. Absent
+   * otherwise.
    */
   names?: string[]
 }

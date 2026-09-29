@@ -17,6 +17,7 @@ import { toast } from 'sonner'
 import { z } from 'zod'
 import { FormAlert } from '@/components/form/form-alert'
 import { TextField } from '@/components/form/text-field'
+import { useUnsavedChanges } from '@/components/form/unsaved-changes'
 import { useMessage } from '@/components/form/use-message'
 import { Button } from '@/components/ui/button'
 import { Switch } from '@/components/ui/switch'
@@ -100,7 +101,8 @@ function DetailsForm({
   const nameError = (field: 'legalName' | 'legalNameAr') =>
     message(errors[field]?.message, { count: BUSINESS_NAME_MAX_LENGTH })
 
-  const submit = form.handleSubmit(async (values) => {
+  /** Saves the names and VAT; true once saved (the form says what went wrong otherwise). */
+  async function persist(values: ProfileForm): Promise<boolean> {
     setConflict(false)
     try {
       const result = await update.mutateAsync({
@@ -111,6 +113,8 @@ function DetailsForm({
         trn: values.vatRegistered ? values.trn : null,
       })
       saved(result.profile)
+      // Saved: nothing is left to ask about (the form also opens again with the new version).
+      form.reset(formOf(result.profile))
       const effects = [
         result.turnedOn.length > 0
           ? `${t('setup.review.alsoOn')} ${moduleNames(result.turnedOn)}`
@@ -122,13 +126,31 @@ function DetailsForm({
       toast.success(t('settings.business.saved'), {
         description: effects.length > 0 ? effects.join(' ') : undefined,
       })
+      return true
     } catch (error) {
       if (apiErrorCode(error) === 'conflict') {
         setConflict(true)
-        return
+        return false
       }
       toast.error(t(apiErrorKey(error)))
+      return false
     }
+  }
+
+  const submit = form.handleSubmit(async (values) => {
+    await persist(values)
+  })
+
+  // Leaving with changes not saved asks first (the owner's request of 2026-09-29).
+  useUnsavedChanges({
+    dirty: canEdit && form.formState.isDirty,
+    save: async () => {
+      let saved = false
+      await form.handleSubmit(async (values) => {
+        saved = await persist(values)
+      })()
+      return saved
+    },
   })
 
   const vatChanged = vatRegistered !== profile.vatRegistered

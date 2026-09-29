@@ -60,9 +60,10 @@ export const materials = tenantTable(
     archivedAt: timestamptz('archived_at'),
   },
   (t) => [
-    // One name per business (case ignored); also the order of the list and its cursor.
+    // One name per business, compared the way people read it (app.name_key: case, spaces, Arabic
+    // letter forms, marks and digits; nameKey in @bizcost/domain, migration name_key).
     uniqueIndex('materials_name_key')
-      .on(t.businessId, sql`lower(name)`)
+      .on(t.businessId, sql`app.name_key(name)`)
       .where(sql`deleted_at is null`),
     check('materials_name_check', sql`btrim(name) <> '' and char_length(name) <= 100`),
     check('materials_dimension_check', sql`dimension in (${quoted(DIMENSIONS)})`),

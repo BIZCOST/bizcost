@@ -1177,6 +1177,72 @@ Refines D-146 and D-154.
 - **Why:** the second UX review of Step 4 (phone screenshots at 375 px; a recipe lost by one tap above the sheet; phantom versions in the audit log; "Materials" in a shop's screens, against D-128).
 - **Rejected:** ignoring taps beside the sheet silently (a person would not know why it stays open); disabling Save when nothing changed (closing is what the person wants).
 
+## Costing Core: the owner's purchasing requests of 2026-09-29 (R1–R5)
+
+The owner asked for five changes to the purchasing screens and every edit form (in Arabic, to the lead, 2026-09-29). Each entry below is his request as built, with the fixes of its security, money and UX review.
+
+### D-157 · 2026-09-29 · Prices before VAT or including VAT
+
+Source: the owner (R1: "the purchase screen doesn't show whether prices include VAT").
+
+- **Decision:** a purchase says whether its prices are typed before VAT or with it ("Prices before VAT / Prices including VAT", «الأسعار قبل الضريبة / الأسعار شاملة الضريبة»), stored as `purchases.prices_include_vat` (boolean, false by default; existing rows false). A new purchase starts before VAT on a tax invoice and including VAT on a non-tax invoice or without an invoice (`defaultPricesIncludeVat`); changing the document type moves it only while the person has not touched the choice. The price label follows it («السعر قبل الضريبة» / «السعر شامل الضريبة»), and the totals always show the amount before VAT, the VAT and the total. The maths (`documents/purchase.ts`): with VAT included, a line's gross = quantity × price − its discount (the discount comes off the gross), the document discount is split over the lines by their gross, VAT = the amount rounded to the currency's minor unit of gross × rate ÷ (100 + rate), and the amount before VAT = gross − VAT (105 including 5 % → 100 + 5). Every stored amount keeps its before-VAT meaning (subtotal, discounts, net, taxable, VAT, total = the gross), so posting, the average, returns and credit notes are unchanged, and delivery is split by the net before VAT in both modes. Property tests: the two modes give the same line when the prices are converted.
+- **Rejected:** a choice per line (one invoice is either); storing gross amounts (every reader would need two ways to read a line).
+
+### D-158 · 2026-09-29 · A new material from a purchase line, and one name per material however it is typed
+
+Source: the owner (R2), and the security review of it.
+
+- **Decision:**
+  - **Quick add:** when no material has the typed name, the line's picker offers "+ Add «name» as a new material" (in the business's wording); an archived material that has it is offered instead, marked "Archived" (it can still be bought). A small sheet asks the name (as typed), how it is measured (weight, volume, count, length) and its unit, and optional packs (a carton of 12 bottles); once saved it is picked in the line. `material.quickCreate` is the same create for any member who may enter purchases (`purchases.documents.manage`, the Materials module on, and `materials.items.view`, since the picker lists the materials); changing or archiving a material stays with `materials.items.manage`. It is audited like `material.create`. The owner allowed this for every member who enters purchases, so no new permission key.
+  - **Duplicates:** the same name after the key below is refused (NAME_TAKEN, which names the material that has it; the sheet offers "Use «name»"). Names that look alike ask first, "Did you mean «name»?" (up to 3, each with "Use «name»", and "No, add it as new"): keys that contain one another (the shorter at least 2 characters), or, both at least 4 characters, at most 2 letters apart (Levenshtein). The Materials sheet says when the name taken is archived ("Bring it back, or use another name").
+  - **The key** (`nameKey` in `@bizcost/domain` = `app.name_key` in the database): format characters dropped (Unicode category Cf: bidi marks, the Arabic letter mark, joiners, the zero-width space…), then NFKC (a letter and its combining mark, Arabic presentation forms, ligatures and full-width forms become the plain letters), lower case, أ إ آ ٱ → ا, ة ۃ ە → ه, ى ی → ي, ک → ك, tashkeel and tatweel dropped, Arabic-Indic digits read as 0–9, spaces collapsed and trimmed. Names are stored as typed; only the key folds. The unique index `materials_name_key` is on `(business_id, app.name_key(name))` of live materials (archived ones count). Migrations `name_key` and `name_key_unicode` renamed live materials that already shared a key to "name (2)", "(3)"… (local and demo data only; an item bought ready to sell renames its product with it, D-117). API tests hold the two functions equal, over every Cf character too.
+- **Why:** the owner's request; and the review showed a name with an invisible bidi mark, a Persian letter or another Unicode form of the same letters passing "already exists", which would split purchases and the average between two materials that read the same.
+- **Rejected:** refusing names that only look alike ("Milk" and "Milk powder" are different); folding ؤ and ئ into و and ي (real spelling differences). Known limit: the key also folds emoji sequences that differ only by a joiner or tag characters (two subdivision flags); rare in a material's name.
+
+### D-159 · 2026-09-29 · How a purchase was paid is required
+
+Source: the owner (R3), and the security review of it.
+
+- **Decision:** a purchase is not saved (as a draft or final) without its payment method: nothing is picked for the person, the field has a required mark and says what is missing under it. The methods: cash, card, bank transfer, cheque, on credit («آجل: ندفع للمورد لاحقًا»: it needs a supplier; database check `purchases_supplier_credit_check`), paid personally by a member («دفعه موظف من ماله الخاص»: `purchases.paid_by_member_id` names an active member of the business, the person entering by default; a database check pairs the two), and "Other", kept since it was already stored and conflicts with none. A draft saved before the rule is completed before it is saved again or finalized (PAYMENT_METHOD_REQUIRED); purchases finalized before keep none (NULL, never owed), and a correction of one copies none. Finalizing checks again that the member who paid is still an active member (NOT_FOUND, as a save does; the purchase page's Finalize says who must choose again), since they may have left after the draft was saved or before a correction's copy is finalized. On credit without a supplier marks the supplier field too, and the empty choice reads "No supplier (a market or shop)".
+- **Why:** the owner's request (every purchase says how it was paid, so what is owed is known); the review found a draft, or a correction's copy, finalized as owed to someone who had left.
+- **Rejected:** a default method (the owner: none preselected); removing "Other" (stored values would need a migration, and nothing conflicts).
+
+### D-160 · 2026-09-29 · Amounts owed, and paying them
+
+Source: the owner (R4).
+
+- **Decision:**
+  - **The page:** "Amounts owed / المستحقات", the Purchases module's second nav entry (`payables`, with `purchases.payments.view`; planned like the module, seen only with the dev-only preview). Tab "To suppliers": final purchases bought on credit, by supplier; tab "To employees": final purchases a member paid personally, by member. Each purchase shows its date, reference and first items, total, returns and credit notes (when there are any), what was paid, what is still owed and who entered it; it opens at its page. `payable.list` sends 25 suppliers or members at a time ("Show more"; keyset on the name), each with its oldest 50 purchases still owed and how many there are; the total is what is owed to all of them.
+  - **Payments:** "Record a payment" on a purchase: the day (the business's time zone, not after today, not before the purchase, not on or before the books-closed date), how (cash, card, bank transfer, cheque; required), the amount (more than 0, at most what is still owed, in the currency's minor unit; part payments allowed) and an optional note. Payments are listed on the purchase with who recorded them. One recorded by mistake is reversed (dated its own day, or the first open day), stays listed as reversed, and every change is audited; payments are never edited or deleted. A purchase with payments that stand is not reversed or corrected until they are (PURCHASE_HAS_PAYMENTS).
+  - **Data and API:** table `purchase_payments` (tenantTable, FORCE RLS, audit trigger, append-only but for its reversal); `purchasePayment.record` (idempotent on the client's id; EXCEEDS_OUTSTANDING), `.reverse`, `.list`, `payable.list` and `purchase.payers` (the active members who may have paid). Permission keys `purchases.payments.view` (needs `purchases.documents.view`) and `purchases.payments.record` (needs `.view`), for Owner, Admin and Manager (existing businesses by migration). Amounts are `supplier_price` (D-144); listing what is owed and recording a payment filter on amounts, so both need supplier prices visible (FORBIDDEN). The hardening suites (cross-tenant, audit coverage, redaction oracle) cover every new procedure.
+- **Open:** a member's own view of what the business owes them (ROADMAP.md §Open; not built now, as the owner asked).
+
+### D-161 · 2026-09-29 · Changes not saved are never lost without asking
+
+Source: the owner (R5).
+
+- **Decision:** one provider and one hook (`components/form/unsaved-changes.tsx`, `useUnsavedChanges`) guard every edit form, sheet and dialog: materials, products, recipes, suppliers, purchases, returns and credit notes, payments, quick add, the settings sections, invitations, branches, a member's role and the account. Leaving one with changes asks «لديك تغييرات لم تُحفظ» / "You have unsaved changes" with «حفظ» (saves, then leaves; if saving fails it stays and shows why), «عدم الحفظ» (leaves) and «متابعة التعديل» (stays). It asks when a sheet or dialog is closed (×, Escape, a tap outside, Cancel), on a link of the app (the sidebar, the tab bar, a link in the page), on navigation in code (the business switcher, sign out) and on the browser's Back (a copy of the page's history entry on top while it has changes); closing the tab or reloading gets the browser's own question. Several forms with changes (two settings sections) are asked about once; Save saves each, the newest first. Back over an open sheet or dialog is about it alone, as on a phone: with changes it asks, then closes it; without, it just closes; the page stays either way. Nothing asks when nothing changed, or after a save (a link clicked right after a save looks again once the saved data has reached the form). It replaces the recipe's own "Discard your changes?" (D-156).
+- **Why:** the owner's request; the review found Back over a changed sheet on a changed purchase asking the same question twice and then leaving the page.
+
+### D-162 · 2026-09-29 · A return or credit note after payment: what was paid beyond is shown, not tracked
+
+Source: the money and UX review of R4.
+
+- **Decision:** what is still owed on a purchase = its total − its final returns and credit notes − the payments that stand, never below 0 (`outstandingOf`); what was paid beyond it = the payments − (total − returns), never below 0 (`overpaidOf`; `purchasePayment.list` `overpaid`, a supplier price). When a return or credit note comes after the purchase was paid, its Payments panel shows "Overpaid" instead of "Still owed" and says who owes it back ("the supplier owes you this amount"; for a member, "settle this amount with …"), so the figures add up; the purchase leaves Amounts owed. A return or credit note is still allowed after payment (the goods did go back). Nothing keeps a supplier's credit balance yet (ROADMAP.md §Open).
+- **Rejected:** refusing a return after payment; a supplier balance now (it needs its own screens and rules).
+
+### D-163 · 2026-09-29 · Purchasing screens after the review of the owner's round
+
+Refines D-067 and D-143.
+
+- **Decision:**
+  - **Arabic that names a member** uses forms that do not agree with the person (D-067): «الإدخال: {name}», «التسجيل: {name}», «أُبطلت في {date} (الإبطال: {name})», «مستحقة لـ{name}: دُفعت من مال شخصي.», «{name} (عضو سابق)» and the tag «عضو سابق». The owner's own option «دفعه موظف من ماله الخاص» stays.
+  - **Amounts owed** rows show the returns and credit notes when there are any (2 × 2 on a phone), so a row adds up; the tabs, like the VAT choice, are 44 px tall on phones.
+  - **The picker** says «اكتب أو اختر» / "Type or pick" (typing is how a new material is added). "Did you mean «Milk»?" names a single look-alike, and each suggestion says "Use «…»".
+  - **Details:** "Who paid" sits under (or beside) the payment method on a desktop; the payment sheet's method has the same required mark as the purchase's.
+  - **Wording:** the reversal of a payment «يصبح … مستحقًا من جديد»; the totals with VAT included «وهنا المبلغ قبل الضريبة والضريبة المشمولة فيه»; «يصبح المبلغ دَينًا على العمل التجاري لمن دفعه…».
+- **Why:** the UX review of the round (phone screenshots at 375 px, both languages).
+
 ## Proposals
 
 Proposals are kept for history once the owner confirms them, with the entries they became. None is awaiting the owner.

@@ -75,6 +75,12 @@ const SIGNED_URL = '/object/sign/'
 const BEANS_PRICE = '57.13'
 const RECIPE_COST = '1.02834'
 const PER_GRAM = '0.05713'
+// What is owed (the owner's requests of 2026-09-29): cream bought on credit, 2 L at 45.67 = 91.34,
+// with a payment of 3.21, so 88.13 is still owed. Each payment case buys its own.
+const CREAM_PRICE = '45.67'
+const OWED_TOTAL = '91.34'
+const PAID = '3.21'
+const OWED_LEFT = '88.13'
 
 let api: Api
 let businessId: string
@@ -86,6 +92,8 @@ let credit: PurchaseReturnDto
 let today: string
 let beans: MaterialDto
 let latte: ProductDto
+let cream: MaterialDto
+let owed: PurchaseDto
 
 /** Calls a procedure as the owner (fixture set-up). */
 async function asOwner<T>(path: string, type: 'query' | 'mutation', input?: unknown): Promise<T> {
@@ -104,6 +112,7 @@ function draftInput() {
     supplierId: supplier.id,
     businessDate: today,
     documentType: 'no_invoice',
+    paymentMethod: 'cash',
     lines: [
       {
         kind: 'material',
@@ -145,6 +154,36 @@ async function newCredit(): Promise<PurchaseReturnDto> {
   return (
     await asOwner<{ data: PurchaseReturnDto }>('purchaseReturn.create', 'mutation', creditInput())
   ).data
+}
+
+/** A posted purchase of cream bought on credit (nothing paid yet). */
+async function newOwed(): Promise<PurchaseDto> {
+  const draft = (
+    await asOwner<{ data: PurchaseDto }>('purchase.create', 'mutation', {
+      ...draftInput(),
+      paymentMethod: 'supplier_credit',
+      lines: [
+        {
+          kind: 'material',
+          id: newId(),
+          materialId: cream.id,
+          qty: '2',
+          unit: 'l',
+          unitPrice: CREAM_PRICE,
+        },
+      ],
+    })
+  ).data
+  return (
+    await asOwner<{ data: PurchaseDto }>('purchase.post', 'mutation', {
+      id: draft.id,
+      version: draft.version,
+    })
+  ).data
+}
+
+function paymentInput(purchaseId: string) {
+  return { id: newId(), purchaseId, businessDate: today, method: 'cash', amount: PAID }
 }
 
 async function uploaded(): Promise<string> {
@@ -281,6 +320,30 @@ const PRODUCTION_ORACLE: Record<string, OracleEntry> = {
     permission: 'products.recipes.view',
     prepare: () => Promise.resolve({ ids: [latte.id] }),
     valuesOf: { cost: [RECIPE_COST] },
+  },
+  'payable.list': {
+    permission: 'purchases.payments.view',
+    input: { party: 'supplier' },
+    valuesOf: { supplier_price: [OWED_TOTAL, OWED_LEFT] },
+  },
+  'purchasePayment.list': {
+    permission: 'purchases.payments.view',
+    prepare: () => Promise.resolve({ purchaseId: owed.id }),
+    valuesOf: { supplier_price: [OWED_TOTAL, PAID, OWED_LEFT] },
+  },
+  'purchasePayment.record': {
+    permission: 'purchases.payments.record',
+    prepare: async () => paymentInput((await newOwed()).id),
+    valuesOf: { supplier_price: [OWED_TOTAL, PAID, OWED_LEFT] },
+  },
+  'purchasePayment.reverse': {
+    permission: 'purchases.payments.record',
+    prepare: async () => {
+      const input = paymentInput((await newOwed()).id)
+      await asOwner('purchasePayment.record', 'mutation', input)
+      return { id: input.id }
+    },
+    valuesOf: { supplier_price: [OWED_TOTAL, PAID] },
   },
   'attachment.add': {
     permission: 'purchases.documents.manage',
@@ -430,6 +493,13 @@ beforeAll(async () => {
   const recipe = await newRecipeInput()
   await asOwner('recipe.save', 'mutation', recipe)
   latte = await asOwner<ProductDto>('product.get', 'query', { id: recipe.productId })
+  cream = await asOwner<MaterialDto>('material.create', 'mutation', {
+    id: newId(),
+    name: 'Oracle cream',
+    unit: 'l',
+  })
+  owed = await newOwed()
+  await asOwner('purchasePayment.record', 'mutation', paymentInput(owed.id))
 }, 90_000)
 
 afterAll(async () => {

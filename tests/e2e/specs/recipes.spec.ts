@@ -153,6 +153,7 @@ async function buy(page: Page, businessId: string, lines: object[]) {
         id,
         businessDate: today.today,
         documentType: 'no_invoice',
+        paymentMethod: 'cash',
         lines: lines.map((line) => ({ kind: 'material', id: randomUUID(), vatRate: '0', ...line })),
       },
       { businessId },
@@ -424,13 +425,12 @@ test('English, desktop and phone: the owner reads the latte and its cost', async
   await row.getByRole('button', { name: 'Recipe', exact: true }).click()
   await lines.nth(0).getByLabel('How much').fill('20')
   await page.keyboard.press('Escape')
-  const confirm = page.getByRole('alertdialog')
-  await expect(confirm).toContainText('Discard your changes?')
+  const confirm = page.getByRole('alertdialog', { name: 'You have unsaved changes' })
   await confirm.getByRole('button', { name: 'Keep editing' }).click()
   await expect(confirm).toHaveCount(0)
   await expect(lines.nth(0).getByLabel('How much')).toHaveValue('20')
   await sheet.getByRole('button', { name: 'Cancel' }).click()
-  await page.getByRole('alertdialog').getByRole('button', { name: 'Discard' }).click()
+  await confirm.getByRole('button', { name: "Don't save" }).click()
   await expect(sheet).toHaveCount(0)
   expect(await version()).toBe(before)
   await shot(page, 'en-390-products')
@@ -554,10 +554,13 @@ test('English, desktop: a shop adds an item bought ready to sell, buys it and se
   await nav.getByRole('link', { name: 'Purchases' }).click()
   await page.getByRole('link', { name: 'New purchase' }).click()
   const line = page.getByRole('group', { name: 'Item 1' })
-  await line.getByRole('combobox', { name: 'Item' }).selectOption({ label: 'Water 500 ml' })
+  // The item is typed and picked from the list.
+  await line.getByRole('combobox', { name: 'Item' }).fill('water')
+  await page.getByRole('option', { name: 'Water 500 ml', exact: true }).click()
   await expect(line.getByRole('combobox', { name: 'Unit' })).toHaveValue(/^pack:/)
   await line.getByRole('textbox', { name: 'Quantity' }).fill('3')
-  await line.getByRole('textbox', { name: 'Price per carton' }).fill('12')
+  await line.getByRole('textbox', { name: 'Price per carton before VAT' }).fill('12')
+  await page.getByRole('combobox', { name: 'How it was paid' }).selectOption({ label: 'Card' })
   await page.getByRole('button', { name: 'Finalize' }).click()
   await page
     .getByRole('alertdialog', { name: 'Finalize this purchase?' })

@@ -7,7 +7,7 @@ import { PERMISSION_CATALOG, type PermissionKey } from './permissions'
 // that businesses already have only through a migration that adds it to their template roles (the
 // catalog_security migration of M2 Step 2 did so for the products and materials keys, D-124, and
 // purchasing_security for the suppliers and purchases keys of M2 Step 3, recipes_security for the
-// recipe keys of M2 Step 4).
+// recipe keys of M2 Step 4, purchasing_payments_security for the payment keys of 2026-09-29).
 
 export const ROLE_TEMPLATE_KEYS = [
   OWNER_TEMPLATE_KEY,
@@ -52,6 +52,8 @@ export const ROLE_TEMPLATES: readonly RoleTemplate[] = [
       'purchases.documents.manage',
       'purchases.documents.post',
       'purchases.documents.reverse',
+      'purchases.payments.view',
+      'purchases.payments.record',
       'data.cost.view',
       'data.profit_margin.view',
       'data.supplier_price.view',

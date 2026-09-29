@@ -8,6 +8,7 @@ import { useId, useState, type FormEvent } from 'react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
 import { FormAlert } from '@/components/form/form-alert'
+import { useUnsavedChanges } from '@/components/form/unsaved-changes'
 import { LoadError, SectionSkeleton } from '@/components/states/query-state'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -37,7 +38,8 @@ export function BooksSettings({ businessId }: { businessId: string }) {
   const date = (value: string) =>
     formatDate(locale, `${value}T00:00:00Z`, { dateStyle: 'long', timeZone: 'UTC' })
 
-  async function save(closedThrough: string | null) {
+  /** Closes the books up to a day, or opens them (null); true once saved. */
+  async function save(closedThrough: string | null): Promise<boolean> {
     setError(null)
     try {
       const saved = await close.mutateAsync({ closedThrough })
@@ -49,10 +51,19 @@ export function BooksSettings({ businessId }: { businessId: string }) {
           ? t('settings.books.closed', { date: date(saved.closedThrough) })
           : t('settings.books.opened'),
       )
+      return true
     } catch (caught) {
       setError(apiErrorKey(caught))
+      return false
     }
   }
+
+  // A day picked and not saved is asked about before leaving (the owner's request of 2026-09-29).
+  const current = books.data ? (books.data.closedThrough ?? books.data.today) : null
+  useUnsavedChanges({
+    dirty: day !== null && current !== null && day !== current,
+    save: () => (day ? save(day) : Promise.resolve(false)),
+  })
 
   function submit(event: FormEvent) {
     event.preventDefault()

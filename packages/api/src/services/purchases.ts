@@ -64,10 +64,17 @@ import {
 // Purchases (ROADMAP.md M2 Step 3; DATA_MODEL.md §6; D-114, D-120). Module `purchases`:
 // purchases.documents.view to read, .manage to save and discard drafts, .post to post, .reverse to
 // reverse or correct (the router checks them). A draft changes nothing but itself: every save checks
-// the whole document (supplier, location, materials and their units, amounts) and stores the amounts
-// computePurchase gives. Posting freezes it and writes the stock ledger and the average (stock.ts);
-// a posted purchase is never edited (a database trigger refuses it): it is reversed ("as if never
-// posted", D-109), or corrected (reversed, and a copy opened as a new draft).
+// the whole document (supplier, location, materials and their units, who paid, amounts) and stores
+// the amounts computePurchase gives. Posting freezes it and writes the stock ledger and the average
+// (stock.ts); a posted purchase is never edited (a database trigger refuses it): it is reversed ("as
+// if never posted", D-109), or corrected (reversed, and a copy opened as a new draft).
+//
+// The owner's requests of 2026-09-29: prices may be typed with their VAT (`pricesIncludeVat`; the
+// stored amounts stay before VAT, so posting reads them the same way); every save and every posting
+// needs a payment method (PAYMENT_METHOD_REQUIRED for a draft saved before without one); a purchase
+// bought on credit (it needs its supplier) or paid by a member from their own money (an active
+// member) is owed until paid (purchase-payments.ts), and one with payments that stand is reversed
+// only once they are (PURCHASE_HAS_PAYMENTS).
 
 type CreateInput = z.output<typeof createPurchaseInput>
 type UpdateInput = z.output<typeof updatePurchaseInput>
@@ -95,6 +102,9 @@ interface PurchaseRecord extends Record<string, unknown> {
   document_type: PurchaseDocumentType
   reference: string | null
   payment_method: PurchaseDto['paymentMethod']
+  paid_by_member_id: string | null
+  paid_by_member_name: string | null
+  prices_include_vat: boolean
   vat_not_reclaimable: boolean
   currency: string
   discount_percent: string | null
@@ -156,6 +166,7 @@ export async function readPurchase(tx: Tx, businessId: string, id: string): Prom
   const [head] = (await tx.execute(sql`
     select p.id, p.status, p.supplier_id, s.name as supplier_name, p.location_id,
            p.business_date::text as business_date, p.document_type, p.reference, p.payment_method,
+           p.paid_by_member_id, pm.display_name as paid_by_member_name, p.prices_include_vat,
            p.vat_not_reclaimable, trim(p.currency) as currency,
            trim_scale(p.discount_percent)::text as discount_percent,
            trim_scale(p.discount_amount)::text as discount_amount, p.notes,
@@ -171,6 +182,8 @@ export async function readPurchase(tx: Tx, businessId: string, id: string): Prom
                and a.deleted_at is null) as attachment_count
       from app.purchases p
       left join app.suppliers s on s.business_id = p.business_id and s.id = p.supplier_id
+      left join app.business_members pm
+        on pm.business_id = p.business_id and pm.id = p.paid_by_member_id
      where p.business_id = ${businessId} and p.id = ${id} and p.deleted_at is null
   `)) as unknown as PurchaseRecord[]
   if (!head) throw new AppError('not_found')
@@ -237,6 +250,9 @@ export async function readPurchase(tx: Tx, businessId: string, id: string): Prom
     documentType: head.document_type,
     reference: head.reference,
     paymentMethod: head.payment_method,
+    paidByMemberId: head.paid_by_member_id,
+    paidByMemberName: head.paid_by_member_name,
+    pricesIncludeVat: head.prices_include_vat,
     vatNotReclaimable: head.vat_not_reclaimable,
     currency: head.currency,
     discount: discountOf(head.discount_percent, head.discount_amount),
@@ -430,6 +446,35 @@ async function resolveLocation(
   return row.id
 }
 
+/**
+ * Who paid, as the method says: a member who paid from their own money must be an active member of
+ * the business (NOT_FOUND otherwise); a purchase bought on credit needs its supplier (VALIDATION; the
+ * input schema says both first).
+ */
+async function assertPaidBy(tx: Tx, businessId: string, input: Fields) {
+  if ((input.paymentMethod === 'paid_by_member') !== (input.paidByMemberId !== null)) {
+    throw invalid('paidByMemberId: goes with paid_by_member')
+  }
+  if (input.paymentMethod === 'supplier_credit' && input.supplierId === null) {
+    throw invalid('supplierId: a purchase on credit needs its supplier')
+  }
+  if (input.paidByMemberId !== null) await assertActivePayer(tx, businessId, input.paidByMemberId)
+}
+
+/**
+ * The member who paid from their own money is an active member of the business (NOT_FOUND
+ * otherwise): checked when a draft is saved and again when it is posted, since they may have left in
+ * between (or a correction copied a purchase paid by someone who has since left).
+ */
+async function assertActivePayer(tx: Tx, businessId: string, memberId: string) {
+  const [row] = (await tx.execute(sql`
+    select m.id from app.business_members m
+     where m.business_id = ${businessId} and m.id = ${memberId}
+       and m.status = 'active' and m.deleted_at is null
+  `)) as unknown as { id: string }[]
+  if (!row) throw new AppError('not_found')
+}
+
 async function assertSupplier(tx: Tx, businessId: string, supplierId: string | null) {
   if (supplierId === null) return
   const [row] = (await tx.execute(sql`
@@ -471,8 +516,14 @@ function amountsOf(
   discount: Fields['discount'],
   inCost: boolean,
   currency: CurrencyCode,
+  pricesIncludeVat: boolean,
 ): PurchaseAmounts {
-  const input = { lines: domainLines(lines), discount: toLineDiscount(discount), vatInCost: inCost }
+  const input = {
+    lines: domainLines(lines),
+    discount: toLineDiscount(discount),
+    vatInCost: inCost,
+    pricesIncludeVat,
+  }
   const error = purchaseError(input, currency)
   if (error) {
     const where = error.line === undefined ? '' : ` (line ${error.line + 1})`
@@ -492,6 +543,7 @@ function amountsOf(
 async function prepareDraft(tx: Tx, ctx: BusinessCtx, input: Fields) {
   const { currency, defaultLocationId } = await draftContext(tx, ctx.businessId)
   await assertSupplier(tx, ctx.businessId, input.supplierId)
+  await assertPaidBy(tx, ctx.businessId, input)
   const locationId = await resolveLocation(tx, ctx, input.locationId, defaultLocationId)
   const materialIds = input.lines.flatMap((l) => (l.kind === 'material' ? [l.materialId] : []))
   // Locked FOR SHARE first, as a posting does: a change of a material's units or kind of measure in
@@ -506,7 +558,7 @@ async function prepareDraft(tx: Tx, ctx: BusinessCtx, input: Fields) {
     baseQtyOf(material, line.qty, { unit: line.unit ?? null, packId: line.packId ?? null })
   }
   // A draft's document amounts do not depend on the VAT rule; its costs are worked out at posting.
-  const amounts = amountsOf(input.lines, input.discount, false, currency)
+  const amounts = amountsOf(input.lines, input.discount, false, currency, input.pricesIncludeVat)
   const header = {
     supplierId: input.supplierId,
     locationId,
@@ -514,6 +566,8 @@ async function prepareDraft(tx: Tx, ctx: BusinessCtx, input: Fields) {
     documentType: input.documentType,
     reference: input.reference,
     paymentMethod: input.paymentMethod,
+    paidByMemberId: input.paidByMemberId,
+    pricesIncludeVat: input.pricesIncludeVat,
     vatNotReclaimable: input.vatNotReclaimable,
     currency,
     discountPercent: input.discount && 'percent' in input.discount ? input.discount.percent : null,
@@ -613,6 +667,9 @@ interface HeadRecord extends Record<string, unknown> {
   business_date: string
   location_id: string
   document_type: PurchaseDocumentType
+  payment_method: PurchaseDto['paymentMethod']
+  paid_by_member_id: string | null
+  prices_include_vat: boolean
   vat_not_reclaimable: boolean
   discount_percent: string | null
   discount_amount: string | null
@@ -622,8 +679,8 @@ interface HeadRecord extends Record<string, unknown> {
 async function lockPurchase(tx: Tx, businessId: string, id: string): Promise<HeadRecord> {
   const [row] = (await tx.execute(sql`
     select p.id, p.status, p.version, p.business_date::text as business_date, p.location_id,
-           p.document_type, p.vat_not_reclaimable,
-           trim_scale(p.discount_percent)::text as discount_percent,
+           p.document_type, p.payment_method, p.paid_by_member_id, p.prices_include_vat,
+           p.vat_not_reclaimable, trim_scale(p.discount_percent)::text as discount_percent,
            trim_scale(p.discount_amount)::text as discount_amount
       from app.purchases p
      where p.business_id = ${businessId} and p.id = ${id} and p.deleted_at is null
@@ -793,7 +850,9 @@ function asInputLine(line: DraftLineRecord): InputLine {
  * delivery share, VAT when it cannot be reclaimed) into the ledger, and the material's average moves
  * (D-114 rule 1). Idempotent: a purchase already posted (or reversed since) is returned as it is.
  * Refused: a date after today (FUTURE_DATE) or on or before the books-closed date (BOOKS_CLOSED), no
- * material line, a material or unit removed since the draft was saved (VALIDATION).
+ * payment method (PAYMENT_METHOD_REQUIRED: a draft saved before it was required), paid by a member
+ * who is no longer an active member (NOT_FOUND, as when it is saved), no material line, a material or
+ * unit removed since the draft was saved (VALIDATION).
  */
 export async function postPurchase(
   ctx: BusinessCtx,
@@ -804,6 +863,10 @@ export async function postPurchase(
     if (head.status !== 'draft') return result(await readPurchase(tx, ctx.businessId, input.id))
     if (head.version !== input.version) throw new AppError('conflict')
 
+    if (head.payment_method === null) throw new AppError('payment_method_required')
+    if (head.paid_by_member_id !== null) {
+      await assertActivePayer(tx, ctx.businessId, head.paid_by_member_id)
+    }
     const business = await lockPostingBusiness(tx, ctx.businessId)
     assertPostable(business, head.business_date)
     const stored = await draftLines(tx, ctx.businessId, input.id)
@@ -829,7 +892,7 @@ export async function postPurchase(
       vatNotReclaimable: head.vat_not_reclaimable,
     })
     const discount = discountOf(head.discount_percent, head.discount_amount)
-    const amounts = amountsOf(lines, discount, inCost, business.currency)
+    const amounts = amountsOf(lines, discount, inCost, business.currency, head.prices_include_vat)
     const baseQty = new Map<string, Quantity>()
     for (const line of materialLines) {
       const material = materials.get(line.materialId)!
@@ -924,7 +987,9 @@ interface ReceiptRecord extends Record<string, unknown> {
  * Reverses a posted purchase in `tx` (already reversed: nothing to do). Its receipts leave the
  * ledger "as if never posted": each material's ledger is replayed without them (D-109), the
  * reversal movements carry what that changed, dated on the purchase's day or the first open day
- * (D-114 rule 3). PURCHASE_HAS_RETURNS while returns or credit notes of it are posted (D-120 rule 1).
+ * (D-114 rule 3). PURCHASE_HAS_RETURNS while returns or credit notes of it are posted (D-120 rule 1),
+ * PURCHASE_HAS_PAYMENTS while payments recorded on it stand (they are reversed first; the purchase
+ * row is locked first, as recording a payment locks it, so neither slips past the other).
  */
 async function reverseInTx(tx: Tx, ctx: BusinessCtx, id: string): Promise<void> {
   const head = await lockPurchase(tx, ctx.businessId, id)
@@ -936,6 +1001,12 @@ async function reverseInTx(tx: Tx, ctx: BusinessCtx, id: string): Promise<void> 
        and r.status = 'posted' and r.deleted_at is null
   `)) as unknown as { n: number }[]
   if ((open?.n ?? 0) > 0) throw new AppError('purchase_has_returns')
+  const [paid] = (await tx.execute(sql`
+    select count(*)::int as n from app.purchase_payments pp
+     where pp.business_id = ${ctx.businessId} and pp.purchase_id = ${id}
+       and pp.reversed_at is null and pp.deleted_at is null
+  `)) as unknown as { n: number }[]
+  if ((paid?.n ?? 0) > 0) throw new AppError('purchase_has_payments')
 
   const business = await lockPostingBusiness(tx, ctx.businessId)
   const reversalDate = reversalDateOf(business, head.business_date)
@@ -1069,7 +1140,12 @@ export async function correctPurchase(
       businessDate: source.businessDate,
       documentType: source.documentType,
       reference: source.reference,
+      // A purchase posted before the method was required copies none: the copy is completed before
+      // it is saved again. A member who paid and has since left is copied too: the editor asks who
+      // paid, and posting refuses the copy as it is (NOT_FOUND).
       paymentMethod: source.paymentMethod,
+      paidByMemberId: source.paidByMemberId,
+      pricesIncludeVat: source.pricesIncludeVat,
       vatNotReclaimable: source.vatNotReclaimable,
       currency,
       discountPercent: source.discountPercent,

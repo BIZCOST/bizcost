@@ -318,6 +318,7 @@ export function FormPart({
 /**
  * The packs and conversions of a material draft, each row with its messages and chain in words.
  * `onPackOfChanged` names the pack whose "holds" changed last (a loop of packs is said on it).
+ * `packsOnly`: the packs without the conversions (the quick-add sheet of a purchase line).
  */
 export function PacksAndConversions({
   draft,
@@ -326,6 +327,7 @@ export function PacksAndConversions({
   units,
   shown,
   onPackOfChanged,
+  packsOnly = false,
 }: {
   draft: MaterialDraft
   onChange: (update: (draft: MaterialDraft) => MaterialDraft) => void
@@ -333,6 +335,7 @@ export function PacksAndConversions({
   units: MaterialUnits | null
   shown: (error: FieldError | undefined) => string | undefined
   onPackOfChanged: (packId: string) => void
+  packsOnly?: boolean
 }) {
   const { t } = useTranslation()
   const container = useRef<HTMLDivElement>(null)
@@ -397,7 +400,7 @@ export function PacksAndConversions({
             onChange={setPack}
             onRemove={() => removePack(pack)}
             onOtherKind={
-              draft.unit && draft.crossFactors.length < MATERIAL_CROSS_FACTORS_MAX
+              !packsOnly && draft.unit && draft.crossFactors.length < MATERIAL_CROSS_FACTORS_MAX
                 ? () => addCross(true)
                 : undefined
             }
@@ -414,31 +417,36 @@ export function PacksAndConversions({
           </Button>
         ) : null}
       </FormPart>
-      <FormPart title={t('catalog.materials.cross.title')} hint={t('catalog.materials.cross.hint')}>
-        {draft.crossFactors.map((cross, index) => (
-          <CrossRow
-            key={cross.id}
-            index={index}
-            cross={cross}
-            draft={draft}
-            errors={check.errors.crossFactors[cross.id]}
-            shown={shown}
-            onChange={setCross}
-            onRemove={() =>
-              onChange((d) => ({
-                ...d,
-                crossFactors: d.crossFactors.filter((c) => c.id !== cross.id),
-              }))
-            }
-          />
-        ))}
-        {draft.crossFactors.length < MATERIAL_CROSS_FACTORS_MAX ? (
-          <Button type="button" variant="outline" onClick={() => addCross(false)}>
-            <PlusIcon aria-hidden />
-            {t('catalog.materials.cross.add')}
-          </Button>
-        ) : null}
-      </FormPart>
+      {packsOnly ? null : (
+        <FormPart
+          title={t('catalog.materials.cross.title')}
+          hint={t('catalog.materials.cross.hint')}
+        >
+          {draft.crossFactors.map((cross, index) => (
+            <CrossRow
+              key={cross.id}
+              index={index}
+              cross={cross}
+              draft={draft}
+              errors={check.errors.crossFactors[cross.id]}
+              shown={shown}
+              onChange={setCross}
+              onRemove={() =>
+                onChange((d) => ({
+                  ...d,
+                  crossFactors: d.crossFactors.filter((c) => c.id !== cross.id),
+                }))
+              }
+            />
+          ))}
+          {draft.crossFactors.length < MATERIAL_CROSS_FACTORS_MAX ? (
+            <Button type="button" variant="outline" onClick={() => addCross(false)}>
+              <PlusIcon aria-hidden />
+              {t('catalog.materials.cross.add')}
+            </Button>
+          ) : null}
+        </FormPart>
+      )}
     </div>
   )
 }

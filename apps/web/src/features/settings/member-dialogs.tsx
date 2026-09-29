@@ -10,6 +10,7 @@ import { useTranslation } from 'react-i18next'
 import { CodeInput } from '@/components/form/code-input'
 import { EmailText } from '@/components/form/email-text'
 import { FormAlert } from '@/components/form/form-alert'
+import { useUnsavedChanges } from '@/components/form/unsaved-changes'
 import { ResendCode } from '@/components/form/resend-code'
 import { isolate, useMessage } from '@/components/form/use-message'
 import {
@@ -61,17 +62,31 @@ export function ChangeRoleDialog({
   const [roleId, setRoleId] = useState<string>(member.roleId)
   const busy = change.isPending
 
-  async function save() {
-    if (roleId === member.roleId) return onClose()
+  /** Saves the role; true once saved (the dialog says what went wrong otherwise). */
+  async function persist(): Promise<boolean> {
     try {
       onChanged(await change.mutateAsync({ memberId: member.id, roleId }))
+      return true
     } catch {
       // Shown below.
+      return false
     }
   }
 
+  async function save() {
+    if (roleId === member.roleId) return onClose()
+    await persist()
+  }
+
+  // Closing it with another role picked and not saved asks first (the owner's request of 2026-09-29).
+  const guard = useUnsavedChanges({
+    dirty: roleId !== member.roleId,
+    save: persist,
+    close: onClose,
+  })
+
   return (
-    <Dialog open onOpenChange={(open) => !open && !busy && onClose()}>
+    <Dialog open onOpenChange={(open) => !open && !busy && guard.requestLeave(onClose)}>
       <DialogContent
         closeLabel={t('actions.close')}
         // Start on the member's current role (the menu that opened this may hold the focus first).
@@ -112,7 +127,12 @@ export function ChangeRoleDialog({
             disabled={busy}
           />
           <DialogFooter>
-            <Button type="button" variant="outline" disabled={busy} onClick={onClose}>
+            <Button
+              type="button"
+              variant="outline"
+              disabled={busy}
+              onClick={() => guard.requestLeave(onClose)}
+            >
               {t('actions.cancel')}
             </Button>
             <Button type="submit" disabled={busy}>

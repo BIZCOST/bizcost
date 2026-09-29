@@ -39,6 +39,13 @@
     "cancelling": "Cancelling…",
     "leaving": "Leaving…"
   },
+  "unsaved": {
+    "title": "You have unsaved changes",
+    "body": "Save them before you leave?",
+    "save": "Save",
+    "discard": "Don't save",
+    "keepEditing": "Keep editing"
+  },
   "password": {
     "show": "Show password",
     "hide": "Hide password"
@@ -59,6 +66,7 @@
     "materials_retail": "Goods",
     "suppliers": "Suppliers",
     "purchases": "Purchases",
+    "payables": "Amounts owed",
     "more": "More",
     "moreTitle": "More sections",
     "quickAdd": "Add new"

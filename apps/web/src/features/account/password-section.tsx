@@ -21,6 +21,7 @@ import { PasswordInput } from '@/components/form/password-input'
 import { PasswordRules } from '@/components/form/password-rules'
 import { ResendCode } from '@/components/form/resend-code'
 import { TextField } from '@/components/form/text-field'
+import { useUnsavedChanges } from '@/components/form/unsaved-changes'
 import { useMessage } from '@/components/form/use-message'
 import { Button } from '@/components/ui/button'
 import { useSessionEmail } from '@/lib/session'
@@ -81,6 +82,15 @@ function PasswordCodeForm({ flow, state }: { flow: PasswordChange; state: Passwo
   const flowError = (field: 'code' | 'password') =>
     state.error?.field === field ? message(state.error.key) : undefined
   const submit = form.handleSubmit(({ code, password }) => flow.submit({ code, password }))
+  // Leaving with a code or a new password typed asks first; saving from that question changes the
+  // password (it leaves once it is changed).
+  useUnsavedChanges({
+    dirty: form.formState.isDirty && state.step !== 'done',
+    save: async () => {
+      await submit()
+      return flow.getState().step === 'done'
+    },
+  })
 
   return (
     <form method="post" onSubmit={submit} noValidate className="space-y-5">

@@ -305,6 +305,8 @@ test('checklist: each step is done as the owner does it, then "You’re all set"
   await page.getByRole('textbox', { name: 'Business name in Arabic' }).fill('ورشة النور')
   await page.getByRole('button', { name: 'Save changes' }).click()
   await expect(page.getByText('Business details saved.')).toBeVisible()
+  // Saved (the TRN's "saved" may still show): nothing is left to save, so leaving does not ask.
+  await expect(page.getByRole('button', { name: 'Save changes' })).toBeDisabled()
 
   await mainNav(page).getByRole('link', { name: 'Dashboard' }).click()
   const allSet = page.getByRole('region', { name: "You're all set" })

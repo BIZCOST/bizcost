@@ -50,7 +50,10 @@ type CreateInput = z.output<typeof createMaterialInput>
 type UpdateInput = z.output<typeof updateMaterialInput>
 type UnitsInput = Pick<CreateInput, 'packs' | 'crossFactors'>
 
-/** The unique index on (business_id, lower(name)) of live materials. */
+/**
+ * The unique index on (business_id, app.name_key(name)) of live materials: one name per business,
+ * compared the way people read it (nameKey in @bizcost/domain; migration name_key).
+ */
 export const MATERIAL_NAME_KEY = 'materials_name_key'
 
 /** The same index of products and services (an item bought ready to sell has both names). */
@@ -293,11 +296,40 @@ export function getMaterial(ctx: BusinessCtx, input: IdInput): Promise<MaterialD
 }
 
 /**
- * `material.create`: idempotent on the client's id (the same payload again returns the material; an
- * id used by another create or another business is CONFLICT). NAME_TAKEN when the business already
- * has a material with that name (archived ones included).
+ * The name of the live material (archived ones included) that is the same name as `name` the way
+ * people read it (app.name_key), for NAME_TAKEN to name it.
+ */
+async function sameNamed(ctx: BusinessCtx, name: string): Promise<string[]> {
+  return ctx.tx(async (tx) => {
+    const rows = (await tx.execute(sql`
+      select m.name from app.materials m
+       where m.business_id = ${ctx.businessId} and m.deleted_at is null
+         and app.name_key(m.name) = app.name_key(${name})
+       limit 1
+    `)) as unknown as { name: string }[]
+    return rows.map((row) => row.name)
+  })
+}
+
+/**
+ * `material.create`, and `material.quickCreate` from a purchase line: idempotent on the client's id
+ * (the same payload again returns the material; an id used by another create or another business is
+ * CONFLICT). NAME_TAKEN when the business already has a material with that name the way people read
+ * it (case, spaces, Arabic letter forms, marks, digits; archived ones included), naming it in
+ * `error.data.names` so the screen can offer it instead.
  */
 export async function createMaterial(ctx: BusinessCtx, input: CreateInput): Promise<MaterialDto> {
+  try {
+    return await insertMaterial(ctx, input)
+  } catch (error) {
+    if (error instanceof AppError && error.appCode === 'name_taken') {
+      throw new AppError('name_taken', { cause: error, names: await sameNamed(ctx, input.name) })
+    }
+    throw error
+  }
+}
+
+async function insertMaterial(ctx: BusinessCtx, input: CreateInput): Promise<MaterialDto> {
   const dimension = dimensionOf(input.unit)
   const units = checkedUnits(dimension, input)
   const requestHash = requestHashOf({

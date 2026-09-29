@@ -134,6 +134,34 @@
       "when": 1790639266973,
       "tag": "20260928234746_recipes_need_materials",
       "breakpoints": true
+    },
+    {
+      "idx": 19,
+      "version": "7",
+      "when": 1790643225312,
+      "tag": "20260929005345_name_key",
+      "breakpoints": true
+    },
+    {
+      "idx": 20,
+      "version": "7",
+      "when": 1790643343898,
+      "tag": "20260929005543_purchasing_payments_tables",
+      "breakpoints": true
+    },
+    {
+      "idx": 21,
+      "version": "7",
+      "when": 1790643350995,
+      "tag": "20260929005550_purchasing_payments_security",
+      "breakpoints": true
+    },
+    {
+      "idx": 22,
+      "version": "7",
+      "when": 1790653941041,
+      "tag": "20260929035221_name_key_unicode",
+      "breakpoints": true
     }
   ]
 }

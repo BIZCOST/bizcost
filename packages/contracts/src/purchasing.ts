@@ -12,6 +12,9 @@ export const SUPPLIER_EMAIL_MAX_LENGTH = 254
 /** Longest notes of a supplier, a purchase, a return or a credit note. */
 export const DOCUMENT_NOTES_MAX_LENGTH = 1000
 
+/** Longest note of a payment of what is owed on a purchase. */
+export const PAYMENT_NOTE_MAX_LENGTH = 500
+
 /** Longest reference (the supplier's invoice, return note or credit note number). */
 export const DOCUMENT_REFERENCE_MAX_LENGTH = 100
 
@@ -24,6 +27,13 @@ export const DOCUMENT_LINES_MAX = 100
 /** Rows per page of a document list: the default, and the most a client may ask for. */
 export const DOCUMENT_PAGE_SIZE = 50
 export const DOCUMENT_PAGE_SIZE_MAX = 100
+
+/**
+ * Amounts owed (`payable.list`): suppliers or members per page, and the purchases listed for each (the
+ * oldest first; the rest are counted, and show up as the older ones are paid).
+ */
+export const PAYABLE_PAGE_SIZE = 25
+export const PAYABLE_INVOICES_MAX = 50
 
 /** Materials one `material.costs` call may ask for (a page of the materials list). */
 export const MATERIAL_COSTS_MAX = 100

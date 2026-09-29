@@ -159,6 +159,7 @@ describe('module manifests', () => {
       ['materials', 'main'],
       ['suppliers', 'main'],
       ['purchases', 'main'],
+      ['payables', 'main'],
     ])
   })
 
@@ -196,6 +197,8 @@ describe('permission catalog', () => {
         'purchases.documents.post',
         'purchases.documents.reverse',
         'purchases.books.close',
+        'purchases.payments.view',
+        'purchases.payments.record',
         'data.cost.view',
         'data.profit_margin.view',
         'data.supplier_price.view',
@@ -295,6 +298,8 @@ describe('role templates', () => {
         'purchases.documents.manage',
         'purchases.documents.post',
         'purchases.documents.reverse',
+        'purchases.payments.view',
+        'purchases.payments.record',
         'data.cost.view',
         'data.profit_margin.view',
         'data.supplier_price.view',

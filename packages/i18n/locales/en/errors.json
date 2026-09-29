@@ -30,6 +30,9 @@
   "exceeds_purchase": "That's more than is left of this purchase. Check the quantity or the amount.",
   "material_in_use": "It is already used in purchases or products, so its kind of measure can't change. You can still pick another unit of the same kind.",
   "unit_in_use": "One of your products uses this in a pack or unit you took out or changed. Change what goes into it first, then try again.",
+  "payment_method_required": "Choose how this purchase was paid, then try again.",
+  "purchase_has_payments": "This purchase has payments recorded on it. Reverse the payments first, then try again.",
+  "exceeds_outstanding": "That's more than is still owed on this purchase. Check the amount.",
   "internal": "Something went wrong on our side. Please try again.",
   "network": "Can't connect. Check your internet and try again."
 }

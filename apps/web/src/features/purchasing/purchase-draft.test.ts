@@ -49,7 +49,11 @@ function line(fields: Partial<MaterialLineDraft>): MaterialLineDraft {
 }
 
 function draft(fields: Partial<PurchaseDraft>): PurchaseDraft {
-  return { ...purchaseDraft(undefined, { today: TODAY, vatRegistered: true }), ...fields }
+  return {
+    ...purchaseDraft(undefined, { today: TODAY, vatRegistered: true }),
+    paymentMethod: 'cash',
+    ...fields,
+  }
 }
 
 describe('a new purchase', () => {
@@ -64,9 +68,40 @@ describe('a new purchase', () => {
     expect(other.lines[0]).toMatchObject({ vatRate: '0' })
     expect(defaultVatRate(true, 'no_invoice')).toBe('0')
   })
+
+  it('types prices before VAT on a tax invoice, with VAT otherwise, and says no payment method', () => {
+    const registered = purchaseDraft(undefined, { today: TODAY, vatRegistered: true })
+    expect(registered).toMatchObject({ pricesIncludeVat: false, paymentMethod: '' })
+    expect(purchaseDraft(undefined, { today: TODAY, vatRegistered: false }).pricesIncludeVat).toBe(
+      true,
+    )
+  })
 })
 
 describe('checkPurchase', () => {
+  it('needs how it was paid; on credit needs the supplier, paid by a member the member', () => {
+    const milk = line({ materialId: MILK.id, qty: '1', unit: 'unit:l', price: '6' })
+    const check = (fields: Partial<PurchaseDraft>) =>
+      checkPurchase(draft({ lines: [milk], ...fields }), context(true))
+    expect(check({ paymentMethod: '' })).toMatchObject({
+      errors: { paymentMethod: { key: 'purchasing.editor.errors.paymentMethod' } },
+      fields: null,
+    })
+    expect(check({ paymentMethod: 'supplier_credit' }).errors.paymentMethod).toEqual({
+      key: 'purchasing.editor.errors.paymentMethodSupplier',
+    })
+    expect(check({ paymentMethod: 'paid_by_member' }).errors.paymentMethod).toEqual({
+      key: 'purchasing.editor.errors.paymentMethodMember',
+    })
+    expect(check({ paymentMethod: 'paid_by_member', paidByMemberId: 'm1' }).fields).toMatchObject({
+      paymentMethod: 'paid_by_member',
+      paidByMemberId: 'm1',
+    })
+    expect(
+      check({ paymentMethod: 'supplier_credit', supplierId: 's1', paidByMemberId: 'm1' }).fields,
+    ).toMatchObject({ paymentMethod: 'supplier_credit', supplierId: 's1', paidByMemberId: null })
+  })
+
   it("the owner's milk: 50 L at AED 6 with 5% VAT", () => {
     const milk = line({ materialId: MILK.id, qty: '50', unit: 'unit:l', price: '6' })
     const checked = checkPurchase(draft({ lines: [milk], supplierId: 's1' }), context(true))
@@ -78,7 +113,9 @@ describe('checkPurchase', () => {
       businessDate: TODAY,
       documentType: 'tax_invoice',
       reference: null,
-      paymentMethod: null,
+      paymentMethod: 'cash',
+      paidByMemberId: null,
+      pricesIncludeVat: false,
       locationId: null,
       vatNotReclaimable: false,
       discount: null,
@@ -98,6 +135,39 @@ describe('checkPurchase', () => {
       ],
     })
     expect(checked.hasMaterial).toBe(true)
+  })
+
+  it('takes the VAT out of prices that include it: 105 with 5% VAT is 100 + 5', () => {
+    const milk = line({ materialId: MILK.id, qty: '1', unit: 'unit:l', price: '105' })
+    const checked = checkPurchase(
+      draft({ documentType: 'no_invoice', pricesIncludeVat: true, lines: [milk] }),
+      context(true),
+    )
+    expect(checked.amounts).toMatchObject({ net: '100.00', vat: '5.00', total: '105.00' })
+    expect(checked.lineAmounts.get(milk.id)).toMatchObject({ taxable: '100.00', vat: '5.00' })
+    expect(checked.fields).toMatchObject({ pricesIncludeVat: true })
+    expect(checked.fields?.lines?.[0]).toMatchObject({ unitPrice: '105', vatRate: '5' })
+    // The same line typed before VAT gives the same amounts.
+    const before = checkPurchase(
+      draft({ lines: [{ ...milk, price: '100' }], pricesIncludeVat: false }),
+      context(true),
+    )
+    expect(before.amounts).toMatchObject({ net: '100.00', vat: '5.00', total: '105.00' })
+  })
+
+  it('never says prices include VAT for a business that is not VAT-registered', () => {
+    const beans = line({ materialId: BEANS.id, qty: '1', unit: 'pack:bag', price: '45' })
+    const checked = checkPurchase(draft({ pricesIncludeVat: true, lines: [beans] }), context(false))
+    expect(checked.fields).toMatchObject({ pricesIncludeVat: false })
+    expect(checked.amounts).toMatchObject({ vat: '0.00', total: '45.00' })
+  })
+
+  it('asks for another member when the one who paid has left the business', () => {
+    const milk = line({ materialId: MILK.id, qty: '1', unit: 'unit:l', price: '6' })
+    const paid = draft({ lines: [milk], paymentMethod: 'paid_by_member', paidByMemberId: 'gone' })
+    const checked = checkPurchase(paid, { ...context(true), payers: new Set(['m1']) })
+    expect(checked.errors.paymentMethod).toEqual({ key: 'purchasing.editor.errors.payerLeft' })
+    expect(checked.fields).toBeNull()
   })
 
   it('reads Arabic digits; a bag of beans priced per bag; no VAT when not VAT-registered', () => {
@@ -218,6 +288,7 @@ describe('a saved draft', () => {
       documentType: 'no_invoice',
       reference: 'R-1',
       paymentMethod: 'cash',
+      pricesIncludeVat: true,
       locationId: 'loc',
       vatNotReclaimable: false,
       discount: { amount: '5' },
@@ -245,6 +316,7 @@ describe('a saved draft', () => {
       documentType: 'no_invoice',
       reference: 'R-1',
       paymentMethod: 'cash',
+      pricesIncludeVat: true,
       locationId: 'loc',
       discountKind: 'amount',
       discount: '5',

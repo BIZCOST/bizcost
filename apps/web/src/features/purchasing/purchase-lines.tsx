@@ -26,6 +26,7 @@ import { useLocale, useTerminology } from '@/lib/i18n/client'
 import { useBusinessContext } from '@/lib/trpc/client'
 import { cn } from '@/lib/utils'
 import { useMoney, useUnitCost } from './amounts'
+import { MaterialPicker } from './material-picker'
 import {
   defaultUnitOf,
   dimensionsOf,
@@ -47,7 +48,9 @@ import {
 // The lines of the purchase editor (M2 Step 3): a material bought in any unit of its kind of measure
 // or one of its packs, said in words as it is typed ("2 bags = 2 kg"), its price per the unit chosen
 // and what that makes per the unit it is counted in, an optional discount and, for a VAT-registered
-// business, its VAT; and delivery charged on the same invoice.
+// business, its VAT; and delivery charged on the same invoice. The material is typed and picked from
+// a list that can add a new one (the owner's request of 2026-09-29); for a VAT-registered business
+// the price's caption says whether it is before VAT or includes it, as the purchase says.
 
 /** A small caption over a box (the box has its own accessible name). */
 function Caption({ children }: { children: ReactNode }) {
@@ -288,9 +291,11 @@ export function MaterialLineRow({
   shown,
   amounts,
   vatRegistered,
+  pricesIncludeVat,
   profile,
   onChange,
   onRemove,
+  onAddMaterial,
 }: {
   index: number
   line: MaterialLineDraft
@@ -301,9 +306,13 @@ export function MaterialLineRow({
   shown: (error: FieldError | undefined) => string | undefined
   amounts: PurchaseLineAmounts | undefined
   vatRegistered: boolean
+  /** The purchase's prices are typed with their VAT (VAT-registered businesses). */
+  pricesIncludeVat: boolean
   profile: TerminologyProfile
   onChange: (line: MaterialLineDraft) => void
   onRemove: (() => void) | undefined
+  /** Opens the quick-add sheet for a name typed in the picker (absent: may not add). */
+  onAddMaterial?: (name: string) => void
 }) {
   const { t } = useTranslation()
   const term = useTerminology()
@@ -337,16 +346,25 @@ export function MaterialLineRow({
     }
   }
   const name = unitNameOf(material, line.unit, (unit) => t(`units.short.${unit as 'kg'}`))
-  const priceLabel = name
-    ? t('purchasing.editor.pricePer', { unit: name })
-    : t('purchasing.editor.price')
+  // Per the unit chosen ("Price per bag") and, for a VAT-registered business, before VAT or with it
+  // as the purchase says ("Price per bag incl. VAT").
+  const priceLabel = !vatRegistered
+    ? name
+      ? t('purchasing.editor.pricePer', { unit: name })
+      : t('purchasing.editor.price')
+    : name
+      ? pricesIncludeVat
+        ? t('purchasing.editor.pricePerInclVat', { unit: name })
+        : t('purchasing.editor.pricePerBeforeVat', { unit: name })
+      : pricesIncludeVat
+        ? t('purchasing.editor.priceInclVat')
+        : t('purchasing.editor.priceBeforeVat')
 
-  function pickMaterial(id: string) {
-    const next = materials.get(id)
+  function pickMaterial(next: MaterialDto) {
     onChange({
       ...line,
-      materialId: id,
-      unit: next ? (isUnitOf(next, line.unit) ? line.unit : defaultUnitOf(next)) : '',
+      materialId: next.id,
+      unit: isUnitOf(next, line.unit) ? line.unit : defaultUnitOf(next),
       savedName: null,
     })
   }
@@ -360,22 +378,20 @@ export function MaterialLineRow({
       <div className="flex items-end gap-2 lg:contents">
         <div className="min-w-0 flex-1 lg:col-start-1 lg:row-start-1">
           <Caption>{term('purchasing.editor.material', profile)}</Caption>
-          <NativeSelect
-            aria-label={term('purchasing.editor.material', profile)}
-            aria-invalid={Boolean(shown(errors?.material))}
-            aria-describedby={describedBy}
+          <MaterialPicker
+            label={term('purchasing.editor.material', profile)}
             value={line.materialId}
-            onChange={(event) => pickMaterial(event.target.value)}
-          >
-            <option value="" disabled>
-              {material || !line.savedName ? t('purchasing.editor.pickMaterial') : line.savedName}
-            </option>
-            {pickable.map((option) => (
-              <option key={option.id} value={option.id}>
-                {option.name}
-              </option>
-            ))}
-          </NativeSelect>
+            materials={materials}
+            pickable={pickable}
+            placeholder={
+              material || !line.savedName ? t('purchasing.editor.pickMaterial') : line.savedName
+            }
+            invalid={Boolean(shown(errors?.material))}
+            describedBy={describedBy}
+            addLabel={(typed) => term('purchasing.editor.quickAddOption', profile, { name: typed })}
+            onPick={pickMaterial}
+            onAdd={onAddMaterial}
+          />
         </div>
         {onRemove ? (
           <Button
@@ -460,7 +476,7 @@ export function MaterialLineRow({
       ) : null}
       <div
         className={cn(
-          'mt-2 grid gap-2 lg:contents',
+          'mt-2 grid items-end gap-2 lg:contents',
           vatRegistered ? 'grid-cols-[minmax(0,3fr)_minmax(0,2fr)]' : 'grid-cols-1',
         )}
       >
@@ -484,15 +500,14 @@ export function MaterialLineRow({
           </div>
         ) : null}
       </div>
-      <p className="mt-1.5 ps-1 text-sm text-muted-foreground lg:row-start-2 lg:mt-0 lg:[grid-column:4/-1]">
-        {vatRegistered ? t('purchasing.editor.priceHint') : t('purchasing.editor.priceHintNoVat')}
-        {perUnit ? (
-          <>
-            {' · '}
-            <bdi data-per-unit>{perUnit}</bdi>
-          </>
-        ) : null}
-      </p>
+      {/* The caption says before or with VAT; without VAT, the price is what was paid. */}
+      {!vatRegistered || perUnit ? (
+        <p className="mt-1.5 ps-1 text-sm text-muted-foreground lg:row-start-2 lg:mt-0 lg:[grid-column:4/-1]">
+          {vatRegistered ? null : t('purchasing.editor.priceHintNoVat')}
+          {!vatRegistered && perUnit ? ' · ' : null}
+          {perUnit ? <bdi data-per-unit>{perUnit}</bdi> : null}
+        </p>
+      ) : null}
       <DiscountRow
         kind={line.discountKind}
         value={line.discount}
@@ -532,6 +547,7 @@ export function DeliveryLineRow({
   errors,
   shown,
   vatRegistered,
+  pricesIncludeVat,
   profile,
   onChange,
   onRemove,
@@ -540,6 +556,7 @@ export function DeliveryLineRow({
   errors: LineErrors | undefined
   shown: (error: FieldError | undefined) => string | undefined
   vatRegistered: boolean
+  pricesIncludeVat: boolean
   profile: TerminologyProfile
   onChange: (line: DeliveryLineDraft) => void
   onRemove: () => void
@@ -551,6 +568,13 @@ export function DeliveryLineRow({
     Boolean(m),
   )
   const describedBy = messages.length > 0 ? messagesId : undefined
+  const amountLabel = vatRegistered
+    ? t(
+        pricesIncludeVat
+          ? 'purchasing.editor.deliveryAmountInclVat'
+          : 'purchasing.editor.deliveryAmountBeforeVat',
+      )
+    : t('purchasing.editor.deliveryAmount')
   return (
     <fieldset
       data-delivery-row
@@ -584,14 +608,14 @@ export function DeliveryLineRow({
       </div>
       <div
         className={cn(
-          'mt-2 grid gap-2 lg:contents',
+          'mt-2 grid items-end gap-2 lg:contents',
           vatRegistered ? 'grid-cols-[minmax(0,3fr)_minmax(0,2fr)]' : 'grid-cols-1',
         )}
       >
         <div className="min-w-0 lg:col-start-4 lg:row-start-1">
-          <Caption>{t('purchasing.editor.deliveryAmount')}</Caption>
+          <Caption>{amountLabel}</Caption>
           <MoneyInput
-            label={t('purchasing.editor.deliveryAmount')}
+            label={amountLabel}
             value={line.amount}
             invalid={Boolean(shown(errors?.amount))}
             describedBy={describedBy}
@@ -642,5 +666,57 @@ export function AddLineButtons({
         {t('purchasing.editor.addDelivery')}
       </Button>
     </div>
+  )
+}
+
+/**
+ * Whether the purchase's prices are typed before VAT or with it (a VAT-registered business; the
+ * owner's request of 2026-09-29). The prices' captions follow it.
+ */
+export function VatModeChoice({
+  value,
+  onChange,
+}: {
+  value: boolean
+  onChange: (includesVat: boolean) => void
+}) {
+  const { t } = useTranslation()
+  const name = useId()
+  return (
+    <fieldset data-vat-mode className="mb-4">
+      <legend className="sr-only">{t('purchasing.editor.vatMode.label')}</legend>
+      <div className="grid grid-cols-2 gap-1 rounded-lg bg-muted p-1">
+        {[false, true].map((includesVat) => (
+          <label key={String(includesVat)} className="relative min-w-0">
+            <input
+              type="radio"
+              name={name}
+              value={includesVat ? 'included' : 'before'}
+              checked={value === includesVat}
+              onChange={() => onChange(includesVat)}
+              className="peer sr-only"
+            />
+            <span
+              className={cn(
+                'flex min-h-11 cursor-pointer items-center justify-center rounded-md px-2 py-1.5 text-center text-sm font-medium text-muted-foreground transition-colors',
+                'peer-checked:bg-card peer-checked:text-foreground peer-checked:shadow-sm',
+                'peer-focus-visible:ring-3 peer-focus-visible:ring-ring',
+              )}
+            >
+              {t(
+                includesVat
+                  ? 'purchasing.editor.vatMode.included'
+                  : 'purchasing.editor.vatMode.before',
+              )}
+            </span>
+          </label>
+        ))}
+      </div>
+      <p className="mt-1.5 text-sm text-muted-foreground">
+        {t(
+          value ? 'purchasing.editor.vatMode.includedHint' : 'purchasing.editor.vatMode.beforeHint',
+        )}
+      </p>
+    </fieldset>
   )
 }

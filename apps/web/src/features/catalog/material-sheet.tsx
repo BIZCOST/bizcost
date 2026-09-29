@@ -1,8 +1,14 @@
 'use client'
 
 import { apiErrorCode, apiErrorKey, apiErrorNames, useTRPC } from '@bizcost/app-core'
-import type { MaterialDto } from '@bizcost/contracts'
-import { DIMENSIONS, newId, type StandardUnit, type TerminologyProfile } from '@bizcost/domain'
+import { CATALOG_SEARCH_MAX_LENGTH, type MaterialDto } from '@bizcost/contracts'
+import {
+  DIMENSIONS,
+  nameKey,
+  newId,
+  type StandardUnit,
+  type TerminologyProfile,
+} from '@bizcost/domain'
 import type { I18nKey } from '@bizcost/i18n'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { useMemo, useRef, useState, type FormEvent } from 'react'
@@ -10,6 +16,8 @@ import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
 import { FormAlert } from '@/components/form/form-alert'
 import { TextField } from '@/components/form/text-field'
+import { sameData } from '@/components/form/unsaved'
+import { useUnsavedChanges } from '@/components/form/unsaved-changes'
 import { isolate } from '@/components/form/use-message'
 import { Button } from '@/components/ui/button'
 import {
@@ -39,7 +47,9 @@ import { OWN_DIRECTION, PacksAndConversions, useShownError } from './units-edito
 // the API checks the same set again before anything is saved.
 // A material sold as it is (bought ready to sell, D-117) says so: its name, unit and archiving move
 // with its product. When a recipe still uses a pack or conversion taken out (UNIT_IN_USE), the
-// message names the products, for a member who may see recipes (D-152).
+// message names the products, for a member who may see recipes (D-152). A name the business already
+// has, compared the way people read it (nameKey), is refused and named (NAME_TAKEN). Closing it with
+// changes not saved asks first (the owner's request of 2026-09-29).
 
 /**
  * The material form in a sheet (phones) or a side panel (desktop). `material` absent: a new one.
@@ -65,10 +75,12 @@ export function MaterialSheet({
   const create = useMutation(trpc.material.create.mutationOptions())
   const update = useMutation(trpc.material.update.mutationOptions())
   const [newMaterialId] = useState(() => newId())
-  const [draft, setDraft] = useState<MaterialDraft>(() => materialDraft(material))
+  const [initial] = useState<MaterialDraft>(() => materialDraft(material))
+  const [draft, setDraft] = useState<MaterialDraft>(initial)
   const [submitted, setSubmitted] = useState(false)
   const [serverError, setServerError] = useState<string | null>(null)
-  const [takenName, setTakenName] = useState<string | null>(null)
+  // A name refused as taken: its key, and the material that has it (and whether it is archived).
+  const [taken, setTaken] = useState<{ key: string; name: string; archived: boolean } | null>(null)
   const [lastChanged, setLastChanged] = useState<string | undefined>(undefined)
   const form = useRef<HTMLFormElement>(null)
   const busy = create.isPending || update.isPending
@@ -76,21 +88,28 @@ export function MaterialSheet({
   const units = useMemo(() => draftUnits(draft), [draft])
   const shown = useShownError(submitted)
 
-  const typedName = formName(draft.name).toLowerCase()
+  const typedKey = nameKey(formName(draft.name))
+  const isTaken = taken !== null && typedKey === taken.key
   const nameError =
     shown(check.errors.name) ??
-    (takenName !== null && typedName === takenName ? t('errors.name_taken') : undefined)
+    (isTaken
+      ? taken.name
+        ? t(taken.archived ? 'catalog.form.nameTakenArchived' : 'catalog.form.nameTakenBy', {
+            name: isolate(taken.name),
+          })
+        : t('errors.name_taken')
+      : undefined)
 
-  async function submit(event: FormEvent) {
-    event.preventDefault()
-    if (busy) return
+  /** Saves the material; true once saved (the form says what went wrong otherwise). */
+  async function save(): Promise<boolean> {
+    if (busy) return false
     setSubmitted(true)
     setServerError(null)
     const { fields } = check
-    if (!fields || (takenName !== null && fields.name.toLowerCase() === takenName)) {
+    if (!fields || isTaken) {
       // After React has shown the messages: the first field to fix.
       setTimeout(() => form.current?.querySelector<HTMLElement>('[aria-invalid="true"]')?.focus())
-      return
+      return false
     }
     try {
       const saved = material
@@ -107,12 +126,13 @@ export function MaterialSheet({
           ? [queryClient.invalidateQueries({ queryKey: trpc.product.list.pathKey() })]
           : []),
       ])
-      onClose()
+      return true
     } catch (error) {
       const code = apiErrorCode(error)
       const names = apiErrorNames(error)
       if (code === 'name_taken') {
-        setTakenName(fields.name.toLowerCase())
+        const name = names[0] ?? ''
+        setTaken({ key: nameKey(fields.name), name, archived: await isArchivedName(name) })
         setTimeout(() => form.current?.querySelector<HTMLElement>('[aria-invalid="true"]')?.focus())
       } else if (code === 'unit_in_use' && names.length > 0) {
         setServerError(
@@ -124,14 +144,38 @@ export function MaterialSheet({
         const key: I18nKey = code === 'conflict' ? 'catalog.form.conflict' : apiErrorKey(error)
         setServerError(t(key))
       }
+      return false
     }
   }
 
-  const hasShownErrors =
-    submitted && (check.fields === null || (takenName !== null && typedName === takenName))
+  /** Whether the material named `name` (as NAME_TAKEN names it) is archived: said so, then. */
+  async function isArchivedName(name: string): Promise<boolean> {
+    if (!name) return false
+    try {
+      const archived = await queryClient.fetchQuery(
+        trpc.material.list.queryOptions({
+          status: 'archived',
+          search: name.slice(0, CATALOG_SEARCH_MAX_LENGTH),
+          limit: 10,
+        }),
+      )
+      return archived.items.some((m) => nameKey(m.name) === nameKey(name))
+    } catch {
+      return false
+    }
+  }
+
+  const guard = useUnsavedChanges({ dirty: !sameData(draft, initial), save, close: onClose })
+
+  async function submit(event: FormEvent) {
+    event.preventDefault()
+    if (await save()) onClose()
+  }
+
+  const hasShownErrors = submitted && (check.fields === null || isTaken)
 
   return (
-    <Sheet open onOpenChange={(open) => !open && !busy && onClose()}>
+    <Sheet open onOpenChange={(open) => !open && !busy && guard.requestLeave(onClose)}>
       <SheetContent closeLabel={t('actions.close')}>
         <form
           ref={form}
@@ -203,7 +247,12 @@ export function MaterialSheet({
             />
           </SheetBody>
           <SheetFooter>
-            <Button type="button" variant="outline" disabled={busy} onClick={onClose}>
+            <Button
+              type="button"
+              variant="outline"
+              disabled={busy}
+              onClick={() => guard.requestLeave(onClose)}
+            >
               {t('actions.cancel')}
             </Button>
             <Button type="submit" disabled={busy}>

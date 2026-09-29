@@ -326,6 +326,9 @@ describe('APP_ERROR_CODES', () => {
     'exceeds_purchase',
     'material_in_use',
     'unit_in_use',
+    'payment_method_required',
+    'purchase_has_payments',
+    'exceeds_outstanding',
     'internal',
   ]
 

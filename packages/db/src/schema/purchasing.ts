@@ -4,12 +4,14 @@ import {
   PURCHASE_DOCUMENT_TYPES,
   PURCHASE_LINE_KINDS,
   PURCHASE_RETURN_KINDS,
+  SETTLEMENT_METHODS,
   STANDARD_UNITS,
   type DocumentStatus,
   type PaymentMethod,
   type PurchaseDocumentType,
   type PurchaseLineKind,
   type PurchaseReturnKind,
+  type SettlementMethod,
   type StandardUnit,
 } from '@bizcost/domain'
 import { sql } from 'drizzle-orm'
@@ -29,6 +31,7 @@ import {
 } from 'drizzle-orm/pg-core'
 import { timestamptz } from './_app'
 import { tenantRef, tenantTable } from './_helpers'
+import { businessMembers } from './access'
 import { materials, materialUnits } from './catalog'
 import { locations } from './locations'
 import { suppliers } from './suppliers'
@@ -53,7 +56,9 @@ const quantity = (name: string) => numeric(name, { precision: 24, scale: 6 })
  * A purchase: what was bought from a supplier (optional) on a business day, at a location (the
  * default one unless the business has branches), with the document the supplier gave and how it was
  * paid. `vat_not_reclaimable` marks a document whose VAT cannot be reclaimed; `vat_in_cost` is the
- * choice made at posting (D-114 rule 4).
+ * choice made at posting (D-114 rule 4). `prices_include_vat`: its prices were typed with their VAT
+ * (the amounts are stored before VAT either way). A purchase paid by a member from their own money
+ * names them (`paid_by_member_id`); one bought on credit has its supplier.
  */
 export const purchases = tenantTable(
   'purchases',
@@ -64,8 +69,13 @@ export const purchases = tenantTable(
     documentType: text('document_type').$type<PurchaseDocumentType>().notNull(),
     // The supplier's invoice or receipt number.
     reference: text('reference'),
+    // Required by the API from 2026-09-29; purchases posted before may have none.
     paymentMethod: text('payment_method').$type<PaymentMethod>(),
+    // paid_by_member: who paid from their own money (a member of the business, active when chosen).
+    paidByMemberId: uuid('paid_by_member_id'),
     vatNotReclaimable: boolean('vat_not_reclaimable').notNull().default(false),
+    // The prices, discounts and delivery amounts were typed with their VAT (computePurchase).
+    pricesIncludeVat: boolean('prices_include_vat').notNull().default(false),
     currency: char('currency', { length: 3 }).notNull(),
     // The document discount: a percentage of the material lines' net, or an amount (at most one).
     discountPercent: percent('discount_percent'),
@@ -95,6 +105,7 @@ export const purchases = tenantTable(
   (t) => [
     tenantRef('purchases_supplier_fk', [t.businessId, t.supplierId], suppliers),
     tenantRef('purchases_location_fk', [t.businessId, t.locationId], locations),
+    tenantRef('purchases_paid_by_member_fk', [t.businessId, t.paidByMemberId], businessMembers),
     foreignKey({
       name: 'purchases_copied_from_fk',
       columns: [t.businessId, t.copiedFromId],
@@ -103,11 +114,20 @@ export const purchases = tenantTable(
     // Lists: newest business day first.
     index('purchases_business_date_idx').on(t.businessId, t.businessDate, t.id),
     index('purchases_supplier_idx').on(t.businessId, t.supplierId),
+    index('purchases_paid_by_member_idx').on(t.businessId, t.paidByMemberId),
     check(
       'purchases_document_type_check',
       sql`document_type in (${quoted(PURCHASE_DOCUMENT_TYPES)})`,
     ),
     check('purchases_payment_method_check', sql`payment_method in (${quoted(PAYMENT_METHODS)})`),
+    check(
+      'purchases_paid_by_member_check',
+      sql`(payment_method is not distinct from 'paid_by_member') = (paid_by_member_id is not null)`,
+    ),
+    check(
+      'purchases_supplier_credit_check',
+      sql`payment_method is distinct from 'supplier_credit' or supplier_id is not null`,
+    ),
     check('purchases_status_check', sql`status in (${quoted(DOCUMENT_STATUSES)})`),
     check('purchases_currency_check', sql`currency ~ '^[A-Z]{3}$'`),
     check(
@@ -315,6 +335,41 @@ export const purchaseReturnLines = tenantTable(
     check('purchase_return_lines_amount_check', sql`amount > 0`),
     check('purchase_return_lines_position_check', sql`position >= 0`),
     check('purchase_return_lines_base_qty_check', sql`base_qty > 0`),
+  ],
+)
+
+/**
+ * A payment of what a purchase left owed (bought on credit, or paid by a member from their own money):
+ * its business day, how the business paid (cash, card, bank transfer, cheque), the amount in the
+ * purchase's currency and an optional note. Never edited or deleted: a payment recorded by mistake is
+ * reversed (`reversed_*`, dated its own day or the first open one), and it then stops counting. A
+ * purchase with payments that stand is not reversed (PURCHASE_HAS_PAYMENTS).
+ */
+export const purchasePayments = tenantTable(
+  'purchase_payments',
+  {
+    purchaseId: uuid('purchase_id').notNull(),
+    businessDate: date('business_date', { mode: 'string' }).notNull(),
+    method: text('method').$type<SettlementMethod>().notNull(),
+    amount: money('amount').notNull(),
+    currency: char('currency', { length: 3 }).notNull(),
+    note: text('note'),
+    reversedAt: timestamptz('reversed_at'),
+    reversedBy: uuid('reversed_by'),
+    reversalDate: date('reversal_date', { mode: 'string' }),
+  },
+  (t) => [
+    tenantRef('purchase_payments_purchase_fk', [t.businessId, t.purchaseId], purchases),
+    index('purchase_payments_purchase_idx').on(t.businessId, t.purchaseId),
+    check('purchase_payments_method_check', sql`method in (${quoted(SETTLEMENT_METHODS)})`),
+    check('purchase_payments_amount_check', sql`amount > 0`),
+    check('purchase_payments_currency_check', sql`currency ~ '^[A-Z]{3}$'`),
+    check('purchase_payments_note_check', sql`btrim(note) <> '' and char_length(note) <= 500`),
+    check(
+      'purchase_payments_reversed_check',
+      sql`(reversed_at is null) = (reversed_by is null)
+        and (reversed_at is null) = (reversal_date is null)`,
+    ),
   ],
 )
 

@@ -10,6 +10,8 @@ import { useEffect, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
 import { FormAlert } from '@/components/form/form-alert'
+import { sameData } from '@/components/form/unsaved'
+import { useUnsavedChanges } from '@/components/form/unsaved-changes'
 import { TextField } from '@/components/form/text-field'
 import { isolate } from '@/components/form/use-message'
 import { Button } from '@/components/ui/button'
@@ -142,7 +144,10 @@ function ReturnForm({
   const [id] = useState(() => document?.id ?? newId())
   const [version, setVersion] = useState<number | null>(document?.version ?? null)
   const [status, setStatus] = useState(document?.status ?? 'draft')
-  const [draft, setDraft] = useState<ReturnDraft>(() => returnDraft(kind, document, today))
+  const [initial] = useState<ReturnDraft>(() => returnDraft(kind, document, today))
+  const [draft, setDraft] = useState<ReturnDraft>(initial)
+  // What was last saved (or opened): changes since are asked about before closing.
+  const [baseline, setBaseline] = useState<ReturnDraft>(initial)
   const [submitted, setSubmitted] = useState(false)
   const [serverError, setServerError] = useState<I18nKey | null>(null)
   const [confirm, setConfirm] = useState<'finalize' | 'reverse' | 'discard' | null>(null)
@@ -246,11 +251,13 @@ function ReturnForm({
 
   async function save(): Promise<number> {
     const fields = check.fields!
+    const snapshot = draft
     const result =
       version === null
         ? await create.mutateAsync({ id, purchaseId: purchase.id, kind, ...fields })
         : await update.mutateAsync({ id, version, ...fields })
     setVersion(result.data.version)
+    setBaseline(snapshot)
     return result.data.version
   }
 
@@ -264,19 +271,33 @@ function ReturnForm({
     return true
   }
 
-  async function saveDraft() {
-    if (busy || !ready()) return
+  /** Saves the draft; true once saved (the sheet says what went wrong otherwise). */
+  async function saveHere(): Promise<boolean> {
+    if (busy || !ready()) return false
     setBusy('saving')
     try {
       await save()
       await refresh()
       toast.success(t('purchasing.editor.saved'))
-      onClose()
+      return true
     } catch (error) {
       setServerError(errorKey(error))
+      return false
     } finally {
       setBusy(null)
     }
+  }
+
+  // Closing it (or leaving the page) with changes not saved asks first (the owner's request of
+  // 2026-09-29).
+  const guard = useUnsavedChanges({
+    dirty: editable && !sameData(draft, baseline),
+    save: saveHere,
+    close: onClose,
+  })
+
+  async function saveDraft() {
+    if (await saveHere()) onClose()
   }
 
   async function finalize() {
@@ -344,7 +365,7 @@ function ReturnForm({
     document?.lines.find((line) => line.purchaseLineId === purchaseLineId)
 
   return (
-    <Sheet open onOpenChange={(open) => !open && busy === null && onClose()}>
+    <Sheet open onOpenChange={(open) => !open && busy === null && guard.requestLeave(onClose)}>
       <SheetContent closeLabel={t('actions.close')}>
         <form
           ref={form}
@@ -643,7 +664,12 @@ function ReturnForm({
             ) : null}
           </SheetBody>
           <SheetFooter className={editable && canPost ? 'grid-cols-3' : undefined}>
-            <Button type="button" variant="outline" disabled={busy !== null} onClick={onClose}>
+            <Button
+              type="button"
+              variant="outline"
+              disabled={busy !== null}
+              onClick={() => guard.requestLeave(onClose)}
+            >
               {editable ? t('actions.cancel') : t('actions.close')}
             </Button>
             {editable ? (

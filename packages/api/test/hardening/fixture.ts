@@ -10,6 +10,8 @@ import type {
   MemberDto,
   ProductDto,
   PurchaseDto,
+  PurchasePaymentDto,
+  PurchasePaymentsDto,
   PurchaseReturnDto,
   RecipeDto,
   RoleDto,
@@ -48,7 +50,8 @@ import { CapturedEmails, join, setupBusiness, WORKSHOP } from '../settings'
 // Step 7): the suites run the API with the dev-only preview of them (D-125), so their procedures are
 // attacked like the others. Each business also has a supplier, a posted purchase with a receipt
 // attached, a draft purchase, a posted return and a draft return (M2 Step 3), a recipe for its product
-// (a line in the material's carton) and an item bought ready to sell with its material (M2 Step 4).
+// (a line in the material's carton) and an item bought ready to sell with its material (M2 Step 4),
+// and a purchase bought on credit with a payment recorded on it (the owner's requests of 2026-09-29).
 
 export type Handler = ReturnType<typeof handlerFor>
 
@@ -213,6 +216,10 @@ export interface Tenant {
   recipe: RecipeDto
   /** A product bought ready to sell (its material made with it, bought in cases of 6). */
   resaleProduct: ProductDto
+  /** A posted purchase bought on credit from the supplier, partly paid. */
+  creditPurchase: PurchaseDto
+  /** The payment recorded on it. */
+  payment: PurchasePaymentDto
 }
 
 function ok<T>(result: CallResult<T>, what: string): T {
@@ -346,6 +353,7 @@ export async function createTenant(api: Api, label: string): Promise<Tenant> {
         supplierId: supplier.id,
         businessDate: today,
         documentType: 'no_invoice',
+        paymentMethod: 'cash',
         reference: `REF-${label}-${tag}`,
         lines: [purchaseLine],
       }),
@@ -364,6 +372,7 @@ export async function createTenant(api: Api, label: string): Promise<Tenant> {
         id: newId(),
         businessDate: today,
         documentType: 'no_invoice',
+        paymentMethod: 'cash',
         lines: [{ ...purchaseLine, id: newId() }],
       }),
       'purchase.create',
@@ -452,6 +461,41 @@ export async function createTenant(api: Api, label: string): Promise<Tenant> {
     }),
     'product.create (bought ready to sell)',
   ) as ProductDto
+  const creditDraft = (
+    ok(
+      await as('purchase.create', 'mutation', {
+        id: newId(),
+        supplierId: supplier.id,
+        businessDate: today,
+        documentType: 'no_invoice',
+        paymentMethod: 'supplier_credit',
+        reference: `CREDIT-${label}-${tag}`,
+        lines: [{ ...purchaseLine, id: newId() }],
+      }),
+      'purchase.create (on credit)',
+    ) as { data: PurchaseDto }
+  ).data
+  const creditPurchase = (
+    ok(
+      await as('purchase.post', 'mutation', { id: creditDraft.id, version: creditDraft.version }),
+      'purchase.post (on credit)',
+    ) as { data: PurchaseDto }
+  ).data
+  const paymentId = newId()
+  const paid = (
+    ok(
+      await as('purchasePayment.record', 'mutation', {
+        id: paymentId,
+        purchaseId: creditPurchase.id,
+        businessDate: today,
+        method: 'bank_transfer',
+        amount: '10',
+        note: `Paid ${label} ${tag}`,
+      }),
+      'purchasePayment.record',
+    ) as PurchasePaymentsDto
+  ).data
+  const payment = paid.payments.find((p) => p.id === paymentId)!
 
   return {
     id,
@@ -481,6 +525,8 @@ export async function createTenant(api: Api, label: string): Promise<Tenant> {
     attachment,
     recipe,
     resaleProduct,
+    creditPurchase,
+    payment,
   }
 }
 
@@ -495,6 +541,8 @@ export function queryInputOf(path: string, tenant: Tenant): unknown {
   if (path === 'material.costs') return { ids: [tenant.material.id] }
   if (path === 'recipe.get') return { productId: tenant.product.id }
   if (path === 'product.costs') return { ids: [tenant.product.id, tenant.resaleProduct.id] }
+  if (path === 'payable.list') return { party: 'supplier' }
+  if (path === 'purchasePayment.list') return { purchaseId: tenant.creditPurchase.id }
   return undefined
 }
 
@@ -537,6 +585,10 @@ export function markersOf(tenant: Tenant): string[] {
     tenant.resaleProduct.id,
     tenant.resaleProduct.name,
     tenant.resaleProduct.resaleMaterialId ?? tenant.resaleProduct.id,
+    tenant.creditPurchase.id,
+    tenant.creditPurchase.reference ?? tenant.creditPurchase.id,
+    tenant.payment.id,
+    tenant.payment.note ?? tenant.payment.id,
     ...Object.values(tenant.roles).map((role) => role.id),
     ...[tenant.owner, tenant.admin, tenant.employee].flatMap(({ user }) => [
       user.id,

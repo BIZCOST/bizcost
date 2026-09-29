@@ -17,6 +17,7 @@ import { useId, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
 import { FormAlert } from '@/components/form/form-alert'
+import { useUnsavedChanges } from '@/components/form/unsaved-changes'
 import { isolate } from '@/components/form/use-message'
 import {
   AlertDialog,
@@ -90,7 +91,8 @@ function PermissionEditor({
     keys.size !== role.permissionKeys.length || role.permissionKeys.some((key) => !keys.has(key))
   const locked = groups.some((group) => group.keys.some((key) => !canGrantKey(access, key)))
 
-  async function save() {
+  /** Saves the role's permissions; true once saved. */
+  async function saveKeys(): Promise<boolean> {
     setConflict(false)
     try {
       await update.mutateAsync({ id: role.id, version: role.version, permissionKeys: [...keys] })
@@ -98,23 +100,46 @@ function PermissionEditor({
       // Your own access changed: the sections you may open follow.
       if (own) await queryClient.invalidateQueries({ queryKey: trpc.business.context.queryKey() })
       toast.success(t('settings.roles.saved', { role: isolate(roleName(role)) }))
-      onDone()
+      return true
     } catch (error) {
       if (apiErrorCode(error) === 'conflict') {
         setConflict(true)
         await queryClient.invalidateQueries({ queryKey: trpc.role.list.queryKey() })
-        return
+        return false
       }
       toast.error(t(apiErrorKey(error)))
+      return false
     }
   }
 
+  async function save() {
+    if (await saveKeys()) onDone()
+  }
+
+  /** What saving takes away from your own role (said first). */
+  const lostKeys = () =>
+    own ? (role.permissionKeys.filter((key) => !keys.has(key)) as PermissionKey[]) : []
+
   function submit() {
     // Taking access away from your own role: say what you lose first.
-    const lost = own ? (role.permissionKeys.filter((key) => !keys.has(key)) as PermissionKey[]) : []
+    const lost = lostKeys()
     if (lost.length > 0) setLosing(lost)
     else void save()
   }
+
+  // Leaving with changes not saved asks first (the owner's request of 2026-09-29). Saving from that
+  // question stays here when it takes access away from your own role: that is said first.
+  useUnsavedChanges({
+    dirty: changed,
+    save: async () => {
+      const lost = lostKeys()
+      if (lost.length > 0) {
+        setLosing(lost)
+        return false
+      }
+      return saveKeys()
+    },
+  })
 
   return (
     <form

@@ -115,23 +115,33 @@ export {
 } from './catalog/keys'
 export {
   ATTACHMENT_ENTITIES,
+  defaultPricesIncludeVat,
   DOCUMENT_STATUSES,
+  isOwedPaymentMethod,
+  outstandingOf,
+  overpaidOf,
+  OWED_PAYMENT_METHODS,
   PAYMENT_METHODS,
   PURCHASE_AVERAGE_DAYS,
   PURCHASE_DOCUMENT_TYPES,
   PURCHASE_LINE_KINDS,
   PURCHASE_RETURN_KINDS,
+  SETTLEMENT_METHODS,
   STOCK_MOVEMENT_KINDS,
   vatInCost,
   type AttachmentEntity,
   type DocumentStatus,
+  type OwedPaymentMethod,
   type PaymentMethod,
   type PurchaseDocumentType,
   type PurchaseLineKind,
   type PurchaseReturnKind,
+  type SettlementMethod,
   type StockMovementKind,
   type VatInCostInput,
 } from './purchasing/keys'
+// Names of catalog records compared the way people read them (duplicates and "did you mean").
+export { matchNames, nameKey, type NameMatches } from './catalog/names'
 export { parseTrn, TRN_LENGTH, type TrnError, type TrnResult } from './business/trn'
 export { businessDisplayName, type BusinessNames } from './business/display-name'
 export {

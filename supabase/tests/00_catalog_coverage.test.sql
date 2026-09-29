@@ -36,15 +36,15 @@ select tables_are(
     'materials', 'material_units', 'products_services', 'product_locations',
     'suppliers', 'purchases', 'purchase_lines', 'purchase_returns', 'purchase_return_lines',
     'stock_movements', 'material_costs', 'stock_balances', 'attachments',
-    'recipes', 'recipe_lines'
+    'recipes', 'recipe_lines', 'purchase_payments'
   ],
   'app contains exactly the Milestone 1 tables and those of M2 so far'
 );
 
 select is(
   (select count(*)::int from business_tables),
-  27,
-  'sanity: 27 app tables carry business_id (the checks below are not vacuous)'
+  28,
+  'sanity: 28 app tables carry business_id (the checks below are not vacuous)'
 );
 
 -- 2. Row level security ---------------------------------------------------------
@@ -273,7 +273,9 @@ select is_empty(
          ('products_services', 'resale_material_id', 'materials'),
          ('recipes', 'product_id', 'products_services'),
          ('recipe_lines', 'recipe_id', 'recipes'),
-         ('recipe_lines', 'material_id', 'materials')
+         ('recipe_lines', 'material_id', 'materials'),
+         ('purchases', 'paid_by_member_id', 'business_members'),
+         ('purchase_payments', 'purchase_id', 'purchases')
        ) as v(child, col, parent)
       where not exists (
         select 1
@@ -470,7 +472,13 @@ select is_empty(
          ('recipes', 'product_id'),
          ('recipe_lines', 'recipe_id'), ('recipe_lines', 'position'), ('recipe_lines', 'material_id'),
          ('recipe_lines', 'qty'), ('recipe_lines', 'unit'), ('recipe_lines', 'pack_id'),
-         ('recipe_lines', 'base_qty')
+         ('recipe_lines', 'base_qty'),
+         ('purchases', 'paid_by_member_id'), ('purchases', 'prices_include_vat'),
+         ('purchase_payments', 'purchase_id'), ('purchase_payments', 'business_date'),
+         ('purchase_payments', 'method'), ('purchase_payments', 'amount'),
+         ('purchase_payments', 'currency'), ('purchase_payments', 'note'),
+         ('purchase_payments', 'reversed_at'), ('purchase_payments', 'reversed_by'),
+         ('purchase_payments', 'reversal_date')
        ) as v(tbl, col)
       where not exists (
         select 1 from pg_attribute a

@@ -9,6 +9,7 @@ import { useParams, useRouter } from 'next/navigation'
 import { useTranslation } from 'react-i18next'
 import { PersonName } from '@/components/app/avatar'
 import { BusinessLogo } from '@/components/app/business-logo'
+import { useConfirmLeave } from '@/components/form/unsaved-changes'
 import { isolate } from '@/components/form/use-message'
 import { Button } from '@/components/ui/button'
 import {
@@ -48,6 +49,7 @@ export function BusinessSwitcher({
   const { t } = useTranslation()
   const { locale } = useLocale()
   const router = useRouter()
+  const confirmLeave = useConfirmLeave()
   const { businessId } = useParams<{ businessId?: string }>()
   const { data: me } = useMe()
   if (!businessId || !me) return null
@@ -95,7 +97,10 @@ export function BusinessSwitcher({
         <DropdownMenuRadioGroup
           value={current.businessId}
           onValueChange={(id) => {
-            if (id !== current.businessId) router.push(`/b/${id}`)
+            // Changes not saved on this page are asked about first.
+            if (id !== current.businessId) {
+              void confirmLeave().then((leave) => leave && router.push(`/b/${id}`))
+            }
           }}
         >
           {businesses.map((membership) => {

@@ -32,7 +32,9 @@ import { previewBaseURL } from '../stack'
 // bags priced per bag, sending a bag back and getting a credit note, in Arabic on a phone (no VAT: the
 // business is not VAT-registered); a workshop with branches buying for a branch, with delivery, a
 // discount on the whole purchase and VAT it can't reclaim (part of the cost); and an employee whose
-// role doesn't show costs, who sees locks.
+// role doesn't show costs, who sees locks. Each purchase says how it was paid (required since the
+// owner's requests of 2026-09-29, with prices before VAT on a tax invoice and the material picked from
+// a list it is typed in; payables.spec.ts covers the rest of those requests).
 // With E2E_SHOTS_DIR set, each step leaves a screenshot there (AR/EN at 390 and 1440 px).
 
 test.describe.configure({ mode: 'serial' })
@@ -159,15 +161,19 @@ async function createMaterial(
   return id
 }
 
+/** Picks a line's material: typed in its box, then picked from the list. */
+async function pickMaterial(line: Locator, label: string, name: string) {
+  await line.getByRole('combobox', { name: label }).fill(name)
+  await line.getByRole('option', { name, exact: true }).click()
+}
+
 /** Fills one material line of the purchase editor. */
 async function fillLine(
   line: Locator,
   values: { material: string; materialLabel: string; qty: string; unit?: string; price: string },
   priceLabel: string | RegExp,
 ) {
-  await line
-    .getByRole('combobox', { name: values.materialLabel })
-    .selectOption({ label: values.material })
+  await pickMaterial(line, values.materialLabel, values.material)
   await line.getByRole('textbox', { name: /^(Quantity|الكمية)$/ }).fill(values.qty)
   if (values.unit) {
     await line
@@ -234,15 +240,18 @@ test('English, desktop: the milk example, a supplier, a receipt, reverse, correc
   await fillLine(
     line,
     { material: 'Milk', materialLabel: 'Ingredient or supply', qty: '٥٠', price: '6' },
-    'Price per L',
+    'Price per L before VAT',
   )
   await expect(line.getByRole('combobox', { name: 'Unit' })).toHaveValue('unit:l')
   await expect(line.getByRole('combobox', { name: 'VAT' })).toHaveValue('5')
   await expect(line.getByText('Total AED 315.00')).toBeVisible()
-  const totals = page.locator('[data-total]')
-  await expect(totals.filter({ hasText: 'Subtotal' })).toContainText('AED 300.00')
-  await expect(totals.filter({ hasText: 'VAT' })).toContainText('AED 15.00')
-  await expect(totals.filter({ hasText: 'Total' }).last()).toContainText('AED 315.00')
+  // Before VAT, the VAT and the total are always said (no discount: no subtotal).
+  const total = (key: string) => page.locator(`[data-total="${key}"]`)
+  await expect(total('subtotal')).toHaveCount(0)
+  await expect(total('net')).toContainText('AED 300.00')
+  await expect(total('vat')).toContainText('AED 15.00')
+  await expect(total('total')).toContainText('AED 315.00')
+  await page.getByRole('combobox', { name: 'How it was paid' }).selectOption({ label: 'Cash' })
   // A receipt picked before the first save is attached with it.
   await page.locator('[data-receipt-input]').setInputFiles({
     name: 'milk-receipt.png',
@@ -291,8 +300,9 @@ test('English, desktop: the milk example, a supplier, a receipt, reverse, correc
   await fillLine(
     page.getByRole('group', { name: 'Item 1' }),
     { material: 'Milk', materialLabel: 'Ingredient or supply', qty: '100', price: '7' },
-    'Price per L',
+    'Price per L before VAT',
   )
+  await page.getByRole('combobox', { name: 'How it was paid' }).selectOption({ label: 'Card' })
   await page.getByRole('button', { name: 'Finalize' }).click()
   await page
     .getByRole('alertdialog', { name: 'Finalize this purchase?' })
@@ -357,8 +367,8 @@ test('English, desktop: the milk example, a supplier, a receipt, reverse, correc
   await expect(page.getByRole('heading', { level: 1 })).toHaveText('Draft purchase')
   await expect(page.getByText('This draft corrects a purchase that was reversed.')).toBeVisible()
   const copy = page.getByRole('group', { name: 'Item 1' })
-  await expect(copy.getByRole('textbox', { name: 'Price per L' })).toHaveValue('6')
-  await copy.getByRole('textbox', { name: 'Price per L' }).fill('6.5')
+  await expect(copy.getByRole('textbox', { name: 'Price per L before VAT' })).toHaveValue('6')
+  await copy.getByRole('textbox', { name: 'Price per L before VAT' }).fill('6.5')
   await page.getByRole('button', { name: 'Save draft' }).click()
   await expect(page.getByText('Draft saved.')).toBeVisible()
   await page.getByRole('button', { name: 'Finalize' }).click()
@@ -402,8 +412,9 @@ test('English, desktop: the milk example, a supplier, a receipt, reverse, correc
   await fillLine(
     page.getByRole('group', { name: 'Item 1' }),
     { material: 'Milk', materialLabel: 'Ingredient or supply', qty: '1', price: '6' },
-    'Price per L',
+    'Price per L before VAT',
   )
+  await page.getByRole('combobox', { name: 'How it was paid' }).selectOption({ label: 'Cash' })
   await page.getByRole('button', { name: 'Finalize' }).click()
   await expect(page.getByRole('alertdialog', { name: 'Finalize this purchase?' })).toHaveCount(0)
   await expect(
@@ -453,16 +464,17 @@ test('English, desktop: the milk example, a supplier, a receipt, reverse, correc
   await fillLine(
     page.getByRole('group', { name: 'Item 1' }),
     { material: 'Milk', materialLabel: 'Ingredient or supply', qty: '12', price: '6.25' },
-    'Price per L',
+    'Price per L before VAT',
   )
   await page.getByRole('button', { name: 'Add delivery on this invoice' }).click()
   await page.getByRole('textbox', { name: 'Delivery amount' }).fill('10')
   await page.getByRole('button', { name: 'Add a discount on the whole purchase' }).click()
   await page.getByRole('textbox', { name: 'Discount on the whole purchase' }).fill('10')
-  await expect(totals.filter({ hasText: 'Subtotal' })).toContainText('AED 85.00')
-  await expect(totals.filter({ hasText: 'Discounts' })).toContainText('AED 7.50')
-  await expect(totals.filter({ hasText: 'VAT' })).toContainText('AED 3.88')
-  await expect(totals.filter({ hasText: 'Total' }).last()).toContainText('AED 81.38')
+  await expect(total('subtotal')).toContainText('AED 85.00')
+  await expect(total('discount')).toContainText('AED 7.50')
+  await expect(total('net')).toContainText('AED 77.50')
+  await expect(total('vat')).toContainText('AED 3.88')
+  await expect(total('total')).toContainText('AED 81.38')
   await expectSound(page, 'en')
   await shot(page, 'en-390-purchase-editor')
   await page.goto(`/b/${businessId}/materials`)
@@ -503,7 +515,9 @@ test('Arabic, phone: a café buys beans in 1 kg bags priced per bag, returns one
   await expect(page.getByRole('switch', { name: 'لا يمكن استرداد الضريبة' })).toHaveCount(0)
   await expect(page.getByRole('combobox', { name: 'الفرع' })).toHaveCount(0)
   const line = page.getByRole('group', { name: 'الصنف 1' })
-  await line.getByRole('combobox', { name: 'المكوّن أو المستلزم' }).selectOption({ label: 'بن' })
+  await pickMaterial(line, 'المكوّن أو المستلزم', 'بن')
+  // Not VAT-registered: no choice of prices before or with VAT.
+  await expect(page.getByRole('radio', { name: 'الأسعار شاملة الضريبة' })).toHaveCount(0)
   // Bought the way it was set up: in bags of 1 kg, the price per bag.
   await expect(line.getByRole('combobox', { name: 'الوحدة' })).toHaveValue(/^pack:/)
   await line.getByRole('textbox', { name: 'الكمية' }).fill('٣')
@@ -517,6 +531,7 @@ test('Arabic, phone: a café buys beans in 1 kg bags priced per bag, returns one
   await line.evaluate((element) => element.scrollIntoView({ block: 'center' }))
   await shot(page, 'ar-390-purchase-editor')
 
+  await page.getByRole('combobox', { name: 'طريقة الدفع' }).selectOption({ label: 'نقدًا' })
   await page.getByRole('button', { name: 'احفظ كمسودة' }).click()
   await expect(page.getByText('تم حفظ المسودة.')).toBeVisible()
   await expect(page).toHaveURL(new RegExp(`/b/${businessId}/purchases/[0-9a-f-]{36}$`))
@@ -622,10 +637,7 @@ test('Arabic, phone: a café buys beans in 1 kg bags priced per bag, returns one
   await expectSound(page, 'ar')
   await shot(page, 'ar-1440-suppliers')
   await page.goto(`/b/${businessId}/purchases/new`)
-  await page
-    .getByRole('group', { name: 'الصنف 1' })
-    .getByRole('combobox', { name: 'المكوّن أو المستلزم' })
-    .selectOption({ label: 'بن' })
+  await pickMaterial(page.getByRole('group', { name: 'الصنف 1' }), 'المكوّن أو المستلزم', 'بن')
   await expectSound(page, 'ar')
   await shot(page, 'ar-1440-purchase-editor')
   await page.goto(`/b/${businessId}/settings/books`)
@@ -657,8 +669,9 @@ test('English, desktop: a workshop with branches buys for a branch, with VAT it 
   await fillLine(
     page.getByRole('group', { name: 'Item 1' }),
     { material: 'Steel sheet', materialLabel: 'Material', qty: '10', price: '20' },
-    'Price per kg',
+    'Price per kg before VAT',
   )
+  await page.getByRole('combobox', { name: 'How it was paid' }).selectOption({ label: 'Cheque' })
   // The VAT can't be reclaimed: it becomes part of the cost. 10 kg × 20 = 200, 10% off the whole
   // purchase (20), VAT 9.00, delivery 10 with VAT 0.50: the goods cost 180 + 9 + 10.50 = 199.50.
   await page.getByRole('switch', { name: "VAT can't be reclaimed" }).click()
@@ -666,11 +679,12 @@ test('English, desktop: a workshop with branches buys for a branch, with VAT it 
   await page.getByRole('textbox', { name: 'Delivery amount' }).fill('10')
   await page.getByRole('button', { name: 'Add a discount on the whole purchase' }).click()
   await page.getByRole('textbox', { name: 'Discount on the whole purchase' }).fill('10')
-  const totals = page.locator('[data-total]')
-  await expect(totals.filter({ hasText: 'Subtotal' })).toContainText('AED 210.00')
-  await expect(totals.filter({ hasText: 'Discounts' })).toContainText('AED 20.00')
-  await expect(totals.filter({ hasText: 'VAT' })).toContainText('AED 9.50')
-  await expect(totals.filter({ hasText: 'Total' }).last()).toContainText('AED 199.50')
+  const total = (key: string) => page.locator(`[data-total="${key}"]`)
+  await expect(total('subtotal')).toContainText('AED 210.00')
+  await expect(total('discount')).toContainText('AED 20.00')
+  await expect(total('net')).toContainText('AED 190.00')
+  await expect(total('vat')).toContainText('AED 9.50')
+  await expect(total('total')).toContainText('AED 199.50')
   await expectSound(page, 'en')
   await shot(page, 'en-1440-branch-purchase-editor')
 

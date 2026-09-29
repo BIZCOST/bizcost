@@ -37,6 +37,9 @@ const TRPC_CODE_OF: Record<AppErrorCode, TRPC_ERROR_CODE_KEY> = {
   exceeds_purchase: 'BAD_REQUEST',
   material_in_use: 'CONFLICT',
   unit_in_use: 'CONFLICT',
+  payment_method_required: 'BAD_REQUEST',
+  purchase_has_payments: 'CONFLICT',
+  exceeds_outstanding: 'BAD_REQUEST',
   internal: 'INTERNAL_SERVER_ERROR',
 }
 

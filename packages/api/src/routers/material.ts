@@ -18,6 +18,7 @@ import {
   updateMaterial,
 } from '../services/materials'
 import { businessProcedure, requireModule, requirePermission, router } from '../trpc'
+import { managePurchases } from './purchase'
 
 /**
  * Materials (services/materials.ts): module `materials` (released and on for the business, else
@@ -27,6 +28,15 @@ import { businessProcedure, requireModule, requirePermission, router } from '../
 const materialsModule = businessProcedure.use(requireModule('materials'))
 const viewMaterials = materialsModule.use(requirePermission('materials.items.view'))
 const manageMaterials = materialsModule.use(requirePermission('materials.items.manage'))
+/**
+ * Adding a material from a purchase line (the owner's request of 2026-09-29): any member who enters
+ * purchases may create one there (only create: changing or archiving stays with
+ * materials.items.manage). The purchase line picker lists the materials, so it needs
+ * materials.items.view as well (and a name refused as taken would otherwise say which names exist).
+ */
+const quickAddMaterials = managePurchases
+  .use(requireModule('materials'))
+  .use(requirePermission('materials.items.view'))
 
 export const materialRouter = router({
   /** `material.list`: a page by name, with search and a status filter (active by default). */
@@ -50,6 +60,14 @@ export const materialRouter = router({
     .query(({ ctx, input }) => materialCosts(ctx, input)),
   /** `material.create`: idempotent on the client's id; units checked by the domain engine. */
   create: manageMaterials
+    .input(createMaterialInput)
+    .output(materialDto)
+    .mutation(({ ctx, input }) => createMaterial(ctx, input)),
+  /**
+   * `material.quickCreate`: the same create, from a purchase line, for members who enter purchases.
+   * NAME_TAKEN for a name the business already has, compared the way people read it (nameKey).
+   */
+  quickCreate: quickAddMaterials
     .input(createMaterialInput)
     .output(materialDto)
     .mutation(({ ctx, input }) => createMaterial(ctx, input)),

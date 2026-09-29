@@ -293,6 +293,27 @@ const PROBES: Record<string, Probe> = {
       },
     ],
   },
+  'material.quickCreate': {
+    base: 'business',
+    reason:
+      'the create of material.create: an id already used anywhere is CONFLICT (the material through ' +
+      'insertIdempotent, a unit through its primary key), a pack names only a pack of the same material',
+    variants: (victim) => [
+      {
+        input: { id: victim.material.id, name: `Pwned ${newId()}`, unit: 'kg' },
+        own: ['conflict'],
+      },
+      {
+        input: {
+          id: newId(),
+          name: `Pwned ${newId()}`,
+          unit: 'l',
+          packs: [{ id: newId(), name: 'crate', qty: '1', ofPackId: victim.material.packs[0]?.id }],
+        },
+        own: ['validation'],
+      },
+    ],
+  },
   'material.update': {
     base: 'business',
     reason:
@@ -508,6 +529,7 @@ const PROBES: Record<string, Probe> = {
         id: newId(),
         businessDate: attacker.purchase.businessDate,
         documentType: 'no_invoice',
+        paymentMethod: 'cash',
         lines: [{ ...own, id: newId() }],
         ...extra,
       })
@@ -529,9 +551,14 @@ const PROBES: Record<string, Probe> = {
           input: draft({ lines: [{ ...own, id: victim.purchase.lines[0]?.id }] }),
           own: ['conflict'],
         },
+        {
+          input: draft({ paymentMethod: 'paid_by_member', paidByMemberId: victim.adminMemberId }),
+          own: ['not_found'],
+        },
       ]
     },
   },
+  'purchase.payers': { base: 'business', reason: `${NO_ROWS}: its own active members` },
   'purchase.update': {
     base: 'business',
     reason: 'the draft and every row it names are looked up in the x-business-id business',
@@ -542,6 +569,7 @@ const PROBES: Record<string, Probe> = {
           version: victim.draftPurchase.version,
           businessDate: victim.draftPurchase.businessDate,
           documentType: 'no_invoice',
+          paymentMethod: 'cash',
         },
         own: ['not_found'],
       },
@@ -551,6 +579,7 @@ const PROBES: Record<string, Probe> = {
           version: attacker.draftPurchase.version,
           businessDate: attacker.draftPurchase.businessDate,
           documentType: 'no_invoice',
+          paymentMethod: 'cash',
           supplierId: victim.supplier.id,
         },
         own: ['not_found'],
@@ -739,6 +768,51 @@ const PROBES: Record<string, Probe> = {
     base: 'business',
     reason: 'looked up in the x-business-id business',
     variants: (victim) => [{ input: { id: victim.attachment.id }, own: ['not_found'] }],
+  },
+  // What is owed and its payments (the owner's requests of 2026-09-29): the purchase and the payment
+  // are looked up in the x-business-id business, and a payment id used anywhere is CONFLICT.
+  'payable.list': {
+    base: 'business',
+    reason: `${NO_ROWS}: its own purchases, suppliers and members`,
+    variants: () => [{ input: { party: 'supplier' } }, { input: { party: 'member' } }],
+  },
+  'purchasePayment.list': {
+    base: 'business',
+    reason: 'the purchase is looked up in the x-business-id business',
+    variants: (victim) => [{ input: { purchaseId: victim.creditPurchase.id }, own: ['not_found'] }],
+  },
+  'purchasePayment.record': {
+    base: 'business',
+    reason:
+      'the purchase is looked up (and locked) in the x-business-id business; a payment id used ' +
+      'anywhere is CONFLICT',
+    variants: (victim, attacker) => [
+      {
+        input: {
+          id: newId(),
+          purchaseId: victim.creditPurchase.id,
+          businessDate: attacker.creditPurchase.businessDate,
+          method: 'cash',
+          amount: '1',
+        },
+        own: ['not_found'],
+      },
+      {
+        input: {
+          id: victim.payment.id,
+          purchaseId: attacker.creditPurchase.id,
+          businessDate: attacker.creditPurchase.businessDate,
+          method: 'cash',
+          amount: '1',
+        },
+        own: ['conflict'],
+      },
+    ],
+  },
+  'purchasePayment.reverse': {
+    base: 'business',
+    reason: 'the payment is looked up in the x-business-id business',
+    variants: (victim) => [{ input: { id: victim.payment.id }, own: ['not_found'] }],
   },
   'books.get': { base: 'business', reason: NO_ROWS },
   'books.close': {

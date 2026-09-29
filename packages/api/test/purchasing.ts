@@ -76,10 +76,10 @@ export class PurchasingApi {
   async member(
     business: { id: string; owner: Person },
     template: RoleTemplateKey,
-  ): Promise<Person> {
+  ): Promise<Person & { memberId: string }> {
     const person = await this.person()
-    await join(this.db, business.owner.user, business.id, person.user, template)
-    return person
+    const memberId = await join(this.db, business.owner.user, business.id, person.user, template)
+    return { ...person, memberId }
   }
 
   call<T>(
@@ -133,9 +133,16 @@ export function line(materialId: string, qty: string, unitPrice: string, extra: 
   return { kind: 'material', id: newId(), materialId, qty, unit: 'l', unitPrice, ...extra }
 }
 
-/** A purchase's input (a no-invoice purchase dated `date` unless given). */
+/** A purchase's input (a no-invoice purchase paid in cash, dated `date`, unless given). */
 export function purchaseInput(date: string, lines: object[], extra: object = {}) {
-  return { id: newId(), businessDate: date, documentType: 'no_invoice', lines, ...extra }
+  return {
+    id: newId(),
+    businessDate: date,
+    documentType: 'no_invoice',
+    paymentMethod: 'cash',
+    lines,
+    ...extra,
+  }
 }
 
 /** One scope: a business, its owner and a way to call as them. */

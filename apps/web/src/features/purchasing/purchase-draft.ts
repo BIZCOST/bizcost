@@ -9,6 +9,7 @@ import {
 } from '@bizcost/contracts'
 import {
   computePurchase,
+  defaultPricesIncludeVat,
   lineError,
   newId,
   purchaseError,
@@ -90,8 +91,15 @@ export interface PurchaseDraft {
   readonly businessDate: string
   readonly documentType: PurchaseDocumentType
   readonly reference: string
-  /** '' when not said. */
+  /** '' until one is picked (required before a save). */
   readonly paymentMethod: PaymentMethod | ''
+  /** paid_by_member: the member who paid from their own money ('' until picked). */
+  readonly paidByMemberId: string
+  /**
+   * Whether the prices, discounts and delivery amounts are typed with their VAT (a VAT-registered
+   * business only; the amounts worked out are before VAT, VAT and total either way).
+   */
+  readonly pricesIncludeVat: boolean
   /** null: the default branch. */
   readonly locationId: string | null
   readonly vatNotReclaimable: boolean
@@ -114,6 +122,7 @@ export interface LineErrors {
 export interface PurchaseErrors {
   businessDate?: FieldError
   reference?: FieldError
+  paymentMethod?: FieldError
   notes?: FieldError
   discount?: FieldError
   /** The document as a whole (e.g. delivery without a material). */
@@ -131,6 +140,11 @@ export interface PurchaseFormContext {
   readonly vatRegistered: boolean
   /** Today in the business's time zone (a later day cannot be posted). */
   readonly today: string
+  /**
+   * The members who may be said to have paid (purchase.payers), once read: a draft naming someone
+   * who left picks another before it is saved.
+   */
+  readonly payers?: ReadonlySet<string>
 }
 
 export interface CheckedPurchase {
@@ -150,6 +164,8 @@ export const MISSING_KEYS: ReadonlySet<I18nKey> = new Set<I18nKey>([
   'catalog.numbers.required',
   'catalog.form.pickUnit',
   'purchasing.editor.errors.material',
+  'purchasing.editor.errors.paymentMethod',
+  'purchasing.editor.errors.paymentMethodMember',
 ])
 
 /** The VAT rate a new line starts with: the standard rate on a VAT-registered tax invoice. */
@@ -188,7 +204,8 @@ function discountDraft(discount: DiscountDto | null | undefined): {
 
 /**
  * The form's first state: a new purchase dated today (the document type a VAT-registered business
- * usually gets is a tax invoice), or a saved draft as it is stored.
+ * usually gets is a tax invoice; prices before VAT on a tax invoice, with VAT otherwise; no payment
+ * method until one is picked), or a saved draft as it is stored.
  */
 export function purchaseDraft(
   purchase: PurchaseDto | undefined,
@@ -204,6 +221,8 @@ export function purchaseDraft(
       documentType,
       reference: '',
       paymentMethod: '',
+      paidByMemberId: '',
+      pricesIncludeVat: defaultPricesIncludeVat(documentType),
       locationId: null,
       vatNotReclaimable: false,
       discountKind: 'none',
@@ -218,6 +237,8 @@ export function purchaseDraft(
     documentType: purchase.documentType,
     reference: purchase.reference ?? '',
     paymentMethod: purchase.paymentMethod ?? '',
+    paidByMemberId: purchase.paidByMemberId ?? '',
+    pricesIncludeVat: purchase.pricesIncludeVat,
     locationId: purchase.locationId,
     vatNotReclaimable: purchase.vatNotReclaimable,
     ...discountDraft(purchase.discount),
@@ -262,11 +283,28 @@ const BUSINESS_DAY = /^\d{4}-\d{2}-\d{2}$/
 export function checkPurchase(draft: PurchaseDraft, context: PurchaseFormContext): CheckedPurchase {
   const errors: PurchaseErrors = { lines: {} }
   const vatRateOf = (rate: string) => (context.vatRegistered ? rate : NO_VAT)
+  // Only a VAT-registered business chooses; any other types what it paid, with no VAT.
+  const pricesIncludeVat = context.vatRegistered && draft.pricesIncludeVat
 
   if (!BUSINESS_DAY.test(draft.businessDate)) {
     errors.businessDate = { key: 'purchasing.editor.errors.date' }
   } else if (draft.businessDate > context.today) {
     errors.businessDate = { key: 'errors.future_date' }
+  }
+  // How it was paid is required (the API refuses a save without it); on credit needs the supplier,
+  // paid by a member needs the member.
+  if (draft.paymentMethod === '') {
+    errors.paymentMethod = { key: 'purchasing.editor.errors.paymentMethod' }
+  } else if (draft.paymentMethod === 'supplier_credit' && !draft.supplierId) {
+    errors.paymentMethod = { key: 'purchasing.editor.errors.paymentMethodSupplier' }
+  } else if (draft.paymentMethod === 'paid_by_member' && !draft.paidByMemberId) {
+    errors.paymentMethod = { key: 'purchasing.editor.errors.paymentMethodMember' }
+  } else if (
+    draft.paymentMethod === 'paid_by_member' &&
+    context.payers &&
+    !context.payers.has(draft.paidByMemberId)
+  ) {
+    errors.paymentMethod = { key: 'purchasing.editor.errors.payerLeft' }
   }
   const reference = draft.reference.trim()
   if (reference.length > DOCUMENT_REFERENCE_MAX_LENGTH) {
@@ -390,7 +428,12 @@ export function checkPurchase(draft: PurchaseDraft, context: PurchaseFormContext
     ? asDiscount(draft.discountKind, documentDiscount.value)
     : null
   let lines = counted
-  const inputOf = () => ({ lines: lines.map((l) => l.input), discount, vatInCost: false })
+  const inputOf = () => ({
+    lines: lines.map((l) => l.input),
+    discount,
+    vatInCost: false,
+    pricesIncludeVat,
+  })
   for (let attempt = 0; attempt < 3; attempt++) {
     const problem = purchaseError(inputOf(), context.currency)
     if (!problem) break
@@ -412,6 +455,7 @@ export function checkPurchase(draft: PurchaseDraft, context: PurchaseFormContext
     Object.keys(errors.lines).length === 0 &&
     !errors.businessDate &&
     !errors.reference &&
+    !errors.paymentMethod &&
     !errors.notes &&
     !errors.discount &&
     !errors.document &&
@@ -421,24 +465,27 @@ export function checkPurchase(draft: PurchaseDraft, context: PurchaseFormContext
     amounts,
     lineAmounts,
     hasMaterial,
-    fields: valid
-      ? {
-          supplierId: draft.supplierId || null,
-          businessDate: draft.businessDate,
-          documentType: draft.documentType,
-          reference: reference || null,
-          paymentMethod: draft.paymentMethod || null,
-          locationId: draft.locationId,
-          vatNotReclaimable: context.vatRegistered ? draft.vatNotReclaimable : false,
-          discount: documentDiscount?.ok
-            ? draft.discountKind === 'percent'
-              ? { percent: documentDiscount.value }
-              : { amount: documentDiscount.value }
-            : null,
-          notes: notes || null,
-          lines: fieldLines,
-        }
-      : null,
+    fields:
+      valid && draft.paymentMethod !== ''
+        ? {
+            supplierId: draft.supplierId || null,
+            businessDate: draft.businessDate,
+            documentType: draft.documentType,
+            reference: reference || null,
+            paymentMethod: draft.paymentMethod,
+            paidByMemberId: draft.paymentMethod === 'paid_by_member' ? draft.paidByMemberId : null,
+            pricesIncludeVat,
+            locationId: draft.locationId,
+            vatNotReclaimable: context.vatRegistered ? draft.vatNotReclaimable : false,
+            discount: documentDiscount?.ok
+              ? draft.discountKind === 'percent'
+                ? { percent: documentDiscount.value }
+                : { amount: documentDiscount.value }
+              : null,
+            notes: notes || null,
+            lines: fieldLines,
+          }
+        : null,
   }
 }
 

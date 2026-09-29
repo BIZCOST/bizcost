@@ -22,6 +22,7 @@ import { Email, EmailText } from '@/components/form/email-text'
 import { FormAlert } from '@/components/form/form-alert'
 import { ResendCode } from '@/components/form/resend-code'
 import { TextField } from '@/components/form/text-field'
+import { useUnsavedChanges } from '@/components/form/unsaved-changes'
 import { useMessage } from '@/components/form/use-message'
 import { Button } from '@/components/ui/button'
 import { useSessionEmail } from '@/lib/session'
@@ -91,6 +92,15 @@ function NewEmailForm({ flow, onCancel }: { flow: EmailChange; onCancel: () => v
   })
   const submit = form.handleSubmit(({ newEmail }) => flow.sendCodes(newEmail))
   const flowError = state.error?.field === 'newEmail' ? message(state.error.key) : undefined
+  // Leaving with a new email typed asks first. Saving from that question sends the codes and stays:
+  // the change needs them.
+  useUnsavedChanges({
+    dirty: form.formState.isDirty,
+    save: async () => {
+      await submit()
+      return false
+    },
+  })
 
   return (
     <form method="post" onSubmit={submit} noValidate className="space-y-4">
@@ -144,6 +154,15 @@ function EmailCodesForm({ flow, onClose }: { flow: EmailChange; onClose: () => v
   }, [state.step, state.currentEmail, onClose, router, t])
 
   const submit = form.handleSubmit((codes) => flow.submit(codes))
+  // Leaving with codes typed asks first; saving from that question checks them (it leaves once the
+  // email is changed).
+  useUnsavedChanges({
+    dirty: form.formState.isDirty && state.step !== 'done',
+    save: async () => {
+      await submit()
+      return flow.getState().step === 'done'
+    },
+  })
   const fieldError = (field: CodeField) =>
     message(form.formState.errors[field]?.message) ??
     (state.error?.field === field ? message(state.error.key) : undefined)

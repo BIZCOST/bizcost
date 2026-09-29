@@ -1,4 +1,5 @@
 import {
+  HandCoinsIcon,
   LayoutDashboardIcon,
   LayoutGridIcon,
   PackageIcon,
@@ -25,6 +26,8 @@ const NAV_ICONS: Readonly<Record<string, LucideIcon>> = {
   // Suppliers and Purchases (M2 Step 3).
   truck: TruckIcon,
   'shopping-cart': ShoppingCartIcon,
+  // Amounts owed (the Purchases module's second entry, 2026-09-29).
+  'hand-coins': HandCoinsIcon,
 }
 
 export const FALLBACK_NAV_ICON: LucideIcon = LayoutGridIcon

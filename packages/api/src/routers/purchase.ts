@@ -6,9 +6,11 @@ import {
   okDto,
   purchaseListDto,
   purchaseListInput,
+  purchasePayersDto,
   purchaseResultDto,
   updatePurchaseInput,
 } from '@bizcost/contracts'
+import { listPayers } from '../services/purchase-payments'
 import {
   correctPurchase,
   createPurchase,
@@ -46,6 +48,11 @@ export const purchaseRouter = router({
     .input(documentIdInput)
     .output(purchaseResultDto)
     .query(({ ctx, input }) => getPurchase(ctx, input)),
+  /**
+   * `purchase.payers`: the active members a purchase may say paid from their own money (the caller
+   * is picked until someone else is).
+   */
+  payers: managePurchases.output(purchasePayersDto).query(({ ctx }) => listPayers(ctx)),
   /** `purchase.create`: a draft, idempotent on the client's id. */
   create: managePurchases
     .input(createPurchaseInput)

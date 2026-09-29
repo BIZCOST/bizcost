@@ -25,6 +25,7 @@ import { toast } from 'sonner'
 import { z } from 'zod'
 import { FormAlert } from '@/components/form/form-alert'
 import { TextField } from '@/components/form/text-field'
+import { useUnsavedChanges } from '@/components/form/unsaved-changes'
 import { isolate, useMessage } from '@/components/form/use-message'
 import {
   AlertDialog,
@@ -100,13 +101,36 @@ function NameDialog({
     defaultValues: { name: initial },
   })
   const busy = form.formState.isSubmitting
-  const submit = form.handleSubmit(async ({ name }) => {
+  /** Saves the name; true once saved (the dialog says what went wrong otherwise). */
+  async function persist(name: string): Promise<boolean> {
     setError(null)
     const failed = await onSubmit(name)
     if (failed) setError(failed)
+    return failed === null
+  }
+  const submit = form.handleSubmit(async ({ name }) => {
+    await persist(name)
+  })
+  // Closing it with a name typed and not saved asks first (the owner's request of 2026-09-29).
+  const guard = useUnsavedChanges({
+    dirty: open && form.formState.isDirty,
+    save: async () => {
+      let saved = false
+      await form.handleSubmit(async ({ name }) => {
+        saved = await persist(name)
+      })()
+      return saved
+    },
+    // While it is open: Back closes it.
+    close: open ? () => onOpenChange(false) : undefined,
   })
   return (
-    <Dialog open={open} onOpenChange={(next) => !busy && onOpenChange(next)}>
+    <Dialog
+      open={open}
+      onOpenChange={(next) =>
+        !busy && (next ? onOpenChange(next) : guard.requestLeave(() => onOpenChange(false)))
+      }
+    >
       <DialogContent closeLabel={t('actions.close')}>
         <DialogHeader>
           <DialogTitle>{title}</DialogTitle>
@@ -129,7 +153,7 @@ function NameDialog({
               type="button"
               variant="outline"
               disabled={busy}
-              onClick={() => onOpenChange(false)}
+              onClick={() => guard.requestLeave(() => onOpenChange(false))}
             >
               {t('actions.cancel')}
             </Button>

@@ -25,16 +25,7 @@ import { useId, useMemo, useState, type FormEvent, type ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
 import { FormAlert } from '@/components/form/form-alert'
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from '@/components/ui/alert-dialog'
+import { useUnsavedChanges } from '@/components/form/unsaved-changes'
 import { Button } from '@/components/ui/button'
 import {
   DropdownMenu,
@@ -498,7 +489,6 @@ export function RecipeSheet({
   const [edited, setEdited] = useState<RecipeLineDraft[] | null>(null)
   const [submitted, setSubmitted] = useState(false)
   const [serverError, setServerError] = useState<I18nKey | null>(null)
-  const [confirmClose, setConfirmClose] = useState(false)
   const saved: RecipeDto | undefined = recipe.data?.data
   const lines = useMemo(() => edited ?? (saved ? recipeDraft(saved) : []), [edited, saved])
   const check = useMemo(() => checkRecipe(lines, materials), [lines, materials])
@@ -561,17 +551,12 @@ export function RecipeSheet({
       )
   }
 
-  async function submit(event: FormEvent) {
-    event.preventDefault()
-    if (!saved || save.isPending) return
-    // Nothing changed: nothing to save (no new version, no audit row).
-    if (!dirty) {
-      onClose()
-      return
-    }
+  /** Saves the recipe; true once saved (the sheet says what went wrong otherwise). */
+  async function saveRecipe(): Promise<boolean> {
+    if (!saved || save.isPending) return false
     setSubmitted(true)
     setServerError(null)
-    if (!check.lines) return
+    if (!check.lines) return false
     try {
       const result = await save.mutateAsync({
         productId: product.id,
@@ -581,11 +566,27 @@ export function RecipeSheet({
       queryClient.setQueryData(trpc.recipe.get.queryKey({ productId: product.id }), result)
       await queryClient.invalidateQueries({ queryKey: trpc.product.costs.pathKey() })
       toast.success(t('catalog.recipes.saved'))
-      onClose()
+      return true
     } catch (error) {
       const code = apiErrorCode(error)
       setServerError(code === 'conflict' ? 'catalog.form.conflict' : apiErrorKey(error))
+      return false
     }
+  }
+
+  // Changes not saved are asked about before the sheet closes or the page is left (D-156; the
+  // owner's request of 2026-09-29: Save, Don't save, Keep editing).
+  const guard = useUnsavedChanges({ dirty: canEdit && dirty, save: saveRecipe, close: onClose })
+
+  async function submit(event: FormEvent) {
+    event.preventDefault()
+    if (!saved || save.isPending) return
+    // Nothing changed: nothing to save (no new version, no audit row).
+    if (!dirty) {
+      onClose()
+      return
+    }
+    if (await saveRecipe()) onClose()
   }
 
   const pickableFor = (line: RecipeLineDraft) =>
@@ -604,8 +605,7 @@ export function RecipeSheet({
   // A tap beside the sheet, Escape, × or Cancel: changes not saved are only dropped once confirmed.
   const requestClose = () => {
     if (busy) return
-    if (canEdit && dirty) setConfirmClose(true)
-    else onClose()
+    guard.requestLeave(onClose)
   }
 
   return (
@@ -762,20 +762,6 @@ export function RecipeSheet({
           </SheetFooter>
         </form>
       </SheetContent>
-      <AlertDialog open={confirmClose} onOpenChange={setConfirmClose}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>{t('catalog.recipes.discardTitle')}</AlertDialogTitle>
-            <AlertDialogDescription>{t('catalog.recipes.discardBody')}</AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>{t('catalog.recipes.keepEditing')}</AlertDialogCancel>
-            <AlertDialogAction variant="destructive" onClick={onClose}>
-              {t('catalog.recipes.discard')}
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
     </Sheet>
   )
 }

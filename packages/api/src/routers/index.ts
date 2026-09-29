@@ -10,6 +10,7 @@ import { locationRouter } from './location'
 import { materialRouter } from './material'
 import { me } from './me'
 import { memberRouter } from './member'
+import { payableRouter, purchasePaymentRouter } from './payable'
 import { productRouter } from './product'
 import { purchaseRouter } from './purchase'
 import { purchaseReturnRouter } from './purchase-return'
@@ -37,6 +38,8 @@ export const appRouter = router({
   supplier: supplierRouter,
   purchase: purchaseRouter,
   purchaseReturn: purchaseReturnRouter,
+  purchasePayment: purchasePaymentRouter,
+  payable: payableRouter,
   attachment: attachmentRouter,
   books: booksRouter,
 })

@@ -226,7 +226,12 @@ test('English, desktop: a café adds its ingredients and what it sells', async (
   await product.getByRole('textbox', { name: 'Name' }).fill('spanish latte')
   await product.getByRole('button', { name: 'Add', exact: true }).click()
   await expect(product.getByText(/^You already have one with this name\./)).toBeVisible()
+  // What was typed is not saved: leaving asks first (the owner's request of 2026-09-29).
   await product.getByRole('button', { name: 'Cancel' }).click()
+  await page
+    .getByRole('alertdialog', { name: 'You have unsaved changes' })
+    .getByRole('button', { name: "Don't save" })
+    .click()
   await expect(product).toBeHidden()
 
   // Edit the product's price.

@@ -10,6 +10,7 @@ import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
 import { Avatar, PersonName } from '@/components/app/avatar'
 import { Logo, LogoMark } from '@/components/brand/logo'
+import { useConfirmLeave } from '@/components/form/unsaved-changes'
 import { isolate } from '@/components/form/use-message'
 import { LanguageMenu } from '@/components/language-menu'
 import { Button } from '@/components/ui/button'
@@ -49,6 +50,7 @@ function UserMenu() {
   const { businessId } = useParams<{ businessId?: string }>()
   const { data: me } = useMe()
   const email = useSessionEmail()
+  const confirmLeave = useConfirmLeave()
   const [signingOut, setSigningOut] = useState(false)
   const name = me?.profile.displayName ?? ''
   // In one of the user's businesses (not a business that is not open to them, or a mistyped one).
@@ -58,6 +60,8 @@ function UserMenu() {
   const settingsBusinessId = inBusiness ? businessId : me ? landingBusinessId(me) : null
 
   async function handleSignOut() {
+    // Changes not saved on this page are asked about first.
+    if (!(await confirmLeave())) return
     setSigningOut(true)
     // This device only; "Sign out everywhere" is on the account page (D-066).
     const result = await signOut(authClient(), 'local')

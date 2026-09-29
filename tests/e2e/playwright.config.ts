@@ -19,7 +19,8 @@ import {
 // are still `planned`, and a production build never shows a planned module (D-125). Their specs
 // (`preview` project) run on a `next dev` server with the dev-only preview, in its own folder
 // (.next/e2e-preview) on E2E_PREVIEW_PORT (default E2E_PORT + 1). When Step 7 releases them, their
-// specs move to the production project and this server goes.
+// specs move to the production project and this server goes. The specs of the owner's requests of
+// 2026-09-29 on those screens (payables, unsaved-changes) run there too.
 
 const { apiUrl, publishableKey, secretKey } = stack()
 const web = 'pnpm --filter @bizcost/web exec next'
@@ -42,7 +43,7 @@ function webEnv(origin: string): Record<string, string> {
 }
 
 /** Specs of the modules shown only by the dev-only preview. */
-const PREVIEW_SPECS = /(?:catalog|purchasing|recipes)\.spec\.ts$/
+const PREVIEW_SPECS = /(?:catalog|purchasing|recipes|payables|unsaved-changes)\.spec\.ts$/
 
 export default defineConfig({
   testDir: './specs',

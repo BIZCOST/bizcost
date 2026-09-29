@@ -10,6 +10,8 @@ import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
 import { FormAlert } from '@/components/form/form-alert'
 import { TextField } from '@/components/form/text-field'
+import { sameData } from '@/components/form/unsaved'
+import { useUnsavedChanges } from '@/components/form/unsaved-changes'
 import { isolate } from '@/components/form/use-message'
 import { Button } from '@/components/ui/button'
 import {
@@ -28,7 +30,7 @@ import { checkSupplier, supplierDraft, type SupplierDraft } from './supplier-dra
 
 // Add or edit a supplier (M2 Step 3; D-133): a name in any language and, if the owner likes, a
 // phone, an email, the TRN on their invoices and notes. Also opened from a purchase ("New
-// supplier…"), which then picks the new supplier.
+// supplier…"), which then picks the new supplier. Closing it with changes not saved asks first.
 
 /** Problems that only say something is missing: shown once the person tries to save. */
 const MISSING: ReadonlySet<I18nKey> = new Set<I18nKey>(['catalog.form.nameRequired'])
@@ -53,7 +55,8 @@ export function SupplierSheet({
   const create = useMutation(trpc.supplier.create.mutationOptions())
   const update = useMutation(trpc.supplier.update.mutationOptions())
   const [newSupplierId] = useState(() => newId())
-  const [draft, setDraft] = useState<SupplierDraft>(() => supplierDraft(supplier))
+  const [initial] = useState<SupplierDraft>(() => supplierDraft(supplier))
+  const [draft, setDraft] = useState<SupplierDraft>(initial)
   const [submitted, setSubmitted] = useState(false)
   const [serverError, setServerError] = useState<I18nKey | null>(null)
   const [takenName, setTakenName] = useState<string | null>(null)
@@ -70,17 +73,15 @@ export function SupplierSheet({
     setTimeout(() => form.current?.querySelector<HTMLElement>('[aria-invalid="true"]')?.focus())
   const set = (patch: Partial<SupplierDraft>) => setDraft((d) => ({ ...d, ...patch }))
 
-  async function submit(event: FormEvent) {
-    event.preventDefault()
-    // A form inside another form's sheet (a purchase): its submit is its own.
-    event.stopPropagation()
-    if (busy) return
+  /** Saves the supplier; true once saved (the form says what went wrong otherwise). */
+  async function save(): Promise<boolean> {
+    if (busy) return false
     setSubmitted(true)
     setServerError(null)
     const { fields } = check
     if (!fields || (takenName !== null && fields.name.toLowerCase() === takenName)) {
       focusFirstError()
-      return
+      return false
     }
     try {
       const saved = supplier
@@ -91,21 +92,31 @@ export function SupplierSheet({
       )
       await queryClient.invalidateQueries({ queryKey: trpc.supplier.list.pathKey() })
       onSaved?.(saved)
-      onClose()
+      return true
     } catch (error) {
       const code = apiErrorCode(error)
       if (code === 'name_taken') {
         setTakenName(fields.name.toLowerCase())
         focusFirstError()
       } else setServerError(code === 'conflict' ? 'catalog.form.conflict' : apiErrorKey(error))
+      return false
     }
+  }
+
+  const guard = useUnsavedChanges({ dirty: !sameData(draft, initial), save, close: onClose })
+
+  async function submit(event: FormEvent) {
+    event.preventDefault()
+    // A form inside another form's sheet (a purchase): its submit is its own.
+    event.stopPropagation()
+    if (await save()) onClose()
   }
 
   const hasShownErrors =
     submitted && (check.fields === null || (takenName !== null && typedName === takenName))
 
   return (
-    <Sheet open onOpenChange={(open) => !open && !busy && onClose()}>
+    <Sheet open onOpenChange={(open) => !open && !busy && guard.requestLeave(onClose)}>
       <SheetContent closeLabel={t('actions.close')}>
         <form
           ref={form}
@@ -211,7 +222,12 @@ export function SupplierSheet({
             />
           </SheetBody>
           <SheetFooter>
-            <Button type="button" variant="outline" disabled={busy} onClick={onClose}>
+            <Button
+              type="button"
+              variant="outline"
+              disabled={busy}
+              onClick={() => guard.requestLeave(onClose)}
+            >
               {t('actions.cancel')}
             </Button>
             <Button type="submit" disabled={busy}>

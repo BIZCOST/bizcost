@@ -1,5 +1,5 @@
 import type Decimal from 'decimal.js'
-import { fixed, toDec } from '../numbers/decimal'
+import { exactProduct, fixed, toDec } from '../numbers/decimal'
 import type { Money, Percent, Quantity } from '../numbers/kinds'
 import { currencyMinorUnit, type CurrencyCode } from '../numbers/rounding'
 import { computeLine, lineError, type LineDiscount, type LineError } from './line'
@@ -19,6 +19,22 @@ import { splitByWeights } from './split'
 // Every amount is rounded half away from zero to the currency's minor unit as it is computed, so
 // the printed lines add up to the printed totals, and the line costs add up to what was paid for the
 // goods (net + VAT when in cost).
+//
+// Prices including VAT (`pricesIncludeVat`, a choice of the whole document): the prices, the line
+// and document discounts and the delivery amounts are typed with their VAT. Then
+//   - a material line's gross = qty × price − its discount (the discount comes off the gross); the
+//     document discount (% of the lines' gross, or an amount with its VAT) is split over the material
+//     lines by their gross, as above;
+//   - each line's VAT is taken out of what is left: vat = round(gross × rate ÷ (100 + rate)), and its
+//     taxable amount (before VAT) = gross − vat; a delivery amount the same way;
+//   - every returned amount keeps its before-VAT meaning, so posting, the average, returns and
+//     credit notes read a line the same way in both modes: subtotal, net and taxable are each the
+//     before-VAT part of their gross (gross − round(gross × rate ÷ (100 + rate))), the line discount
+//     = subtotal − net and the document discount's share = net − taxable (never below zero: a smaller
+//     gross never has a larger before-VAT part), and total = taxable + vat = the gross;
+//   - delivery is split over the material lines by their net before VAT, as with prices before VAT.
+// So a line whose gross is the total of a line typed before VAT gets exactly that line's net, VAT and
+// cost (the property tests): 105 including 5 % is 100 + 5.
 
 /** A material bought: quantity in its purchase unit, price per purchase unit, optional discount. */
 export interface PurchaseMaterialLineInput {
@@ -45,23 +61,28 @@ export interface PurchaseInput {
   readonly discount?: LineDiscount | null
   /** Whether VAT is part of the cost (vatInCost). */
   readonly vatInCost: boolean
+  /**
+   * Whether the prices, discounts and delivery amounts are typed with their VAT (default false:
+   * before VAT). The amounts computed are before VAT either way (see above).
+   */
+  readonly pricesIncludeVat?: boolean
 }
 
 /** A line's amounts, each with exactly the currency's minor-unit digits. */
 export interface PurchaseLineAmounts {
   readonly kind: 'material' | 'delivery'
-  /** qty × unit price (delivery: its amount). */
+  /** qty × unit price (delivery: its amount), before VAT. */
   readonly subtotal: Money
-  /** The line's own discount (0 for delivery). */
+  /** The line's own discount (0 for delivery), before VAT. */
   readonly discount: Money
   /** subtotal − discount. */
   readonly net: Money
-  /** Its share of the document discount (0 for delivery). */
+  /** Its share of the document discount (0 for delivery), before VAT. */
   readonly documentDiscount: Money
   /** net − documentDiscount: what VAT is charged on. */
   readonly taxable: Money
   readonly vat: Money
-  /** taxable + vat. */
+  /** taxable + vat (prices including VAT: the line's gross after its discounts). */
   readonly total: Money
   /** Material lines: their share of the delivery (with its VAT when in cost); 0 for delivery. */
   readonly deliveryShare: Money
@@ -71,7 +92,7 @@ export interface PurchaseLineAmounts {
 
 export interface PurchaseAmounts {
   readonly lines: readonly PurchaseLineAmounts[]
-  /** The document discount as an amount. */
+  /** The document discount as an amount before VAT (Σ the lines' shares). */
   readonly documentDiscount: Money
   /** Σ line subtotals (delivery included). */
   readonly subtotal: Money
@@ -148,8 +169,16 @@ export function computePurchase(input: PurchaseInput, currency: CurrencyCode): P
   const digits = currencyMinorUnit(currency)
   const round = (value: Decimal) => toDec(fixed(value, digits))
   const print = (value: Decimal) => fixed(value, digits) as Money
+  const includesVat = input.pricesIncludeVat === true
+  /** The part of an amount typed with its VAT that is before VAT (the amount itself otherwise). */
+  const beforeVat = (amount: Decimal, rate: string) => {
+    if (!includesVat) return amount
+    const r = toDec(rate)
+    return amount.minus(round(exactProduct([amount, r]).dividedBy(r.plus(100))))
+  }
 
-  // Line subtotals, discounts and nets, delivery lines as they are.
+  // Line subtotals, discounts and nets as typed (with VAT when prices include it), delivery lines as
+  // they are.
   const base = input.lines.map((line) => {
     if (line.kind === 'material') {
       const amounts = computeLine(materialLine(line), currency)
@@ -162,7 +191,7 @@ export function computePurchase(input: PurchaseInput, currency: CurrencyCode): P
   const weights = materialIndexes.map((i) => base[i]!.net)
   const materialNet = weights.reduce((acc, w) => acc.plus(toDec(w)), toDec(ZERO))
 
-  // The document discount, split by net amount.
+  // The document discount (typed like the prices), split by the lines' net as typed.
   const discount = input.discount
   const documentDiscount = !discount
     ? toDec(ZERO)
@@ -174,39 +203,49 @@ export function computePurchase(input: PurchaseInput, currency: CurrencyCode): P
     discountShares.set(materialIndexes[k]!, share),
   )
 
-  // Taxable amounts and VAT.
+  // Taxable amounts and VAT: charged on what is left, or taken out of it when it includes VAT. The
+  // subtotal and net are said before VAT too (the discounts are then the differences).
   const taxed = base.map((b, i) => {
-    const share = toDec(discountShares.get(i) ?? ZERO)
-    const taxable = toDec(b.net).minus(share)
-    const vat = round(taxable.times(toDec(b.line.vatRate)).dividedBy(100))
-    return { ...b, share, taxable, vat }
+    const rate = b.line.vatRate
+    const left = toDec(b.net).minus(toDec(discountShares.get(i) ?? ZERO))
+    const taxable = beforeVat(left, rate)
+    const vat = includesVat ? left.minus(taxable) : round(left.times(toDec(rate)).dividedBy(100))
+    return {
+      kind: b.line.kind,
+      subtotal: beforeVat(toDec(b.subtotal), rate),
+      net: beforeVat(toDec(b.net), rate),
+      taxable,
+      vat,
+    }
   })
   if (taxed.some((t) => t.taxable.lt(0))) {
     throw new RangeError('Invalid purchase: document_discount_over_net')
   }
 
-  // Delivery (with its VAT when VAT is part of the cost), split over the material lines the same way.
+  // Delivery (with its VAT when VAT is part of the cost), split over the material lines by their net
+  // before VAT (the weights of the document discount when prices are before VAT).
   const inCost = (t: (typeof taxed)[number]) =>
     input.vatInCost ? t.taxable.plus(t.vat) : t.taxable
   const delivery = taxed
-    .filter((t) => t.line.kind === 'delivery')
+    .filter((t) => t.kind === 'delivery')
     .reduce((acc, t) => acc.plus(inCost(t)), toDec(ZERO))
   const deliveryShares = new Map<number, string>()
   if (materialIndexes.length > 0) {
-    splitByWeights(fixed(delivery, digits), weights, digits).forEach((share, k) =>
+    const netWeights = materialIndexes.map((i) => fixed(taxed[i]!.net, digits))
+    splitByWeights(fixed(delivery, digits), netWeights, digits).forEach((share, k) =>
       deliveryShares.set(materialIndexes[k]!, share),
     )
   }
 
   const lines: PurchaseLineAmounts[] = taxed.map((t, i) => {
-    const isMaterial = t.line.kind === 'material'
+    const isMaterial = t.kind === 'material'
     const deliveryShare = toDec(deliveryShares.get(i) ?? ZERO)
     return {
-      kind: t.line.kind,
-      subtotal: t.subtotal as Money,
-      discount: t.discount as Money,
-      net: t.net as Money,
-      documentDiscount: print(t.share),
+      kind: t.kind,
+      subtotal: print(t.subtotal),
+      discount: print(t.subtotal.minus(t.net)),
+      net: print(t.net),
+      documentDiscount: print(t.net.minus(t.taxable)),
       taxable: print(t.taxable),
       vat: print(t.vat),
       total: print(t.taxable.plus(t.vat)),
@@ -218,11 +257,13 @@ export function computePurchase(input: PurchaseInput, currency: CurrencyCode): P
     lines.reduce((acc, line) => acc.plus(toDec(pick(line))), toDec(ZERO))
   const net = sum((l) => l.taxable)
   const vat = sum((l) => l.vat)
+  // Before VAT: the typed discount itself when prices are before VAT.
+  const documentDiscountNet = sum((l) => l.documentDiscount)
   return {
     lines,
-    documentDiscount: print(documentDiscount),
+    documentDiscount: print(documentDiscountNet),
     subtotal: print(sum((l) => l.subtotal)),
-    discount: print(sum((l) => l.discount).plus(documentDiscount)),
+    discount: print(sum((l) => l.discount).plus(documentDiscountNet)),
     net: print(net),
     vat: print(vat),
     total: print(net.plus(vat)),

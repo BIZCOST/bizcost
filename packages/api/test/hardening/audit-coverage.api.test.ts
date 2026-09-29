@@ -157,6 +157,7 @@ async function purchaseDraftInput() {
     id: newId(),
     businessDate: tenant.purchase.businessDate,
     documentType: 'no_invoice',
+    paymentMethod: 'cash',
     supplierId: tenant.supplier.id,
     lines: [
       {
@@ -441,6 +442,18 @@ const AUDIT: Record<string, AuditProbe> = {
         packs: [{ id: newId(), name: 'sack', qty: '50', ofUnit: 'kg' }],
       }),
   },
+  'material.quickCreate': {
+    run: async () => ({
+      result: await call(tenant.admin, 'material.quickCreate', 'mutation', {
+        id: newId(),
+        name: 'Straws ' + newId(),
+        unit: 'piece',
+        packs: [{ id: newId(), name: 'box', qty: '100', ofUnit: 'piece' }],
+      }),
+      actor: tenant.admin.user,
+      businessId: tenant.id,
+    }),
+  },
   'material.update': {
     run: async () => {
       const material = await newMaterial()
@@ -637,6 +650,31 @@ const AUDIT: Record<string, AuditProbe> = {
         version: 0,
         lines: [{ id: newId(), materialId: material.id, qty: '18', unit: 'g' }],
       })
+    },
+  },
+  'purchasePayment.record': {
+    run: () =>
+      asOwner('purchasePayment.record', {
+        id: newId(),
+        purchaseId: tenant.creditPurchase.id,
+        businessDate: tenant.creditPurchase.businessDate,
+        method: 'card',
+        amount: '1',
+      }),
+  },
+  'purchasePayment.reverse': {
+    run: async () => {
+      const id = newId()
+      await ok(
+        call(tenant.owner, 'purchasePayment.record', 'mutation', {
+          id,
+          purchaseId: tenant.creditPurchase.id,
+          businessDate: tenant.creditPurchase.businessDate,
+          method: 'cash',
+          amount: '1',
+        }),
+      )
+      return asOwner('purchasePayment.reverse', { id })
     },
   },
   'books.close': {

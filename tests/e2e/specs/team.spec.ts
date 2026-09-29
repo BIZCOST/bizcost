@@ -102,7 +102,12 @@ test('the owner invites someone; the email arrives and a new user joins from it'
   await dialog.getByRole('textbox', { name: 'Their email' }).fill(inviteeEmail.toUpperCase())
   await dialog.getByRole('button', { name: 'Send invitation' }).click()
   await expect(dialog.getByText('This email already has an invitation waiting.')).toBeVisible()
+  // The email typed is not sent: leaving asks first (the owner's request of 2026-09-29).
   await dialog.getByRole('button', { name: 'Cancel' }).click()
+  await ownerPage
+    .getByRole('alertdialog', { name: 'You have unsaved changes' })
+    .getByRole('button', { name: "Don't save" })
+    .click()
 
   const { token, subject } = await nextInvitation(inviteeEmail)
   expect(subject).toMatch(/Rashed Owner.* invited you to join .*Al Noor Workshop.* on BizCost/)

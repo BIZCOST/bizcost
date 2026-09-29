@@ -19,6 +19,7 @@ import { toast } from 'sonner'
 import { EmailText } from '@/components/form/email-text'
 import { FormAlert } from '@/components/form/form-alert'
 import { TextField } from '@/components/form/text-field'
+import { useUnsavedChanges } from '@/components/form/unsaved-changes'
 import { isolate } from '@/components/form/use-message'
 import {
   AlertDialog,
@@ -93,7 +94,8 @@ export function InviteDialog({
   const create = useMutation(trpc.invitation.create.mutationOptions())
   const [invitationId, setInvitationId] = useState(newId)
   const [email, setEmail] = useState('')
-  const [roleId, setRoleId] = useState<string | null>(() => defaultRoleId(roles, access))
+  const [initialRoleId] = useState<string | null>(() => defaultRoleId(roles, access))
+  const [roleId, setRoleId] = useState<string | null>(initialRoleId)
   const [locale, setLocale] = useState<Locale | null>(null)
   const [emailError, setEmailError] = useState<I18nKey | null>(null)
   const [formError, setFormError] = useState<I18nKey | null>(null)
@@ -112,7 +114,8 @@ export function InviteDialog({
     requestAnimationFrame(() => formAlert.current?.scrollIntoView({ block: 'nearest' }))
   }
 
-  async function submit() {
+  /** Sends the invitation; true once sent (the dialog says what went wrong otherwise). */
+  async function send(): Promise<boolean> {
     setEmailError(null)
     setFormError(null)
     const parsed = invitationEmailInput.safeParse(email)
@@ -120,11 +123,11 @@ export function InviteDialog({
       showEmailError(
         email.trim() === '' ? 'settings.invite.emailRequired' : 'settings.invite.emailInvalid',
       )
-      return
+      return false
     }
     if (!roleId) {
       showFormError('settings.invite.roleRequired')
-      return
+      return false
     }
     try {
       await create.mutateAsync({
@@ -135,7 +138,7 @@ export function InviteDialog({
       })
       toast.success(<EmailText i18nKey="settings.invite.sent" email={parsed.data} />)
       await queryClient.invalidateQueries({ queryKey: trpc.invitation.list.queryKey() })
-      onOpenChange(false)
+      return true
     } catch (error) {
       // The server answered, so no invitation waits under this id (refused, or cancelled because
       // its email could not be sent): the next try is a new invitation. Without an answer the id is
@@ -144,11 +147,30 @@ export function InviteDialog({
       const shown = inviteError(error)
       if (shown.field) showEmailError(shown.key)
       else showFormError(shown.key)
+      return false
     }
   }
 
+  async function submit() {
+    if (await send()) onOpenChange(false)
+  }
+
+  // Closing it with something typed or picked and not sent asks first (Save sends it; the owner's
+  // request of 2026-09-29).
+  const guard = useUnsavedChanges({
+    dirty: open && (email.trim() !== '' || roleId !== initialRoleId || locale !== null),
+    save: send,
+    // While it is open: Back closes it.
+    close: open ? () => onOpenChange(false) : undefined,
+  })
+
   return (
-    <Dialog open={open} onOpenChange={(next) => !busy && onOpenChange(next)}>
+    <Dialog
+      open={open}
+      onOpenChange={(next) =>
+        !busy && (next ? onOpenChange(next) : guard.requestLeave(() => onOpenChange(false)))
+      }
+    >
       <DialogContent closeLabel={t('actions.close')}>
         <DialogHeader>
           <DialogTitle>{t('settings.invite.title')}</DialogTitle>
@@ -206,7 +228,7 @@ export function InviteDialog({
               type="button"
               variant="outline"
               disabled={busy}
-              onClick={() => onOpenChange(false)}
+              onClick={() => guard.requestLeave(() => onOpenChange(false))}
             >
               {t('actions.cancel')}
             </Button>

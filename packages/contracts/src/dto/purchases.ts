@@ -5,6 +5,7 @@ import {
   PAYMENT_METHODS,
   PURCHASE_DOCUMENT_TYPES,
   PURCHASE_RETURN_KINDS,
+  SETTLEMENT_METHODS,
   type DecimalKind,
 } from '@bizcost/domain'
 import { z } from 'zod'
@@ -13,6 +14,8 @@ import { zBusinessDate, zDecimal, zUuid } from '../primitives'
 import {
   DOCUMENT_LINES_MAX,
   DOCUMENT_NOTES_MAX_LENGTH,
+  PAYABLE_PAGE_SIZE,
+  PAYMENT_NOTE_MAX_LENGTH,
   DOCUMENT_PAGE_SIZE,
   DOCUMENT_PAGE_SIZE_MAX,
   DOCUMENT_REFERENCE_MAX_LENGTH,
@@ -93,7 +96,8 @@ export type DiscountDto = z.infer<typeof discountDto>
 /**
  * A material bought: `qty` in its purchase unit, which is a standard unit (`unit`: of the material's
  * dimension, or of another one through its cross factor) or one of its packs (`packId`); exactly one
- * of the two. `unitPrice` is per purchase unit, before VAT; the line's own discount comes off first.
+ * of the two. `unitPrice` is per purchase unit, before VAT, or with its VAT when the purchase's
+ * `pricesIncludeVat` is on (its discount then too); the line's own discount comes off first.
  */
 export const purchaseMaterialLineInput = z
   .object({
@@ -112,7 +116,10 @@ export const purchaseMaterialLineInput = z
     message: 'exactly one of unit and packId',
   })
 
-/** Delivery charged on the same invoice: split over the material lines and part of their cost. */
+/**
+ * Delivery charged on the same invoice: split over the material lines and part of their cost. The
+ * amount is before VAT, or with its VAT when the purchase's `pricesIncludeVat` is on.
+ */
 export const purchaseDeliveryLineInput = z.object({
   kind: z.literal('delivery'),
   id: zUuid,
@@ -128,13 +135,28 @@ export const purchaseLineInput = z.discriminatedUnion('kind', [
 export type PurchaseLineInput = z.input<typeof purchaseLineInput>
 
 const purchaseFields = {
-  /** Optional: a purchase at a market may have none. */
+  /** Optional: a purchase at a market may have none (supplier credit needs one). */
   supplierId: zUuid.nullable().default(null),
   businessDate: zBusinessDate,
   documentType: purchaseDocumentTypeDto,
   /** The supplier's invoice or receipt number. */
   reference: optionalLine(DOCUMENT_REFERENCE_MAX_LENGTH),
-  paymentMethod: paymentMethodDto.nullable().default(null),
+  /**
+   * How it was paid: required on every save (a draft saved before 2026-09-29 without one is
+   * completed first). `supplier_credit` needs `supplierId`; `paid_by_member` needs
+   * `paidByMemberId`.
+   */
+  paymentMethod: paymentMethodDto,
+  /**
+   * `paid_by_member` only: the member who paid from their own money, an active member of the
+   * business (NOT_FOUND otherwise); null for every other method.
+   */
+  paidByMemberId: zUuid.nullable().default(null),
+  /**
+   * Whether the prices, discounts and delivery amounts are typed with their VAT (default false). The
+   * amounts stored and returned are before VAT, VAT and total either way.
+   */
+  pricesIncludeVat: z.boolean().default(false),
   /**
    * Where the goods came in. Only with multi_location (CAPABILITY_DISABLED for another than the
    * default location without it); null: the default location.
@@ -153,16 +175,35 @@ const purchaseFields = {
     .refine(uniqueIds, { message: 'duplicate line id' }),
 }
 
+/** Who paid goes with how it was paid (VALIDATION otherwise). */
+function paidBy(purchase: {
+  paymentMethod: string
+  paidByMemberId: string | null
+  supplierId: string | null
+}) {
+  if ((purchase.paymentMethod === 'paid_by_member') !== (purchase.paidByMemberId !== null)) {
+    return false
+  }
+  return purchase.paymentMethod !== 'supplier_credit' || purchase.supplierId !== null
+}
+const paidByMessage = {
+  message: 'paidByMemberId goes with paid_by_member, and supplier_credit needs a supplier',
+}
+
 /** `purchase.create` (a draft): idempotent on the client's `id`. */
-export const createPurchaseInput = z.object({ id: zUuid, ...purchaseFields })
+export const createPurchaseInput = z
+  .object({ id: zUuid, ...purchaseFields })
+  .refine(paidBy, paidByMessage)
 export type CreatePurchaseInput = z.input<typeof createPurchaseInput>
 
 /** `purchase.update` (a draft only): the whole document, `version` as read. */
-export const updatePurchaseInput = z.object({
-  id: zUuid,
-  version: z.int().positive(),
-  ...purchaseFields,
-})
+export const updatePurchaseInput = z
+  .object({
+    id: zUuid,
+    version: z.int().positive(),
+    ...purchaseFields,
+  })
+  .refine(paidBy, paidByMessage)
 export type UpdatePurchaseInput = z.input<typeof updatePurchaseInput>
 
 /** `purchase.get`, `purchase.reverse`. */
@@ -257,7 +298,13 @@ export const purchaseDto = z.object({
   businessDate: zBusinessDate,
   documentType: purchaseDocumentTypeDto,
   reference: z.string().nullable(),
+  /** Null only on a purchase posted before the method was required (or a draft from then). */
   paymentMethod: paymentMethodDto.nullable(),
+  /** `paid_by_member`: the member who paid, and their name in the business as it is now. */
+  paidByMemberId: zUuid.nullable(),
+  paidByMemberName: z.string().nullable(),
+  /** Whether its prices were typed with their VAT (its amounts are before VAT, VAT and total). */
+  pricesIncludeVat: z.boolean(),
   vatNotReclaimable: z.boolean(),
   /** ISO 4217 (the business's currency). */
   currency: z.string(),
@@ -457,6 +504,189 @@ export const purchaseReturnListDto = withMeta(
   z.object({ items: z.array(purchaseReturnListItemDto), nextCursor: z.string().nullable() }),
 )
 export type PurchaseReturnListDto = z.infer<typeof purchaseReturnListDto>
+
+// ---------------------------------------------------------------------------------------------------
+// Who paid, what is owed, and paying it (the owner's requests of 2026-09-29)
+// ---------------------------------------------------------------------------------------------------
+
+/** `purchase.payers` (purchases.documents.manage): the members a purchase may say paid for it. */
+export const purchasePayerDto = z.object({
+  memberId: zUuid,
+  /** Their name in the business. */
+  name: z.string(),
+  /** The caller: the one picked until someone else is. */
+  isMe: z.boolean(),
+})
+export type PurchasePayerDto = z.infer<typeof purchasePayerDto>
+
+/** The active members of the business, by name. */
+export const purchasePayersDto = z.object({ items: z.array(purchasePayerDto) })
+export type PurchasePayersDto = z.infer<typeof purchasePayersDto>
+
+/** Who a purchase is owed to: its supplier (bought on credit), or the member who paid for it. */
+export const payablePartyDto = z.enum(['supplier', 'member'])
+export type PayablePartyDto = z.infer<typeof payablePartyDto>
+
+/**
+ * `payable.list` (purchases.payments.view, and supplier prices visible: it lists only what is still
+ * owed, so it filters on amounts): what the business still owes, by supplier or by member, a page of
+ * PAYABLE_PAGE_SIZE suppliers or members at a time (`cursor`: the previous page's `nextCursor`).
+ */
+export const payableListInput = z.object({
+  party: payablePartyDto,
+  cursor: z.string().min(1).max(500).optional(),
+  /** Suppliers or members per page (at most PAYABLE_PAGE_SIZE, the default). */
+  limit: z.int().min(1).max(PAYABLE_PAGE_SIZE).default(PAYABLE_PAGE_SIZE),
+})
+export type PayableListInput = z.input<typeof payableListInput>
+
+/** The member who entered or changed something, as the business names them now. */
+export const memberNameDto = z.object({
+  memberId: zUuid.nullable(),
+  name: z.string().nullable(),
+})
+
+/** One final purchase with something still owed on it. */
+export const payableInvoiceDto = z.object({
+  purchaseId: zUuid,
+  businessDate: zBusinessDate,
+  /** The supplier's invoice or receipt number. */
+  reference: z.string().nullable(),
+  documentType: purchaseDocumentTypeDto,
+  /** The names of its first two materials, as bought. */
+  itemNames: z.array(z.string()),
+  currency: z.string(),
+  /** The purchase's total, with its VAT. */
+  total: price(),
+  /** What its final returns and credit notes took off (their totals, with VAT). */
+  returned: price(),
+  /** The payments recorded on it that stand. */
+  paid: price(),
+  /** total − returned − paid (never below zero). */
+  outstanding: price(),
+  /** Who entered the purchase. */
+  enteredBy: memberNameDto,
+})
+export type PayableInvoiceDto = z.infer<typeof payableInvoiceDto>
+
+/** A supplier, or a member who paid personally, and the purchases still owed to them. */
+export const payableGroupDto = z.object({
+  party: payablePartyDto,
+  /** The supplier's or the member's id. */
+  partyId: zUuid,
+  name: z.string(),
+  /** False for an archived supplier or a member who left (still owed). */
+  active: z.boolean(),
+  /** Σ outstanding of all its purchases still owed. */
+  outstanding: price(),
+  /** How many of its purchases are still owed. */
+  invoiceCount: z.int().nonnegative(),
+  /** The oldest PAYABLE_INVOICES_MAX of them, oldest first. */
+  invoices: z.array(payableInvoiceDto),
+})
+export type PayableGroupDto = z.infer<typeof payableGroupDto>
+
+export const payableListDto = withMeta(
+  z.object({
+    party: payablePartyDto,
+    /** The business's currency. */
+    currency: z.string(),
+    /** Σ outstanding of every supplier or member (all pages). */
+    total: price(),
+    /** This page, by name. */
+    groups: z.array(payableGroupDto),
+    /** The next page's cursor; null on the last page. */
+    nextCursor: z.string().nullable(),
+  }),
+)
+export type PayableListDto = z.infer<typeof payableListDto>
+
+/** How the business paid what it owed: cash, card, bank transfer or cheque. */
+export const settlementMethodDto = z.enum(SETTLEMENT_METHODS)
+
+/**
+ * `purchasePayment.record` (purchases.payments.record, and supplier prices visible: the amount is
+ * checked against what is owed): a payment of what is owed on a final purchase bought on credit or
+ * paid by a member. Idempotent on the client's `id`. Its day is in the business's time zone, not
+ * after today (FUTURE_DATE), not on or before the books-closed date (BOOKS_CLOSED), not before the
+ * purchase (VALIDATION); the amount more than zero, at most the currency's decimals (VALIDATION) and
+ * at most what is still owed (EXCEEDS_OUTSTANDING).
+ */
+export const recordPurchasePaymentInput = z.object({
+  id: zUuid,
+  purchaseId: zUuid,
+  businessDate: zBusinessDate,
+  method: settlementMethodDto,
+  amount: positiveMoneyInput,
+  note: z
+    .string()
+    .trim()
+    .max(PAYMENT_NOTE_MAX_LENGTH)
+    .nullish()
+    .transform((value) => (value ? value : null)),
+})
+export type RecordPurchasePaymentInput = z.input<typeof recordPurchasePaymentInput>
+
+/**
+ * `purchasePayment.reverse` (purchases.payments.record): a payment recorded by mistake stops counting
+ * (it stays listed as reversed; every change is audited). Dated its own day, or the first open day
+ * when the books are closed on it (BOOKS_CLOSED when that is after today). Idempotent.
+ */
+export const reversePurchasePaymentInput = z.object({ id: zUuid })
+export type ReversePurchasePaymentInput = z.input<typeof reversePurchasePaymentInput>
+
+/** `purchasePayment.list` (purchases.payments.view): the payments of one purchase. */
+export const purchasePaymentsInput = z.object({ purchaseId: zUuid })
+export type PurchasePaymentsInput = z.input<typeof purchasePaymentsInput>
+
+export const purchasePaymentDto = z.object({
+  id: zUuid,
+  businessDate: zBusinessDate,
+  method: settlementMethodDto,
+  amount: price(),
+  currency: z.string(),
+  note: z.string().nullable(),
+  /** `reversed`: recorded by mistake, it no longer counts. */
+  status: z.enum(['recorded', 'reversed']),
+  recordedBy: memberNameDto,
+  createdAt: isoTimestamp,
+  reversedAt: isoTimestamp.nullable(),
+  reversedBy: memberNameDto.nullable(),
+  /** The reversal's business day (the payment's own, or the first open day). */
+  reversalDate: zBusinessDate.nullable(),
+})
+export type PurchasePaymentDto = z.infer<typeof purchasePaymentDto>
+
+/** A purchase's payments and what is still owed on it. */
+export const purchasePaymentsDto = withMeta(
+  z.object({
+    purchaseId: zUuid,
+    /** Who it is owed to; null when it was paid when bought (cash, card…) or never said. */
+    owedTo: z
+      .object({
+        party: payablePartyDto,
+        partyId: zUuid,
+        name: z.string(),
+      })
+      .nullable(),
+    status: documentStatusDto,
+    currency: z.string(),
+    total: price(),
+    returned: price(),
+    paid: price(),
+    /** What can still be paid (0 unless it is final and owed). */
+    outstanding: price(),
+    /**
+     * What was paid beyond what it came to after its final returns and credit notes (paid − (total −
+     * returned), 0 when not more): a return or credit note posted after it was paid leaves it owed
+     * back to the business, which nothing else tracks yet (D-162).
+     */
+    overpaid: price(),
+    /** Newest first; reversed ones too. */
+    payments: z.array(purchasePaymentDto),
+  }),
+)
+export type PurchasePaymentsDto = z.infer<typeof purchasePaymentsDto>
 
 // ---------------------------------------------------------------------------------------------------
 // The books-closed date (D-114 rule 6)

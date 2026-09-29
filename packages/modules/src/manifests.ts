@@ -212,9 +212,11 @@ const SUPPLIERS = {
 } as const satisfies ModuleManifest
 
 // Purchases (M2 Step 3; planned until Step 7): purchases, supplier returns and credit notes, posted
-// with the weighted average (D-114, D-120), their receipts (attachments), and the "books closed up
-// to" date. Materials depend on it (their cost comes from purchases); the reverse would be a cycle,
-// so Purchases lists no deps. The supplier of a purchase is optional (no dependency either).
+// with the weighted average (D-114, D-120), their receipts (attachments), the "books closed up to"
+// date, and what the business still owes on purchases bought on credit or paid by a member, with the
+// payments of it (the owner's request of 2026-09-29, D-160; its own nav entry, "Amounts owed").
+// Materials depend on it (their cost comes from purchases); the reverse would be a cycle, so
+// Purchases lists no deps. The supplier of a purchase is optional (no dependency either).
 const PURCHASES = {
   id: 'purchases',
   kind: 'core',
@@ -227,6 +229,8 @@ const PURCHASES = {
     'purchases.documents.post',
     'purchases.documents.reverse',
     'purchases.books.close',
+    'purchases.payments.view',
+    'purchases.payments.record',
   ],
   nav: [
     {
@@ -236,6 +240,14 @@ const PURCHASES = {
       icon: 'shopping-cart',
       group: 'main',
       permission: 'purchases.documents.view',
+    },
+    {
+      id: 'payables',
+      labelKey: 'nav.payables',
+      path: 'payables',
+      icon: 'hand-coins',
+      group: 'main',
+      permission: 'purchases.payments.view',
     },
   ],
   quickActions: [],

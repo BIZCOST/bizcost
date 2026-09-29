@@ -5,13 +5,14 @@ import type { MaterialDto, PurchaseLineDto, PurchaseResultDto } from '@bizcost/c
 import {
   BASE_UNITS,
   compareDecimal,
+  isOwedPaymentMethod,
   newId,
   subtractDecimals,
   type PurchaseReturnKind,
   type Quantity,
 } from '@bizcost/domain'
 import { formatList, type I18nKey } from '@bizcost/i18n'
-import { useMutation, useQueryClient } from '@tanstack/react-query'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   ArrowLeftIcon,
   CheckCheckIcon,
@@ -43,6 +44,7 @@ import { ConfirmDialog } from './confirm-dialog'
 import { hasModule, useAllMaterials, useLocationOptions } from './data'
 import { pricePerCountingUnit, quantityInWords } from './line-units'
 import { Panel } from './panel'
+import { PaymentsPanel } from './payments-panel'
 import { Totals } from './totals'
 import { Receipts } from './receipts'
 import { ReturnSheet, useLineQuantity } from './return-sheet'
@@ -53,6 +55,9 @@ import { StatusBadge } from './status-badge'
 // its returns and credit notes, and its receipts. A final purchase can be reversed ("as if it was
 // never entered") or corrected (reversed, and a copy opened as a new draft); goods can be sent back
 // and a credit note recorded. Every action asks first, saying in plain words what it changes.
+// Bought on credit or paid by a member (the owner's requests of 2026-09-29): its payments, what is
+// still owed and "Record a payment"; a purchase with payments that stand is reversed only once they
+// are.
 
 /** A line's quantity in words: "2 bags = 2 kg" (or as it was bought, without the material). */
 function LineQuantity({
@@ -119,6 +124,16 @@ export function PurchaseView({
     null,
   )
   const [correctionId] = useState(() => newId())
+  // What is owed on it and its payments, for a final purchase bought on credit or paid by a member.
+  const showsPayments =
+    context !== undefined &&
+    purchase.status !== 'draft' &&
+    isOwedPaymentMethod(purchase.paymentMethod) &&
+    can(context, 'purchases.payments.view')
+  const payments = useQuery({
+    ...trpc.purchasePayment.list.queryOptions({ purchaseId: purchase.id }),
+    enabled: showsPayments,
+  })
   if (!context) return null
 
   const vatRegistered = context.capabilities.vat_registered === true
@@ -146,7 +161,16 @@ export function PurchaseView({
   const posted = purchase.status === 'posted'
   // A purchase is reversed (or corrected) only once its final returns and credit notes are (D-120).
   const finalReturns = purchase.returns.filter((r) => r.status === 'posted')
-  const reversible = posted && finalReturns.length === 0
+  // …and its payments that stand (the owner's request of 2026-09-29).
+  const standingPayments = (payments.data?.data.payments ?? []).filter(
+    (payment) => payment.status === 'recorded',
+  )
+  const reversible =
+    posted &&
+    finalReturns.length === 0 &&
+    // Offered once its payments are read (the API refuses it too: PURCHASE_HAS_PAYMENTS).
+    (!showsPayments || payments.data !== undefined) &&
+    standingPayments.length === 0
   const finalizeClosed =
     purchase.status === 'draft' ? closedFor(purchase.businessDate, today, closedThrough) : null
   // What the goods cost once final returns and credit notes took theirs off (null when hidden).
@@ -162,6 +186,8 @@ export function PurchaseView({
       queryClient.invalidateQueries({ queryKey: trpc.material.costs.pathKey() }),
       queryClient.invalidateQueries({ queryKey: trpc.product.costs.pathKey() }),
       queryClient.invalidateQueries({ queryKey: trpc.recipe.get.pathKey() }),
+      queryClient.invalidateQueries({ queryKey: trpc.purchasePayment.list.pathKey() }),
+      queryClient.invalidateQueries({ queryKey: trpc.payable.list.pathKey() }),
     ])
   }
 
@@ -171,6 +197,10 @@ export function PurchaseView({
     // Closed books refusing a reversal or a correction: say when it can be done (finalizing a
     // draft keeps the message about its date).
     if (code === 'books_closed' && confirm !== 'finalize') return 'purchasing.confirm.reverseClosed'
+    // Posting checks again that the member who paid is still a member (NOT_FOUND otherwise).
+    if (code === 'not_found' && confirm === 'finalize' && purchase.paidByMemberId !== null) {
+      return 'purchasing.confirm.payerLeft'
+    }
     return apiErrorKey(error)
   }
 
@@ -364,6 +394,18 @@ export function PurchaseView({
                 {t(`purchasing.paymentMethods.${purchase.paymentMethod}`)}
               </Detail>
             ) : null}
+            {purchase.paymentMethod === 'paid_by_member' ? (
+              <Detail label={t('purchasing.editor.payer')}>
+                <bdi>{purchase.paidByMemberName ?? '…'}</bdi>
+              </Detail>
+            ) : null}
+            {vatRegistered ? (
+              <Detail label={t('purchasing.view.prices')}>
+                {purchase.pricesIncludeVat
+                  ? t('purchasing.view.pricesIncluded')
+                  : t('purchasing.view.pricesBefore')}
+              </Detail>
+            ) : null}
             {location && context.capabilities.multi_location ? (
               <Detail label={t('purchasing.editor.location')}>
                 <bdi>{location.name}</bdi>
@@ -420,6 +462,9 @@ export function PurchaseView({
                               unit:
                                 line.packName ?? (line.unit ? t(`units.short.${line.unit}`) : ''),
                             }).replaceAll(' ', NBSP)}
+                            {vatRegistered && purchase.pricesIncludeVat ? (
+                              <> {t('purchasing.view.inclVat').replaceAll(' ', NBSP)}</>
+                            ) : null}
                           </>
                         )}
                         {line.discount ? (
@@ -437,7 +482,10 @@ export function PurchaseView({
                         {vatRegistered && compareDecimal(line.vatRate, '0') > 0 ? (
                           <>
                             {' · '}
-                            {t('purchasing.editor.vatRate', { rate: line.vatRate })}
+                            {t('purchasing.editor.vatRate', { rate: line.vatRate }).replaceAll(
+                              ' ',
+                              NBSP,
+                            )}
                           </>
                         ) : null}
                       </p>
@@ -524,6 +572,7 @@ export function PurchaseView({
           <Totals
             subtotal={purchase.subtotal}
             discount={purchase.discountTotal}
+            net={purchase.netTotal}
             vat={purchase.vatTotal}
             total={purchase.total}
             vatRegistered={vatRegistered}
@@ -600,6 +649,24 @@ export function PurchaseView({
               </p>
             ) : null}
           </Panel>
+        ) : null}
+
+        {showsPayments && payments.data ? (
+          <PaymentsPanel
+            owed={payments.data.data}
+            purchaseDate={purchase.businessDate}
+            today={today}
+            closedThrough={closedThrough}
+            canRecord={
+              can(context, 'purchases.payments.record') &&
+              context.visibleCategories.includes('supplier_price')
+            }
+          />
+        ) : null}
+        {posted && finalReturns.length === 0 && standingPayments.length > 0 && canReverse ? (
+          <p data-reverse-payments-first className="text-sm text-muted-foreground">
+            {t('purchasing.payments.reverseFirst')}
+          </p>
         ) : null}
 
         <Panel title={t('purchasing.receipts.title')} hint={t('purchasing.receipts.hint')}>
