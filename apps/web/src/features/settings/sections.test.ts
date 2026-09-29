@@ -54,9 +54,13 @@ describe('settings sections', () => {
     expect(isSectionVisible(access([]), 'locations')).toBe(false)
   })
 
-  it('offers closing the books only with Purchases on and the key to close them (D-137)', () => {
+  it('offers closing the books with Purchases or Expenses on and the key to close them (D-137, D-176)', () => {
     const purchases = { modules: [{ id: 'purchases' }] }
     expect(isSectionVisible({ ...access('all'), ...purchases }, 'books')).toBe(true)
+    // Expenses obey the date too: a business without Purchases can still open its books.
+    expect(isSectionVisible({ ...access('all'), modules: [{ id: 'expenses' }] }, 'books')).toBe(
+      true,
+    )
     expect(isSectionVisible(access('all'), 'books')).toBe(false)
     expect(
       isSectionVisible({ ...access(['purchases.documents.view']), ...purchases }, 'books'),
@@ -68,6 +72,35 @@ describe('settings sections', () => {
       'business',
       'modules',
       'books',
+      'language',
+    ])
+  })
+
+  it('offers expense approval only with Expenses on, a team and the key to choose it (D-164)', () => {
+    const expenses = { modules: [{ id: 'expenses' }] }
+    expect(isSectionVisible({ ...access('all'), ...expenses }, 'approval')).toBe(true)
+    // Without Expenses, or without a team (nothing is approved in a solo business).
+    expect(isSectionVisible(access('all'), 'approval')).toBe(false)
+    expect(isSectionVisible({ ...access('all', SOLO), ...expenses }, 'approval')).toBe(false)
+    // A Manager approves expenses but does not choose whether they need approval.
+    expect(
+      isSectionVisible(
+        { ...access(['expenses.documents.view', 'expenses.documents.approve']), ...expenses },
+        'approval',
+      ),
+    ).toBe(false)
+    expect(
+      isSectionVisible({ ...access(['expenses.approval.manage']), ...expenses }, 'approval'),
+    ).toBe(true)
+    expect(visibleSections({ ...access('all'), ...expenses })).toEqual([
+      'business',
+      'locations',
+      'members',
+      'roles',
+      'modules',
+      // Expenses obey the books-closed date too (D-176).
+      'books',
+      'approval',
       'language',
     ])
   })

@@ -234,7 +234,9 @@ describe('R4: what is owed, and paying it', () => {
     expect(group).toMatchObject({ party: 'supplier', name: supplier.name, active: true })
     expect(group.invoices).toEqual([
       expect.objectContaining({
-        purchaseId: purchase.id,
+        kind: 'purchase',
+        documentId: purchase.id,
+        categoryName: null,
         total: '105',
         returned: '0',
         paid: '0',
@@ -333,7 +335,7 @@ describe('R4: what is owed, and paying it', () => {
     const groups = (await owed('member')).data.groups
     const group = groups.find((g) => g.partyId === admin.memberId)!
     expect(group).toMatchObject({ party: 'member', active: true })
-    expect(group.invoices.map((i) => i.purchaseId)).toContain(purchase.id)
+    expect(group.invoices.map((i) => i.documentId)).toContain(purchase.id)
     expect((await payments(purchase.id)).data.owedTo).toEqual({
       party: 'member',
       partyId: admin.memberId,
@@ -342,7 +344,7 @@ describe('R4: what is owed, and paying it', () => {
     // Not in the suppliers' tab.
     expect(
       (await owed('supplier')).data.groups.some((g) =>
-        g.invoices.some((i) => i.purchaseId === purchase.id),
+        g.invoices.some((i) => i.documentId === purchase.id),
       ),
     ).toBe(false)
   })

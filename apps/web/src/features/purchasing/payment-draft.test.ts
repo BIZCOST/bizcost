@@ -4,7 +4,7 @@ import { checkPayment, paymentDraft } from './payment-draft'
 const CONTEXT = {
   currency: 'AED' as const,
   outstanding: '105.00',
-  purchaseDate: '2026-09-20',
+  documentDate: '2026-09-20',
   today: '2026-09-29',
   closedThrough: null,
 }
@@ -57,5 +57,16 @@ describe('a payment of what is owed', () => {
         { ...CONTEXT, closedThrough: '2026-09-25' },
       ).errors.businessDate,
     ).toEqual({ key: 'purchasing.payment.booksClosed' })
+  })
+
+  it('of an expense: never before the expense (D-166)', () => {
+    const cash = { ...paymentDraft('105', CONTEXT.today, 'AED'), method: 'cash' as const }
+    expect(
+      checkPayment({ ...cash, businessDate: '2026-09-19' }, { ...CONTEXT, kind: 'expense' }).errors
+        .businessDate,
+    ).toEqual({ key: 'purchasing.payment.beforeExpense' })
+    expect(
+      checkPayment({ ...cash, businessDate: '2026-09-20' }, { ...CONTEXT, kind: 'expense' }).fields,
+    ).toMatchObject({ businessDate: '2026-09-20', amount: '105' })
   })
 })

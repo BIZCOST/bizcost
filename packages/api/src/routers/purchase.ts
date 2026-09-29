@@ -10,7 +10,7 @@ import {
   purchaseResultDto,
   updatePurchaseInput,
 } from '@bizcost/contracts'
-import { listPayers } from '../services/purchase-payments'
+import { listPayers } from '../services/payments'
 import {
   correctPurchase,
   createPurchase,

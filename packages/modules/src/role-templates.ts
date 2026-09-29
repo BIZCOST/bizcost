@@ -7,7 +7,8 @@ import { PERMISSION_CATALOG, type PermissionKey } from './permissions'
 // that businesses already have only through a migration that adds it to their template roles (the
 // catalog_security migration of M2 Step 2 did so for the products and materials keys, D-124, and
 // purchasing_security for the suppliers and purchases keys of M2 Step 3, recipes_security for the
-// recipe keys of M2 Step 4, purchasing_payments_security for the payment keys of 2026-09-29).
+// recipe keys of M2 Step 4, purchasing_payments_security for the payment keys of 2026-09-29,
+// expenses_security for the expenses and running-costs keys of M2 Step 5).
 
 export const ROLE_TEMPLATE_KEYS = [
   OWNER_TEMPLATE_KEY,
@@ -54,6 +55,15 @@ export const ROLE_TEMPLATES: readonly RoleTemplate[] = [
       'purchases.documents.reverse',
       'purchases.payments.view',
       'purchases.payments.record',
+      'expenses.documents.view',
+      'expenses.documents.manage',
+      'expenses.documents.approve',
+      'expenses.documents.post',
+      'expenses.documents.reverse',
+      'expenses.payments.view',
+      'expenses.payments.record',
+      'running_costs.items.view',
+      'running_costs.items.manage',
       'data.cost.view',
       'data.profit_margin.view',
       'data.supplier_price.view',
@@ -70,6 +80,8 @@ export const ROLE_TEMPLATES: readonly RoleTemplate[] = [
       'materials.items.view',
       'suppliers.items.view',
       'purchases.documents.view',
+      'expenses.documents.view',
+      'running_costs.items.view',
       'data.cost.view',
       'data.profit_margin.view',
       'data.supplier_price.view',

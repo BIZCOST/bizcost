@@ -544,7 +544,7 @@ test('Arabic, phone: a café buys beans in 1 kg bags priced per bag, returns one
   await shot(page, 'ar-390-finalize-dialog')
   await finalize.getByRole('button', { name: 'اعتمد' }).click()
   await expect(page.getByRole('heading', { level: 1 })).toHaveText(/^مشتريات /)
-  await expect(page.getByText('معتمدة', { exact: true }).first()).toBeVisible()
+  await expect(page.getByText('نهائية', { exact: true }).first()).toBeVisible()
   await expectSound(page, 'ar')
   await shot(page, 'ar-390-purchase-final')
 
@@ -571,7 +571,7 @@ test('Arabic, phone: a café buys beans in 1 kg bags priced per bag, returns one
   const documents = page.getByRole('list', { name: 'المرتجعات وإشعارات التخفيض' })
   await expect(documents.getByRole('listitem')).toHaveCount(1)
   await expect(documents).toContainText('مرتجع')
-  await expect(documents).toContainText('معتمد')
+  await expect(documents).toContainText('نهائي')
   await expect(documents).toContainText('45.00')
   await expect(page.locator('[data-purchase-line]')).toContainText('أُرجع 1 كيس')
 

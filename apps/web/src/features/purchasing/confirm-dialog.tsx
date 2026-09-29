@@ -35,6 +35,7 @@ export function ConfirmDialog({
   disabled = false,
   onConfirm,
   onClose,
+  children,
 }: {
   open: boolean
   icon: LucideIcon
@@ -51,6 +52,8 @@ export function ConfirmDialog({
   disabled?: boolean
   onConfirm: () => void
   onClose: () => void
+  /** A field the action takes, under the words (e.g. why an expense is rejected). */
+  children?: ReactNode
 }) {
   const { t } = useTranslation()
   return (
@@ -68,6 +71,7 @@ export function ConfirmDialog({
             </div>
           </AlertDialogDescription>
         </AlertDialogHeader>
+        {children}
         {error ? <FormAlert tone="error">{t(error)}</FormAlert> : null}
         <AlertDialogFooter>
           <AlertDialogCancel disabled={busy}>{t('actions.cancel')}</AlertDialogCancel>

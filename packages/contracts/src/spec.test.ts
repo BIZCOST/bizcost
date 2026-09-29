@@ -329,6 +329,11 @@ describe('APP_ERROR_CODES', () => {
     'payment_method_required',
     'purchase_has_payments',
     'exceeds_outstanding',
+    'expense_in_approval',
+    'expense_not_submitted',
+    'approval_required',
+    'approval_off',
+    'expense_has_payments',
     'internal',
   ]
 

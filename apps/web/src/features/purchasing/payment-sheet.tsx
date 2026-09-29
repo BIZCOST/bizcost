@@ -1,7 +1,7 @@
 'use client'
 
 import { apiErrorCode, apiErrorKey, useTRPC } from '@bizcost/app-core'
-import type { PurchasePaymentsDto } from '@bizcost/contracts'
+import type { PayableKindDto, PurchasePaymentsDto } from '@bizcost/contracts'
 import {
   newId,
   SETTLEMENT_METHODS,
@@ -37,21 +37,49 @@ import { firstOpenDay } from './books'
 import { checkPayment, PAYMENT_MISSING, paymentDraft, type PaymentDraft } from './payment-draft'
 import { MoneyInput } from './purchase-lines'
 
-// "Record a payment" of what is owed on a purchase (the owner's request of 2026-09-29), from the
-// purchase or from Amounts owed: the day, how it was paid, how much (all that is owed to start with;
-// part of it is fine) and an optional note. purchasePayment.record, idempotent on the sheet's id.
+// "Record a payment" of what is owed on a purchase (the owner's request of 2026-09-29) or an expense
+// (M2 Step 5, D-166), from the document or from Amounts owed: the day, how it was paid, how much (all
+// that is owed to start with; part of it is fine) and an optional note. purchasePayment.record or
+// expensePayment.record, idempotent on the sheet's id.
+
+/** A document something is owed on: a purchase or an expense (D-166). */
+export interface OwedDocument {
+  readonly kind: PayableKindDto
+  readonly id: string
+  /** Its own day: a payment is never before it. */
+  readonly businessDate: string
+}
+
+/**
+ * Who it is owed to, its amounts and its payments: purchasePayment.list's data or
+ * expensePayment.list's (the same fields; each adds its own id).
+ */
+export type OwedAmounts = Omit<PurchasePaymentsDto['data'], 'purchaseId' | 'status'> & {
+  readonly status: string
+}
+
+/** "What you paid … for this purchase" (or expense), to a supplier or back to a member. */
+const DESCRIPTIONS = {
+  purchase: {
+    supplier: 'purchasing.payment.descriptionSupplier',
+    member: 'purchasing.payment.descriptionMember',
+  },
+  expense: {
+    supplier: 'purchasing.payment.descriptionSupplierExpense',
+    member: 'purchasing.payment.descriptionMemberExpense',
+  },
+} as const
 
 export function PaymentSheet({
+  document,
   owed,
-  purchaseDate,
   today,
   closedThrough,
   onClose,
 }: {
-  /** The purchase's payments and what is still owed on it (purchasePayment.list). */
-  owed: PurchasePaymentsDto['data']
-  /** The purchase's own day: a payment is never before it. */
-  purchaseDate: string
+  document: OwedDocument
+  /** Its payments and what is still owed on it. */
+  owed: OwedAmounts
   today: string
   closedThrough: string | null
   onClose: () => void
@@ -60,7 +88,8 @@ export function PaymentSheet({
   const money = useMoney()
   const trpc = useTRPC()
   const queryClient = useQueryClient()
-  const record = useMutation(trpc.purchasePayment.record.mutationOptions())
+  const recordPurchase = useMutation(trpc.purchasePayment.record.mutationOptions())
+  const recordExpense = useMutation(trpc.expensePayment.record.mutationOptions())
   const [paymentId] = useState(() => newId())
   const [initial] = useState<PaymentDraft>(() =>
     paymentDraft(owed.outstanding ?? '0', today, owed.currency as CurrencyCode),
@@ -69,24 +98,25 @@ export function PaymentSheet({
   const [submitted, setSubmitted] = useState(false)
   const [serverError, setServerError] = useState<I18nKey | null>(null)
   const form = useRef<HTMLFormElement>(null)
-  const busy = record.isPending
+  const busy = recordPurchase.isPending || recordExpense.isPending
   const currency = owed.currency as CurrencyCode
   const check = useMemo(
     () =>
       checkPayment(draft, {
         currency,
         outstanding: owed.outstanding ?? '0',
-        purchaseDate,
+        kind: document.kind,
+        documentDate: document.businessDate,
         today,
         closedThrough,
       }),
-    [draft, currency, owed.outstanding, purchaseDate, today, closedThrough],
+    [draft, currency, owed.outstanding, document, today, closedThrough],
   )
   const shown = (error: FieldError | undefined): string | undefined =>
     error && (submitted || !PAYMENT_MISSING.has(error.key)) ? t(error.key, error.values) : undefined
   const set = (patch: Partial<PaymentDraft>) => setDraft((d) => ({ ...d, ...patch }))
   const openFrom = firstOpenDay(today, closedThrough)
-  const minDate = openFrom && openFrom > purchaseDate ? openFrom : purchaseDate
+  const minDate = openFrom && openFrom > document.businessDate ? openFrom : document.businessDate
 
   /** Records it; true once recorded (the sheet says what went wrong otherwise). */
   async function save(): Promise<boolean> {
@@ -97,15 +127,27 @@ export function PaymentSheet({
       return false
     }
     try {
-      const result = await record.mutateAsync({
-        id: paymentId,
-        purchaseId: owed.purchaseId,
-        ...check.fields,
-      })
-      queryClient.setQueryData(
-        trpc.purchasePayment.list.queryKey({ purchaseId: owed.purchaseId }),
-        result,
-      )
+      if (document.kind === 'expense') {
+        const result = await recordExpense.mutateAsync({
+          id: paymentId,
+          expenseId: document.id,
+          ...check.fields,
+        })
+        queryClient.setQueryData(
+          trpc.expensePayment.list.queryKey({ expenseId: document.id }),
+          result,
+        )
+      } else {
+        const result = await recordPurchase.mutateAsync({
+          id: paymentId,
+          purchaseId: document.id,
+          ...check.fields,
+        })
+        queryClient.setQueryData(
+          trpc.purchasePayment.list.queryKey({ purchaseId: document.id }),
+          result,
+        )
+      }
       await queryClient.invalidateQueries({ queryKey: trpc.payable.list.pathKey() })
       toast.success(t('purchasing.payment.recorded'))
       return true
@@ -141,12 +183,9 @@ export function PaymentSheet({
           <SheetHeader>
             <SheetTitle>{t('purchasing.payment.title')}</SheetTitle>
             <SheetDescription className="max-sm:not-sr-only">
-              {t(
-                owed.owedTo?.party === 'member'
-                  ? 'purchasing.payment.descriptionMember'
-                  : 'purchasing.payment.descriptionSupplier',
-                { name: isolate(owedTo) },
-              )}
+              {t(DESCRIPTIONS[document.kind][owed.owedTo?.party ?? 'supplier'], {
+                name: isolate(owedTo),
+              })}
             </SheetDescription>
           </SheetHeader>
           <SheetBody className="space-y-6">

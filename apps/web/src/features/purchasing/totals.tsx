@@ -2,6 +2,7 @@
 
 import { compareDecimal } from '@bizcost/domain'
 import { useTranslation } from 'react-i18next'
+import { cn } from '@/lib/utils'
 import { Locked } from './amounts'
 
 /**
@@ -49,11 +50,12 @@ export function Totals({
         <div
           key={row.key}
           data-total={row.key}
-          className={
-            row.strong
-              ? 'flex items-baseline justify-between gap-4 border-t pt-2 text-base font-semibold'
-              : 'flex items-baseline justify-between gap-4'
-          }
+          className={cn(
+            'flex items-baseline justify-between gap-4',
+            row.strong && 'text-base font-semibold',
+            // The total alone (no VAT, no discounts) has nothing above it to rule off.
+            row.strong && rows.length > 1 && 'border-t pt-2',
+          )}
         >
           <dt className={row.strong ? undefined : 'text-muted-foreground'}>{row.label}</dt>
           <dd className="tabular-nums">

@@ -4,6 +4,8 @@ import {
   LayoutGridIcon,
   PackageIcon,
   PlusIcon,
+  ReceiptIcon,
+  RepeatIcon,
   SettingsIcon,
   ShoppingCartIcon,
   TagIcon,
@@ -26,8 +28,11 @@ const NAV_ICONS: Readonly<Record<string, LucideIcon>> = {
   // Suppliers and Purchases (M2 Step 3).
   truck: TruckIcon,
   'shopping-cart': ShoppingCartIcon,
-  // Amounts owed (the Purchases module's second entry, 2026-09-29).
+  // Amounts owed (the Purchases module's second entry, 2026-09-29; Expenses' too, D-166).
   'hand-coins': HandCoinsIcon,
+  // Expenses and Running Costs (M2 Step 5).
+  receipt: ReceiptIcon,
+  repeat: RepeatIcon,
 }
 
 export const FALLBACK_NAV_ICON: LucideIcon = LayoutGridIcon

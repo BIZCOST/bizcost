@@ -5,7 +5,8 @@ import { isModuleServed } from '@/lib/trpc/server'
 
 export async function generateMetadata(): Promise<Metadata> {
   const t = await getT()
-  return { title: t(isModuleServed('purchases') ? 'common.nav.payables' : 'notFound.title') }
+  const served = isModuleServed('purchases') || isModuleServed('expenses')
+  return { title: t(served ? 'common.nav.payables' : 'notFound.title') }
 }
 
 export default function Page() {

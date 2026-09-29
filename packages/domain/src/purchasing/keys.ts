@@ -122,8 +122,11 @@ export const STOCK_MOVEMENT_KINDS = [
 ] as const
 export type StockMovementKind = (typeof STOCK_MOVEMENT_KINDS)[number]
 
-/** `attachments.entity`: what a file is attached to. M2 Step 3: purchases (their receipts). */
-export const ATTACHMENT_ENTITIES = ['purchase'] as const
+/**
+ * `attachments.entity`: what a file is attached to. M2 Step 3: purchases (their receipts); M2 Step 5:
+ * expenses (their receipts).
+ */
+export const ATTACHMENT_ENTITIES = ['purchase', 'expense'] as const
 export type AttachmentEntity = (typeof ATTACHMENT_ENTITIES)[number]
 
 /** Days of purchases the average uses until the business's first stock count (D-115). */

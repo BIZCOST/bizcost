@@ -14,6 +14,7 @@ export const SETTINGS_SECTIONS = [
   'roles',
   'modules',
   'books',
+  'approval',
   'language',
 ] as const
 export type SettingsSection = (typeof SETTINGS_SECTIONS)[number]
@@ -47,10 +48,20 @@ export function isSectionVisible(access: Access, section: SettingsSection): bool
     case 'modules':
       return can(access, 'settings.modules.manage')
     case 'books':
-      // "Books closed up to" belongs to Purchases, the first module that posts (D-137).
+      // "Books closed up to": purchases and expenses obey it, so either module on shows it (D-137,
+      // D-176); the key is still Purchases' until Step 7.
       return (
-        (access.modules ?? []).some((module) => module.id === 'purchases') &&
-        can(access, 'purchases.books.close')
+        (access.modules ?? []).some(
+          (module) => module.id === 'purchases' || module.id === 'expenses',
+        ) && can(access, 'purchases.books.close')
+      )
+    case 'approval':
+      // Whether expenses need approval: Expenses on, a team (without one nothing is approved, D-164),
+      // and the key to choose it (Owner, Admin).
+      return (
+        capability(access, 'has_team') &&
+        (access.modules ?? []).some((module) => module.id === 'expenses') &&
+        can(access, 'expenses.approval.manage')
       )
   }
 }
@@ -81,6 +92,7 @@ export const SECTION_TITLES: Readonly<Record<SettingsSection, I18nKey>> = {
   roles: 'settings.roles.title',
   modules: 'settings.modules.title',
   books: 'settings.books.title',
+  approval: 'settings.approval.title',
   language: 'settings.language.title',
 }
 
@@ -91,5 +103,6 @@ export const SECTION_DESCRIPTIONS: Readonly<Record<SettingsSection, I18nKey>> = 
   roles: 'settings.roles.description',
   modules: 'settings.modules.description',
   books: 'settings.books.description',
+  approval: 'settings.approval.description',
   language: 'settings.language.description',
 }

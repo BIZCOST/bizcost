@@ -152,17 +152,26 @@ function toActionDto({ id, labelKey, path, icon }: QuickAction): QuickActionDto 
  * The released and enabled modules of a business, each with the nav entries and "+" actions this
  * member may use (the `modules` part of business.context), in manifest order. `manifests` is the
  * registry; tests pass their own (e.g. a module released later) to show the shell follows the data.
+ * A page that several modules share ("Amounts owed": purchases and expenses, D-166) is listed once,
+ * by the first of them the member may use it through.
  */
 export function buildModuleNav(
   enabledKeys: ReadonlySet<string>,
   can: Can,
   manifests: readonly ModuleManifest[] = MODULES,
 ): readonly EnabledModuleDto[] {
+  const listed = new Set<string>()
   return manifests
     .filter((m) => isModuleActive(m, enabledKeys))
     .map((m) => ({
       id: m.id,
-      nav: visibleNav(m, can).map(toNavDto),
+      nav: visibleNav(m, can)
+        .filter((entry) => {
+          if (listed.has(entry.path)) return false
+          listed.add(entry.path)
+          return true
+        })
+        .map(toNavDto),
       quickActions: visibleQuickActions(m, can).map(toActionDto),
     }))
 }

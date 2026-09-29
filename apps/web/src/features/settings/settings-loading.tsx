@@ -13,6 +13,7 @@ const SKELETON_CARDS: Readonly<Record<SettingsSection, number>> = {
   roles: 3,
   modules: 3,
   books: 1,
+  approval: 1,
   language: 1,
 }
 

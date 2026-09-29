@@ -9,7 +9,7 @@ import { StatePanel } from '@/components/states/state-panel'
 import { Button } from '@/components/ui/button'
 import { can, sectionPath } from '@/features/settings/sections'
 import { useBusinessContext } from '@/lib/trpc/client'
-import { moduleAccess, shellNav, wayBack } from './nav'
+import { moduleAccess, shellNav, wayBack, type ModuleIds } from './nav'
 import { PageContainer } from './page-container'
 import { useNavWording } from './use-nav-wording'
 
@@ -17,14 +17,14 @@ import { useNavWording } from './use-nav-wording'
  * A module's page, shown only when the module is on for the business and the member may use its
  * entry `entryId`; otherwise the "turned off" or "not open to you" state (the API refuses the same:
  * MODULE_DISABLED, FORBIDDEN), with a way to another section of the shell. Wrap each module's pages in
- * it.
+ * it. A page several modules share (Amounts owed) names them all: it is open through any of them.
  */
 export function ModuleGate({
   moduleId,
   entryId,
   children,
 }: {
-  moduleId: string
+  moduleId: ModuleIds
   entryId: string
   children: ReactNode
 }) {

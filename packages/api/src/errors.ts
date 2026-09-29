@@ -40,6 +40,11 @@ const TRPC_CODE_OF: Record<AppErrorCode, TRPC_ERROR_CODE_KEY> = {
   payment_method_required: 'BAD_REQUEST',
   purchase_has_payments: 'CONFLICT',
   exceeds_outstanding: 'BAD_REQUEST',
+  expense_in_approval: 'CONFLICT',
+  expense_not_submitted: 'CONFLICT',
+  approval_required: 'CONFLICT',
+  approval_off: 'CONFLICT',
+  expense_has_payments: 'CONFLICT',
   internal: 'INTERNAL_SERVER_ERROR',
 }
 

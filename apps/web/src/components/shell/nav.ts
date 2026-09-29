@@ -155,15 +155,27 @@ export function bottomTabs(
 }
 
 /**
+ * A module's id, or the ids of the modules that share a page (Amounts owed: Purchases and Expenses,
+ * D-166; the registry lists its entry once, through the first of them the member may use it by).
+ */
+export type ModuleIds = string | readonly string[]
+
+function idsOf(moduleIds: ModuleIds): readonly string[] {
+  return typeof moduleIds === 'string' ? [moduleIds] : moduleIds
+}
+
+/**
  * Another section of the shell than module `moduleId` (the first in the nav's order: a `main` one
  * before Settings), or none: where a module's "turned off" or "not open to you" state leads, and
- * where the business root sends a member who may not use the Dashboard.
+ * where the business root sends a member who may not use the Dashboard. For a shared page, another
+ * section than all of its modules'.
  */
 export function wayBack(
   items: readonly ShellNavItem[],
-  moduleId: string,
+  moduleId: ModuleIds,
 ): ShellNavItem | undefined {
-  return items.find((item) => item.moduleId !== moduleId)
+  const ids = idsOf(moduleId)
+  return items.find((item) => !ids.includes(item.moduleId))
 }
 
 /** What a module's page shows the member: the page, "not open to you", or "turned off". */
@@ -173,13 +185,17 @@ export type ModuleAccess = 'open' | 'forbidden' | 'off'
  * For a module's page (its nav entry `entryId`): `off` when the module is not released and on for the
  * business (business.context lists only those), `forbidden` when the member may not use the entry,
  * else `open`. The API refuses the same (MODULE_DISABLED, FORBIDDEN); this picks the page's state.
+ * A page several modules share is open through any of them, and off only when none of them is on.
  */
 export function moduleAccess(
   modules: readonly EnabledModuleDto[],
-  moduleId: string,
+  moduleId: ModuleIds,
   entryId: string,
 ): ModuleAccess {
-  const module = modules.find((m) => m.id === moduleId)
-  if (!module) return 'off'
-  return module.nav.some((entry) => entry.id === entryId) ? 'open' : 'forbidden'
+  const ids = idsOf(moduleId)
+  const on = modules.filter((m) => ids.includes(m.id))
+  if (on.length === 0) return 'off'
+  return on.some((module) => module.nav.some((entry) => entry.id === entryId))
+    ? 'open'
+    : 'forbidden'
 }

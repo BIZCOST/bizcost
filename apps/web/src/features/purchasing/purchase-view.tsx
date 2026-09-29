@@ -653,8 +653,8 @@ export function PurchaseView({
 
         {showsPayments && payments.data ? (
           <PaymentsPanel
+            document={{ kind: 'purchase', id: purchase.id, businessDate: purchase.businessDate }}
             owed={payments.data.data}
-            purchaseDate={purchase.businessDate}
             today={today}
             closedThrough={closedThrough}
             canRecord={
@@ -670,7 +670,7 @@ export function PurchaseView({
         ) : null}
 
         <Panel title={t('purchasing.receipts.title')} hint={t('purchasing.receipts.hint')}>
-          <Receipts purchaseId={purchase.id} canManage={canManage} />
+          <Receipts recordId={purchase.id} canManage={canManage} />
         </Panel>
       </div>
 

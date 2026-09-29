@@ -818,7 +818,7 @@ export function PurchaseEditor({
           {version === null ? (
             <PendingReceipts files={pending} onChange={setPending} />
           ) : (
-            <Receipts purchaseId={purchaseId} canManage />
+            <Receipts recordId={purchaseId} canManage />
           )}
         </Panel>
 

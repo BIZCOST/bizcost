@@ -1,7 +1,7 @@
 'use client'
 
 import { apiErrorCode, apiErrorKey, useTRPC } from '@bizcost/app-core'
-import type { PurchasePaymentDto, PurchasePaymentsDto } from '@bizcost/contracts'
+import type { PurchasePaymentDto } from '@bizcost/contracts'
 import { compareDecimal } from '@bizcost/domain'
 import type { I18nKey } from '@bizcost/i18n'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
@@ -16,22 +16,22 @@ import { cn } from '@/lib/utils'
 import { Money, useBusinessDate, useMoney } from './amounts'
 import { ConfirmDialog } from './confirm-dialog'
 import { Panel } from './panel'
-import { PaymentSheet } from './payment-sheet'
+import { PaymentSheet, type OwedAmounts, type OwedDocument } from './payment-sheet'
 
-// The payments of a purchase bought on credit or paid by a member (the owner's request of
-// 2026-09-29): who it is owed to, its total, what returns and credit notes took off, what was paid
+// The payments of a purchase (the owner's request of 2026-09-29) or an expense (M2 Step 5, D-166)
+// bought on credit or paid by a member: who it is owed to, its total, what returns and credit notes took off, what was paid
 // and what is still owed; each payment with its day, how it was paid, who recorded it and its note.
 // A payment recorded by mistake is reversed (it stays listed, marked reversed, with who reversed it).
 // A return or credit note posted after it was paid can leave it paid beyond what it came to: then the
 // last row says how much, in place of "Still owed", and a line says who owes it back (D-162).
 
 /** Whether more was paid than it came to after its returns and credit notes (D-162). */
-function isOverpaid(owed: PurchasePaymentsDto['data']): boolean {
+function isOverpaid(owed: OwedAmounts): boolean {
   return owed.overpaid !== undefined && compareDecimal(owed.overpaid, '0') > 0
 }
 
 /** Its total, returns, payments and what is still owed (or what was paid beyond it). */
-function Summary({ owed }: { owed: PurchasePaymentsDto['data'] }) {
+function Summary({ owed }: { owed: OwedAmounts }) {
   const { t } = useTranslation()
   const rows: { key: string; label: string; value: string | undefined; strong?: boolean }[] = [
     { key: 'total', label: t('purchasing.payments.total'), value: owed.total },
@@ -76,18 +76,30 @@ function Summary({ owed }: { owed: PurchasePaymentsDto['data'] }) {
   )
 }
 
+/** "Bought on credit: owed to …" (or an expense on credit), or "Paid by … from their own money". */
+const OWED_TO = {
+  purchase: {
+    supplier: 'purchasing.payments.owedToSupplier',
+    member: 'purchasing.payments.owedToMember',
+  },
+  expense: {
+    supplier: 'purchasing.payments.owedToSupplierExpense',
+    member: 'purchasing.payments.owedToMember',
+  },
+} as const
+
 export function PaymentsPanel({
+  document,
   owed,
-  purchaseDate,
   today,
   closedThrough,
   canRecord,
 }: {
-  owed: PurchasePaymentsDto['data']
-  purchaseDate: string
+  document: OwedDocument
+  owed: OwedAmounts
   today: string
   closedThrough: string | null
-  /** purchases.payments.record, with supplier prices visible. */
+  /** purchases.payments.record (or expenses.payments.record), with supplier prices visible. */
   canRecord: boolean
 }) {
   const { t } = useTranslation()
@@ -95,7 +107,9 @@ export function PaymentsPanel({
   const queryClient = useQueryClient()
   const money = useMoney()
   const businessDate = useBusinessDate()
-  const reverse = useMutation(trpc.purchasePayment.reverse.mutationOptions())
+  const reversePurchase = useMutation(trpc.purchasePayment.reverse.mutationOptions())
+  const reverseExpense = useMutation(trpc.expensePayment.reverse.mutationOptions())
+  const reversingBusy = reversePurchase.isPending || reverseExpense.isPending
   const [recording, setRecording] = useState(false)
   const [reversing, setReversing] = useState<PurchasePaymentDto | null>(null)
   const [error, setError] = useState<I18nKey | null>(null)
@@ -111,11 +125,19 @@ export function PaymentsPanel({
     if (!reversing) return
     setError(null)
     try {
-      const result = await reverse.mutateAsync({ id: reversing.id })
-      queryClient.setQueryData(
-        trpc.purchasePayment.list.queryKey({ purchaseId: owed.purchaseId }),
-        result,
-      )
+      if (document.kind === 'expense') {
+        const result = await reverseExpense.mutateAsync({ id: reversing.id })
+        queryClient.setQueryData(
+          trpc.expensePayment.list.queryKey({ expenseId: document.id }),
+          result,
+        )
+      } else {
+        const result = await reversePurchase.mutateAsync({ id: reversing.id })
+        queryClient.setQueryData(
+          trpc.purchasePayment.list.queryKey({ purchaseId: document.id }),
+          result,
+        )
+      }
       await queryClient.invalidateQueries({ queryKey: trpc.payable.list.pathKey() })
       toast.success(t('purchasing.payments.reversed'))
       setReversing(null)
@@ -132,14 +154,7 @@ export function PaymentsPanel({
     <Panel
       title={t('purchasing.payments.title')}
       hint={
-        owedTo
-          ? t(
-              owedTo.party === 'member'
-                ? 'purchasing.payments.owedToMember'
-                : 'purchasing.payments.owedToSupplier',
-              { name: isolate(owedTo.name) },
-            )
-          : undefined
+        owedTo ? t(OWED_TO[document.kind][owedTo.party], { name: isolate(owedTo.name) }) : undefined
       }
       action={
         canPay ? (
@@ -247,7 +262,7 @@ export function PaymentsPanel({
         note={t('purchasing.payments.reverseNote')}
         action={t('purchasing.payments.reverse')}
         busyLabel={t('purchasing.confirm.reversing')}
-        busy={reverse.isPending}
+        busy={reversingBusy}
         error={error}
         destructive
         onConfirm={() => void doReverse()}
@@ -255,8 +270,8 @@ export function PaymentsPanel({
       />
       {recording ? (
         <PaymentSheet
+          document={document}
           owed={owed}
-          purchaseDate={purchaseDate}
           today={today}
           closedThrough={closedThrough}
           onClose={() => setRecording(false)}

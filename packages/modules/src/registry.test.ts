@@ -46,9 +46,16 @@ describe('module manifests', () => {
     const started = MODULES.filter(
       (m) => m.availability === 'planned' && (m.permissionKeys.length > 0 || m.nav.length > 0),
     )
-    // M2 Steps 2 and 3 build Products & Services, Materials, Suppliers and Purchases; they stay
-    // planned until Step 7 (D-124).
-    expect(started.map((m) => m.id)).toEqual(['products', 'materials', 'suppliers', 'purchases'])
+    // M2 Steps 2, 3 and 5 build Products & Services, Materials, Suppliers, Purchases, Expenses and
+    // Running Costs; they stay planned until Step 7 (D-124).
+    expect(started.map((m) => m.id)).toEqual([
+      'products',
+      'materials',
+      'suppliers',
+      'purchases',
+      'expenses',
+      'running_costs',
+    ])
     for (const m of started) {
       expect(m.permissionKeys.length, m.id).toBeGreaterThan(0)
       expect(m.nav.length, m.id).toBeGreaterThan(0)
@@ -123,12 +130,21 @@ describe('module manifests', () => {
   })
 
   it('use nav/quick-action permissions from the module itself, and unique ids', () => {
-    const ids = new Set<string>()
+    const ids = new Map<string, string>()
     const manifests: readonly ModuleManifest[] = MODULES
     for (const m of manifests) {
       for (const entry of [...m.nav, ...m.quickActions]) {
-        expect(ids.has(entry.id), `duplicate nav id ${entry.id}`).toBe(false)
-        ids.add(entry.id)
+        // One page shared by modules (Amounts owed, D-166) repeats its entry exactly, but for the
+        // permission; buildModuleNav lists it once.
+        const shape = JSON.stringify([
+          entry.labelKey,
+          entry.path,
+          entry.icon,
+          'group' in entry ? entry.group : null,
+        ])
+        const seen = ids.get(entry.id)
+        expect(seen === undefined || seen === shape, `duplicate nav id ${entry.id}`).toBe(true)
+        ids.set(entry.id, shape)
         expect(entry.labelKey).toMatch(/^nav\.[a-z][a-z0-9_.]*$/)
         // Shipped with the module's build: the label in both languages (a common `nav.*` key).
         for (const locale of LOCALES) {
@@ -160,6 +176,9 @@ describe('module manifests', () => {
       ['suppliers', 'main'],
       ['purchases', 'main'],
       ['payables', 'main'],
+      ['expenses', 'main'],
+      ['payables', 'main'],
+      ['running_costs', 'main'],
     ])
   })
 
@@ -173,7 +192,7 @@ describe('module manifests', () => {
 })
 
 describe('permission catalog', () => {
-  it('holds the keys of dashboard, settings, products, materials, suppliers and purchases, and one data key per sensitivity category', () => {
+  it('holds the keys of dashboard, settings, products, materials, suppliers, purchases, expenses and running costs, and one data key per sensitivity category', () => {
     expect([...PERMISSION_CATALOG].sort()).toEqual(
       [
         'dashboard.home.view',
@@ -199,6 +218,16 @@ describe('permission catalog', () => {
         'purchases.books.close',
         'purchases.payments.view',
         'purchases.payments.record',
+        'expenses.documents.view',
+        'expenses.documents.manage',
+        'expenses.documents.approve',
+        'expenses.documents.post',
+        'expenses.documents.reverse',
+        'expenses.payments.view',
+        'expenses.payments.record',
+        'expenses.approval.manage',
+        'running_costs.items.view',
+        'running_costs.items.manage',
         'data.cost.view',
         'data.profit_margin.view',
         'data.supplier_price.view',
@@ -300,6 +329,15 @@ describe('role templates', () => {
         'purchases.documents.reverse',
         'purchases.payments.view',
         'purchases.payments.record',
+        'expenses.documents.view',
+        'expenses.documents.manage',
+        'expenses.documents.approve',
+        'expenses.documents.post',
+        'expenses.documents.reverse',
+        'expenses.payments.view',
+        'expenses.payments.record',
+        'running_costs.items.view',
+        'running_costs.items.manage',
         'data.cost.view',
         'data.profit_margin.view',
         'data.supplier_price.view',
@@ -314,6 +352,8 @@ describe('role templates', () => {
         'materials.items.view',
         'suppliers.items.view',
         'purchases.documents.view',
+        'expenses.documents.view',
+        'running_costs.items.view',
         'data.cost.view',
         'data.profit_margin.view',
         'data.supplier_price.view',

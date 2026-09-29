@@ -21,6 +21,8 @@ describe('permission groups of the Roles section', () => {
       'materials',
       'suppliers',
       'purchases',
+      'expenses',
+      'running_costs',
       'data',
     ])
     expect(groups.flatMap((g) => g.keys).sort()).toEqual([...PERMISSION_CATALOG].sort())
@@ -41,6 +43,8 @@ describe('permission groups of the Roles section', () => {
       'materials',
       'suppliers',
       'purchases',
+      'expenses',
+      'running_costs',
       'orders',
       'data',
     ])
@@ -88,6 +92,14 @@ describe('visiblePermissionGroups', () => {
       'materials.items.view',
       'materials.items.manage',
     ])
+    // Choosing whether expenses need approval only means something with a team (D-164).
+    const expenses = (has_team: boolean) =>
+      visiblePermissionGroups({ has_team, multi_location: false }, [...M1, 'expenses']).find(
+        (g) => g.id === 'expenses',
+      )?.keys
+    expect(expenses(true)).toContain('expenses.approval.manage')
+    expect(expenses(false)).not.toContain('expenses.approval.manage')
+    expect(expenses(false)).toContain('expenses.documents.approve')
     // A module the business turned off offers nothing either.
     expect(
       visiblePermissionGroups(capabilities, [...M1, 'products']).map((g) => g.id),

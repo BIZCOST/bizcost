@@ -29,7 +29,8 @@ import { AppError } from '../errors'
 import { isoOf } from './stock'
 
 // Attachments (ROADMAP.md M2 Step 3; DATA_MODEL.md §6 Files; D-030, D-085): files attached to a
-// record, first a purchase's receipts, in the private bucket business-files. As for the logo, the API
+// record (a purchase's or an expense's receipts, M2 Steps 3 and 5), in the private bucket
+// business-files. As for the logo, the API
 // first registers the path {business_id}/{entity}/{uuidv7}.{ext} in app.file_uploads (at most 100
 // attachment uploads per business an hour, in the database), then returns Storage's signed upload URL;
 // Storage accepts a file only at an open registered path. `attachment.add` then checks the object
@@ -49,6 +50,12 @@ const EXTENSION_OF: Readonly<Record<AttachmentContentType, string>> = {
   'image/jpeg': 'jpg',
   'image/webp': 'webp',
   'application/pdf': 'pdf',
+}
+
+/** The table of each kind of record files are attached to. */
+const RECORD_TABLES: Readonly<Record<AttachmentEntity, ReturnType<typeof sql.raw>>> = {
+  purchase: sql.raw('app.purchases'),
+  expense: sql.raw('app.expenses'),
 }
 
 /** Storage's signed upload URLs work for 2 hours; the registry closes the path at the same time. */
@@ -75,23 +82,30 @@ export function sniffAttachmentType(bytes: Uint8Array): AttachmentContentType | 
 /**
  * The record must be a live record of this business (NOT_FOUND otherwise). With `lock`, its row is
  * locked FOR NO KEY UPDATE until the transaction ends: a discard of it (FOR UPDATE, then the files it
- * sees) and other attaches to it wait, or this waits for them and then finds a discarded record.
+ * sees) and other attaches to it wait, or this waits for them and then finds a discarded record. With
+ * `change` (a file added or taken off), an expense sent for approval or approved is refused
+ * (EXPENSE_IN_APPROVAL): what the approver looks at, its receipts included, is what is approved
+ * (D-164, D-176).
  */
 async function assertRecord(
   tx: Tx,
   businessId: string,
   entity: AttachmentEntity,
   id: string,
-  lock = false,
+  { lock = false, change = false }: { lock?: boolean; change?: boolean } = {},
 ) {
-  // One entity today; the attachments table's trigger checks the same (DATA_MODEL.md §6).
-  if (entity !== 'purchase') throw new AppError('not_found')
+  // The attachments table's trigger checks the same (DATA_MODEL.md §6).
+  const table = RECORD_TABLES[entity]
+  if (!table) throw new AppError('not_found')
   const [row] = (await tx.execute(sql`
-    select p.id from app.purchases p
-     where p.business_id = ${businessId} and p.id = ${id} and p.deleted_at is null
+    select r.id, r.status from ${table} r
+     where r.business_id = ${businessId} and r.id = ${id} and r.deleted_at is null
      ${lock ? sql`for no key update` : sql``}
-  `)) as unknown as { id: string }[]
+  `)) as unknown as { id: string; status: string }[]
   if (!row) throw new AppError('not_found')
+  if (change && entity === 'expense' && (row.status === 'submitted' || row.status === 'approved')) {
+    throw new AppError('expense_in_approval')
+  }
 }
 
 async function countOn(tx: Tx, businessId: string, entity: AttachmentEntity, id: string) {
@@ -132,7 +146,8 @@ function closeUploads(
 }
 
 /**
- * `attachment.uploadUrl` (purchases.documents.manage): where to upload one file for the record. The
+ * `attachment.uploadUrl` (the record's "manage" key: purchases.documents.manage or
+ * expenses.documents.manage): where to upload one file for the record. The
  * path is registered first (RATE_LIMITED after 100 in an hour); at most ATTACHMENTS_PER_RECORD_MAX
  * files per record (VALIDATION). Uploads of the business that expired unused are removed on the way.
  */
@@ -142,7 +157,7 @@ export async function attachmentUploadUrl(
 ): Promise<AttachmentUploadUrlDto> {
   const path = `${ctx.businessId}/${input.entity}/${newId()}.${EXTENSION_OF[input.contentType]}`
   const expired = await ctx.tx(async (tx) => {
-    await assertRecord(tx, ctx.businessId, input.entity, input.entityId)
+    await assertRecord(tx, ctx.businessId, input.entity, input.entityId, { change: true })
     if (
       (await countOn(tx, ctx.businessId, input.entity, input.entityId)) >=
       ATTACHMENTS_PER_RECORD_MAX
@@ -234,7 +249,7 @@ function toDto(record: AttachmentRecord, urls: Map<string, string>): AttachmentD
   }
 }
 
-/** `attachment.list` (purchases.documents.view): the record's files, oldest first. */
+/** `attachment.list` (the record's "view" key): the record's files, oldest first. */
 export async function listAttachments(
   ctx: BusinessCtx,
   input: ListInput,
@@ -258,7 +273,7 @@ async function discard(ctx: BusinessCtx, path: string): Promise<void> {
 }
 
 /**
- * `attachment.add` (purchases.documents.manage): attaches an uploaded file. The path must be an
+ * `attachment.add` (the record's "manage" key): attaches an uploaded file. The path must be an
  * attachment path of this business for this kind of record (VALIDATION) that attachment.uploadUrl
  * issued and that was not attached or refused since; the object must exist, be at most 10 MB and be a
  * PNG, JPEG, WebP or PDF whose first bytes, stored type and extension agree (ATTACHMENT_INVALID
@@ -271,7 +286,7 @@ export async function addAttachment(
   const match = attachmentPathPattern(ctx.businessId, input.entity).exec(input.path)
   if (!match) throw new AppError('validation', { message: 'path: not an attachment path here' })
   const [upload] = await ctx.tx(async (tx) => {
-    await assertRecord(tx, ctx.businessId, input.entity, input.entityId)
+    await assertRecord(tx, ctx.businessId, input.entity, input.entityId, { change: true })
     return tx
       .select({ status: fileUploads.status, purpose: fileUploads.purpose })
       .from(fileUploads)
@@ -322,7 +337,10 @@ export async function addAttachment(
     // Then the record, locked until the attachment is committed: a discard in flight has taken it
     // out (NOT_FOUND), or waits and takes this file with it (D-139, D-145). The lock also makes the
     // count below exact.
-    await assertRecord(tx, ctx.businessId, input.entity, input.entityId, true)
+    await assertRecord(tx, ctx.businessId, input.entity, input.entityId, {
+      lock: true,
+      change: true,
+    })
     if (
       (await countOn(tx, ctx.businessId, input.entity, input.entityId)) >=
       ATTACHMENTS_PER_RECORD_MAX
@@ -347,7 +365,7 @@ export async function addAttachment(
 }
 
 /**
- * Takes every file off a record that is being discarded (a draft purchase), in the caller's
+ * Takes every file off a record that is being discarded (a draft purchase or expense), in the caller's
  * transaction: the rows are soft-deleted and their uploads closed. Returns their paths, for
  * removeStoredFiles once the transaction has committed.
  */
@@ -379,9 +397,35 @@ export async function removeStoredFiles(ctx: BusinessCtx, paths: readonly string
   if (paths.length > 0) await removeQuietly(ctx.config, paths)
 }
 
-/** `attachment.remove` (purchases.documents.manage): the file is taken off and deleted. */
-export async function removeAttachment(ctx: BusinessCtx, input: IdInput): Promise<OkDto> {
+/**
+ * `attachment.remove`: the file is taken off and deleted. `mayManage` checks the caller may change the
+ * record the file is on (FORBIDDEN otherwise), once its kind is known; EXPENSE_IN_APPROVAL while the
+ * expense it is on is reviewed.
+ */
+export async function removeAttachment(
+  ctx: BusinessCtx,
+  input: IdInput,
+  mayManage: (entity: AttachmentEntity) => void,
+): Promise<OkDto> {
   const path = await ctx.tx(async (tx) => {
+    const [found] = await tx
+      .select({ entity: attachments.entity, entityId: attachments.entityId })
+      .from(attachments)
+      .where(
+        and(
+          eq(attachments.businessId, ctx.businessId),
+          eq(attachments.id, input.id),
+          isNull(attachments.deletedAt),
+        ),
+      )
+    if (!found) throw new AppError('not_found')
+    mayManage(found.entity)
+    // The record locked first (as a discard or an approval locks it), then refused while it is
+    // reviewed (an expense sent for approval or approved, D-176).
+    await assertRecord(tx, ctx.businessId, found.entity, found.entityId, {
+      lock: true,
+      change: true,
+    })
     const [row] = await tx
       .update(attachments)
       .set({ deletedAt: sql`now()` })

@@ -132,15 +132,26 @@ function LineMessages({
 }
 
 /**
- * The VAT of a line: the standard rate or none (a stored other rate stays offered). The options are
- * short ("5%", "None"): the caption and the box's name say VAT, and a phone has no room for more.
+ * The VAT of a line (or of an expense): the standard rate or none (a stored other rate stays offered).
+ * The options are short ("5%", "None"): the caption and the box's name say VAT, and a phone has no
+ * room for more.
  */
-function VatSelect({ value, onChange }: { value: string; onChange: (value: string) => void }) {
+export function VatSelect({
+  value,
+  onChange,
+  id,
+}: {
+  value: string
+  onChange: (value: string) => void
+  /** With a visible label pointing at it (its name is then the label's). */
+  id?: string
+}) {
   const { t } = useTranslation()
   const rates = [STANDARD_VAT_RATE, NO_VAT]
   return (
     <NativeSelect
-      aria-label={t('purchasing.editor.vat')}
+      id={id}
+      aria-label={id ? undefined : t('purchasing.editor.vat')}
       value={value}
       onChange={(event) => onChange(event.target.value)}
     >
@@ -669,22 +680,45 @@ export function AddLineButtons({
   )
 }
 
+/** The switch's words: a purchase's prices, or an expense's one amount (M2 Step 5). */
+const VAT_MODE_WORDS = {
+  prices: {
+    label: 'purchasing.editor.vatMode.label',
+    before: 'purchasing.editor.vatMode.before',
+    included: 'purchasing.editor.vatMode.included',
+    beforeHint: 'purchasing.editor.vatMode.beforeHint',
+    includedHint: 'purchasing.editor.vatMode.includedHint',
+  },
+  amount: {
+    label: 'purchasing.editor.vatModeAmount.label',
+    before: 'purchasing.editor.vatModeAmount.before',
+    included: 'purchasing.editor.vatModeAmount.included',
+    beforeHint: 'purchasing.editor.vatModeAmount.beforeHint',
+    includedHint: 'purchasing.editor.vatModeAmount.includedHint',
+  },
+} as const
+
 /**
- * Whether the purchase's prices are typed before VAT or with it (a VAT-registered business; the
- * owner's request of 2026-09-29). The prices' captions follow it.
+ * Whether the purchase's prices (or the expense's amount) are typed before VAT or with it (a
+ * VAT-registered business; the owner's request of 2026-09-29). The prices' captions follow it.
  */
 export function VatModeChoice({
   value,
   onChange,
+  wording = 'prices',
+  className = 'mb-4',
 }: {
   value: boolean
   onChange: (includesVat: boolean) => void
+  wording?: keyof typeof VAT_MODE_WORDS
+  className?: string
 }) {
   const { t } = useTranslation()
   const name = useId()
+  const words = VAT_MODE_WORDS[wording]
   return (
-    <fieldset data-vat-mode className="mb-4">
-      <legend className="sr-only">{t('purchasing.editor.vatMode.label')}</legend>
+    <fieldset data-vat-mode className={className}>
+      <legend className="sr-only">{t(words.label)}</legend>
       <div className="grid grid-cols-2 gap-1 rounded-lg bg-muted p-1">
         {[false, true].map((includesVat) => (
           <label key={String(includesVat)} className="relative min-w-0">
@@ -703,19 +737,13 @@ export function VatModeChoice({
                 'peer-focus-visible:ring-3 peer-focus-visible:ring-ring',
               )}
             >
-              {t(
-                includesVat
-                  ? 'purchasing.editor.vatMode.included'
-                  : 'purchasing.editor.vatMode.before',
-              )}
+              {t(includesVat ? words.included : words.before)}
             </span>
           </label>
         ))}
       </div>
       <p className="mt-1.5 text-sm text-muted-foreground">
-        {t(
-          value ? 'purchasing.editor.vatMode.includedHint' : 'purchasing.editor.vatMode.beforeHint',
-        )}
+        {t(value ? words.includedHint : words.beforeHint)}
       </p>
     </fieldset>
   )

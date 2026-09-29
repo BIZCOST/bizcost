@@ -140,6 +140,34 @@ export {
   type StockMovementKind,
   type VatInCostInput,
 } from './purchasing/keys'
+// Expenses and running costs (M2 Step 5): statuses and approval, amounts, monthly amounts.
+export {
+  EXPENSE_STATUSES,
+  monthlyAmount,
+  monthlyTotal,
+  RUNNING_COST_FREQUENCIES,
+  runningCostActiveOn,
+  STARTER_COST_CATEGORIES,
+  type ExpenseStatus,
+  type RunningCostFrequency,
+  type StarterCostCategory,
+} from './expenses/keys'
+export {
+  computeExpense,
+  expenseError,
+  type ExpenseAmounts,
+  type ExpenseErrorCode,
+  type ExpenseInput,
+} from './expenses/amounts'
+export {
+  EXPENSE_ACTIONS,
+  expenseActions,
+  expenseTransition,
+  type ExpenseAction,
+  type ExpenseActionContext,
+  type ExpenseRefusal,
+  type ExpenseTransition,
+} from './expenses/approval'
 // Names of catalog records compared the way people read them (duplicates and "did you mean").
 export { matchNames, nameKey, type NameMatches } from './catalog/names'
 export { parseTrn, TRN_LENGTH, type TrnError, type TrnResult } from './business/trn'

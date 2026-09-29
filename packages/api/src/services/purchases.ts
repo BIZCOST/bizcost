@@ -73,7 +73,7 @@ import {
 // stored amounts stay before VAT, so posting reads them the same way); every save and every posting
 // needs a payment method (PAYMENT_METHOD_REQUIRED for a draft saved before without one); a purchase
 // bought on credit (it needs its supplier) or paid by a member from their own money (an active
-// member) is owed until paid (purchase-payments.ts), and one with payments that stand is reversed
+// member) is owed until paid (payments.ts), and one with payments that stand is reversed
 // only once they are (PURCHASE_HAS_PAYMENTS).
 
 type CreateInput = z.output<typeof createPurchaseInput>
@@ -408,8 +408,8 @@ export async function listPurchases(ctx: BusinessCtx, input: ListInput): Promise
 // Drafts
 // ---------------------------------------------------------------------------------------------------
 
-/** The business's currency and default location, as a draft save needs them. */
-async function draftContext(tx: Tx, businessId: string) {
+/** The business's currency and default location, as a draft save needs them (expenses too). */
+export async function draftContext(tx: Tx, businessId: string) {
   const [row] = (await tx.execute(sql`
     select trim(b.currency) as currency,
            (select l.id from app.locations l
@@ -427,7 +427,7 @@ async function draftContext(tx: Tx, businessId: string) {
  * multi_location capability (CAPABILITY_DISABLED) and must be a live location of the business
  * (NOT_FOUND).
  */
-async function resolveLocation(
+export async function resolveLocation(
   tx: Tx,
   ctx: BusinessCtx,
   locationId: string | null,
@@ -446,17 +446,24 @@ async function resolveLocation(
   return row.id
 }
 
+/** How a purchase or an expense was paid, and by whom (the fields assertPaidBy checks). */
+interface PaidByFields {
+  readonly paymentMethod: Fields['paymentMethod']
+  readonly paidByMemberId: string | null
+  readonly supplierId: string | null
+}
+
 /**
  * Who paid, as the method says: a member who paid from their own money must be an active member of
- * the business (NOT_FOUND otherwise); a purchase bought on credit needs its supplier (VALIDATION; the
- * input schema says both first).
+ * the business (NOT_FOUND otherwise); a purchase or an expense bought on credit needs its supplier
+ * (VALIDATION; the input schema says both first).
  */
-async function assertPaidBy(tx: Tx, businessId: string, input: Fields) {
+export async function assertPaidBy(tx: Tx, businessId: string, input: PaidByFields) {
   if ((input.paymentMethod === 'paid_by_member') !== (input.paidByMemberId !== null)) {
     throw invalid('paidByMemberId: goes with paid_by_member')
   }
   if (input.paymentMethod === 'supplier_credit' && input.supplierId === null) {
-    throw invalid('supplierId: a purchase on credit needs its supplier')
+    throw invalid('supplierId: bought on credit needs its supplier')
   }
   if (input.paidByMemberId !== null) await assertActivePayer(tx, businessId, input.paidByMemberId)
 }
@@ -466,7 +473,7 @@ async function assertPaidBy(tx: Tx, businessId: string, input: Fields) {
  * otherwise): checked when a draft is saved and again when it is posted, since they may have left in
  * between (or a correction copied a purchase paid by someone who has since left).
  */
-async function assertActivePayer(tx: Tx, businessId: string, memberId: string) {
+export async function assertActivePayer(tx: Tx, businessId: string, memberId: string) {
   const [row] = (await tx.execute(sql`
     select m.id from app.business_members m
      where m.business_id = ${businessId} and m.id = ${memberId}
@@ -475,7 +482,7 @@ async function assertActivePayer(tx: Tx, businessId: string, memberId: string) {
   if (!row) throw new AppError('not_found')
 }
 
-async function assertSupplier(tx: Tx, businessId: string, supplierId: string | null) {
+export async function assertSupplier(tx: Tx, businessId: string, supplierId: string | null) {
   if (supplierId === null) return
   const [row] = (await tx.execute(sql`
     select s.id from app.suppliers s

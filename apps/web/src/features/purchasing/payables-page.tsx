@@ -4,8 +4,8 @@ import { useTRPC } from '@bizcost/app-core'
 import type {
   PayableGroupDto,
   PayableInvoiceDto,
+  PayableKindDto,
   PayablePartyDto,
-  PurchasePaymentsDto,
 } from '@bizcost/contracts'
 import { compareDecimal } from '@bizcost/domain'
 import { formatList } from '@bizcost/i18n'
@@ -27,16 +27,21 @@ import { useLocale } from '@/lib/i18n/client'
 import { useBusinessContext } from '@/lib/trpc/client'
 import { cn } from '@/lib/utils'
 import { Money, useBusinessDate } from './amounts'
-import { PaymentSheet } from './payment-sheet'
+import { PaymentSheet, type OwedAmounts, type OwedDocument } from './payment-sheet'
 
-// Amounts owed (the owner's request of 2026-09-29; the Purchases module's second nav entry, with
-// purchases.payments.view): what the business still owes, in two tabs, "To suppliers" (purchases
-// bought on credit, by supplier) and "To employees" (purchases a member paid from their own money, by
-// member). Each purchase says its day, its total, what its returns and credit notes took off (when
-// any), what was paid, what is still owed and who entered it, opens at its page, and with
-// purchases.payments.record takes a payment ("Record a payment"). The amounts are supplier prices: a
-// member who may not see them is told so (payable.list refuses). payable.list comes a page of
-// suppliers or members at a time ("Show more"), each with its oldest purchases still owed.
+// Amounts owed (the owner's request of 2026-09-29; a nav entry of Purchases and of Expenses, listed
+// once, D-166): what the business still owes, in two tabs, "To suppliers" (purchases and expenses on
+// credit, by supplier) and "To employees" (purchases and expenses a member paid from their own money,
+// by member). Each says its day, its total, what its returns and credit notes took off (a purchase,
+// when any), what was paid, what is still owed and who entered it, opens at its page, and with the
+// key to record payments of its kind (purchases.payments.record, expenses.payments.record) takes a
+// payment ("Record a payment"). A member sees the kinds whose payments they may see (payable.list).
+// The amounts are supplier prices: a member who may not see them is told so (payable.list refuses).
+// payable.list comes a page of suppliers or members at a time ("Show more"), each with its oldest
+// purchases and expenses still owed.
+
+/** The modules whose documents are owed here: the page is open through either (D-166). */
+const PAYABLES_MODULES = ['purchases', 'expenses'] as const
 
 const TABS: readonly { party: PayablePartyDto; param: string | null }[] = [
   { party: 'supplier', param: null },
@@ -55,7 +60,10 @@ function useParty(): [PayablePartyDto, (party: PayablePartyDto) => void] {
   ]
 }
 
-/** One purchase still owed: its day and number, first items, amounts, who entered it. */
+/**
+ * One purchase or expense still owed: its day and number, a purchase's first items or an expense's
+ * category and what it was for, the amounts, who entered it.
+ */
 function InvoiceRow({
   invoice,
   href,
@@ -69,10 +77,17 @@ function InvoiceRow({
   const { t } = useTranslation()
   const { locale } = useLocale()
   const businessDate = useBusinessDate()
-  const items = formatList(
-    locale,
-    invoice.itemNames.filter(Boolean).map((name) => isolate(name)),
-  )
+  // A purchase: its first items ("Milk and Sugar"); an expense: its category · what it was for.
+  const items =
+    invoice.kind === 'expense'
+      ? [invoice.categoryName, ...invoice.itemNames]
+          .filter((name): name is string => Boolean(name))
+          .map((name) => isolate(name))
+          .join(' · ')
+      : formatList(
+          locale,
+          invoice.itemNames.filter(Boolean).map((name) => isolate(name)),
+        )
   // Returns and credit notes took something off: said, so that the amounts add up.
   const returned = invoice.returned !== undefined && compareDecimal(invoice.returned, '0') > 0
   return (
@@ -85,7 +100,12 @@ function InvoiceRow({
           href={href}
           className="font-medium text-primary underline-offset-4 outline-none hover:underline focus-visible:ring-3 focus-visible:ring-ring"
         >
-          {t('purchasing.view.title', { date: businessDate(invoice.businessDate) })}
+          {t(
+            invoice.kind === 'expense'
+              ? 'purchasing.payables.expenseTitle'
+              : 'purchasing.view.title',
+            { date: businessDate(invoice.businessDate) },
+          )}
         </Link>
         <p className="mt-0.5 text-sm text-muted-foreground">
           {invoice.reference ? (
@@ -153,7 +173,7 @@ function InvoiceRow({
   )
 }
 
-/** A supplier or member and the purchases still owed to them. */
+/** A supplier or member and the purchases and expenses still owed to them. */
 function GroupCard({
   group,
   businessId,
@@ -161,7 +181,8 @@ function GroupCard({
 }: {
   group: PayableGroupDto
   businessId: string
-  onPay?: (invoice: PayableInvoiceDto) => void
+  /** Absent for a kind the member may not record payments of. */
+  onPay?: (invoice: PayableInvoiceDto) => (() => void) | undefined
 }) {
   const { t } = useTranslation()
   const id = useId()
@@ -195,10 +216,10 @@ function GroupCard({
       <ul aria-label={group.name} className="divide-y">
         {group.invoices.map((invoice) => (
           <InvoiceRow
-            key={invoice.purchaseId}
+            key={`${invoice.kind}:${invoice.documentId}`}
             invoice={invoice}
-            href={`/b/${businessId}/purchases/${invoice.purchaseId}`}
-            onPay={onPay ? () => onPay(invoice) : undefined}
+            href={`/b/${businessId}/${invoice.kind === 'expense' ? 'expenses' : 'purchases'}/${invoice.documentId}`}
+            onPay={onPay?.(invoice)}
           />
         ))}
       </ul>
@@ -228,22 +249,23 @@ function Payables() {
     ),
   )
   const books = useQuery(trpc.books.get.queryOptions())
-  const [paying, setPaying] = useState<{
-    owed: PurchasePaymentsDto['data']
-    purchaseDate: string
-  } | null>(null)
+  const [paying, setPaying] = useState<{ document: OwedDocument; owed: OwedAmounts } | null>(null)
   const tabsId = useId()
   if (!context) return null
-  const canRecord = can(context, 'purchases.payments.record') && seesAmounts
+  // Each kind's payments are recorded with its own key (D-166), and only by a member who sees the
+  // amounts.
+  const canRecord: Record<PayableKindDto, boolean> = {
+    purchase: seesAmounts && can(context, 'purchases.payments.record'),
+    expense: seesAmounts && can(context, 'expenses.payments.record'),
+  }
   const title = t('common.nav.payables')
   const first = list.data?.pages[0]?.data
   const groups = list.data?.pages.flatMap((page) => page.data.groups) ?? []
 
   function pay(group: PayableGroupDto, invoice: PayableInvoiceDto) {
     setPaying({
-      purchaseDate: invoice.businessDate,
+      document: { kind: invoice.kind, id: invoice.documentId, businessDate: invoice.businessDate },
       owed: {
-        purchaseId: invoice.purchaseId,
         owedTo: { party: group.party, partyId: group.partyId, name: group.name },
         status: 'posted',
         currency: invoice.currency,
@@ -336,7 +358,9 @@ function Payables() {
                 key={group.partyId}
                 group={group}
                 businessId={businessId}
-                onPay={canRecord ? (invoice) => pay(group, invoice) : undefined}
+                onPay={(invoice) =>
+                  canRecord[invoice.kind] ? () => pay(group, invoice) : undefined
+                }
               />
             ))}
             {list.isError ? (
@@ -357,8 +381,8 @@ function Payables() {
       </div>
       {paying && books.data ? (
         <PaymentSheet
+          document={paying.document}
           owed={paying.owed}
-          purchaseDate={paying.purchaseDate}
           today={books.data.today}
           closedThrough={books.data.closedThrough}
           onClose={() => setPaying(null)}
@@ -368,10 +392,10 @@ function Payables() {
   )
 }
 
-/** Amounts owed, inside the Purchases module's gate (its "payables" entry). */
+/** Amounts owed, inside the gate of the modules that share it (Purchases, Expenses; D-166). */
 export function PayablesPage() {
   return (
-    <ModuleGate moduleId="purchases" entryId="payables">
+    <ModuleGate moduleId={PAYABLES_MODULES} entryId="payables">
       <Payables />
     </ModuleGate>
   )

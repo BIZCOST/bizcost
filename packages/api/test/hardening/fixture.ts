@@ -3,6 +3,9 @@ import type {
   AttachmentUploadUrlDto,
   BooksDto,
   BusinessProfileDto,
+  CostCategoryDto,
+  ExpenseDto,
+  ExpensePaymentsDto,
   InvitationDto,
   LocationDto,
   LogoUploadUrlDto,
@@ -15,6 +18,7 @@ import type {
   PurchaseReturnDto,
   RecipeDto,
   RoleDto,
+  RunningCostDto,
   SupplierDto,
 } from '@bizcost/contracts'
 import type { Db } from '@bizcost/db'
@@ -52,6 +56,9 @@ import { CapturedEmails, join, setupBusiness, WORKSHOP } from '../settings'
 // attached, a draft purchase, a posted return and a draft return (M2 Step 3), a recipe for its product
 // (a line in the material's carton) and an item bought ready to sell with its material (M2 Step 4),
 // and a purchase bought on credit with a payment recorded on it (the owner's requests of 2026-09-29).
+// M2 Step 5: expenses need approval in each business; each has a category of its own, an expense
+// bought on credit with a receipt and a payment, a draft expense, one sent for approval, and a
+// running cost.
 
 export type Handler = ReturnType<typeof handlerFor>
 
@@ -70,7 +77,14 @@ export interface Api {
 }
 
 /** The modules still being built that the suites preview (D-125). */
-export const PREVIEW_MODULES = ['materials', 'products', 'suppliers', 'purchases'] as const
+export const PREVIEW_MODULES = [
+  'materials',
+  'products',
+  'suppliers',
+  'purchases',
+  'expenses',
+  'running_costs',
+] as const
 
 /**
  * The API as deployed (secret key for Storage, emails kept instead of sent), with the modules still
@@ -220,6 +234,20 @@ export interface Tenant {
   creditPurchase: PurchaseDto
   /** The payment recorded on it. */
   payment: PurchasePaymentDto
+  /** A category of its own (besides the starter ones every business has). */
+  category: CostCategoryDto
+  /** A posted expense bought on credit from the supplier, with a receipt and a payment. */
+  expense: ExpenseDto
+  /** Its receipt. */
+  expenseAttachment: AttachmentDto
+  /** The payment recorded on it. */
+  expensePayment: PurchasePaymentDto
+  /** A draft expense. */
+  draftExpense: ExpenseDto
+  /** An expense sent for approval. */
+  submittedExpense: ExpenseDto
+  /** A running cost. */
+  runningCost: RunningCostDto
 }
 
 function ok<T>(result: CallResult<T>, what: string): T {
@@ -497,6 +525,97 @@ export async function createTenant(api: Api, label: string): Promise<Tenant> {
   ).data
   const payment = paid.payments.find((p) => p.id === paymentId)!
 
+  ok(await as('expense.updateSettings', 'mutation', { approval: true }), 'expense.updateSettings')
+  const category = ok(
+    await as('costCategory.create', 'mutation', { id: newId(), name: `Cleaning ${label} ${tag}` }),
+    'costCategory.create',
+  ) as CostCategoryDto
+  const expenseInput = (extra: object) => ({
+    id: newId(),
+    categoryId: category.id,
+    businessDate: today,
+    documentType: 'tax_invoice',
+    paymentMethod: 'cash',
+    amount: '100',
+    vatRate: '5',
+    ...extra,
+  })
+  const expenseDraft = async (extra: object) =>
+    (
+      ok(await as('expense.create', 'mutation', expenseInput(extra)), 'expense.create') as {
+        data: ExpenseDto
+      }
+    ).data
+  const creditExpense = await expenseDraft({
+    supplierId: supplier.id,
+    paymentMethod: 'supplier_credit',
+    reference: `BILL-${label}-${tag}`,
+  })
+  ok(
+    await as('expense.post', 'mutation', { id: creditExpense.id, version: creditExpense.version }),
+    'expense.post',
+  )
+  const billUpload = ok(
+    await as('attachment.uploadUrl', 'mutation', {
+      entity: 'expense',
+      entityId: creditExpense.id,
+      contentType: 'image/png',
+    }),
+    'attachment.uploadUrl (expense)',
+  ) as AttachmentUploadUrlDto
+  expect((await uploadTo(billUpload.uploadUrl, PNG, 'image/png')).ok).toBe(true)
+  const expenseAttachment = (
+    ok(
+      await as('attachment.add', 'mutation', {
+        entity: 'expense',
+        entityId: creditExpense.id,
+        path: billUpload.path,
+        fileName: `bill-${label}-${tag}.png`,
+      }),
+      'attachment.add (expense)',
+    ) as { data: AttachmentDto }
+  ).data
+  const expensePaymentId = newId()
+  const expensePaid = (
+    ok(
+      await as('expensePayment.record', 'mutation', {
+        id: expensePaymentId,
+        expenseId: creditExpense.id,
+        businessDate: today,
+        method: 'cash',
+        amount: '5',
+        note: `Bill paid ${label} ${tag}`,
+      }),
+      'expensePayment.record',
+    ) as ExpensePaymentsDto
+  ).data
+  const expensePayment = expensePaid.payments.find((p) => p.id === expensePaymentId)!
+  const expense = (
+    ok(await as('expense.get', 'query', { id: creditExpense.id }), 'expense.get') as {
+      data: ExpenseDto
+    }
+  ).data
+  const draftExpense = await expenseDraft({ description: `Draft ${label} ${tag}` })
+  const toSubmit = await expenseDraft({})
+  const submittedExpense = (
+    ok(
+      await as('expense.submit', 'mutation', { id: toSubmit.id, version: toSubmit.version }),
+      'expense.submit',
+    ) as { data: ExpenseDto }
+  ).data
+  const runningCost = (
+    ok(
+      await as('runningCost.create', 'mutation', {
+        id: newId(),
+        name: `Shop rent ${label} ${tag}`,
+        categoryId: category.id,
+        amount: '15000',
+        startsOn: today,
+      }),
+      'runningCost.create',
+    ) as { data: RunningCostDto }
+  ).data
+
   return {
     id,
     label,
@@ -527,6 +646,13 @@ export async function createTenant(api: Api, label: string): Promise<Tenant> {
     resaleProduct,
     creditPurchase,
     payment,
+    category,
+    expense,
+    expenseAttachment,
+    expensePayment,
+    draftExpense,
+    submittedExpense,
+    runningCost,
   }
 }
 
@@ -543,6 +669,9 @@ export function queryInputOf(path: string, tenant: Tenant): unknown {
   if (path === 'product.costs') return { ids: [tenant.product.id, tenant.resaleProduct.id] }
   if (path === 'payable.list') return { party: 'supplier' }
   if (path === 'purchasePayment.list') return { purchaseId: tenant.creditPurchase.id }
+  if (path === 'expense.get') return { id: tenant.expense.id }
+  if (path === 'expensePayment.list') return { expenseId: tenant.expense.id }
+  if (path === 'runningCost.get') return { id: tenant.runningCost.id }
   return undefined
 }
 
@@ -589,6 +718,19 @@ export function markersOf(tenant: Tenant): string[] {
     tenant.creditPurchase.reference ?? tenant.creditPurchase.id,
     tenant.payment.id,
     tenant.payment.note ?? tenant.payment.id,
+    tenant.category.id,
+    tenant.category.name,
+    tenant.expense.id,
+    tenant.expense.reference ?? tenant.expense.id,
+    tenant.expenseAttachment.id,
+    tenant.expenseAttachment.fileName,
+    tenant.expensePayment.id,
+    tenant.expensePayment.note ?? tenant.expensePayment.id,
+    tenant.draftExpense.id,
+    tenant.draftExpense.description ?? tenant.draftExpense.id,
+    tenant.submittedExpense.id,
+    tenant.runningCost.id,
+    tenant.runningCost.name,
     ...Object.values(tenant.roles).map((role) => role.id),
     ...[tenant.owner, tenant.admin, tenant.employee].flatMap(({ user }) => [
       user.id,

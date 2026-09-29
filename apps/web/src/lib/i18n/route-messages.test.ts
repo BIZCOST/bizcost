@@ -14,8 +14,10 @@ import {
   AUTH_MESSAGES,
   CATALOG_MESSAGES,
   DASHBOARD_MESSAGES,
+  EXPENSES_MESSAGES,
   PURCHASES_MESSAGES,
   ROOT_MESSAGES,
+  RUNNING_COSTS_MESSAGES,
   SETTINGS_MESSAGES,
   SETTINGS_SECTION_MESSAGES,
   SETUP_MESSAGES,
@@ -129,6 +131,54 @@ describe("each route's messages have the keys its code translates", () => {
     expect(missing(['features/purchasing', 'components/ui'], PURCHASES_MESSAGES)).toEqual({})
   })
 
+  it('Expenses: the list, the editor, the view, the categories and the shared parts', () => {
+    const purchasing = 'features/purchasing'
+    expect(
+      missing(
+        [
+          'features/expenses',
+          `${purchasing}/amounts.tsx`,
+          `${purchasing}/confirm-dialog.tsx`,
+          `${purchasing}/panel.tsx`,
+          `${purchasing}/payments-panel.tsx`,
+          `${purchasing}/payment-sheet.tsx`,
+          `${purchasing}/payment-draft.ts`,
+          `${purchasing}/purchase-lines.tsx`,
+          `${purchasing}/receipts.tsx`,
+          `${purchasing}/supplier-sheet.tsx`,
+          `${purchasing}/supplier-draft.ts`,
+          `${purchasing}/totals.tsx`,
+          'features/catalog/catalog-list.tsx',
+          'features/catalog/catalog-loading.tsx',
+          'components/ui',
+        ],
+        EXPENSES_MESSAGES,
+      ),
+    ).toEqual({})
+  })
+
+  it('Running Costs: the list, its form and the categories', () => {
+    const expenses = 'features/expenses'
+    expect(
+      missing(
+        [
+          `${expenses}/running-costs-page.tsx`,
+          `${expenses}/running-cost-sheet.tsx`,
+          `${expenses}/running-cost-draft.ts`,
+          `${expenses}/categories-sheet.tsx`,
+          `${expenses}/category-field.tsx`,
+          `${expenses}/data.ts`,
+          'features/purchasing/amounts.tsx',
+          'features/purchasing/confirm-dialog.tsx',
+          'features/purchasing/panel.tsx',
+          'features/catalog/catalog-list.tsx',
+          'features/catalog/catalog-loading.tsx',
+        ],
+        RUNNING_COSTS_MESSAGES,
+      ),
+    ).toEqual({})
+  })
+
   it('settings: the home and every section', () => {
     const settings = 'features/settings'
     const sections = {
@@ -138,6 +188,7 @@ describe("each route's messages have the keys its code translates", () => {
       roles: ['roles-settings.tsx', 'role-picker.tsx'],
       modules: ['customize-settings.tsx', '../setup/review-parts.tsx'],
       books: ['books-settings.tsx'],
+      approval: ['approval-settings.tsx'],
       language: ['language-settings.tsx'],
     } as const
     expect(
@@ -171,6 +222,8 @@ describe("each route's messages have the keys its code translates", () => {
       CATALOG_MESSAGES,
       SUPPLIERS_MESSAGES,
       PURCHASES_MESSAGES,
+      EXPENSES_MESSAGES,
+      RUNNING_COSTS_MESSAGES,
       SETTINGS_MESSAGES,
       ...Object.values(SETTINGS_SECTION_MESSAGES),
     ].flat()

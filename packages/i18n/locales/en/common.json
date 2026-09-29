@@ -67,6 +67,8 @@
     "suppliers": "Suppliers",
     "purchases": "Purchases",
     "payables": "Amounts owed",
+    "expenses": "Expenses",
+    "running_costs": "Running Costs",
     "more": "More",
     "moreTitle": "More sections",
     "quickAdd": "Add new"

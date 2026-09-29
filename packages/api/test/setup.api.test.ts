@@ -164,6 +164,14 @@ describe('business.createFromSetup', () => {
       select name, is_default from app.locations where business_id = ${id}`
     expect(places).toEqual([{ name: 'المنزل', is_default: true }])
 
+    // The owner's starter categories of expenses and running costs, in Arabic (D-167).
+    const categories = await admin<{ name: string }[]>`
+      select name from app.cost_categories where business_id = ${id} order by name`
+    expect(categories).toHaveLength(14)
+    expect(categories.map((c) => c.name)).toEqual(
+      expect.arrayContaining(['الإيجار', 'الكهرباء', 'الماء', 'الرواتب', 'أخرى']),
+    )
+
     const [profile] = await admin<{ last_business_id: string | null }[]>`
       select last_business_id from app.profiles where id = ${user.id}`
     expect(profile?.last_business_id).toBe(id)
@@ -181,6 +189,7 @@ describe('business.createFromSetup', () => {
         'business_modules',
         'locations',
         'role_permissions',
+        'cost_categories',
       ]),
     )
     for (const row of audit) {

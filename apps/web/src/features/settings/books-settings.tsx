@@ -19,9 +19,10 @@ import { isSectionVisible } from './sections'
 import { SectionPage } from './settings-shell'
 
 // Settings → Closing the books (M2 Step 3; D-114 rule 6, D-137): nothing dated on or before the chosen
-// day can be finalized or reversed any more (purchases now; expenses and later documents too). Off by
+// day can be finalized or reversed any more (purchases and expenses; later documents too). Off by
 // default. The day is today at the latest; moving it back or opening the books again is allowed, and
-// every change is in the audit log. Only members with purchases.books.close (Owner, Admin) see it.
+// every change is in the audit log. Only members with purchases.books.close (Owner, Admin) see it,
+// with Purchases or Expenses on (D-176).
 
 export function BooksSettings({ businessId }: { businessId: string }) {
   const { t } = useTranslation()

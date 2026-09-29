@@ -441,5 +441,21 @@
     "kitchen_main": "المطبخ الرئيسي",
     "customer_sites": "المقر الرئيسي",
     "customer_sites_main": "المقر الرئيسي"
+  },
+  "cost_categories": {
+    "rent": "الإيجار",
+    "electricity": "الكهرباء",
+    "water": "الماء",
+    "salaries": "الرواتب",
+    "internet": "الإنترنت",
+    "phone": "الهاتف",
+    "licences": "الرخص",
+    "insurance": "التأمين",
+    "software": "اشتراكات البرامج",
+    "vehicles": "تكاليف المركبات",
+    "marketing": "التسويق",
+    "equipment": "تكاليف المعدات",
+    "maintenance": "الصيانة",
+    "other": "أخرى"
   }
 }

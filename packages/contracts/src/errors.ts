@@ -79,8 +79,21 @@ export const APP_ERROR_CODES = [
   'payment_method_required',
   /** Reversing a purchase that has payments recorded on it: they are reversed first. */
   'purchase_has_payments',
-  /** A payment of more than is still owed on the purchase. */
+  /** A payment of more than is still owed on the purchase or expense. */
   'exceeds_outstanding',
+  /**
+   * Changing or discarding an expense sent for approval (submitted or approved): it is rejected
+   * first (D-164).
+   */
+  'expense_in_approval',
+  /** Approving or rejecting an expense that was not sent for approval. */
+  'expense_not_submitted',
+  /** Finalizing an expense that needs approval, by a member who may not approve it (D-164). */
+  'approval_required',
+  /** Sending an expense for approval while the business does not require approval. */
+  'approval_off',
+  /** Reversing an expense that has payments recorded on it: they are reversed first. */
+  'expense_has_payments',
   'internal',
 ] as const
 export type AppErrorCode = (typeof APP_ERROR_CODES)[number]
@@ -102,8 +115,8 @@ export interface AppErrorData {
   /**
    * What the refusal is about, by name, only when the caller may see those records: UNIT_IN_USE names
    * the products whose recipes use the pack or conversion (at most 5); NAME_TAKEN from
-   * `material.create` or `material.quickCreate` names the material that already has the name. Absent
-   * otherwise.
+   * `material.create` or `material.quickCreate` names the material that already has the name, and
+   * from `costCategory.create` or `.update` the category (M2 Step 5). Absent otherwise.
    */
   names?: string[]
 }

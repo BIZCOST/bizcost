@@ -3,10 +3,13 @@ import {
   withMeta,
   type AttachmentUploadUrlDto,
   type BooksDto,
+  type CostCategoryDto,
+  type ExpenseDto,
   type MaterialDto,
   type ProductDto,
   type PurchaseDto,
   type PurchaseReturnDto,
+  type RunningCostDto,
   type SupplierDto,
 } from '@bizcost/contracts'
 import { newId, SENSITIVITY_CATEGORIES, type SensitivityCategory } from '@bizcost/domain'
@@ -81,6 +84,16 @@ const CREAM_PRICE = '45.67'
 const OWED_TOTAL = '91.34'
 const PAID = '3.21'
 const OWED_LEFT = '88.13'
+// Expenses (M2 Step 5): 63.47 before VAT at 5 % is 3.17 of VAT, 66.64 in all (`supplier_price`);
+// one bought on credit has a payment of 4.32, so 62.32 is still owed. A running cost of 7 321.09 a
+// week is 31 724.723333333333 a month (`cost`).
+const EXPENSE_NET = '63.47'
+const EXPENSE_TOTAL = '66.64'
+const EXPENSE_PAID = '4.32'
+const EXPENSE_LEFT = '62.32'
+const RUNNING = '7321.09'
+const RUNNING_MONTHLY = '31724.723333333333'
+const EXPENSE = { supplier_price: [EXPENSE_NET, EXPENSE_TOTAL] }
 
 let api: Api
 let businessId: string
@@ -94,6 +107,10 @@ let beans: MaterialDto
 let latte: ProductDto
 let cream: MaterialDto
 let owed: PurchaseDto
+let category: CostCategoryDto
+let spent: ExpenseDto
+let owedExpense: ExpenseDto
+let running: RunningCostDto
 
 /** Calls a procedure as the owner (fixture set-up). */
 async function asOwner<T>(path: string, type: 'query' | 'mutation', input?: unknown): Promise<T> {
@@ -210,6 +227,65 @@ async function newRecipeInput() {
     productId: product.id,
     version: 0,
     lines: [{ id: newId(), materialId: beans.id, qty: '18', unit: 'g' }],
+  }
+}
+
+function expenseInput(extra: object = {}) {
+  return {
+    id: newId(),
+    categoryId: category.id,
+    businessDate: today,
+    documentType: 'tax_invoice',
+    paymentMethod: 'cash',
+    amount: EXPENSE_NET,
+    vatRate: '5',
+    ...extra,
+  }
+}
+
+async function newExpenseDraft(extra: object = {}): Promise<ExpenseDto> {
+  return (await asOwner<{ data: ExpenseDto }>('expense.create', 'mutation', expenseInput(extra)))
+    .data
+}
+
+async function newExpensePosted(extra: object = {}): Promise<ExpenseDto> {
+  const draft = await newExpenseDraft(extra)
+  return (
+    await asOwner<{ data: ExpenseDto }>('expense.post', 'mutation', {
+      id: draft.id,
+      version: draft.version,
+    })
+  ).data
+}
+
+async function newExpenseSubmitted(): Promise<ExpenseDto> {
+  const draft = await newExpenseDraft()
+  return (
+    await asOwner<{ data: ExpenseDto }>('expense.submit', 'mutation', {
+      id: draft.id,
+      version: draft.version,
+    })
+  ).data
+}
+
+/** A posted expense bought on credit from the supplier (nothing paid yet). */
+function newOwedExpense(): Promise<ExpenseDto> {
+  return newExpensePosted({ supplierId: supplier.id, paymentMethod: 'supplier_credit' })
+}
+
+function expensePaymentInput(expenseId: string) {
+  return { id: newId(), expenseId, businessDate: today, method: 'cash', amount: EXPENSE_PAID }
+}
+
+function runningInput(extra: object = {}) {
+  return {
+    id: newId(),
+    name: 'Oracle rent',
+    categoryId: category.id,
+    amount: RUNNING,
+    frequency: 'weekly',
+    startsOn: today,
+    ...extra,
   }
 }
 
@@ -344,6 +420,113 @@ const PRODUCTION_ORACLE: Record<string, OracleEntry> = {
       return { id: input.id }
     },
     valuesOf: { supplier_price: [OWED_TOTAL, PAID] },
+  },
+  'expense.list': {
+    permission: 'expenses.documents.view',
+    valuesOf: { supplier_price: [EXPENSE_TOTAL] },
+  },
+  'expense.get': {
+    permission: 'expenses.documents.view',
+    prepare: () => Promise.resolve({ id: spent.id }),
+    valuesOf: EXPENSE,
+  },
+  'expense.create': {
+    permission: 'expenses.documents.manage',
+    prepare: () => Promise.resolve(expenseInput()),
+    valuesOf: EXPENSE,
+  },
+  'expense.update': {
+    permission: 'expenses.documents.manage',
+    prepare: async () => {
+      const draft = await newExpenseDraft()
+      return { ...expenseInput(), id: draft.id, version: draft.version }
+    },
+    valuesOf: EXPENSE,
+  },
+  'expense.submit': {
+    permission: 'expenses.documents.manage',
+    prepare: async () => {
+      const draft = await newExpenseDraft()
+      return { id: draft.id, version: draft.version }
+    },
+    valuesOf: EXPENSE,
+  },
+  'expense.approve': {
+    permission: 'expenses.documents.approve',
+    prepare: async () => {
+      const sent = await newExpenseSubmitted()
+      return { id: sent.id, version: sent.version }
+    },
+    valuesOf: EXPENSE,
+  },
+  'expense.reject': {
+    permission: 'expenses.documents.approve',
+    prepare: async () => {
+      const sent = await newExpenseSubmitted()
+      return { id: sent.id, version: sent.version, reason: 'Not ours' }
+    },
+    valuesOf: EXPENSE,
+  },
+  'expense.post': {
+    permission: 'expenses.documents.post',
+    prepare: async () => {
+      const draft = await newExpenseDraft()
+      return { id: draft.id, version: draft.version }
+    },
+    valuesOf: EXPENSE,
+  },
+  'expense.reverse': {
+    permission: 'expenses.documents.reverse',
+    prepare: async () => ({ id: (await newExpensePosted()).id }),
+    valuesOf: EXPENSE,
+  },
+  'expense.correct': {
+    permission: 'expenses.documents.reverse',
+    prepare: async () => ({ id: (await newExpensePosted()).id, newId: newId() }),
+    valuesOf: EXPENSE,
+  },
+  'expensePayment.list': {
+    permission: 'expenses.payments.view',
+    prepare: () => Promise.resolve({ expenseId: owedExpense.id }),
+    valuesOf: { supplier_price: [EXPENSE_TOTAL, EXPENSE_PAID, EXPENSE_LEFT] },
+  },
+  'expensePayment.record': {
+    permission: 'expenses.payments.record',
+    prepare: async () => expensePaymentInput((await newOwedExpense()).id),
+    valuesOf: { supplier_price: [EXPENSE_TOTAL, EXPENSE_PAID, EXPENSE_LEFT] },
+  },
+  'expensePayment.reverse': {
+    permission: 'expenses.payments.record',
+    prepare: async () => {
+      const input = expensePaymentInput((await newOwedExpense()).id)
+      await asOwner('expensePayment.record', 'mutation', input)
+      return { id: input.id }
+    },
+    valuesOf: { supplier_price: [EXPENSE_TOTAL, EXPENSE_PAID] },
+  },
+  'runningCost.list': {
+    permission: 'running_costs.items.view',
+    valuesOf: { cost: [RUNNING, RUNNING_MONTHLY] },
+  },
+  'runningCost.get': {
+    permission: 'running_costs.items.view',
+    prepare: () => Promise.resolve({ id: running.id }),
+    valuesOf: { cost: [RUNNING, RUNNING_MONTHLY] },
+  },
+  'runningCost.create': {
+    permission: 'running_costs.items.manage',
+    prepare: () => Promise.resolve(runningInput()),
+    valuesOf: { cost: [RUNNING, RUNNING_MONTHLY] },
+  },
+  'runningCost.update': {
+    permission: 'running_costs.items.manage',
+    prepare: async () => {
+      const created = (
+        await asOwner<{ data: RunningCostDto }>('runningCost.create', 'mutation', runningInput())
+      ).data
+      return { ...runningInput(), id: created.id, version: created.version }
+    },
+    valuesOf: { cost: [RUNNING, RUNNING_MONTHLY] },
   },
   'attachment.add': {
     permission: 'purchases.documents.manage',
@@ -500,6 +683,18 @@ beforeAll(async () => {
   })
   owed = await newOwed()
   await asOwner('purchasePayment.record', 'mutation', paymentInput(owed.id))
+  // Expenses need approval here, so a submitted expense can be approved or rejected.
+  await asOwner('expense.updateSettings', 'mutation', { approval: true })
+  category = await asOwner<CostCategoryDto>('costCategory.create', 'mutation', {
+    id: newId(),
+    name: 'Oracle cleaning',
+  })
+  spent = await newExpensePosted()
+  owedExpense = await newOwedExpense()
+  await asOwner('expensePayment.record', 'mutation', expensePaymentInput(owedExpense.id))
+  running = (
+    await asOwner<{ data: RunningCostDto }>('runningCost.create', 'mutation', runningInput())
+  ).data
 }, 90_000)
 
 afterAll(async () => {

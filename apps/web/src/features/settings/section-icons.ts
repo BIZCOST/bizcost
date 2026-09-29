@@ -1,5 +1,6 @@
 import {
   BookLockIcon,
+  CircleCheckBigIcon,
   LanguagesIcon,
   LayoutGridIcon,
   MapPinnedIcon,
@@ -17,5 +18,6 @@ export const SECTION_ICONS: Readonly<Record<SettingsSection, LucideIcon>> = {
   roles: ShieldCheckIcon,
   modules: LayoutGridIcon,
   books: BookLockIcon,
+  approval: CircleCheckBigIcon,
   language: LanguagesIcon,
 }

@@ -1,6 +1,8 @@
 import type {
   AttachmentUploadUrlDto,
   BusinessProfileDto,
+  CostCategoryDto,
+  ExpenseDto,
   InvitationDto,
   LocationDto,
   LogoUploadUrlDto,
@@ -10,6 +12,7 @@ import type {
   PurchaseReturnDto,
   RecipeResultDto,
   RoleDto,
+  RunningCostDto,
   SupplierDto,
 } from '@bizcost/contracts'
 import { newId } from '@bizcost/domain'
@@ -224,6 +227,90 @@ async function uploadedReceipt(): Promise<string> {
   )
   expect((await uploadTo(upload.uploadUrl, PNG, 'image/png')).ok).toBe(true)
   return upload.path
+}
+
+async function newCategory(): Promise<CostCategoryDto> {
+  return ok(
+    call<CostCategoryDto>(tenant.owner, 'costCategory.create', 'mutation', {
+      id: newId(),
+      name: `Category ${newId()}`,
+    }),
+  )
+}
+
+function expenseInput(extra: object = {}) {
+  return {
+    id: newId(),
+    categoryId: tenant.category.id,
+    businessDate: tenant.expense.businessDate,
+    documentType: 'tax_invoice',
+    paymentMethod: 'cash',
+    amount: '20',
+    vatRate: '5',
+    ...extra,
+  }
+}
+
+async function newExpenseDraft(extra: object = {}): Promise<ExpenseDto> {
+  return (
+    await ok(
+      call<{ data: ExpenseDto }>(tenant.owner, 'expense.create', 'mutation', expenseInput(extra)),
+    )
+  ).data
+}
+
+async function newPostedExpense(extra: object = {}): Promise<ExpenseDto> {
+  const draft = await newExpenseDraft(extra)
+  return (
+    await ok(
+      call<{ data: ExpenseDto }>(tenant.owner, 'expense.post', 'mutation', {
+        id: draft.id,
+        version: draft.version,
+      }),
+    )
+  ).data
+}
+
+/** Approval on (the fixture turns it on; a probe may have turned it off since). */
+async function approvalOn() {
+  await ok(call(tenant.owner, 'expense.updateSettings', 'mutation', { approval: true }))
+}
+
+async function newSubmittedExpense(): Promise<ExpenseDto> {
+  await approvalOn()
+  const draft = await newExpenseDraft()
+  return (
+    await ok(
+      call<{ data: ExpenseDto }>(tenant.owner, 'expense.submit', 'mutation', {
+        id: draft.id,
+        version: draft.version,
+      }),
+    )
+  ).data
+}
+
+function runningCostInput(extra: object = {}) {
+  return {
+    id: newId(),
+    name: `Rent ${newId().slice(-6)}`,
+    categoryId: tenant.category.id,
+    amount: '1000',
+    startsOn: tenant.expense.businessDate,
+    ...extra,
+  }
+}
+
+async function newRunningCost(): Promise<RunningCostDto> {
+  return (
+    await ok(
+      call<{ data: RunningCostDto }>(
+        tenant.owner,
+        'runningCost.create',
+        'mutation',
+        runningCostInput(),
+      ),
+    )
+  ).data
 }
 
 async function asOwner(path: string, input?: unknown): Promise<Done> {
@@ -675,6 +762,138 @@ const AUDIT: Record<string, AuditProbe> = {
         }),
       )
       return asOwner('purchasePayment.reverse', { id })
+    },
+  },
+  // Expenses, their categories and payments, and running costs (M2 Step 5).
+  'costCategory.create': {
+    run: () => asOwner('costCategory.create', { id: newId(), name: `Category ${newId()}` }),
+  },
+  'costCategory.update': {
+    run: async () => {
+      const category = await newCategory()
+      return asOwner('costCategory.update', {
+        id: category.id,
+        version: category.version,
+        name: `Renamed ${newId()}`,
+      })
+    },
+  },
+  'costCategory.archive': {
+    run: async () => asOwner('costCategory.archive', { id: (await newCategory()).id }),
+  },
+  'costCategory.unarchive': {
+    run: async () => {
+      const category = await newCategory()
+      await ok(call(tenant.owner, 'costCategory.archive', 'mutation', { id: category.id }))
+      return asOwner('costCategory.unarchive', { id: category.id })
+    },
+  },
+  'expense.create': { run: () => asOwner('expense.create', expenseInput()) },
+  'expense.update': {
+    run: async () => {
+      const draft = await newExpenseDraft()
+      return asOwner('expense.update', {
+        ...expenseInput({ description: 'Changed' }),
+        id: draft.id,
+        version: draft.version,
+      })
+    },
+  },
+  'expense.discard': {
+    run: async () => {
+      const draft = await newExpenseDraft()
+      return asOwner('expense.discard', { id: draft.id, version: draft.version })
+    },
+  },
+  'expense.submit': {
+    run: async () => {
+      await approvalOn()
+      const draft = await newExpenseDraft()
+      return asOwner('expense.submit', { id: draft.id, version: draft.version })
+    },
+  },
+  'expense.approve': {
+    run: async () => {
+      const sent = await newSubmittedExpense()
+      return asOwner('expense.approve', { id: sent.id, version: sent.version })
+    },
+  },
+  'expense.reject': {
+    run: async () => {
+      const sent = await newSubmittedExpense()
+      return asOwner('expense.reject', { id: sent.id, version: sent.version, reason: 'Why' })
+    },
+  },
+  'expense.post': {
+    run: async () => {
+      const draft = await newExpenseDraft()
+      return asOwner('expense.post', { id: draft.id, version: draft.version })
+    },
+  },
+  'expense.reverse': {
+    run: async () => asOwner('expense.reverse', { id: (await newPostedExpense()).id }),
+  },
+  'expense.correct': {
+    run: async () =>
+      asOwner('expense.correct', { id: (await newPostedExpense()).id, newId: newId() }),
+  },
+  'expense.updateSettings': {
+    run: async () => {
+      await approvalOn()
+      const done = await asOwner('expense.updateSettings', { approval: false })
+      await approvalOn()
+      return done
+    },
+  },
+  'expensePayment.record': {
+    run: async () => {
+      const bill = await newPostedExpense({
+        supplierId: tenant.supplier.id,
+        paymentMethod: 'supplier_credit',
+      })
+      return asOwner('expensePayment.record', {
+        id: newId(),
+        expenseId: bill.id,
+        businessDate: bill.businessDate,
+        method: 'card',
+        amount: '1',
+      })
+    },
+  },
+  'expensePayment.reverse': {
+    run: async () => {
+      const bill = await newPostedExpense({
+        supplierId: tenant.supplier.id,
+        paymentMethod: 'supplier_credit',
+      })
+      const id = newId()
+      await ok(
+        call(tenant.owner, 'expensePayment.record', 'mutation', {
+          id,
+          expenseId: bill.id,
+          businessDate: bill.businessDate,
+          method: 'cash',
+          amount: '1',
+        }),
+      )
+      return asOwner('expensePayment.reverse', { id })
+    },
+  },
+  'runningCost.create': { run: () => asOwner('runningCost.create', runningCostInput()) },
+  'runningCost.update': {
+    run: async () => {
+      const cost = await newRunningCost()
+      return asOwner('runningCost.update', {
+        ...runningCostInput({ amount: '1200' }),
+        id: cost.id,
+        version: cost.version,
+      })
+    },
+  },
+  'runningCost.remove': {
+    run: async () => {
+      const cost = await newRunningCost()
+      return asOwner('runningCost.remove', { id: cost.id, version: cost.version })
     },
   },
   'books.close': {

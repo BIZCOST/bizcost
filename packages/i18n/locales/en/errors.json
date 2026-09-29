@@ -32,7 +32,12 @@
   "unit_in_use": "One of your products uses this in a pack or unit you took out or changed. Change what goes into it first, then try again.",
   "payment_method_required": "Choose how this purchase was paid, then try again.",
   "purchase_has_payments": "This purchase has payments recorded on it. Reverse the payments first, then try again.",
-  "exceeds_outstanding": "That's more than is still owed on this purchase. Check the amount.",
+  "exceeds_outstanding": "That's more than is still owed. Check the amount.",
+  "expense_in_approval": "This expense was sent for approval, so it can't be changed now. To change it, it must be rejected first.",
+  "expense_not_submitted": "This expense wasn't sent for approval.",
+  "approval_required": "This expense needs approval before it is final. Send it for approval instead.",
+  "approval_off": "Expenses don't need approval now. Finalize it instead.",
+  "expense_has_payments": "This expense has payments recorded on it. Reverse the payments first, then try again.",
   "internal": "Something went wrong on our side. Please try again.",
   "network": "Can't connect. Check your internet and try again."
 }

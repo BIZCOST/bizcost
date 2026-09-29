@@ -726,6 +726,7 @@ const PROBES: Record<string, Probe> = {
     reason: 'the record is looked up in the x-business-id business',
     variants: (victim) => [
       { input: { entity: 'purchase', entityId: victim.purchase.id }, own: ['not_found'] },
+      { input: { entity: 'expense', entityId: victim.expense.id }, own: ['not_found'] },
     ],
   },
   'attachment.uploadUrl': {
@@ -734,6 +735,10 @@ const PROBES: Record<string, Probe> = {
     variants: (victim) => [
       {
         input: { entity: 'purchase', entityId: victim.purchase.id, contentType: 'image/png' },
+        own: ['not_found'],
+      },
+      {
+        input: { entity: 'expense', entityId: victim.expense.id, contentType: 'image/png' },
         own: ['not_found'],
       },
     ],
@@ -767,7 +772,10 @@ const PROBES: Record<string, Probe> = {
   'attachment.remove': {
     base: 'business',
     reason: 'looked up in the x-business-id business',
-    variants: (victim) => [{ input: { id: victim.attachment.id }, own: ['not_found'] }],
+    variants: (victim) => [
+      { input: { id: victim.attachment.id }, own: ['not_found'] },
+      { input: { id: victim.expenseAttachment.id }, own: ['not_found'] },
+    ],
   },
   // What is owed and its payments (the owner's requests of 2026-09-29): the purchase and the payment
   // are looked up in the x-business-id business, and a payment id used anywhere is CONFLICT.
@@ -894,6 +902,306 @@ const PROBES: Record<string, Probe> = {
       { input: { ids: [attacker.product.id, victim.resaleProduct.id] }, own: ['not_found'] },
     ],
   },
+  // Expenses, their categories and payments, and running costs (M2 Step 5): every reference is
+  // looked up in the x-business-id business, ids used anywhere are CONFLICT, and composite foreign
+  // keys keep a category, supplier, location and member inside their business.
+  'costCategory.list': {
+    base: 'business',
+    reason: `${NO_ROWS}; the cursor only positions a page inside that business`,
+    variants: () => [{ input: { search: 'clean', status: 'all' } }],
+  },
+  'costCategory.create': {
+    base: 'business',
+    reason: 'an id already used anywhere is CONFLICT (insertIdempotent), the row is never read',
+    variants: (victim) => [
+      { input: { id: victim.category.id, name: `Pwned ${newId()}` }, own: ['conflict'] },
+    ],
+  },
+  'costCategory.update': {
+    base: 'business',
+    reason: 'looked up in the x-business-id business',
+    variants: (victim) => [
+      {
+        input: { id: victim.category.id, version: victim.category.version, name: 'Pwned' },
+        own: ['not_found'],
+      },
+    ],
+  },
+  'costCategory.archive': {
+    base: 'business',
+    reason: 'looked up in the x-business-id business',
+    variants: (victim) => [{ input: { id: victim.category.id }, own: ['not_found'] }],
+  },
+  'costCategory.unarchive': {
+    base: 'business',
+    reason: 'looked up in the x-business-id business',
+    variants: (victim) => [{ input: { id: victim.category.id }, own: ['not_found'] }],
+  },
+  'expense.list': {
+    base: 'business',
+    reason: `${NO_ROWS}; a category or supplier filter is looked up in that business (NOT_FOUND)`,
+    variants: (victim) => [
+      { input: { status: 'all' } },
+      { input: { categoryId: victim.category.id }, own: ['not_found'] },
+      { input: { supplierId: victim.supplier.id }, own: ['not_found'] },
+    ],
+  },
+  'expense.get': {
+    base: 'business',
+    reason: 'looked up in the x-business-id business',
+    variants: (victim) => [{ input: { id: victim.expense.id }, own: ['not_found'] }],
+  },
+  'expense.payers': { base: 'business', reason: `${NO_ROWS}: its own active members` },
+  'expense.settings': { base: 'business', reason: NO_ROWS },
+  'expense.updateSettings': {
+    base: 'business',
+    reason: NO_ROWS,
+    variants: () => [{ input: { approval: true } }],
+  },
+  'expense.create': {
+    base: 'business',
+    reason:
+      'its category, supplier, location and the member who paid are looked up in the ' +
+      'x-business-id business, and an id used anywhere is CONFLICT',
+    variants: (victim, attacker) => {
+      const draft = (extra: object) => ({
+        id: newId(),
+        categoryId: attacker.category.id,
+        businessDate: attacker.expense.businessDate,
+        documentType: 'no_invoice',
+        paymentMethod: 'cash',
+        amount: '1',
+        ...extra,
+      })
+      return [
+        { input: draft({ id: victim.expense.id }), own: ['conflict'] },
+        { input: draft({ categoryId: victim.category.id }), own: ['not_found'] },
+        { input: draft({ supplierId: victim.supplier.id }), own: ['not_found'] },
+        { input: draft({ locationId: victim.defaultLocationId }), own: ['not_found'] },
+        {
+          input: draft({ paymentMethod: 'paid_by_member', paidByMemberId: victim.adminMemberId }),
+          own: ['not_found'],
+        },
+      ]
+    },
+  },
+  'expense.update': {
+    base: 'business',
+    reason: 'the draft and every row it names are looked up in the x-business-id business',
+    variants: (victim, attacker) => {
+      const fields = (tenant: Tenant, extra: object = {}) => ({
+        categoryId: tenant.category.id,
+        businessDate: tenant.draftExpense.businessDate,
+        documentType: 'no_invoice',
+        paymentMethod: 'cash',
+        amount: '1',
+        ...extra,
+      })
+      return [
+        {
+          input: {
+            id: victim.draftExpense.id,
+            version: victim.draftExpense.version,
+            ...fields(victim),
+          },
+          own: ['not_found'],
+        },
+        {
+          input: {
+            id: attacker.draftExpense.id,
+            version: attacker.draftExpense.version,
+            ...fields(attacker, { categoryId: victim.category.id }),
+          },
+          own: ['not_found'],
+        },
+      ]
+    },
+  },
+  'expense.discard': {
+    base: 'business',
+    reason: 'looked up (and locked) in the x-business-id business',
+    variants: (victim) => [
+      {
+        input: { id: victim.draftExpense.id, version: victim.draftExpense.version },
+        own: ['not_found'],
+      },
+    ],
+  },
+  'expense.submit': {
+    base: 'business',
+    reason: 'looked up (and locked) in the x-business-id business',
+    variants: (victim) => [
+      {
+        input: { id: victim.draftExpense.id, version: victim.draftExpense.version },
+        own: ['not_found'],
+      },
+    ],
+  },
+  'expense.approve': {
+    base: 'business',
+    reason: 'looked up (and locked) in the x-business-id business',
+    variants: (victim) => [
+      {
+        input: { id: victim.submittedExpense.id, version: victim.submittedExpense.version },
+        own: ['not_found'],
+      },
+    ],
+  },
+  'expense.reject': {
+    base: 'business',
+    reason: 'looked up (and locked) in the x-business-id business',
+    variants: (victim) => [
+      {
+        input: {
+          id: victim.submittedExpense.id,
+          version: victim.submittedExpense.version,
+          reason: 'Pwned',
+        },
+        own: ['not_found'],
+      },
+    ],
+  },
+  'expense.post': {
+    base: 'business',
+    reason: 'looked up (and locked) in the x-business-id business',
+    variants: (victim) => [
+      {
+        input: { id: victim.draftExpense.id, version: victim.draftExpense.version },
+        own: ['not_found'],
+      },
+    ],
+  },
+  'expense.reverse': {
+    base: 'business',
+    reason: 'looked up (and locked) in the x-business-id business',
+    variants: (victim) => [{ input: { id: victim.expense.id }, own: ['not_found'] }],
+  },
+  'expense.correct': {
+    base: 'business',
+    reason:
+      'the expense is looked up in the x-business-id business; a new id used anywhere is ' +
+      'CONFLICT and the whole correction (its reversal too) is rolled back',
+    variants: (victim, attacker) => [
+      { input: { id: victim.expense.id, newId: newId() }, own: ['not_found'] },
+      { input: { id: attacker.expense.id, newId: victim.draftExpense.id }, own: ['conflict'] },
+    ],
+  },
+  'expensePayment.list': {
+    base: 'business',
+    reason: 'the expense is looked up in the x-business-id business',
+    variants: (victim) => [{ input: { expenseId: victim.expense.id }, own: ['not_found'] }],
+  },
+  'expensePayment.record': {
+    base: 'business',
+    reason:
+      'the expense is looked up (and locked) in the x-business-id business; a payment id used ' +
+      'anywhere is CONFLICT',
+    variants: (victim, attacker) => [
+      {
+        input: {
+          id: newId(),
+          expenseId: victim.expense.id,
+          businessDate: attacker.expense.businessDate,
+          method: 'cash',
+          amount: '1',
+        },
+        own: ['not_found'],
+      },
+      {
+        input: {
+          id: victim.expensePayment.id,
+          expenseId: attacker.expense.id,
+          businessDate: attacker.expense.businessDate,
+          method: 'cash',
+          amount: '1',
+        },
+        own: ['conflict'],
+      },
+    ],
+  },
+  'expensePayment.reverse': {
+    base: 'business',
+    reason: 'the payment is looked up in the x-business-id business',
+    variants: (victim) => [{ input: { id: victim.expensePayment.id }, own: ['not_found'] }],
+  },
+  'runningCost.list': {
+    base: 'business',
+    reason: `${NO_ROWS}; a category filter is looked up in that business (NOT_FOUND)`,
+    variants: (victim) => [
+      { input: { state: 'all' } },
+      { input: { categoryId: victim.category.id }, own: ['not_found'] },
+    ],
+  },
+  'runningCost.get': {
+    base: 'business',
+    reason: 'looked up in the x-business-id business',
+    variants: (victim) => [{ input: { id: victim.runningCost.id }, own: ['not_found'] }],
+  },
+  'runningCost.create': {
+    base: 'business',
+    reason:
+      'its category is looked up in the x-business-id business; an id used anywhere is CONFLICT',
+    variants: (victim, attacker) => [
+      {
+        input: {
+          id: victim.runningCost.id,
+          name: 'Pwned',
+          categoryId: attacker.category.id,
+          amount: '1',
+          startsOn: attacker.runningCost.startsOn,
+        },
+        own: ['conflict'],
+      },
+      {
+        input: {
+          id: newId(),
+          name: 'Pwned',
+          categoryId: victim.category.id,
+          amount: '1',
+          startsOn: attacker.runningCost.startsOn,
+        },
+        own: ['not_found'],
+      },
+    ],
+  },
+  'runningCost.update': {
+    base: 'business',
+    reason: 'the record and its category are looked up in the x-business-id business',
+    variants: (victim, attacker) => [
+      {
+        input: {
+          id: victim.runningCost.id,
+          version: victim.runningCost.version,
+          name: 'Pwned',
+          categoryId: victim.category.id,
+          amount: '1',
+          startsOn: victim.runningCost.startsOn,
+        },
+        own: ['not_found'],
+      },
+      {
+        input: {
+          id: attacker.runningCost.id,
+          version: attacker.runningCost.version,
+          name: attacker.runningCost.name,
+          categoryId: victim.category.id,
+          amount: '1',
+          startsOn: attacker.runningCost.startsOn,
+        },
+        own: ['not_found'],
+      },
+    ],
+  },
+  'runningCost.remove': {
+    base: 'business',
+    reason: 'looked up in the x-business-id business',
+    variants: (victim) => [
+      {
+        input: { id: victim.runningCost.id, version: victim.runningCost.version },
+        own: ['not_found'],
+      },
+    ],
+  },
 }
 
 // A stand-in tenant for reading the probes' shape before the fixture exists (never sent).
@@ -907,6 +1215,8 @@ const STUB_FIELD = {
   lines: [{ id: newId() }],
   businessDate: '2026-01-01',
   resaleMaterialId: newId(),
+  startsOn: '2026-01-01',
+  description: 'stub',
 }
 const STUB = new Proxy({} as Tenant, {
   get: (_target, key) => (key === 'roles' ? new Proxy({}, { get: () => STUB_FIELD }) : STUB_FIELD),

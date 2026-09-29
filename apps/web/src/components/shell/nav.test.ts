@@ -253,6 +253,32 @@ describe('bottomTabs', () => {
   })
 })
 
+describe('a page two modules share: Amounts owed (Purchases and Expenses, D-166)', () => {
+  const registry = withPreviewModules(['materials', 'suppliers', 'purchases', 'expenses'])
+  const both = new Set(['materials', 'suppliers', 'purchases', 'expenses'])
+  const shared = ['purchases', 'expenses'] as const
+
+  it('is listed once and open through either module; off only when neither is on', () => {
+    const modules = buildModuleNav(both, owner, registry)
+    const items = shellNav(modules, ID, `${ROOT}/payables`)
+    expect(items.filter((item) => item.id === 'payables')).toHaveLength(1)
+    expect(active(items)).toBe('payables')
+    expect(moduleAccess(modules, shared, 'payables')).toBe('open')
+    // A business without Purchases (it sells services) keeps it through Expenses.
+    const expensesOnly = buildModuleNav(new Set(['expenses']), owner, registry)
+    expect(moduleAccess(expensesOnly, shared, 'payables')).toBe('open')
+    expect(moduleAccess(expensesOnly, 'purchases', 'payables')).toBe('off')
+    expect(moduleAccess(buildModuleNav(nothing, owner, registry), shared, 'payables')).toBe('off')
+    // On, but not open to an employee (no key to see what is owed).
+    expect(
+      moduleAccess(buildModuleNav(both, canFor('employee'), registry), shared, 'payables'),
+    ).toBe('forbidden')
+    // Its states lead to a section of neither module.
+    expect(wayBack(items, shared)?.id).toBe('dashboard')
+    for (const item of items) expect(navIcon(item.icon)).not.toBe(FALLBACK_NAV_ICON)
+  })
+})
+
 describe('wayBack', () => {
   it("leads from a module's state to another section: the first in the nav, else Settings", () => {
     const registry = released(ORDERS)

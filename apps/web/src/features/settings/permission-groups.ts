@@ -71,6 +71,8 @@ const HIDDEN_GROUPS: ReadonlySet<PermissionGroupId> = new Set(['data'])
 /** Keys that only mean something with a capability: hidden (and kept as they are) without it. */
 const KEY_CAPABILITY: Readonly<Partial<Record<PermissionKey, string>>> = {
   'settings.locations.manage': 'multi_location',
+  // Approval of expenses applies only with a team (D-164).
+  'expenses.approval.manage': 'has_team',
 }
 
 /** Groups that belong to Dashboard and Settings, which every business has. */

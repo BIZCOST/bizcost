@@ -45,6 +45,43 @@ export const SUPPLIERS_MESSAGES: readonly MessageSpec[] = [
  */
 export const PURCHASES_MESSAGES: readonly MessageSpec[] = ['catalog', 'units', 'purchasing']
 
+/** The starter names of the categories (their order in the pickers, D-167). */
+const STARTER_CATEGORIES: MessageSpec = { namespace: 'setup', paths: ['cost_categories'] }
+
+/**
+ * Expenses (M2 Step 5; its layout): the expenses messages, the purchasing messages (how it was paid,
+ * the document types, receipts, payments and the supplier form), the catalog's list and form words and
+ * the starter categories.
+ */
+export const EXPENSES_MESSAGES: readonly MessageSpec[] = [
+  { namespace: 'catalog', paths: ['list', 'form', 'numbers'] },
+  'purchasing',
+  'expenses',
+  STARTER_CATEGORIES,
+]
+
+/**
+ * Running Costs (M2 Step 5; its layout): the expenses messages (running costs and the shared
+ * categories), the catalog's list and form words, the few purchasing words of its form (and of the
+ * money box), and the starter categories.
+ */
+export const RUNNING_COSTS_MESSAGES: readonly MessageSpec[] = [
+  { namespace: 'catalog', paths: ['list', 'form', 'numbers'] },
+  {
+    namespace: 'purchasing',
+    paths: [
+      'optional',
+      'notes',
+      'notesHint',
+      'tooLong',
+      'editor.errors.date',
+      'editor.amountPlaceholder',
+    ],
+  },
+  'expenses',
+  STARTER_CATEGORIES,
+]
+
 /** Settings of a business (layout): the section list, the settings home and every section's frame. */
 export const SETTINGS_MESSAGES: readonly MessageSpec[] = ['settings']
 
@@ -65,5 +102,7 @@ export const SETTINGS_SECTION_MESSAGES: Readonly<Record<SettingsSection, readonl
     modules: ['setup', 'modules'],
     // Closing the books: its own words (settings) only.
     books: [],
+    // Whether expenses need approval: its own words (settings) only.
+    approval: [],
     language: [],
   }

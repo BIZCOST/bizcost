@@ -162,6 +162,20 @@
       "when": 1790653941041,
       "tag": "20260929035221_name_key_unicode",
       "breakpoints": true
+    },
+    {
+      "idx": 23,
+      "version": "7",
+      "when": 1790660812431,
+      "tag": "20260929054652_expenses_tables",
+      "breakpoints": true
+    },
+    {
+      "idx": 24,
+      "version": "7",
+      "when": 1790660845073,
+      "tag": "20260929054725_expenses_security",
+      "breakpoints": true
     }
   ]
 }

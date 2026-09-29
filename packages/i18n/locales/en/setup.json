@@ -441,5 +441,21 @@
     "kitchen_main": "Main kitchen",
     "customer_sites": "Main base",
     "customer_sites_main": "Main base"
+  },
+  "cost_categories": {
+    "rent": "Rent",
+    "electricity": "Electricity",
+    "water": "Water",
+    "salaries": "Salaries",
+    "internet": "Internet",
+    "phone": "Phone",
+    "licences": "Licences",
+    "insurance": "Insurance",
+    "software": "Software subscriptions",
+    "vehicles": "Vehicle costs",
+    "marketing": "Marketing",
+    "equipment": "Equipment costs",
+    "maintenance": "Maintenance",
+    "other": "Other"
   }
 }

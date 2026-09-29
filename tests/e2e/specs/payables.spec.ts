@@ -281,7 +281,7 @@ test('English, desktop: prices before and with VAT, how it was paid, amounts owe
   const sheet = page.getByRole('dialog', { name: 'Record a payment' })
   await expect(sheet.getByRole('textbox', { name: 'Amount' })).toHaveValue('105.00')
   await sheet.getByRole('textbox', { name: 'Amount' }).fill('120')
-  await expect(sheet.getByText("That's more than is still owed on this purchase.")).toBeVisible()
+  await expect(sheet.getByText("That's more than is still owed.")).toBeVisible()
   await sheet.getByRole('textbox', { name: 'Amount' }).fill('40')
   await sheet.getByRole('button', { name: 'Record payment' }).click()
   await expect(sheet.getByText('Choose how you paid.')).toBeVisible()

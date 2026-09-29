@@ -17,7 +17,7 @@ export const baseURL = `http://localhost:${port}`
  */
 export const previewPort = Number(process.env.E2E_PREVIEW_PORT ?? port + 1)
 export const previewBaseURL = `http://localhost:${previewPort}`
-export const PREVIEW_MODULES = 'materials,products,suppliers,purchases'
+export const PREVIEW_MODULES = 'materials,products,suppliers,purchases,expenses,running_costs'
 
 export interface Stack {
   apiUrl: string

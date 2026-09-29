@@ -23,6 +23,9 @@ export const businesses = app.table(
     logoPath: text('logo_path'),
     // "Books closed up to" (D-114 rule 6): nothing dated on or before it is posted or reversed.
     booksClosedThrough: date('books_closed_through', { mode: 'string' }),
+    // Expenses need approval before they are final (D-164). It applies only while the business has a
+    // team (has_team); the setting is kept when the team is turned off.
+    expenseApproval: boolean('expense_approval').notNull().default(false),
     ...rowMetaColumns(),
   },
   () => [

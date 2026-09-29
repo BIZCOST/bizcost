@@ -33,6 +33,7 @@ import { and, eq, isNull, sql } from 'drizzle-orm'
 import type { AuthUser } from '../auth'
 import type { Context } from '../context'
 import { AppError, sqlStateOf } from '../errors'
+import { seedCostCategories } from './cost-categories'
 import { defaultDisplayName, ensureProfile } from './profile'
 
 // Smart Setup's confirm step (docs/PRODUCT.md §6, ROADMAP.md Step 5): creates a business from the
@@ -187,6 +188,10 @@ async function writeSetup(tx: Tx, auth: AuthUser, setup: Setup): Promise<void> {
     isDefault: true,
   })
 
+  // The categories expenses and running costs share (D-116), named in the user's language (then
+  // plain data, like the default location).
+  await seedCostCategories(tx, id, locale)
+
   // Editable copies of the role templates, named in the user's language. The Owner role exists
   // already (create_business); its permissions are implicit.
   await tx
@@ -225,8 +230,8 @@ async function writeSetup(tx: Tx, auth: AuthUser, setup: Setup): Promise<void> {
  * `business.createFromSetup`: validates the answers strictly (parseSetupAnswers), recomputes
  * recommend(), applies the review adjustments within their rules (applyAdjustments), then in ONE
  * transaction creates the business with its Owner membership and writes the business type, wording,
- * VAT status, setup answers, capabilities, module rows, default location and roles, and makes it the
- * caller's last business.
+ * VAT status, setup answers, capabilities, module rows, default location, starter cost categories and
+ * roles, and makes it the caller's last business.
  *
  * Idempotent on businessId: the same payload again returns the same business (also when two
  * identical requests race); another payload, or an id of a business the caller cannot see, is

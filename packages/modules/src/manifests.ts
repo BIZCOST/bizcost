@@ -255,6 +255,76 @@ const PURCHASES = {
   requiresCapabilities: [],
 } as const satisfies ModuleManifest
 
+// Expenses (M2 Step 5; planned until Step 7): one amount in a category (shared with Running Costs,
+// D-116), its document type apart from how it was paid (PRODUCT.md §4 rule 13), receipts, and an
+// optional approval before it is final (with a team, D-164). An expense bought on credit or paid by a
+// member is owed until paid, next to purchases in "Amounts owed" (D-166): the page is one, listed by
+// whichever module comes first (the registry lists a path once). Amounts are `supplier_price`
+// (D-165). The supplier is optional, so no dependency on Suppliers.
+const EXPENSES = {
+  id: 'expenses',
+  kind: 'core',
+  availability: 'planned',
+  phase: 2,
+  deps: [],
+  permissionKeys: [
+    'expenses.documents.view',
+    'expenses.documents.manage',
+    'expenses.documents.approve',
+    'expenses.documents.post',
+    'expenses.documents.reverse',
+    'expenses.payments.view',
+    'expenses.payments.record',
+    'expenses.approval.manage',
+  ],
+  nav: [
+    {
+      id: 'expenses',
+      labelKey: 'nav.expenses',
+      path: 'expenses',
+      icon: 'receipt',
+      group: 'main',
+      permission: 'expenses.documents.view',
+    },
+    {
+      id: 'payables',
+      labelKey: 'nav.payables',
+      path: 'payables',
+      icon: 'hand-coins',
+      group: 'main',
+      permission: 'expenses.payments.view',
+    },
+  ],
+  quickActions: [],
+  sensitiveFields: ['supplier_price'],
+  requiresCapabilities: [],
+} as const satisfies ModuleManifest
+
+// Running Costs (M2 Step 5; planned until Step 7): "What do you pay to run your business?" Regular
+// amounts per period in the categories shared with Expenses, turned into monthly amounts that Step 6
+// shares over product costs (D-116). Never posted. Amounts are `cost` (D-165).
+const RUNNING_COSTS = {
+  id: 'running_costs',
+  kind: 'core',
+  availability: 'planned',
+  phase: 2,
+  deps: [],
+  permissionKeys: ['running_costs.items.view', 'running_costs.items.manage'],
+  nav: [
+    {
+      id: 'running_costs',
+      labelKey: 'nav.running_costs',
+      path: 'running-costs',
+      icon: 'repeat',
+      group: 'main',
+      permission: 'running_costs.items.view',
+    },
+  ],
+  quickActions: [],
+  sensitiveFields: ['cost'],
+  requiresCapabilities: [],
+} as const satisfies ModuleManifest
+
 interface PlannedManifest extends ModuleManifest {
   readonly availability: 'planned'
   readonly permissionKeys: readonly []
@@ -294,8 +364,8 @@ export const MODULES = [
   MATERIALS,
   SUPPLIERS,
   PURCHASES,
-  planned('expenses', 'core', 2),
-  planned('running_costs', 'core', 2),
+  EXPENSES,
+  RUNNING_COSTS,
   planned('files', 'core', 2),
   planned('cost_engine', 'core', 2),
   planned('customers', 'core', 3),

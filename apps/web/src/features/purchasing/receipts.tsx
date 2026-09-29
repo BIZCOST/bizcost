@@ -8,6 +8,7 @@ import {
   type AttachmentContentType,
   type AttachmentDto,
 } from '@bizcost/contracts'
+import type { AttachmentEntity } from '@bizcost/domain'
 import { formatNumber, type I18nKey } from '@bizcost/i18n'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
@@ -36,10 +37,11 @@ import { Button } from '@/components/ui/button'
 import { useLocale } from '@/lib/i18n/client'
 import { Locked } from './amounts'
 
-// A purchase's receipts (M2 Step 3; D-139): photos (PNG, JPEG, WebP) or PDFs of up to 10 MB, uploaded
-// straight to the private bucket with a signed URL the API issues (attachment.uploadUrl), then checked
-// and attached by the API (attachment.add). Each opens through a signed link of a few minutes. A
-// receipt shows what was paid, so a member who may not see supplier prices sees its name only.
+// A purchase's receipts (M2 Step 3; D-139), and an expense's (M2 Step 5): photos (PNG, JPEG, WebP) or
+// PDFs of up to 10 MB, uploaded straight to the private bucket with a signed URL the API issues
+// (attachment.uploadUrl), then checked and attached by the API (attachment.add). Each opens through a
+// signed link of a few minutes. A receipt shows what was paid, so a member who may not see supplier
+// prices sees its name only.
 
 function isAttachmentType(type: string): type is AttachmentContentType {
   return (ATTACHMENT_CONTENT_TYPES as readonly string[]).includes(type)
@@ -56,16 +58,19 @@ export function receiptProblem(file: File): I18nKey | null {
   return null
 }
 
-/** Uploads one file and attaches it to purchase `purchaseId`; throws with the problem's key. */
-export function useUploadReceipt() {
+/**
+ * Uploads one file and attaches it to the purchase or expense `recordId` (`entity`); throws with the
+ * problem's key.
+ */
+export function useUploadReceipt(entity: AttachmentEntity = 'purchase') {
   const trpc = useTRPC()
   const queryClient = useQueryClient()
   const uploadUrl = useMutation(trpc.attachment.uploadUrl.mutationOptions())
   const add = useMutation(trpc.attachment.add.mutationOptions())
-  return async (purchaseId: string, file: File): Promise<void> => {
+  return async (recordId: string, file: File): Promise<void> => {
     const problem = receiptProblem(file)
     if (problem) throw new ReceiptError(problem)
-    const record = { entity: 'purchase' as const, entityId: purchaseId }
+    const record = { entity, entityId: recordId }
     try {
       const target = await uploadUrl.mutateAsync({
         ...record,
@@ -89,11 +94,16 @@ export function useUploadReceipt() {
       throw new ReceiptError(caught instanceof TypeError ? 'errors.network' : apiErrorKey(caught))
     } finally {
       await queryClient.invalidateQueries({ queryKey: trpc.attachment.list.pathKey() })
-      await queryClient.invalidateQueries({
-        queryKey: trpc.purchase.get.queryKey({ id: purchaseId }),
-      })
+      await queryClient.invalidateQueries({ queryKey: recordKey(trpc, entity, recordId) })
     }
   }
+}
+
+/** The query of the record the receipts belong to (it counts them). */
+function recordKey(trpc: ReturnType<typeof useTRPC>, entity: AttachmentEntity, id: string) {
+  return entity === 'expense'
+    ? trpc.expense.get.queryKey({ id })
+    : trpc.purchase.get.queryKey({ id })
 }
 
 export class ReceiptError extends Error {
@@ -174,7 +184,7 @@ function AttachButton({
   )
 }
 
-/** Receipts picked for a purchase that is not saved yet: attached once it is. */
+/** Receipts picked for a purchase or expense that is not saved yet: attached once it is. */
 export function PendingReceipts({
   files,
   onChange,
@@ -231,16 +241,22 @@ export function PendingReceipts({
   )
 }
 
-/** A saved purchase's receipts: open, attach and remove (removing asks first). */
-export function Receipts({ purchaseId, canManage }: { purchaseId: string; canManage: boolean }) {
+/** A saved purchase's or expense's receipts: open, attach and remove (removing asks first). */
+export function Receipts({
+  entity = 'purchase',
+  recordId,
+  canManage,
+}: {
+  entity?: AttachmentEntity
+  recordId: string
+  canManage: boolean
+}) {
   const { t } = useTranslation()
   const trpc = useTRPC()
   const queryClient = useQueryClient()
   const size = useFileSize()
-  const upload = useUploadReceipt()
-  const list = useQuery(
-    trpc.attachment.list.queryOptions({ entity: 'purchase', entityId: purchaseId }),
-  )
+  const upload = useUploadReceipt(entity)
+  const list = useQuery(trpc.attachment.list.queryOptions({ entity, entityId: recordId }))
   const remove = useMutation(trpc.attachment.remove.mutationOptions())
   const [uploading, setUploading] = useState(false)
   const [error, setError] = useState<I18nKey | null>(null)
@@ -251,7 +267,7 @@ export function Receipts({ purchaseId, canManage }: { purchaseId: string; canMan
     setError(null)
     setUploading(true)
     try {
-      await upload(purchaseId, file)
+      await upload(recordId, file)
       toast.success(t('purchasing.receipts.attached'))
     } catch (caught) {
       setError(caught instanceof ReceiptError ? caught.key : 'errors.internal')
@@ -271,9 +287,7 @@ export function Receipts({ purchaseId, canManage }: { purchaseId: string; canMan
       setRemoving(null)
     } finally {
       await queryClient.invalidateQueries({ queryKey: trpc.attachment.list.pathKey() })
-      await queryClient.invalidateQueries({
-        queryKey: trpc.purchase.get.queryKey({ id: purchaseId }),
-      })
+      await queryClient.invalidateQueries({ queryKey: recordKey(trpc, entity, recordId) })
     }
   }
 
@@ -341,7 +355,11 @@ export function Receipts({ purchaseId, canManage }: { purchaseId: string; canMan
             <AlertDialogTitle>
               {t('purchasing.receipts.removeTitle', { name: isolate(removing?.fileName ?? '') })}
             </AlertDialogTitle>
-            <AlertDialogDescription>{t('purchasing.receipts.removeBody')}</AlertDialogDescription>
+            <AlertDialogDescription>
+              {entity === 'expense'
+                ? t('purchasing.receipts.removeBodyExpense')
+                : t('purchasing.receipts.removeBody')}
+            </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel disabled={remove.isPending}>{t('actions.cancel')}</AlertDialogCancel>

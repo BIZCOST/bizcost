@@ -135,7 +135,14 @@ describe('the dev-only preview (D-125)', () => {
   const materials = moduleById('materials')!
 
   it('may show only planned modules whose build started', () => {
-    expect(PREVIEWABLE_MODULE_IDS).toEqual(['products', 'materials', 'suppliers', 'purchases'])
+    expect(PREVIEWABLE_MODULE_IDS).toEqual([
+      'products',
+      'materials',
+      'suppliers',
+      'purchases',
+      'expenses',
+      'running_costs',
+    ])
   })
 
   it('parses a comma or space separated list, and names what it cannot preview', () => {
@@ -317,6 +324,35 @@ describe('buildModuleNav', () => {
       0,
       1,
     ])
+  })
+
+  it('lists a page two modules share (Amounts owed, D-166) once, through the first the member may use', () => {
+    const registry = withPreviewModules(['purchases', 'expenses'])
+    const entries = (enabled: Set<string>, can: (key: string) => boolean) =>
+      buildModuleNav(enabled, can, registry).map((m) => [m.id, m.nav.map((e) => e.id)])
+    // Core modules are on unless switched off.
+    const all = new Set(['purchases', 'expenses'])
+    expect(entries(all, everybody)).toEqual([
+      ['dashboard', ['dashboard']],
+      ['settings', ['settings']],
+      ['purchases', ['purchases', 'payables']],
+      ['expenses', ['expenses']],
+    ])
+    // Only the expenses' payments: the page comes with Expenses.
+    const expensesOnly = (key: string) => !key.startsWith('purchases.payments')
+    expect(entries(all, expensesOnly)).toContainEqual(['expenses', ['expenses', 'payables']])
+    expect(entries(all, expensesOnly)).toContainEqual(['purchases', ['purchases']])
+    // Purchases turned off (a services business): the page stays, with Expenses.
+    const noPurchases = buildModuleNav(
+      resolveEnabledModules([{ key: 'purchases', enabled: false }]),
+      everybody,
+      registry,
+    )
+    expect(noPurchases.map((m) => [m.id, m.nav.map((e) => e.id)])).toContainEqual([
+      'expenses',
+      ['expenses', 'payables'],
+    ])
+    expect(noPurchases.some((m) => m.id === 'purchases')).toBe(false)
   })
 })
 

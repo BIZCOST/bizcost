@@ -226,6 +226,52 @@ export function requireAnyPermission(...keys: readonly PermissionKey[]) {
 }
 
 /**
+ * A way in to something several modules share: the module must be active and every key held (e.g.
+ * ['purchases', 'purchases.documents.view', 'purchases.payments.view']).
+ */
+export type ModuleAccessPair = readonly [ModuleId, ...PermissionKey[]]
+
+/** Whether the member reaches it through the pair: the module active, its permissions held. */
+export function passes(
+  ctx: { readonly modules: Context['modules']; readonly access: BusinessAccess },
+  [id, ...keys]: ModuleAccessPair,
+): boolean {
+  const manifest = ctx.modules.find((m) => m.id === id)
+  return (
+    manifest !== undefined &&
+    isModuleActive(manifest, ctx.access.enabledModules) &&
+    keys.every((key) => can(ctx.access.effective, key))
+  )
+}
+
+/**
+ * For what several modules share (the categories of expenses and running costs, "Amounts owed", a
+ * receipt's attachments): the member must pass through at least one pair (its module active and its
+ * permission held). MODULE_DISABLED when none of the modules is active, FORBIDDEN otherwise.
+ */
+export function requireAnyAccess(...pairs: readonly ModuleAccessPair[]) {
+  return t.middleware(({ ctx, next }) => {
+    const access = accessOf(ctx)
+    if (!access) throw new AppError('internal', { message: 'requireAnyAccess outside a business' })
+    assertAnyAccess({ modules: ctx.modules, access }, pairs)
+    return next()
+  })
+}
+
+/** Inside a handler: as requireAnyAccess. */
+export function assertAnyAccess(
+  ctx: { readonly modules: Context['modules']; readonly access: BusinessAccess },
+  pairs: readonly ModuleAccessPair[],
+): void {
+  if (pairs.some((pair) => passes(ctx, pair))) return
+  const anyActive = pairs.some(([id]) => {
+    const manifest = ctx.modules.find((m) => m.id === id)
+    return manifest !== undefined && isModuleActive(manifest, ctx.access.enabledModules)
+  })
+  throw new AppError(anyActive ? 'forbidden' : 'module_disabled')
+}
+
+/**
  * The business must have the capability on (CAPABILITY_DISABLED otherwise): a solo business has no
  * team or role screens, a single-location business no location screens (docs/PRODUCT.md §5). The UI
  * hides them; this makes the API refuse them too. Use after businessProcedure.

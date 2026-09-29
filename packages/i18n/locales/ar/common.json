@@ -67,6 +67,8 @@
     "suppliers": "الموردون",
     "purchases": "المشتريات",
     "payables": "المستحقات",
+    "expenses": "المصروفات",
+    "running_costs": "المصاريف التشغيلية",
     "more": "المزيد",
     "moreTitle": "أقسام أخرى",
     "quickAdd": "إضافة جديد"

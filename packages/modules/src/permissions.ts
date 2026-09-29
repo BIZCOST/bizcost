@@ -39,6 +39,14 @@ export const PERMISSION_NEEDS: Readonly<Partial<Record<PermissionKey, readonly P
     'purchases.books.close': ['purchases.documents.view'],
     'purchases.payments.view': ['purchases.documents.view'],
     'purchases.payments.record': ['purchases.payments.view'],
+    'expenses.documents.manage': ['expenses.documents.view'],
+    'expenses.documents.approve': ['expenses.documents.view'],
+    'expenses.documents.post': ['expenses.documents.view'],
+    'expenses.documents.reverse': ['expenses.documents.view'],
+    'expenses.payments.view': ['expenses.documents.view'],
+    'expenses.payments.record': ['expenses.payments.view'],
+    'expenses.approval.manage': ['expenses.documents.view'],
+    'running_costs.items.manage': ['running_costs.items.view'],
   }
 
 /** The keys of `keys` granted without a key they need (empty when the set is coherent). */
