@@ -102,8 +102,8 @@ export function visiblePermissionGroups(
 }
 
 /**
- * Switches one permission of a set: on also turns on what it needs; off also turns off what needs it
- * (PERMISSION_NEEDS, which the API enforces too).
+ * Switches one permission of a set: on also turns on what it needs, and what that needs; off also
+ * turns off what needs it, and what needs that (PERMISSION_NEEDS, which the API enforces too).
  */
 export function switchPermission(
   keys: ReadonlySet<string>,
@@ -111,14 +111,20 @@ export function switchPermission(
   on: boolean,
 ): Set<string> {
   const next = new Set(keys)
-  if (on) {
-    next.add(key)
-    const needed = PERMISSION_NEEDS[key]
-    if (needed) next.add(needed)
-  } else {
-    next.delete(key)
-    for (const [dependent, needed] of Object.entries(PERMISSION_NEEDS)) {
-      if (needed === key) next.delete(dependent)
+  const pending: PermissionKey[] = [key]
+  const seen = new Set<string>()
+  while (pending.length > 0) {
+    const current = pending.pop()!
+    if (seen.has(current)) continue
+    seen.add(current)
+    if (on) {
+      next.add(current)
+      pending.push(...(PERMISSION_NEEDS[current] ?? []))
+    } else {
+      next.delete(current)
+      for (const [dependent, needed] of Object.entries(PERMISSION_NEEDS)) {
+        if (needed?.includes(current)) pending.push(dependent as PermissionKey)
+      }
     }
   }
   return next

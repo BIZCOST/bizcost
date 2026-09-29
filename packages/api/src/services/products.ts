@@ -9,11 +9,20 @@ import type {
 import {
   createIdempotent,
   locations,
+  materials,
+  materialUnits,
   productLocations,
   productsServices,
   type Tx,
 } from '@bizcost/db'
-import { can, newId, type ProductType, type StandardUnit, type VatCategory } from '@bizcost/domain'
+import {
+  can,
+  dimensionOf,
+  newId,
+  type ProductType,
+  type StandardUnit,
+  type VatCategory,
+} from '@bizcost/domain'
 import {
   and,
   asc,
@@ -29,6 +38,7 @@ import {
 import type { z } from 'zod'
 import type { BusinessCtx } from '../business-context'
 import { AppError } from '../errors'
+import { assertModuleActive, assertPermission } from '../trpc'
 import {
   containsPattern,
   decodeCursor,
@@ -36,18 +46,30 @@ import {
   requestHashOf,
   withUniqueName,
 } from './catalog'
+import {
+  checkedUnits,
+  MATERIAL_NAME_KEY,
+  setResaleMaterialArchived,
+  syncResaleMaterial,
+} from './materials'
 
 // Products & Services (ROADMAP.md M2 Step 2; DATA_MODEL.md §6, D-121, D-123): what a business sells.
 // Module `products`, products.items.view to read and products.items.manage to write (the router
 // checks both). Where each is sold is a list of locations, only for a business with more than one
 // (capability multi_location): empty means every location. Only members who manage the branches
 // (settings.locations.manage) change it (D-129). Nothing is ever deleted: a record is archived.
+//
+// An item bought ready to sell (M2 Step 4, D-117) is a product and its material, created together in
+// one transaction (the Materials module on, and materials.items.manage too) and kept in step: a change
+// of its name or unit, and archiving it, change the material as well (materials.items.manage again).
+// The product's row is locked first, then the material's, as material.update does. The link never
+// changes (the trigger keep_resale_link refuses it).
 
 type ListInput = z.output<typeof catalogListInput>
 type IdInput = z.output<typeof catalogIdInput>
 type CreateInput = z.output<typeof createProductInput>
 type UpdateInput = z.output<typeof updateProductInput>
-type Fields = Omit<CreateInput, 'id'>
+type Fields = Omit<CreateInput, 'id' | 'resale'>
 
 /** The unique index on (business_id, lower(name)) of live products and services. */
 const NAME_KEY = 'products_services_name_key'
@@ -65,6 +87,7 @@ const productColumns = {
   defaultPrice: sql<string | null>`trim_scale(${productsServices.defaultPrice})::text`,
   vatCategory: productsServices.vatCategory,
   priceIncludesVat: productsServices.priceIncludesVat,
+  resaleMaterialId: productsServices.resaleMaterialId,
   archivedAt: productsServices.archivedAt,
   version: productsServices.version,
 }
@@ -78,6 +101,7 @@ type ProductRow = {
   defaultPrice: string | null
   vatCategory: VatCategory
   priceIncludesVat: boolean
+  resaleMaterialId: string | null
   archivedAt: Date | null
   version: number
 }
@@ -93,6 +117,7 @@ function toDto(row: ProductRow, locationIds: readonly string[]): ProductDto {
     vatCategory: row.vatCategory,
     priceIncludesVat: row.priceIncludesVat,
     locationIds: [...locationIds],
+    resaleMaterialId: row.resaleMaterialId,
     archivedAt: row.archivedAt?.toISOString() ?? null,
     version: row.version,
   }
@@ -291,20 +316,69 @@ export function getProduct(ctx: BusinessCtx, input: IdInput): Promise<ProductDto
 }
 
 /**
+ * The material of an item bought ready to sell, created with its product (D-117): the product's name
+ * and unit (so its dimension), with the packs and conversions it is bought in. Idempotent on the
+ * client's material id, with a fingerprint of its own (an id already used, by a material.create too,
+ * is CONFLICT).
+ */
+async function createResaleMaterial(
+  ctx: BusinessCtx,
+  tx: Tx,
+  productId: string,
+  fields: Fields,
+  resale: NonNullable<CreateInput['resale']>,
+): Promise<void> {
+  const dimension = dimensionOf(fields.unit)
+  const units = checkedUnits(dimension, resale)
+  const { row, created } = await createIdempotent(tx, materials, {
+    id: resale.materialId,
+    businessId: ctx.businessId,
+    name: fields.name,
+    dimension,
+    unit: fields.unit,
+    requestHash: requestHashOf({
+      resaleOf: productId,
+      name: fields.name,
+      unit: fields.unit,
+      packs: resale.packs,
+      crossFactors: resale.crossFactors,
+    }),
+  })
+  if (row.deletedAt !== null) throw new AppError('conflict', { message: 'material was removed' })
+  // One statement: a pack may name another new pack (the FK is checked at its end).
+  if (created && units.length > 0) {
+    await tx
+      .insert(materialUnits)
+      .values(units.map((u) => ({ ...u, businessId: ctx.businessId, materialId: row.id })))
+  }
+}
+
+/**
  * `product.create`: idempotent on the client's id (the same payload again returns it; an id used by
  * another create or another business is CONFLICT). NAME_TAKEN when the business already has a
- * product or service with that name (archived ones included).
+ * product or service with that name (archived ones included). With `resale` it is bought ready to
+ * sell: its material is created with it (the Materials module on, materials.items.manage; NAME_TAKEN
+ * also when a material has the name).
  */
 export async function createProduct(ctx: BusinessCtx, input: CreateInput): Promise<ProductDto> {
-  const { id, ...fields } = input
-  const requestHash = requestHashOf(fields)
-  return withUniqueName(NAME_KEY, () =>
+  const { id, resale, ...fields } = input
+  if (resale) {
+    assertModuleActive(ctx, 'materials')
+    assertPermission(ctx, 'materials.items.manage')
+    // Its units are checked before anything is written (VALIDATION).
+    checkedUnits(dimensionOf(fields.unit), resale)
+  }
+  // A product made or done keeps the fingerprint it always had.
+  const requestHash = requestHashOf(resale ? { ...fields, resale } : fields)
+  return withUniqueName([NAME_KEY, MATERIAL_NAME_KEY], () =>
     ctx.tx(async (tx) => {
       const locationIds = await checkedLocations(ctx, tx, fields.locationIds, [])
+      if (resale) await createResaleMaterial(ctx, tx, id, fields, resale)
       const { row, created } = await createIdempotent(tx, productsServices, {
         id,
         businessId: ctx.businessId,
         ...columnsOf(fields),
+        resaleMaterialId: resale?.materialId ?? null,
         requestHash,
       })
       if (row.deletedAt !== null) throw new AppError('conflict', { message: 'product was removed' })
@@ -319,12 +393,17 @@ export async function createProduct(ctx: BusinessCtx, input: CreateInput): Promi
 /**
  * `product.update`: the whole record, `version` as read (CONFLICT when it changed since, NOT_FOUND
  * when it is not a product or service of this business). The locations are checked against what is
- * stored once the version matched, so a form opened before another change gets CONFLICT.
+ * stored once the version matched, so a form opened before another change gets CONFLICT. An item
+ * bought ready to sell stays a product (VALIDATION), and a new name or unit is its material's too
+ * (materials.items.manage; NAME_TAKEN when another material has the name; a unit of another kind of
+ * measure only while nothing uses the material, MATERIAL_IN_USE).
  */
 export async function updateProduct(ctx: BusinessCtx, input: UpdateInput): Promise<ProductDto> {
   const { id, version, ...fields } = input
-  return withUniqueName(NAME_KEY, () =>
+  return withUniqueName([NAME_KEY, MATERIAL_NAME_KEY], () =>
     ctx.tx(async (tx) => {
+      // As read: the update below matches only this version, so this is what it changes.
+      const before = await findProduct(tx, ctx.businessId, id)
       const [row] = await tx
         .update(productsServices)
         .set(columnsOf(fields))
@@ -336,10 +415,17 @@ export async function updateProduct(ctx: BusinessCtx, input: UpdateInput): Promi
             eq(productsServices.version, version),
           ),
         )
-        .returning({ id: productsServices.id })
+        .returning({ id: productsServices.id, resaleMaterialId: productsServices.resaleMaterialId })
       if (!row) {
         if (await findProduct(tx, ctx.businessId, id)) throw new AppError('conflict')
         throw new AppError('not_found')
+      }
+      if (
+        row.resaleMaterialId !== null &&
+        (!before || before.name !== fields.name || before.unit !== fields.unit)
+      ) {
+        assertPermission(ctx, 'materials.items.manage')
+        await syncResaleMaterial(tx, ctx.businessId, row.resaleMaterialId, fields.name, fields.unit)
       }
       const stored = (await locationsOf(tx, ctx.businessId, [id])).get(id) ?? []
       const locationIds = await checkedLocations(ctx, tx, fields.locationIds, stored)
@@ -349,13 +435,32 @@ export async function updateProduct(ctx: BusinessCtx, input: UpdateInput): Promi
   )
 }
 
-/** Sets or clears archived_at; a record already in that state is returned unchanged. */
+/**
+ * Sets or clears archived_at; a record already in that state is returned unchanged. An item bought
+ * ready to sell takes its material with it (D-117), which needs materials.items.manage.
+ */
 async function setArchived(
   ctx: BusinessCtx,
   input: IdInput,
   archived: boolean,
 ): Promise<ProductDto> {
   return ctx.tx(async (tx) => {
+    // The product's row first (the lock order of every change of the pair), then its material's.
+    const [locked] = await tx
+      .select({ resaleMaterialId: productsServices.resaleMaterialId })
+      .from(productsServices)
+      .where(
+        and(
+          eq(productsServices.businessId, ctx.businessId),
+          eq(productsServices.id, input.id),
+          isNull(productsServices.deletedAt),
+        ),
+      )
+      .for('update')
+    if (locked?.resaleMaterialId) {
+      assertPermission(ctx, 'materials.items.manage')
+      await setResaleMaterialArchived(tx, ctx.businessId, locked.resaleMaterialId, archived)
+    }
     await tx
       .update(productsServices)
       .set({ archivedAt: archived ? sql`now()` : null })

@@ -19,31 +19,35 @@ export function isCatalogPermissionKey(value: unknown): value is PermissionKey {
 }
 
 /**
- * Permissions that make sense only with another one: changing something needs seeing it. A role that
- * grants a key here must also grant the key it needs (role.updatePermissions refuses anything else;
- * the Roles editor switches both together).
+ * Permissions that make sense only with others: changing something needs seeing it, and seeing what
+ * goes into each product needs seeing the materials it names (a recipe shows their averages with its
+ * costs, D-155). A role that grants a key here must also grant every key it needs, and the keys those
+ * need (role.updatePermissions refuses anything else; the Roles editor switches them together).
  */
-export const PERMISSION_NEEDS: Readonly<Partial<Record<PermissionKey, PermissionKey>>> = {
-  'settings.business.edit': 'settings.business.view',
-  'settings.members.manage': 'settings.members.view',
-  'products.items.manage': 'products.items.view',
-  'materials.items.manage': 'materials.items.view',
-  'suppliers.items.manage': 'suppliers.items.view',
-  'purchases.documents.manage': 'purchases.documents.view',
-  'purchases.documents.post': 'purchases.documents.view',
-  'purchases.documents.reverse': 'purchases.documents.view',
-  'purchases.books.close': 'purchases.documents.view',
-}
+export const PERMISSION_NEEDS: Readonly<Partial<Record<PermissionKey, readonly PermissionKey[]>>> =
+  {
+    'settings.business.edit': ['settings.business.view'],
+    'settings.members.manage': ['settings.members.view'],
+    'products.items.manage': ['products.items.view'],
+    'products.recipes.view': ['products.items.view', 'materials.items.view'],
+    'products.recipes.manage': ['products.recipes.view'],
+    'materials.items.manage': ['materials.items.view'],
+    'suppliers.items.manage': ['suppliers.items.view'],
+    'purchases.documents.manage': ['purchases.documents.view'],
+    'purchases.documents.post': ['purchases.documents.view'],
+    'purchases.documents.reverse': ['purchases.documents.view'],
+    'purchases.books.close': ['purchases.documents.view'],
+  }
 
-/** The keys of `keys` granted without the key they need (empty when the set is coherent). */
+/** The keys of `keys` granted without a key they need (empty when the set is coherent). */
 export function keysMissingNeeds(keys: Iterable<string>): PermissionKey[] {
   const set = new Set(keys)
   const missing: PermissionKey[] = []
   for (const [key, needed] of Object.entries(PERMISSION_NEEDS) as [
     PermissionKey,
-    PermissionKey,
+    readonly PermissionKey[],
   ][]) {
-    if (set.has(key) && !set.has(needed)) missing.push(key)
+    if (set.has(key) && needed.some((n) => !set.has(n))) missing.push(key)
   }
   return missing
 }

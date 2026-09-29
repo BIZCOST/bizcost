@@ -6,8 +6,9 @@ import type {
   MaterialListDto,
   updateMaterialInput,
 } from '@bizcost/contracts'
-import { createIdempotent, materials, materialUnits, type Tx } from '@bizcost/db'
+import { createIdempotent, materials, materialUnits, productsServices, type Tx } from '@bizcost/db'
 import {
+  can,
   compareDecimal,
   dimensionOf,
   validateMaterialUnits,
@@ -20,6 +21,7 @@ import { and, asc, eq, ilike, inArray, isNotNull, isNull, sql, type SQL } from '
 import type { z } from 'zod'
 import type { BusinessCtx } from '../business-context'
 import { AppError } from '../errors'
+import { assertPermission } from '../trpc'
 import {
   containsPattern,
   decodeCursor,
@@ -27,6 +29,7 @@ import {
   requestHashOf,
   withUniqueName,
 } from './catalog'
+import { recomputeRecipeLines } from './recipes'
 
 // Materials (ROADMAP.md M2 Step 2; DATA_MODEL.md §6, D-108, D-122, D-123): what a business buys to
 // make or sell, with the units it buys it in. Module `materials`, materials.items.view to read and
@@ -34,6 +37,12 @@ import {
 // unit (which fixes its dimension) and every pack and cross factor, checked together by the domain's
 // units engine. Nothing is ever deleted: a material is archived, and units taken out of it are
 // soft-deleted.
+//
+// M2 Step 4: recipes name materials in any of their units, so a material that recipes use keeps its
+// dimension (MATERIAL_IN_USE), and a change of its units works their base quantities out again, or is
+// refused when a line would no longer convert (UNIT_IN_USE, D-148). The material of an item bought
+// ready to sell (D-117) moves with its product: its name, unit and archiving change both, with the
+// product's permission too, and its product's row is locked first (as product.update does).
 
 type ListInput = z.output<typeof catalogListInput>
 type IdInput = z.output<typeof catalogIdInput>
@@ -42,7 +51,10 @@ type UpdateInput = z.output<typeof updateMaterialInput>
 type UnitsInput = Pick<CreateInput, 'packs' | 'crossFactors'>
 
 /** The unique index on (business_id, lower(name)) of live materials. */
-const NAME_KEY = 'materials_name_key'
+export const MATERIAL_NAME_KEY = 'materials_name_key'
+
+/** The same index of products and services (an item bought ready to sell has both names). */
+const PRODUCT_NAME_KEY = 'products_services_name_key'
 
 const materialColumns = {
   id: materials.id,
@@ -88,7 +100,11 @@ type UnitRow = {
 /** A unit as stored: the rows `material_units` holds for a material's packs and cross factors. */
 type UnitValues = Omit<UnitRow, 'materialId'>
 
-function toDto(row: MaterialRow, units: readonly UnitRow[]): MaterialDto {
+function toDto(
+  row: MaterialRow,
+  units: readonly UnitRow[],
+  resaleProductId: string | null,
+): MaterialDto {
   return {
     id: row.id,
     name: row.name,
@@ -106,6 +122,7 @@ function toDto(row: MaterialRow, units: readonly UnitRow[]): MaterialDto {
     crossFactors: units
       .filter((u) => u.kind === 'cross')
       .map((u) => ({ id: u.id, unit: u.unit ?? 'g', qty: u.qty, ofUnit: u.ofUnit ?? 'g' })),
+    resaleProductId,
     archivedAt: row.archivedAt?.toISOString() ?? null,
     version: row.version,
   }
@@ -126,6 +143,49 @@ async function unitsOf(tx: Tx, businessId: string, ids: readonly string[]): Prom
     .orderBy(asc(materialUnits.createdAt), asc(materialUnits.id))
 }
 
+/** The products these materials are sold as (items bought ready to sell, D-117), by material. */
+async function resaleProductsOf(
+  tx: Tx,
+  businessId: string,
+  ids: readonly string[],
+): Promise<Map<string, string>> {
+  if (ids.length === 0) return new Map()
+  const rows = await tx
+    .select({ id: productsServices.id, materialId: productsServices.resaleMaterialId })
+    .from(productsServices)
+    .where(
+      and(
+        eq(productsServices.businessId, businessId),
+        inArray(productsServices.resaleMaterialId, [...ids]),
+        isNull(productsServices.deletedAt),
+      ),
+    )
+  return new Map(rows.flatMap((r) => (r.materialId ? [[r.materialId, r.id] as const] : [])))
+}
+
+/**
+ * The product an item bought ready to sell is sold as, locked FOR UPDATE: whoever changes the pair
+ * (product.update, material.update, archiving either) locks the product first, then the material.
+ */
+async function lockResaleProduct(tx: Tx, businessId: string, materialId: string) {
+  const [row] = await tx
+    .select({
+      id: productsServices.id,
+      name: productsServices.name,
+      unit: productsServices.unit,
+    })
+    .from(productsServices)
+    .where(
+      and(
+        eq(productsServices.businessId, businessId),
+        eq(productsServices.resaleMaterialId, materialId),
+        isNull(productsServices.deletedAt),
+      ),
+    )
+    .for('update')
+  return row
+}
+
 async function findMaterial(tx: Tx, businessId: string, id: string) {
   const [row] = await tx
     .select(materialColumns)
@@ -139,7 +199,8 @@ async function findMaterial(tx: Tx, businessId: string, id: string) {
 async function loadMaterial(tx: Tx, businessId: string, id: string): Promise<MaterialDto> {
   const row = await findMaterial(tx, businessId, id)
   if (!row) throw new AppError('not_found')
-  return toDto(row, await unitsOf(tx, businessId, [id]))
+  const resale = await resaleProductsOf(tx, businessId, [id])
+  return toDto(row, await unitsOf(tx, businessId, [id]), resale.get(id) ?? null)
 }
 
 /**
@@ -148,7 +209,7 @@ async function loadMaterial(tx: Tx, businessId: string, id: string): Promise<Mat
  * factor per dimension (VALIDATION otherwise). Ids are unique across packs and cross factors, and
  * pack names unique ignoring case.
  */
-function checkedUnits(dimension: Dimension, input: UnitsInput): UnitValues[] {
+export function checkedUnits(dimension: Dimension, input: UnitsInput): UnitValues[] {
   const units: MaterialUnits = {
     dimension,
     packs: input.packs.map((p) => ({
@@ -208,17 +269,16 @@ export async function listMaterials(ctx: BusinessCtx, input: ListInput): Promise
       .orderBy(sql`lower(${materials.name})`, asc(materials.id))
       .limit(input.limit + 1)
     const page = rows.slice(0, input.limit)
-    const units = await unitsOf(
-      tx,
-      ctx.businessId,
-      page.map((r) => r.id),
-    )
+    const ids = page.map((r) => r.id)
+    const units = await unitsOf(tx, ctx.businessId, ids)
+    const resale = await resaleProductsOf(tx, ctx.businessId, ids)
     const last = page.at(-1)
     return {
       items: page.map((row) =>
         toDto(
           row,
           units.filter((u) => u.materialId === row.id),
+          resale.get(row.id) ?? null,
         ),
       ),
       nextCursor:
@@ -246,7 +306,7 @@ export async function createMaterial(ctx: BusinessCtx, input: CreateInput): Prom
     packs: input.packs,
     crossFactors: input.crossFactors,
   })
-  return withUniqueName(NAME_KEY, () =>
+  return withUniqueName(MATERIAL_NAME_KEY, () =>
     ctx.tx(async (tx) => {
       const { row, created } = await createIdempotent(tx, materials, {
         id: input.id,
@@ -269,7 +329,7 @@ export async function createMaterial(ctx: BusinessCtx, input: CreateInput): Prom
   )
 }
 
-/** Whether a purchase line (drafts too) or a stock movement names the material. */
+/** Whether a purchase line (drafts too), a stock movement or a recipe line names the material. */
 async function materialInUse(tx: Tx, businessId: string, id: string): Promise<boolean> {
   const [row] = (await tx.execute(sql`
     select exists (
@@ -280,6 +340,11 @@ async function materialInUse(tx: Tx, businessId: string, id: string): Promise<bo
         or exists (
              select 1 from app.stock_movements m
               where m.business_id = ${businessId} and m.material_id = ${id}
+           )
+        or exists (
+             select 1 from app.recipe_lines r
+              where r.business_id = ${businessId} and r.material_id = ${id}
+                and r.deleted_at is null
            ) as used
   `)) as unknown as { used: boolean }[]
   return row?.used === true
@@ -300,13 +365,18 @@ function sameUnit(a: UnitValues, b: UnitValues): boolean {
  * `material.update`: the whole material, `version` as read (CONFLICT when it changed since, NOT_FOUND
  * when it is not a material of this business). Units are matched by id: new ids are added, changed
  * ones updated, missing ones soft-deleted. A unit id cannot turn from a pack into a cross factor, and
- * an id that belongs to another material or business is refused (VALIDATION, CONFLICT).
+ * an id that belongs to another material or business is refused (VALIDATION, CONFLICT). Recipe lines
+ * in its units are worked out again (UNIT_IN_USE when one no longer converts, D-148). The material of
+ * an item bought ready to sell renames its product and changes its unit too, which needs
+ * products.items.manage (FORBIDDEN otherwise; NAME_TAKEN when another product has the name).
  */
 export async function updateMaterial(ctx: BusinessCtx, input: UpdateInput): Promise<MaterialDto> {
   const dimension = dimensionOf(input.unit)
   const wanted = checkedUnits(dimension, input)
-  return withUniqueName(NAME_KEY, () =>
+  return withUniqueName([MATERIAL_NAME_KEY, PRODUCT_NAME_KEY], () =>
     ctx.tx(async (tx) => {
+      // Bought ready to sell: its product's row first (the lock order of every change of the pair).
+      const product = await lockResaleProduct(tx, ctx.businessId, input.id)
       // As read: the update below matches only this version, so its dimension is the one it changes.
       const current = await findMaterial(tx, ctx.businessId, input.id)
       // The row lock taken here also makes saves of this material wait for each other, and a draft
@@ -388,29 +458,124 @@ export async function updateMaterial(ctx: BusinessCtx, input: UpdateInput): Prom
             ),
           )
       }
+      // Recipes that use it in a pack or a conversion follow what its units say now.
+      if (added.length + changed.length + removed.length > 0) {
+        await recomputeRecipeLines(
+          tx,
+          ctx.businessId,
+          input.id,
+          can(ctx.access.effective, 'products.recipes.view'),
+        )
+      }
+      if (product && (product.name !== input.name || product.unit !== input.unit)) {
+        assertPermission(ctx, 'products.items.manage')
+        await tx
+          .update(productsServices)
+          .set({ name: input.name, unit: input.unit })
+          .where(
+            and(
+              eq(productsServices.businessId, ctx.businessId),
+              eq(productsServices.id, product.id),
+            ),
+          )
+      }
       return loadMaterial(tx, ctx.businessId, input.id)
     }),
   )
 }
 
-/** Sets or clears archived_at; a material already in that state is returned unchanged. */
+/**
+ * Keeps the material of an item bought ready to sell in step with its product (D-117), after
+ * product.update changed the product's name or unit (the product's row is locked already): the same
+ * name and unit, so the same dimension. A new dimension needs the material's packs and conversions to
+ * fit it (VALIDATION) and nothing to use the material (MATERIAL_IN_USE: purchases, the ledger,
+ * recipes), checked under its row lock as material.update does.
+ */
+export async function syncResaleMaterial(
+  tx: Tx,
+  businessId: string,
+  materialId: string,
+  name: string,
+  unit: StandardUnit,
+): Promise<void> {
+  const current = await findMaterial(tx, businessId, materialId)
+  if (!current) throw new AppError('not_found')
+  if (current.name === name && current.unit === unit) return
+  const dimension = dimensionOf(unit)
+  if (dimension !== current.dimension) {
+    const units = await unitsOf(tx, businessId, [materialId])
+    checkedUnits(dimension, {
+      packs: units
+        .filter((u) => u.kind === 'pack')
+        .map((u) => ({
+          id: u.id,
+          name: u.name ?? '',
+          qty: u.qty,
+          ofUnit: u.ofUnit,
+          ofPackId: u.ofPackId,
+        })),
+      crossFactors: units
+        .filter((u) => u.kind === 'cross')
+        .map((u) => ({ id: u.id, unit: u.unit ?? 'g', qty: u.qty, ofUnit: u.ofUnit ?? 'g' })),
+    })
+  }
+  await tx
+    .update(materials)
+    .set({ name, unit, dimension })
+    .where(and(eq(materials.businessId, businessId), eq(materials.id, materialId)))
+  if (dimension !== current.dimension && (await materialInUse(tx, businessId, materialId))) {
+    throw new AppError('material_in_use')
+  }
+}
+
+/**
+ * Archives or brings back the material of an item bought ready to sell with its product (D-117; the
+ * product's row is locked already). A material already in that state is left as it is.
+ */
+export async function setResaleMaterialArchived(
+  tx: Tx,
+  businessId: string,
+  materialId: string,
+  archived: boolean,
+): Promise<void> {
+  await tx
+    .update(materials)
+    .set({ archivedAt: archived ? sql`now()` : null })
+    .where(
+      and(
+        eq(materials.businessId, businessId),
+        eq(materials.id, materialId),
+        isNull(materials.deletedAt),
+        archived ? isNull(materials.archivedAt) : isNotNull(materials.archivedAt),
+      ),
+    )
+}
+
+/**
+ * Sets or clears archived_at; a material already in that state is returned unchanged. The material of
+ * an item bought ready to sell takes its product with it (D-117), which needs products.items.manage.
+ */
 async function setArchived(
   ctx: BusinessCtx,
   input: IdInput,
   archived: boolean,
 ): Promise<MaterialDto> {
   return ctx.tx(async (tx) => {
-    await tx
-      .update(materials)
-      .set({ archivedAt: archived ? sql`now()` : null })
-      .where(
-        and(
-          eq(materials.businessId, ctx.businessId),
-          eq(materials.id, input.id),
-          isNull(materials.deletedAt),
-          archived ? isNull(materials.archivedAt) : isNotNull(materials.archivedAt),
-        ),
-      )
+    const product = await lockResaleProduct(tx, ctx.businessId, input.id)
+    if (product) assertPermission(ctx, 'products.items.manage')
+    await setResaleMaterialArchived(tx, ctx.businessId, input.id, archived)
+    if (product) {
+      await tx
+        .update(productsServices)
+        .set({ archivedAt: archived ? sql`now()` : null })
+        .where(
+          and(
+            eq(productsServices.businessId, ctx.businessId),
+            eq(productsServices.id, product.id),
+            archived ? isNull(productsServices.archivedAt) : isNotNull(productsServices.archivedAt),
+          ),
+        )
+    }
     return loadMaterial(tx, ctx.businessId, input.id)
   })
 }

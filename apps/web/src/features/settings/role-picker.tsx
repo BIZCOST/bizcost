@@ -5,7 +5,8 @@ import { formatList } from '@bizcost/i18n'
 import { isRoleTemplateKey, PERMISSION_CATALOG } from '@bizcost/modules'
 import { CheckIcon } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
-import { useLocale } from '@/lib/i18n/client'
+import { useLocale, useTerminology } from '@/lib/i18n/client'
+import { useBusinessContext } from '@/lib/trpc/client'
 import { cn } from '@/lib/utils'
 import { permissionLabelKey } from './permission-groups'
 import { canGrantRole, isTemplateDefault, roleNameKey } from './role-labels'
@@ -29,6 +30,9 @@ const SUMMARY_LABELS = 3
 export function useRoleSummary() {
   const { t } = useTranslation()
   const { locale } = useLocale()
+  // In the business's wording ("See recipes" for a café).
+  const term = useTerminology()
+  const profile = useBusinessContext().data?.terminologyProfile
   return (role: RoleDto) => {
     if (role.isOwner) return t('settings.roleInfo.owner')
     if (isRoleTemplateKey(role.templateKey) && isTemplateDefault(role)) {
@@ -40,7 +44,7 @@ export function useRoleSummary() {
     const shown = keys.length > SUMMARY_LABELS + 1 ? keys.slice(0, SUMMARY_LABELS) : keys
     // The labels start a sentence ("See costs"); inside one, English writes them in lower case.
     const labels = shown.map((key) => {
-      const label = t(permissionLabelKey(key))
+      const label = term(permissionLabelKey(key), profile)
       return locale === 'en' ? label.charAt(0).toLowerCase() + label.slice(1) : label
     })
     const rest = keys.length - shown.length

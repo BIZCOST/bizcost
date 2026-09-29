@@ -160,6 +160,8 @@ export function PurchaseView({
       queryClient.invalidateQueries({ queryKey: trpc.purchase.get.queryKey({ id: purchase.id }) }),
       queryClient.invalidateQueries({ queryKey: trpc.purchase.list.pathKey() }),
       queryClient.invalidateQueries({ queryKey: trpc.material.costs.pathKey() }),
+      queryClient.invalidateQueries({ queryKey: trpc.product.costs.pathKey() }),
+      queryClient.invalidateQueries({ queryKey: trpc.recipe.get.pathKey() }),
     ])
   }
 

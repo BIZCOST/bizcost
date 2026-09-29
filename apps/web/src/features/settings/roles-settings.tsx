@@ -31,7 +31,7 @@ import {
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Switch } from '@/components/ui/switch'
-import { useLocale } from '@/lib/i18n/client'
+import { useLocale, useTerminology } from '@/lib/i18n/client'
 import { useBusinessContext } from '@/lib/trpc/client'
 import { cn } from '@/lib/utils'
 import {
@@ -74,6 +74,9 @@ function PermissionEditor({
 }) {
   const { t } = useTranslation()
   const { locale } = useLocale()
+  // The business's wording: a café's "See recipes", "Ingredients & supplies" (D-118).
+  const term = useTerminology()
+  const profile = access.terminologyProfile
   const trpc = useTRPC()
   const queryClient = useQueryClient()
   const roleName = useRoleName()
@@ -137,7 +140,9 @@ function PermissionEditor({
       ) : null}
       {groups.map((group) => (
         <fieldset key={group.id} className="space-y-1" disabled={update.isPending}>
-          <legend className="mb-1 text-sm font-semibold">{t(groupTitleKey(group.id))}</legend>
+          <legend className="mb-1 text-sm font-semibold">
+            {term(groupTitleKey(group.id), profile)}
+          </legend>
           <ul className="divide-y rounded-xl border">
             {group.keys.map((key: PermissionKey) => {
               const id = `${ids}-${key.replaceAll('.', '-')}`
@@ -146,7 +151,7 @@ function PermissionEditor({
                 <li key={key} className="flex items-start gap-4 px-3.5 py-3">
                   <div className="min-w-0 flex-1">
                     <p id={`${id}-label`} className="flex items-center gap-1.5 text-sm font-medium">
-                      {t(permissionLabelKey(key))}
+                      {term(permissionLabelKey(key), profile)}
                       {allowed ? null : (
                         <LockKeyholeIcon
                           aria-label={t('settings.roles.locked')}
@@ -156,7 +161,7 @@ function PermissionEditor({
                       )}
                     </p>
                     <p id={`${id}-hint`} className="mt-0.5 text-sm text-muted-foreground">
-                      {t(permissionHintKey(key))}
+                      {term(permissionHintKey(key), profile)}
                     </p>
                   </div>
                   <Switch
@@ -198,7 +203,7 @@ function PermissionEditor({
               {t('settings.roles.ownRoleBody', {
                 list: formatList(
                   locale,
-                  (losing ?? []).map((key) => t(permissionLabelKey(key))),
+                  (losing ?? []).map((key) => term(permissionLabelKey(key), profile)),
                 ),
               })}
             </AlertDialogDescription>

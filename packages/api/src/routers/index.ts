@@ -13,6 +13,7 @@ import { memberRouter } from './member'
 import { productRouter } from './product'
 import { purchaseRouter } from './purchase'
 import { purchaseReturnRouter } from './purchase-return'
+import { recipeRouter } from './recipe'
 import { roleRouter } from './role'
 import { supplierRouter } from './supplier'
 
@@ -32,6 +33,7 @@ export const appRouter = router({
   role: roleRouter,
   material: materialRouter,
   product: productRouter,
+  recipe: recipeRouter,
   supplier: supplierRouter,
   purchase: purchaseRouter,
   purchaseReturn: purchaseReturnRouter,

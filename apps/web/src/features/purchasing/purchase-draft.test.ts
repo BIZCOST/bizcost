@@ -23,6 +23,7 @@ const MILK: MaterialDto = {
   unit: 'l',
   packs: [{ id: 'carton', name: 'carton', qty: '12', ofUnit: 'l', ofPackId: null }],
   crossFactors: [],
+  resaleProductId: null,
   archivedAt: null,
   version: 1,
 }
@@ -33,6 +34,7 @@ const BEANS: MaterialDto = {
   unit: 'kg',
   packs: [{ id: 'bag', name: 'كيس', qty: '1', ofUnit: 'kg', ofPackId: null }],
   crossFactors: [],
+  resaleProductId: null,
   archivedAt: null,
   version: 1,
 }

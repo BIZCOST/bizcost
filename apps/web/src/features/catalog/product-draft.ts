@@ -6,7 +6,13 @@ import {
   type ProductDto,
 } from '@bizcost/contracts'
 import type { ProductType, StandardUnit, VatCategory } from '@bizcost/domain'
-import { formName } from './material-draft'
+import {
+  checkMaterial,
+  formName,
+  type MaterialCheck,
+  type MaterialCheckOptions,
+  type MaterialDraft,
+} from './material-draft'
 import { readPrice, type FieldError } from './numbers'
 
 // The product and service form (M2 Step 2; D-121, D-123): what the person typed, checked, and
@@ -35,8 +41,11 @@ export interface ProductErrors {
   locations?: FieldError
 }
 
-/** product.create's fields (without the id); product.update adds the id and the version. */
-export type ProductFields = Omit<CreateProductInput, 'id'>
+/**
+ * product.create's fields (without the id and `resale`, which the form adds for an item bought ready to
+ * sell); product.update adds the id and the version.
+ */
+export type ProductFields = Omit<CreateProductInput, 'id' | 'resale'>
 
 /** What the business uses and the member may do, for the fields of the form. */
 export interface ProductFormAccess {
@@ -121,4 +130,20 @@ export function checkProduct(
       locationIds,
     },
   }
+}
+
+/**
+ * The material side of an item bought ready to sell (M2 Step 4, D-117): the packs and conversions it
+ * is bought in, checked by the units engine with the product's own unit (the material's is the
+ * product's). Its name is the product's, checked there, so only the units' problems count here.
+ */
+export function checkResaleUnits(
+  product: Pick<ProductDraft, 'unit'>,
+  units: Pick<MaterialDraft, 'packs' | 'crossFactors'>,
+  options: MaterialCheckOptions = {},
+): MaterialCheck {
+  return checkMaterial(
+    { name: 'resale', unit: product.unit, packs: units.packs, crossFactors: units.crossFactors },
+    options,
+  )
 }

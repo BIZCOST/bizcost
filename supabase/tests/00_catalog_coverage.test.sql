@@ -35,15 +35,16 @@ select tables_are(
     'member_locations', 'business_invitations', 'setup_answers', 'file_uploads', 'audit_log',
     'materials', 'material_units', 'products_services', 'product_locations',
     'suppliers', 'purchases', 'purchase_lines', 'purchase_returns', 'purchase_return_lines',
-    'stock_movements', 'material_costs', 'stock_balances', 'attachments'
+    'stock_movements', 'material_costs', 'stock_balances', 'attachments',
+    'recipes', 'recipe_lines'
   ],
   'app contains exactly the Milestone 1 tables and those of M2 so far'
 );
 
 select is(
   (select count(*)::int from business_tables),
-  25,
-  'sanity: 25 app tables carry business_id (the checks below are not vacuous)'
+  27,
+  'sanity: 27 app tables carry business_id (the checks below are not vacuous)'
 );
 
 -- 2. Row level security ---------------------------------------------------------
@@ -268,7 +269,11 @@ select is_empty(
          ('stock_movements', 'reverses_id', 'stock_movements'),
          ('material_costs', 'material_id', 'materials'),
          ('stock_balances', 'location_id', 'locations'),
-         ('stock_balances', 'material_id', 'materials')
+         ('stock_balances', 'material_id', 'materials'),
+         ('products_services', 'resale_material_id', 'materials'),
+         ('recipes', 'product_id', 'products_services'),
+         ('recipe_lines', 'recipe_id', 'recipes'),
+         ('recipe_lines', 'material_id', 'materials')
        ) as v(child, col, parent)
       where not exists (
         select 1
@@ -460,7 +465,12 @@ select is_empty(
          ('material_costs', 'avg_cost'),
          ('stock_balances', 'location_id'), ('stock_balances', 'material_id'), ('stock_balances', 'qty'),
          ('attachments', 'entity'), ('attachments', 'entity_id'), ('attachments', 'path'),
-         ('attachments', 'file_name'), ('attachments', 'content_type'), ('attachments', 'size_bytes')
+         ('attachments', 'file_name'), ('attachments', 'content_type'), ('attachments', 'size_bytes'),
+         ('products_services', 'resale_material_id'),
+         ('recipes', 'product_id'),
+         ('recipe_lines', 'recipe_id'), ('recipe_lines', 'position'), ('recipe_lines', 'material_id'),
+         ('recipe_lines', 'qty'), ('recipe_lines', 'unit'), ('recipe_lines', 'pack_id'),
+         ('recipe_lines', 'base_qty')
        ) as v(tbl, col)
       where not exists (
         select 1 from pg_attribute a

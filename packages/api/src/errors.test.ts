@@ -40,6 +40,7 @@ describe('AppError', () => {
     ['has_later_returns', 'CONFLICT'],
     ['exceeds_purchase', 'BAD_REQUEST'],
     ['material_in_use', 'CONFLICT'],
+    ['unit_in_use', 'CONFLICT'],
     ['internal', 'INTERNAL_SERVER_ERROR'],
   ] as const)('%s uses the tRPC code %s', (appCode, trpcCode) => {
     const error = new AppError(appCode)

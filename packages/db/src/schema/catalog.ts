@@ -124,6 +124,12 @@ export const materialUnits = tenantTable(
  * (NULL: not set yet), before VAT unless `price_includes_vat`. The VAT setting applies only while the
  * business is VAT-registered. Document lines copy these values; editing a line never edits the record
  * (D-002).
+ *
+ * `resale_material_id` (M2 Step 4, D-117): an item bought ready to sell is one product and its
+ * material, created together and kept in step by the API (name, unit, archiving). Purchases buy the
+ * material, and the product costs the material's average for one unit sold, with no recipe. At most
+ * one product per material, only a product (not a service), and the link never changes (trigger
+ * keep_resale_link).
  */
 export const productsServices = tenantTable(
   'products_services',
@@ -137,8 +143,20 @@ export const productsServices = tenantTable(
     priceIncludesVat: boolean('price_includes_vat').notNull().default(false),
     // Archived: hidden from pickers; still listed (filter) and never deleted (D-123).
     archivedAt: timestamptz('archived_at'),
+    // Bought ready to sell: the material bought for it (D-117); NULL for anything made or done.
+    resaleMaterialId: uuid('resale_material_id'),
   },
   (t) => [
+    tenantRef(
+      'products_services_resale_material_fk',
+      [t.businessId, t.resaleMaterialId],
+      materials,
+    ),
+    // One product per material bought ready to sell.
+    uniqueIndex('products_services_resale_material_key')
+      .on(t.businessId, t.resaleMaterialId)
+      .where(sql`resale_material_id is not null`),
+    check('products_services_resale_check', sql`resale_material_id is null or type = 'product'`),
     // One name per business (case ignored); also the order of the list and its cursor.
     uniqueIndex('products_services_name_key')
       .on(t.businessId, sql`lower(name)`)

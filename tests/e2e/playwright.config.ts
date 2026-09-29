@@ -42,7 +42,7 @@ function webEnv(origin: string): Record<string, string> {
 }
 
 /** Specs of the modules shown only by the dev-only preview. */
-const PREVIEW_SPECS = /(?:catalog|purchasing)\.spec\.ts$/
+const PREVIEW_SPECS = /(?:catalog|purchasing|recipes)\.spec\.ts$/
 
 export default defineConfig({
   testDir: './specs',

@@ -107,8 +107,11 @@ describe('businessContextDto', () => {
     expect(businessContextDto.safeParse(badCategory).success).toBe(false)
     const badVersion = { ...context, permissionsVersion: 1.5 }
     expect(businessContextDto.safeParse(badVersion).success).toBe(false)
-    const badProfile = { ...context, terminologyProfile: 'retail' }
+    const badProfile = { ...context, terminologyProfile: 'shop' }
     expect(businessContextDto.safeParse(badProfile).success).toBe(false)
+    // The retail wording is a profile since M2 Step 4 (D-117).
+    const retail = { ...context, terminologyProfile: 'retail' }
+    expect(businessContextDto.safeParse(retail).success).toBe(true)
     const badCurrency = { ...context, currency: 'aed' }
     expect(businessContextDto.safeParse(badCurrency).success).toBe(false)
   })

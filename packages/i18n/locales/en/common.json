@@ -56,6 +56,7 @@
     "materials": "Materials",
     "materials_food": "Ingredients & supplies",
     "materials_factory": "Raw materials",
+    "materials_retail": "Goods",
     "suppliers": "Suppliers",
     "purchases": "Purchases",
     "more": "More",
@@ -67,7 +68,8 @@
     "products_projects": "Services",
     "materials": "Materials",
     "materials_food": "Ingredients",
-    "materials_factory": "Materials"
+    "materials_factory": "Materials",
+    "materials_retail": "Goods"
   },
   "home": {
     "greeting": "Hello, {{name}}",

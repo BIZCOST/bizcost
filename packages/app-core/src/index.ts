@@ -4,6 +4,7 @@ export {
   API_STALE_TIME_MS,
   apiErrorCode,
   apiErrorKey,
+  apiErrorNames,
   createApiClient,
   createQueryClient,
   isAccessChange,

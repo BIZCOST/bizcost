@@ -10,14 +10,16 @@ import {
   useQuery,
   useQueryClient,
 } from '@tanstack/react-query'
-import { PackageIcon } from 'lucide-react'
+import { PackageCheckIcon, PackageIcon } from 'lucide-react'
 import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
 import { isolate } from '@/components/form/use-message'
 import { ModuleGate } from '@/components/shell/module-gate'
 import { PageContainer } from '@/components/shell/page-container'
+import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
+import { hasModule } from '@/features/purchasing/data'
 import { can } from '@/features/settings/sections'
 import { useTerminology } from '@/lib/i18n/client'
 import { useBusinessContext } from '@/lib/trpc/client'
@@ -34,12 +36,19 @@ import {
 } from './catalog-list'
 import { MaterialCostDetails, useMaterialCosts } from './material-cost'
 import { MaterialSheet } from './material-sheet'
+import { ProductSheet } from './product-sheet'
 import { PackChainText, useUnitQuantity } from './unit-parts'
 import { materialUnits, outerPacks, packChain } from './units'
 
 // Materials (M2 Step 2; ROADMAP.md Step 2, D-118, D-122, D-123): what the business buys to make or
-// sell, in its wording ("Ingredients & supplies" for food, "Raw materials" for a factory). Everyone
-// with materials.items.view sees the list; materials.items.manage adds, edits and archives.
+// sell, in its wording ("Ingredients & supplies" for food, "Raw materials" for a factory, "Goods"
+// for a shop, D-117). Everyone with materials.items.view sees the list; materials.items.manage adds,
+// edits and archives.
+//
+// Items bought ready to sell (M2 Step 4, D-117) are tagged "Sold as it is": they are one record with
+// their product, so archiving says it leaves Products & Services too. A shop's Goods page adds an
+// item to sell (the product form bought ready to sell, when the member may add products), and a
+// supply it uses (the material form) as a second choice.
 
 /**
  * A material's details in the list: its unit, each pack in words and, while the business uses
@@ -83,7 +92,7 @@ function MaterialDetails({
   )
 }
 
-type Editing = { material?: MaterialDto; key: string }
+type Editing = { material?: MaterialDto; key: string; toSell?: boolean; used?: boolean }
 
 function MaterialsList() {
   const { t } = useTranslation()
@@ -120,8 +129,17 @@ function MaterialsList() {
   if (!context) return null
   const profile = context.terminologyProfile
   const canManage = can(context, 'materials.items.manage')
-  const refresh = () => queryClient.invalidateQueries({ queryKey: trpc.material.list.pathKey() })
-  const add = () => setEditing({ key: `new-${Date.now()}` })
+  // An item sold as it is moves with its product (D-117): both lists follow.
+  const refresh = () =>
+    Promise.all([
+      queryClient.invalidateQueries({ queryKey: trpc.material.list.pathKey() }),
+      queryClient.invalidateQueries({ queryKey: trpc.product.list.pathKey() }),
+    ])
+  // A shop adds goods to sell: the product form, bought ready to sell (D-117).
+  const addsToSell =
+    profile === 'retail' && hasModule(context, 'products') && can(context, 'products.items.manage')
+  const add = () => setEditing({ key: `new-${Date.now()}`, toSell: addsToSell })
+  const addUsed = () => setEditing({ key: `new-${Date.now()}`, used: true })
 
   async function confirmArchive() {
     if (!archiving) return
@@ -153,9 +171,21 @@ function MaterialsList() {
     <PageContainer>
       <ListHeader
         title={title}
-        intro={t('catalog.materials.intro')}
+        intro={term('catalog.materials.intro', profile)}
         addLabel={canManage && !firstTime ? term('catalog.materials.add', profile) : null}
         onAdd={add}
+        more={
+          canManage && !firstTime && addsToSell ? (
+            <Button
+              size="lg"
+              variant="outline"
+              onClick={addUsed}
+              title={t('catalog.materials.addUsedHint')}
+            >
+              {t('catalog.materials.addUsed')}
+            </Button>
+          ) : null
+        }
       />
       {firstTime ? null : <ListToolbar search={search} status={status} onChange={set} />}
       <ListBody
@@ -168,21 +198,33 @@ function MaterialsList() {
             icon={PackageIcon}
             title={term('catalog.materials.empty.title', profile)}
             body={
-              canManage ? t('catalog.materials.empty.body') : t('catalog.materials.empty.viewer')
+              canManage
+                ? term('catalog.materials.empty.body', profile)
+                : t('catalog.materials.empty.viewer')
             }
           >
             {canManage ? (
-              <Button size="lg" onClick={add}>
-                {term('catalog.materials.add', profile)}
-              </Button>
+              <div className="flex flex-wrap justify-center gap-2">
+                <Button size="lg" onClick={add}>
+                  {term('catalog.materials.add', profile)}
+                </Button>
+                {addsToSell ? (
+                  <Button size="lg" variant="outline" onClick={addUsed}>
+                    {t('catalog.materials.addUsed')}
+                  </Button>
+                ) : null}
+              </div>
             ) : null}
           </ListEmpty>
         }
         renderRow={(material: MaterialDto) => (
           <ListRow
-            icon={PackageIcon}
+            icon={material.resaleProductId ? PackageCheckIcon : PackageIcon}
             name={material.name}
             archived={material.archivedAt !== null}
+            badges={
+              material.resaleProductId ? <Badge>{t('catalog.materials.soldAs')}</Badge> : null
+            }
             details={<MaterialDetails material={material} cost={costs.get(material.id)} />}
             onEdit={canManage ? () => setEditing({ material, key: material.id }) : undefined}
             onArchive={() => {
@@ -193,16 +235,25 @@ function MaterialsList() {
           />
         )}
       />
-      {editing ? (
+      {editing?.toSell ? (
+        <ProductSheet
+          key={editing.key}
+          profile={profile}
+          resale="only"
+          onClose={() => setEditing(null)}
+        />
+      ) : editing ? (
         <MaterialSheet
           key={editing.key}
           material={editing.material}
           profile={profile}
+          newTitle={editing.used ? t('catalog.materials.newSupply') : undefined}
           onClose={() => setEditing(null)}
         />
       ) : null}
       <ArchiveDialog
         name={archiving?.name ?? null}
+        body={archiving?.resaleProductId ? t('catalog.list.archiveBodyPair') : undefined}
         busy={archive.isPending}
         error={archiveError}
         onConfirm={() => void confirmArchive()}

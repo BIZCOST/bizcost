@@ -123,11 +123,14 @@ export function ListHeader({
   intro,
   addLabel,
   onAdd,
+  more,
 }: {
   title: string
   intro: string
   addLabel: string | null
   onAdd: () => void
+  /** A second, quieter way to add (e.g. a supply on a shop's Goods page). */
+  more?: ReactNode
 }) {
   return (
     <header className="mb-6 flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
@@ -135,11 +138,16 @@ export function ListHeader({
         <h1 className="text-2xl font-semibold tracking-tight sm:text-3xl">{title}</h1>
         <p className="mt-1.5 max-w-2xl text-muted-foreground">{intro}</p>
       </div>
-      {addLabel ? (
-        <Button size="lg" className="shrink-0" onClick={onAdd}>
-          <PlusIcon aria-hidden />
-          {addLabel}
-        </Button>
+      {addLabel || more ? (
+        <div className="flex shrink-0 flex-wrap gap-2">
+          {more}
+          {addLabel ? (
+            <Button size="lg" className="shrink-0" onClick={onAdd}>
+              <PlusIcon aria-hidden />
+              {addLabel}
+            </Button>
+          ) : null}
+        </div>
       ) : null}
     </header>
   )
@@ -380,7 +388,9 @@ export function ListBody<T extends { id: string }>({
 
 /**
  * One row: its icon, name and details. For members who may change it, the row opens the form and a
- * menu has Edit and Archive (or Bring back).
+ * menu has Edit and Archive (or Bring back). From 1280 px (where the page beside the sidebar is wide
+ * enough, D-095), `aside` and `footer` become columns of the row, aligned between rows like a table's;
+ * on smaller screens they stack under the details.
  */
 export function ListRow({
   icon: Icon,
@@ -388,6 +398,8 @@ export function ListRow({
   archived,
   badges,
   details,
+  aside,
+  footer,
   onEdit,
   onArchive,
   onUnarchive,
@@ -397,6 +409,13 @@ export function ListRow({
   archived: boolean
   badges?: ReactNode
   details: ReactNode
+  /** Under the details, or a column beside them from 1280 px: e.g. a product's material cost. */
+  aside?: ReactNode
+  /**
+   * Under the details, outside the row's button (a column before its menu from 1280 px): e.g. a
+   * button that opens what goes into it. Null keeps the column empty, so the rows stay aligned.
+   */
+  footer?: ReactNode
   /** Absent for members who may only look. */
   onEdit?: () => void
   onArchive?: () => void
@@ -413,59 +432,93 @@ export function ListRow({
       >
         <Icon aria-hidden className="size-5" />
       </span>
-      <span className="min-w-0 flex-1">
-        <span className="flex flex-wrap items-center gap-x-2 gap-y-1">
-          <span dir="auto" className="min-w-0 font-medium break-words">
-            {name}
+      <span
+        className={cn(
+          'min-w-0 flex-1',
+          aside !== undefined &&
+            'xl:grid xl:grid-cols-[minmax(0,1fr)_minmax(0,20rem)] xl:items-center xl:gap-x-6',
+        )}
+      >
+        <span className="block min-w-0">
+          <span className="flex flex-wrap items-center gap-x-2 gap-y-1">
+            <span dir="auto" className="min-w-0 font-medium break-words">
+              {name}
+            </span>
+            {badges}
+            {archived ? <Badge>{t('catalog.list.archivedBadge')}</Badge> : null}
           </span>
-          {badges}
-          {archived ? <Badge>{t('catalog.list.archivedBadge')}</Badge> : null}
+          <span className="mt-1 block text-sm leading-relaxed text-muted-foreground">
+            {details}
+          </span>
         </span>
-        <span className="mt-1 block text-sm leading-relaxed text-muted-foreground">{details}</span>
+        {aside !== undefined ? (
+          <span className="block text-sm leading-relaxed text-muted-foreground">{aside}</span>
+        ) : null}
       </span>
     </>
   )
+  const column = footer !== undefined
+  const below = footer ? (
+    <div className="-mt-1.5 ps-[4.25rem] pe-4 pb-3 sm:ps-[4.5rem] sm:pe-5 xl:m-0 xl:w-48 xl:shrink-0 xl:p-0 xl:pe-2">
+      {footer}
+    </div>
+  ) : column ? (
+    <div aria-hidden className="hidden xl:block xl:w-48 xl:shrink-0" />
+  ) : null
   if (!onEdit) {
-    return <div className="flex items-start gap-3 px-4 py-3.5 sm:px-5">{face}</div>
+    return (
+      <div className={cn(column && 'xl:flex xl:items-center')}>
+        <div className="flex min-w-0 items-start gap-3 px-4 py-3.5 sm:px-5 xl:flex-1">{face}</div>
+        {below}
+      </div>
+    )
   }
   return (
-    <div className="flex items-start gap-1 pe-2 transition-colors hover:bg-muted/40">
-      <button
-        type="button"
-        onClick={onEdit}
-        className="flex min-w-0 flex-1 items-start gap-3 rounded-2xl px-4 py-3.5 text-start outline-none focus-visible:ring-3 focus-visible:ring-ring focus-visible:ring-inset sm:px-5"
-      >
-        {face}
-      </button>
-      <DropdownMenu>
-        <DropdownMenuTrigger asChild>
-          <Button
-            variant="ghost"
-            size="icon"
-            className="mt-2 shrink-0"
-            aria-label={t('catalog.list.actions', { name: isolate(name) })}
-          >
-            <EllipsisVerticalIcon aria-hidden />
-          </Button>
-        </DropdownMenuTrigger>
-        <DropdownMenuContent align="end" className="w-52">
-          <DropdownMenuItem className="py-2" onSelect={onEdit}>
-            <PencilIcon aria-hidden />
-            {t('catalog.list.edit')}
-          </DropdownMenuItem>
-          {archived ? (
-            <DropdownMenuItem className="py-2" onSelect={onUnarchive}>
-              <ArchiveRestoreIcon aria-hidden />
-              {t('catalog.list.unarchive')}
+    <div
+      className={cn(
+        'transition-colors hover:bg-muted/40',
+        column && 'xl:flex xl:items-center xl:pe-2',
+      )}
+    >
+      <div className={cn('flex items-start gap-1 pe-2', column && 'xl:contents')}>
+        <button
+          type="button"
+          onClick={onEdit}
+          className="flex min-w-0 flex-1 items-start gap-3 rounded-2xl px-4 py-3.5 text-start outline-none focus-visible:ring-3 focus-visible:ring-ring focus-visible:ring-inset sm:px-5"
+        >
+          {face}
+        </button>
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <Button
+              variant="ghost"
+              size="icon"
+              className={cn('mt-2 shrink-0', column && 'xl:order-last xl:mt-0')}
+              aria-label={t('catalog.list.actions', { name: isolate(name) })}
+            >
+              <EllipsisVerticalIcon aria-hidden />
+            </Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end" className="w-52">
+            <DropdownMenuItem className="py-2" onSelect={onEdit}>
+              <PencilIcon aria-hidden />
+              {t('catalog.list.edit')}
             </DropdownMenuItem>
-          ) : (
-            <DropdownMenuItem className="py-2" onSelect={onArchive}>
-              <ArchiveIcon aria-hidden />
-              {t('catalog.list.archive')}
-            </DropdownMenuItem>
-          )}
-        </DropdownMenuContent>
-      </DropdownMenu>
+            {archived ? (
+              <DropdownMenuItem className="py-2" onSelect={onUnarchive}>
+                <ArchiveRestoreIcon aria-hidden />
+                {t('catalog.list.unarchive')}
+              </DropdownMenuItem>
+            ) : (
+              <DropdownMenuItem className="py-2" onSelect={onArchive}>
+                <ArchiveIcon aria-hidden />
+                {t('catalog.list.archive')}
+              </DropdownMenuItem>
+            )}
+          </DropdownMenuContent>
+        </DropdownMenu>
+      </div>
+      {below}
     </div>
   )
 }
@@ -473,6 +526,7 @@ export function ListRow({
 /** "Archive X?": what archiving does, then Archive or Cancel. */
 export function ArchiveDialog({
   name,
+  body,
   busy,
   error,
   onConfirm,
@@ -480,6 +534,8 @@ export function ArchiveDialog({
 }: {
   /** The record being archived; null when the dialog is closed. */
   name: string | null
+  /** What archiving it does, when it says more than the usual words. */
+  body?: string
   busy: boolean
   error: I18nKey | null
   onConfirm: () => void
@@ -496,7 +552,7 @@ export function ArchiveDialog({
           <AlertDialogTitle>
             {t('catalog.list.archiveTitle', { name: isolate(name ?? '') })}
           </AlertDialogTitle>
-          <AlertDialogDescription>{t('catalog.list.archiveBody')}</AlertDialogDescription>
+          <AlertDialogDescription>{body ?? t('catalog.list.archiveBody')}</AlertDialogDescription>
         </AlertDialogHeader>
         {error ? <FormAlert tone="error">{t(error)}</FormAlert> : null}
         <AlertDialogFooter>

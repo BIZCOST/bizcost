@@ -61,6 +61,7 @@ describe('checkProduct', () => {
       vatCategory: 'zero_rated',
       priceIncludesVat: true,
       locationIds: [BRANCH_A],
+      resaleMaterialId: null,
       archivedAt: null,
       version: 2,
     }

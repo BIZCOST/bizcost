@@ -180,6 +180,29 @@ export function requireModule(id: ModuleId) {
   })
 }
 
+/**
+ * Inside a handler, for what a procedure does only on some inputs (an item bought ready to sell also
+ * writes a material, D-117): the module must be active for the business, as requireModule checks it
+ * (MODULE_DISABLED otherwise).
+ */
+export function assertModuleActive(
+  ctx: { readonly modules: Context['modules']; readonly access: BusinessAccess },
+  id: ModuleId,
+): void {
+  const manifest = ctx.modules.find((m) => m.id === id)
+  if (!manifest || !isModuleActive(manifest, ctx.access.enabledModules)) {
+    throw new AppError('module_disabled')
+  }
+}
+
+/** Inside a handler: the member must hold the permission (FORBIDDEN otherwise). */
+export function assertPermission(
+  ctx: { readonly access: BusinessAccess },
+  key: PermissionKey,
+): void {
+  if (!can(ctx.access.effective, key)) throw new AppError('forbidden')
+}
+
 /** The member must hold the permission (FORBIDDEN otherwise). Use after businessProcedure. */
 export function requirePermission(key: PermissionKey) {
   return t.middleware(({ ctx, next }) => {

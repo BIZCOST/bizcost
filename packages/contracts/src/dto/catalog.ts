@@ -24,7 +24,9 @@ import { cleanName, CONTROL_CHARACTER, hasVisibleCharacter } from '../text'
 
 // Materials and Products & Services (ROADMAP.md M2 Step 2; docs/DATA_MODEL.md §6, D-121–D-123).
 // Decimals are strings (Arabic-Indic digits accepted), timestamps ISO strings. One name per record,
-// in any language (D-113). Nothing here is sensitive: costs come with purchases (Step 3).
+// in any language (D-113). Nothing here is sensitive: costs come with purchases (Step 3) and recipes
+// (Step 4, dto/recipes.ts). An item bought ready to sell (D-117) is a product and its material,
+// created together and linked: productDto.resaleMaterialId, materialDto.resaleProductId.
 
 const isoTimestamp = z.iso.datetime({ offset: true })
 
@@ -155,6 +157,11 @@ export const materialDto = z.object({
   /** In the order they were added. */
   packs: z.array(materialPackDto),
   crossFactors: z.array(materialCrossFactorDto),
+  /**
+   * The product it is sold as, when it is bought ready to sell (D-117): its name, unit and archiving
+   * change with the product's. Null for anything used to make or do something.
+   */
+  resaleProductId: zUuid.nullable(),
   /** When it was archived (hidden from pickers); null while active. */
   archivedAt: isoTimestamp.nullable(),
   version: z.int().positive(),
@@ -207,8 +214,29 @@ const productFields = {
     .refine((ids) => new Set(ids).size === ids.length, { message: 'duplicate location' }),
 }
 
-/** `product.create`: `id` is a client UUIDv7, so a retry with the same payload returns it. */
-export const createProductInput = z.object({ id: zUuid, ...productFields })
+/**
+ * "Bought ready to sell" (D-117): the product is created with its material, in one transaction, both
+ * with the product's name and unit; `materialId` is the material's client UUIDv7. Its packs and cross
+ * factors are the material's (how it is bought: 1 carton = 24 cans). Only for a product (not a
+ * service); needs the Materials module and materials.items.manage too.
+ */
+export const resaleInput = z.object({
+  materialId: zUuid,
+  packs: z.array(materialPackInput).max(MATERIAL_PACKS_MAX).default([]),
+  crossFactors: z.array(materialCrossFactorInput).max(MATERIAL_CROSS_FACTORS_MAX).default([]),
+})
+export type ResaleInput = z.input<typeof resaleInput>
+
+/**
+ * `product.create`: `id` is a client UUIDv7, so a retry with the same payload returns it. `resale`
+ * (default null) makes it an item bought ready to sell; the link never changes afterwards.
+ */
+export const createProductInput = z
+  .object({ id: zUuid, ...productFields, resale: resaleInput.nullable().default(null) })
+  .refine((product) => product.resale === null || product.type === 'product', {
+    message: 'only a product is bought ready to sell',
+    path: ['resale'],
+  })
 export type CreateProductInput = z.input<typeof createProductInput>
 
 /** `product.update`: the whole record, `version` as read (CONFLICT when it changed). */
@@ -230,6 +258,11 @@ export const productDto = z.object({
   priceIncludesVat: z.boolean(),
   /** Where it is sold; empty = every location. */
   locationIds: z.array(zUuid),
+  /**
+   * Bought ready to sell (D-117): the material it is bought as (its cost is that material's average
+   * for one unit sold; it has no recipe). Null for a product made, or a service.
+   */
+  resaleMaterialId: zUuid.nullable(),
   archivedAt: isoTimestamp.nullable(),
   version: z.int().positive(),
 })

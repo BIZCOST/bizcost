@@ -260,6 +260,8 @@ export function PurchaseEditor({
       queryClient.setQueryData(trpc.purchase.get.queryKey({ id: purchaseId }), posted)
       void queryClient.invalidateQueries({ queryKey: trpc.purchase.list.pathKey() })
       void queryClient.invalidateQueries({ queryKey: trpc.material.costs.pathKey() })
+      void queryClient.invalidateQueries({ queryKey: trpc.product.costs.pathKey() })
+      void queryClient.invalidateQueries({ queryKey: trpc.recipe.get.pathKey() })
       toast.success(t('purchasing.confirm.finalized', { names: names() }))
       setConfirm(null)
       if (isNew) router.replace(`${listHref}/${purchaseId}`)
@@ -506,7 +508,7 @@ export function PurchaseEditor({
         >
           {!canSeeMaterials ? (
             <FormAlert tone="info" className="mb-3">
-              {t('purchasing.editor.noMaterialAccess')}
+              {term('purchasing.editor.noMaterialAccess', profile)}
             </FormAlert>
           ) : materialsReady && pickableMaterials.length === 0 ? (
             <FormAlert tone="info" className="mb-3">

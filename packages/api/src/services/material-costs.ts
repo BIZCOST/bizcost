@@ -1,4 +1,5 @@
 import type { MaterialCostDto, materialCostsInput, MaterialCostsDto } from '@bizcost/contracts'
+import type { Tx } from '@bizcost/db'
 import {
   costRatio,
   PURCHASE_AVERAGE_DAYS,
@@ -25,10 +26,13 @@ import { uuidArray } from './stock'
 //
 // Sensitive: the averages are `cost`, the last purchase's prices `supplier_price` (the redact
 // middleware removes them for members who may not see them).
+//
+// The same average prices recipes and items bought ready to sell (M2 Step 4, services/recipes.ts):
+// costRecordsOf and averageBasisOf are the one place that says which purchases it counts.
 
 type Input = z.output<typeof materialCostsInput>
 
-interface CostRecord extends Record<string, unknown> {
+export interface CostRecord extends Record<string, unknown> {
   material_id: string
   unit: StandardUnit
   today: string
@@ -48,90 +52,137 @@ interface CostRecord extends Record<string, unknown> {
   doc_qty: string | null
 }
 
+/**
+ * The sums of the D-115 average and the last purchase of each live material of the business among
+ * `ids`, by material id (a material that is not one is missing from the map).
+ */
+export async function costRecordsOf(
+  tx: Tx,
+  businessId: string,
+  ids: readonly string[],
+): Promise<Map<string, CostRecord>> {
+  if (ids.length === 0) return new Map()
+  const records = (await tx.execute(sql`
+    with today as (
+      select (now() at time zone b.timezone)::date as d
+        from app.businesses b
+       where b.id = ${businessId}
+    ),
+    receipts as (
+      select m.id, m.material_id, m.purchase_line_id, m.business_date, m.seq, m.qty, m.value
+        from app.stock_movements m
+       where m.business_id = ${businessId}
+         and m.material_id = any(${uuidArray(ids)})
+         and m.kind = 'purchase'
+         and not exists (
+           select 1 from app.stock_movements r
+            where r.business_id = m.business_id and r.reverses_id = m.id)
+    ),
+    taken as (
+      select x.receipt_id, sum(-x.qty) as qty, sum(-x.value) as value
+        from app.stock_movements x
+       where x.business_id = ${businessId}
+         and x.material_id = any(${uuidArray(ids)})
+         and x.kind in ('purchase_return', 'purchase_credit')
+         and not exists (
+           select 1 from app.stock_movements r
+            where r.business_id = x.business_id and r.reverses_id = x.id)
+       group by x.receipt_id
+    ),
+    lines as (
+      select r.material_id, r.purchase_line_id, r.business_date, r.seq,
+             r.qty - coalesce(t.qty, 0) as qty, r.value - coalesce(t.value, 0) as value
+        from receipts r
+        left join taken t on t.receipt_id = r.id
+    ),
+    last_line as (
+      select distinct on (n.material_id)
+             n.material_id, n.purchase_line_id, n.business_date, n.qty, n.value
+        from lines n
+       where n.qty > 0
+       order by n.material_id, n.business_date desc, n.seq desc
+    )
+    select mat.id as material_id, mat.unit, today.d::text as today,
+           (today.d - ${PURCHASE_AVERAGE_DAYS - 1}::int)::text as window_from,
+           trim_scale(sum(n.value) filter (
+             where n.qty > 0 and n.business_date > today.d - ${PURCHASE_AVERAGE_DAYS}::int
+               and n.business_date <= today.d))::text as window_value,
+           trim_scale(sum(n.qty) filter (
+             where n.qty > 0 and n.business_date > today.d - ${PURCHASE_AVERAGE_DAYS}::int
+               and n.business_date <= today.d))::text as window_qty,
+           max(pl.purchase_id::text) as last_purchase_id,
+           max(ll.business_date)::text as last_date,
+           trim_scale(max(pl.qty))::text as last_qty,
+           max(pl.unit) as last_unit,
+           max(pl.pack_id::text) as last_pack_id,
+           max(u.name) as last_pack_name,
+           trim_scale(max(pl.base_qty))::text as last_base_qty,
+           trim_scale(max(ll.qty))::text as last_net_qty,
+           trim_scale(max(ll.value))::text as last_net_value,
+           trim_scale(sum(n.value) filter (
+             where n.qty > 0 and np.purchase_id = pl.purchase_id))::text as doc_value,
+           trim_scale(sum(n.qty) filter (
+             where n.qty > 0 and np.purchase_id = pl.purchase_id))::text as doc_qty
+      from app.materials mat
+     cross join today
+      left join lines n on n.material_id = mat.id
+      left join app.purchase_lines np
+        on np.business_id = mat.business_id and np.id = n.purchase_line_id
+      left join last_line ll on ll.material_id = mat.id
+      left join app.purchase_lines pl
+        on pl.business_id = mat.business_id and pl.id = ll.purchase_line_id
+      left join app.material_units u
+        on u.business_id = pl.business_id and u.id = pl.pack_id
+     where mat.business_id = ${businessId}
+       and mat.id = any(${uuidArray(ids)})
+       and mat.deleted_at is null
+     group by mat.id, mat.unit, today.d, pl.purchase_id
+  `)) as unknown as CostRecord[]
+  return new Map(records.map((record) => [record.material_id, record] as const))
+}
+
+/** The sums a material's average is made of, and which average it is (D-115). */
+export interface AverageBasis {
+  readonly basis: 'purchases_90_days' | 'last_purchase'
+  /** Σ value of the purchases it counts (numeric(28,12)). */
+  readonly value: string
+  /** Σ base quantity of those purchases (more than zero). */
+  readonly qty: string
+}
+
+/**
+ * The average a material's cost uses today (D-115): its purchases of the last 90 days, else its last
+ * purchase document; null when it was never bought ("no price yet", never 0).
+ */
+export function averageBasisOf(r: CostRecord): AverageBasis | null {
+  if (r.window_value !== null && r.window_qty !== null) {
+    return { value: r.window_value, qty: r.window_qty, basis: 'purchases_90_days' }
+  }
+  if (r.doc_value !== null && r.doc_qty !== null) {
+    return { value: r.doc_value, qty: r.doc_qty, basis: 'last_purchase' }
+  }
+  return null
+}
+
+/** The days the 90-day average covers: from, and to (today in the business's time zone). */
+export async function averageWindowOf(
+  tx: Tx,
+  businessId: string,
+): Promise<{ from: string; to: string }> {
+  const [row] = (await tx.execute(sql`
+    select (today.d - ${PURCHASE_AVERAGE_DAYS - 1}::int)::text as from_day, today.d::text as to_day
+      from (select (now() at time zone b.timezone)::date as d
+              from app.businesses b where b.id = ${businessId}) as today
+  `)) as unknown as { from_day: string; to_day: string }[]
+  if (!row) throw new AppError('not_found')
+  return { from: row.from_day, to: row.to_day }
+}
+
 /** `material.costs`: NOT_FOUND unless every id is a material of this business. */
 export async function materialCosts(ctx: BusinessCtx, input: Input): Promise<MaterialCostsDto> {
   const ids = input.ids
-  const records = await ctx.tx(
-    async (tx) =>
-      (await tx.execute(sql`
-        with today as (
-          select (now() at time zone b.timezone)::date as d
-            from app.businesses b
-           where b.id = ${ctx.businessId}
-        ),
-        receipts as (
-          select m.id, m.material_id, m.purchase_line_id, m.business_date, m.seq, m.qty, m.value
-            from app.stock_movements m
-           where m.business_id = ${ctx.businessId}
-             and m.material_id = any(${uuidArray(ids)})
-             and m.kind = 'purchase'
-             and not exists (
-               select 1 from app.stock_movements r
-                where r.business_id = m.business_id and r.reverses_id = m.id)
-        ),
-        taken as (
-          select x.receipt_id, sum(-x.qty) as qty, sum(-x.value) as value
-            from app.stock_movements x
-           where x.business_id = ${ctx.businessId}
-             and x.material_id = any(${uuidArray(ids)})
-             and x.kind in ('purchase_return', 'purchase_credit')
-             and not exists (
-               select 1 from app.stock_movements r
-                where r.business_id = x.business_id and r.reverses_id = x.id)
-           group by x.receipt_id
-        ),
-        lines as (
-          select r.material_id, r.purchase_line_id, r.business_date, r.seq,
-                 r.qty - coalesce(t.qty, 0) as qty, r.value - coalesce(t.value, 0) as value
-            from receipts r
-            left join taken t on t.receipt_id = r.id
-        ),
-        last_line as (
-          select distinct on (n.material_id)
-                 n.material_id, n.purchase_line_id, n.business_date, n.qty, n.value
-            from lines n
-           where n.qty > 0
-           order by n.material_id, n.business_date desc, n.seq desc
-        )
-        select mat.id as material_id, mat.unit, today.d::text as today,
-               (today.d - ${PURCHASE_AVERAGE_DAYS - 1}::int)::text as window_from,
-               trim_scale(sum(n.value) filter (
-                 where n.qty > 0 and n.business_date > today.d - ${PURCHASE_AVERAGE_DAYS}::int
-                   and n.business_date <= today.d))::text as window_value,
-               trim_scale(sum(n.qty) filter (
-                 where n.qty > 0 and n.business_date > today.d - ${PURCHASE_AVERAGE_DAYS}::int
-                   and n.business_date <= today.d))::text as window_qty,
-               max(pl.purchase_id::text) as last_purchase_id,
-               max(ll.business_date)::text as last_date,
-               trim_scale(max(pl.qty))::text as last_qty,
-               max(pl.unit) as last_unit,
-               max(pl.pack_id::text) as last_pack_id,
-               max(u.name) as last_pack_name,
-               trim_scale(max(pl.base_qty))::text as last_base_qty,
-               trim_scale(max(ll.qty))::text as last_net_qty,
-               trim_scale(max(ll.value))::text as last_net_value,
-               trim_scale(sum(n.value) filter (
-                 where n.qty > 0 and np.purchase_id = pl.purchase_id))::text as doc_value,
-               trim_scale(sum(n.qty) filter (
-                 where n.qty > 0 and np.purchase_id = pl.purchase_id))::text as doc_qty
-          from app.materials mat
-         cross join today
-          left join lines n on n.material_id = mat.id
-          left join app.purchase_lines np
-            on np.business_id = mat.business_id and np.id = n.purchase_line_id
-          left join last_line ll on ll.material_id = mat.id
-          left join app.purchase_lines pl
-            on pl.business_id = mat.business_id and pl.id = ll.purchase_line_id
-          left join app.material_units u
-            on u.business_id = pl.business_id and u.id = pl.pack_id
-         where mat.business_id = ${ctx.businessId}
-           and mat.id = any(${uuidArray(ids)})
-           and mat.deleted_at is null
-         group by mat.id, mat.unit, today.d, pl.purchase_id
-      `)) as unknown as CostRecord[],
-  )
-  if (records.length !== ids.length) throw new AppError('not_found')
-  const byId = new Map(records.map((record) => [record.material_id, record] as const))
+  const byId = await ctx.tx((tx) => costRecordsOf(tx, ctx.businessId, ids))
+  if (byId.size !== ids.length) throw new AppError('not_found')
   return {
     data: { items: ids.map((id) => toDto(byId.get(id)!)) },
     meta: { redacted: [] },
@@ -140,12 +191,7 @@ export async function materialCosts(ctx: BusinessCtx, input: Input): Promise<Mat
 
 function toDto(r: CostRecord): MaterialCostDto {
   const perUnitFactor = STANDARD_UNITS[r.unit].factor
-  const window =
-    r.window_value !== null && r.window_qty !== null
-      ? { value: r.window_value, qty: r.window_qty, basis: 'purchases_90_days' as const }
-      : r.doc_value !== null && r.doc_qty !== null
-        ? { value: r.doc_value, qty: r.doc_qty, basis: 'last_purchase' as const }
-        : null
+  const window = averageBasisOf(r)
   const perBaseUnit = window ? costRatio([window.value], [window.qty]) : null
   const perUnit = window ? costRatio([window.value, perUnitFactor], [window.qty]) : null
   const last =

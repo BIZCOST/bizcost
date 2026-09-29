@@ -36,14 +36,23 @@ const TRPC_CODE_OF: Record<AppErrorCode, TRPC_ERROR_CODE_KEY> = {
   has_later_returns: 'CONFLICT',
   exceeds_purchase: 'BAD_REQUEST',
   material_in_use: 'CONFLICT',
+  unit_in_use: 'CONFLICT',
   internal: 'INTERNAL_SERVER_ERROR',
 }
 
-/** A tRPC error with an app code. The message defaults to the code: never put SQL or data in it. */
+/**
+ * A tRPC error with an app code. The message defaults to the code: never put SQL or data in it.
+ * `names`: what the refusal is about, by the names the caller may see (UNIT_IN_USE: the products whose
+ * recipes use the unit, D-152); the formatter sends them as `data.names` for the message to say.
+ */
 export class AppError extends TRPCError {
   readonly appCode: AppErrorCode
+  readonly names: readonly string[]
 
-  constructor(appCode: AppErrorCode, options: { message?: string; cause?: unknown } = {}) {
+  constructor(
+    appCode: AppErrorCode,
+    options: { message?: string; cause?: unknown; names?: readonly string[] } = {},
+  ) {
     super({
       code: TRPC_CODE_OF[appCode],
       message: options.message ?? appCode,
@@ -51,6 +60,7 @@ export class AppError extends TRPCError {
     })
     this.name = 'AppError'
     this.appCode = appCode
+    this.names = options.names ?? []
   }
 }
 
@@ -186,6 +196,7 @@ export function formatError({
     appCode,
     i18nKey: appErrorI18nKey(appCode),
   }
+  if (error instanceof AppError && error.names.length > 0) data.names = [...error.names]
   if (shape.data.path !== undefined) data.path = shape.data.path
   if (!production && shape.data.stack !== undefined) data.stack = shape.data.stack
   return { message: production ? appCode : shape.message, code: shape.code, data }

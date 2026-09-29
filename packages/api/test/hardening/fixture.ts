@@ -11,6 +11,7 @@ import type {
   ProductDto,
   PurchaseDto,
   PurchaseReturnDto,
+  RecipeDto,
   RoleDto,
   SupplierDto,
 } from '@bizcost/contracts'
@@ -46,7 +47,8 @@ import { CapturedEmails, join, setupBusiness, WORKSHOP } from '../settings'
 // Materials, Products & Services, Suppliers and Purchases are still planned (M2 Steps 2–3, released with
 // Step 7): the suites run the API with the dev-only preview of them (D-125), so their procedures are
 // attacked like the others. Each business also has a supplier, a posted purchase with a receipt
-// attached, a draft purchase, a posted return and a draft return (M2 Step 3).
+// attached, a draft purchase, a posted return and a draft return (M2 Step 3), a recipe for its product
+// (a line in the material's carton) and an item bought ready to sell with its material (M2 Step 4).
 
 export type Handler = ReturnType<typeof handlerFor>
 
@@ -207,6 +209,10 @@ export interface Tenant {
   draftReturn: PurchaseReturnDto
   /** The receipt attached to the purchase. */
   attachment: AttachmentDto
+  /** The product's recipe: half a carton of the material. */
+  recipe: RecipeDto
+  /** A product bought ready to sell (its material made with it, bought in cases of 6). */
+  resaleProduct: ProductDto
 }
 
 function ok<T>(result: CallResult<T>, what: string): T {
@@ -421,6 +427,31 @@ export async function createTenant(api: Api, label: string): Promise<Tenant> {
       data: PurchaseDto
     }
   ).data
+  const recipe = (
+    ok(
+      await as('recipe.save', 'mutation', {
+        productId: product.id,
+        version: 0,
+        lines: [
+          { id: newId(), materialId: material.id, qty: '0.5', packId: material.packs[1]?.id },
+        ],
+      }),
+      'recipe.save',
+    ) as { data: RecipeDto }
+  ).data
+  const resaleProduct = ok(
+    await as('product.create', 'mutation', {
+      id: newId(),
+      name: `Juice ${label} ${tag}`,
+      type: 'product',
+      unit: 'piece',
+      resale: {
+        materialId: newId(),
+        packs: [{ id: newId(), name: `case ${tag}`, qty: '6', ofUnit: 'piece' }],
+      },
+    }),
+    'product.create (bought ready to sell)',
+  ) as ProductDto
 
   return {
     id,
@@ -448,6 +479,8 @@ export async function createTenant(api: Api, label: string): Promise<Tenant> {
     purchaseReturn,
     draftReturn,
     attachment,
+    recipe,
+    resaleProduct,
   }
 }
 
@@ -460,6 +493,8 @@ export function queryInputOf(path: string, tenant: Tenant): unknown {
   if (path === 'purchaseReturn.get') return { id: tenant.purchaseReturn.id }
   if (path === 'attachment.list') return { entity: 'purchase', entityId: tenant.purchase.id }
   if (path === 'material.costs') return { ids: [tenant.material.id] }
+  if (path === 'recipe.get') return { productId: tenant.product.id }
+  if (path === 'product.costs') return { ids: [tenant.product.id, tenant.resaleProduct.id] }
   return undefined
 }
 
@@ -498,6 +533,10 @@ export function markersOf(tenant: Tenant): string[] {
     tenant.draftReturn.id,
     tenant.attachment.id,
     tenant.attachment.fileName,
+    ...tenant.recipe.lines.map((l) => l.id),
+    tenant.resaleProduct.id,
+    tenant.resaleProduct.name,
+    tenant.resaleProduct.resaleMaterialId ?? tenant.resaleProduct.id,
     ...Object.values(tenant.roles).map((role) => role.id),
     ...[tenant.owner, tenant.admin, tenant.employee].flatMap(({ user }) => [
       user.id,

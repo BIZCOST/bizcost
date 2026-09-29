@@ -344,7 +344,14 @@ export interface CallResult<T = unknown> {
   error?: {
     message: string
     code: number
-    data: { code: string; httpStatus: number; appCode: string; i18nKey: string; stack?: string }
+    data: {
+      code: string
+      httpStatus: number
+      appCode: string
+      i18nKey: string
+      names?: string[]
+      stack?: string
+    }
   }
   raw: string
 }

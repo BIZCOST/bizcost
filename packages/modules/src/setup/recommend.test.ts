@@ -269,7 +269,7 @@ describe('recommend(): personas (PRODUCT.md §6.11)', () => {
       {
         questions: 9,
         type: 'retail',
-        profile: 'general',
+        profile: 'retail',
         capabilities: ['has_team', 'keeps_stock', 'sells_via_pos'],
         vat: true,
         optional: [

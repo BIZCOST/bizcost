@@ -132,14 +132,21 @@ const SETTINGS = {
   requiresCapabilities: [],
 } as const satisfies ModuleManifest
 
-// Products & Services (M2 Step 2; planned until Step 7 releases the M2 modules together).
+// Products & Services (M2 Step 2; planned until Step 7 releases the M2 modules together). Recipes (M2
+// Step 4, D-149): what each product or service uses, and what its materials cost (`cost`). A recipe
+// names materials, so its procedures also need the Materials module on.
 const PRODUCTS = {
   id: 'products',
   kind: 'core',
   availability: 'planned',
   phase: 2,
   deps: [],
-  permissionKeys: ['products.items.view', 'products.items.manage'],
+  permissionKeys: [
+    'products.items.view',
+    'products.items.manage',
+    'products.recipes.view',
+    'products.recipes.manage',
+  ],
   nav: [
     {
       id: 'products',
@@ -151,7 +158,8 @@ const PRODUCTS = {
     },
   ],
   quickActions: [],
-  sensitiveFields: [],
+  // The product cost (M2 Step 4): what its materials cost at their average.
+  sensitiveFields: ['cost'],
   requiresCapabilities: [],
 } as const satisfies ModuleManifest
 

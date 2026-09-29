@@ -2,6 +2,8 @@ import {
   catalogIdInput,
   catalogListInput,
   createProductInput,
+  productCostsDto,
+  productCostsInput,
   productDto,
   productListDto,
   updateProductInput,
@@ -14,16 +16,26 @@ import {
   unarchiveProduct,
   updateProduct,
 } from '../services/products'
+import { productCosts } from '../services/recipes'
 import { businessProcedure, requireModule, requirePermission, router } from '../trpc'
 
 /**
  * Products & Services (services/products.ts): module `products` (released and on for the business,
  * else MODULE_DISABLED; planned until M2 Step 7, so only the dev-only preview reaches it before then,
- * D-125), then products.items.view to read and products.items.manage to write.
+ * D-125), then products.items.view to read and products.items.manage to write. An item bought ready
+ * to sell also writes its material (services/products.ts checks the Materials module and
+ * materials.items.manage for it). `product.costs` needs the Materials module too (costs come from
+ * materials) and products.recipes.view: how many lines a recipe has, which of its materials were
+ * never bought and whether an item bought ready to sell was bought are recipe and purchase facts
+ * (D-150), not part of the list every member sees; and materials.items.view, as recipes (D-155).
  */
 const productsModule = businessProcedure.use(requireModule('products'))
 const viewProducts = productsModule.use(requirePermission('products.items.view'))
 const manageProducts = productsModule.use(requirePermission('products.items.manage'))
+const viewProductCosts = productsModule
+  .use(requireModule('materials'))
+  .use(requirePermission('materials.items.view'))
+  .use(requirePermission('products.recipes.view'))
 
 export const productRouter = router({
   /** `product.list`: a page by name, with search and a status filter (active by default). */
@@ -36,7 +48,16 @@ export const productRouter = router({
     .input(catalogIdInput)
     .output(productDto)
     .query(({ ctx, input }) => getProduct(ctx, input)),
-  /** `product.create`: idempotent on the client's id. */
+  /**
+   * `product.costs`: what the materials of one unit of each product cost today (its recipe, or its
+   * material's average when bought ready to sell), unrounded, and whether it is complete. `cost`
+   * (withMeta).
+   */
+  costs: viewProductCosts
+    .input(productCostsInput)
+    .output(productCostsDto)
+    .query(({ ctx, input }) => productCosts(ctx, input)),
+  /** `product.create`: idempotent on the client's id; `resale` makes it bought ready to sell. */
   create: manageProducts
     .input(createProductInput)
     .output(productDto)

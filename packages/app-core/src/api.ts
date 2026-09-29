@@ -32,6 +32,20 @@ export function apiErrorCode(error: unknown): AppErrorCode | undefined {
 }
 
 /**
+ * The names a refusal is about (`error.data.names`: UNIT_IN_USE names the products whose recipes
+ * use the unit), when the server sent any; else empty.
+ */
+export function apiErrorNames(error: unknown): string[] {
+  if (!(error instanceof TRPCClientError)) return []
+  const data: unknown = error.data
+  const names =
+    typeof data === 'object' && data !== null && 'names' in data ? data.names : undefined
+  return Array.isArray(names)
+    ? names.filter((name): name is string => typeof name === 'string')
+    : []
+}
+
+/**
  * The i18n key to show for a failed API call: the server's `errors.<appCode>`, `errors.network`
  * when the request never got an answer, else `errors.internal`. Server text is never shown.
  */

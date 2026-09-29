@@ -325,6 +325,7 @@ describe('APP_ERROR_CODES', () => {
     'has_later_returns',
     'exceeds_purchase',
     'material_in_use',
+    'unit_in_use',
     'internal',
   ]
 

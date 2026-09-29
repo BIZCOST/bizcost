@@ -89,7 +89,7 @@ const PROFILE_OF: Readonly<Record<BusinessType, TerminologyProfile>> = {
   workshop: 'workshop',
   projects: 'projects',
   maker: 'maker',
-  retail: 'general',
+  retail: 'retail',
   services: 'general',
   other: 'general',
 }

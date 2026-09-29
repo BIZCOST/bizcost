@@ -97,6 +97,14 @@ export {
   type WacStep,
 } from './costing/wac'
 export { costRatio } from './costing/cost-ratio'
+// Product cost from its recipe: Σ base quantity × the material's average (D-115), never rounded.
+export {
+  costOfQty,
+  rollUpRecipe,
+  type CostBasis,
+  type RecipeCost,
+  type RecipeCostLine,
+} from './costing/recipe'
 export {
   MATERIAL_UNIT_KINDS,
   PRODUCT_TYPES,

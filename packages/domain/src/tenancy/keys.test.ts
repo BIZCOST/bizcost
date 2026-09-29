@@ -13,7 +13,7 @@ describe('isLocale', () => {
 })
 
 describe('isTerminologyProfile', () => {
-  it('accepts only the six profiles', () => {
+  it('accepts only the seven profiles', () => {
     expect(TERMINOLOGY_PROFILES).toEqual([
       'general',
       'food',
@@ -21,9 +21,10 @@ describe('isTerminologyProfile', () => {
       'workshop',
       'factory',
       'projects',
+      'retail',
     ])
     for (const profile of TERMINOLOGY_PROFILES) expect(isTerminologyProfile(profile)).toBe(true)
-    expect(isTerminologyProfile('retail')).toBe(false)
+    expect(isTerminologyProfile('shop')).toBe(false)
     expect(isTerminologyProfile(undefined)).toBe(false)
   })
 })

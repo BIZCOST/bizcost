@@ -197,6 +197,7 @@ describe('materialDraft', () => {
         { id: 'b', name: 'Bottle', qty: '1', ofUnit: 'l', ofPackId: null },
       ],
       crossFactors: [{ id: 'x', unit: 'kg', qty: '1.03', ofUnit: 'l' }],
+      resaleProductId: null,
       archivedAt: null,
       version: 3,
     }

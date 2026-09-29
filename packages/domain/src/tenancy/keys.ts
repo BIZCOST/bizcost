@@ -46,7 +46,10 @@ export const BUSINESS_TYPES = [
 ] as const
 export type BusinessType = (typeof BUSINESS_TYPES)[number]
 
-/** `businesses.terminology_profile`: the wording of the UI (docs/PRODUCT.md §5, §13). */
+/**
+ * `businesses.terminology_profile`: the wording of the UI (docs/PRODUCT.md §5, §13). `retail` (M2 Step
+ * 4, D-117) calls materials "Goods".
+ */
 export const TERMINOLOGY_PROFILES = [
   'general',
   'food',
@@ -54,6 +57,7 @@ export const TERMINOLOGY_PROFILES = [
   'workshop',
   'factory',
   'projects',
+  'retail',
 ] as const
 export type TerminologyProfile = (typeof TERMINOLOGY_PROFILES)[number]
 

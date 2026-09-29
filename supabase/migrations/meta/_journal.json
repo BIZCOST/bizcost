@@ -113,6 +113,27 @@
       "when": 1790598634669,
       "tag": "20260928123034_purchasing_integrity",
       "breakpoints": true
+    },
+    {
+      "idx": 16,
+      "version": "7",
+      "when": 1790601658804,
+      "tag": "20260928132058_recipes_tables",
+      "breakpoints": true
+    },
+    {
+      "idx": 17,
+      "version": "7",
+      "when": 1790601673251,
+      "tag": "20260928132113_recipes_security",
+      "breakpoints": true
+    },
+    {
+      "idx": 18,
+      "version": "7",
+      "when": 1790639266973,
+      "tag": "20260928234746_recipes_need_materials",
+      "breakpoints": true
     }
   ]
 }

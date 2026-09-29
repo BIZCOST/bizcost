@@ -4,6 +4,7 @@ import {
   type AttachmentUploadUrlDto,
   type BooksDto,
   type MaterialDto,
+  type ProductDto,
   type PurchaseDto,
   type PurchaseReturnDto,
   type SupplierDto,
@@ -69,6 +70,11 @@ const LAST_PRICE = '52.39'
 const AVERAGE = '42.0325'
 const CREDIT = '7.77'
 const SIGNED_URL = '/object/sign/'
+// Recipes (M2 Step 4): beans bought once, 1 kg at 57.13 (no other case buys them), so 18 g cost
+// 18 × 57.13 ÷ 1 000 = 1.02834 and a gram 0.05713 (`cost`), whatever the purchase cases post.
+const BEANS_PRICE = '57.13'
+const RECIPE_COST = '1.02834'
+const PER_GRAM = '0.05713'
 
 let api: Api
 let businessId: string
@@ -78,6 +84,8 @@ let supplier: SupplierDto
 let purchase: PurchaseDto
 let credit: PurchaseReturnDto
 let today: string
+let beans: MaterialDto
+let latte: ProductDto
 
 /** Calls a procedure as the owner (fixture set-up). */
 async function asOwner<T>(path: string, type: 'query' | 'mutation', input?: unknown): Promise<T> {
@@ -150,6 +158,21 @@ async function uploaded(): Promise<string> {
 }
 
 const PRICE = { supplier_price: [UNIT_PRICE, LINE_TOTAL] }
+
+/** A product with the beans' recipe input (18 g), made for a recipe.save call. */
+async function newRecipeInput() {
+  const product = await asOwner<ProductDto>('product.create', 'mutation', {
+    id: newId(),
+    name: `Oracle latte ${newId().slice(-8)}`,
+    type: 'product',
+    unit: 'piece',
+  })
+  return {
+    productId: product.id,
+    version: 0,
+    lines: [{ id: newId(), materialId: beans.id, qty: '18', unit: 'g' }],
+  }
+}
 
 /** Production procedures with sensitive output (M2 Step 3). */
 const PRODUCTION_ORACLE: Record<string, OracleEntry> = {
@@ -243,6 +266,21 @@ const PRODUCTION_ORACLE: Record<string, OracleEntry> = {
     permission: 'purchases.documents.view',
     prepare: () => Promise.resolve({ entity: 'purchase', entityId: purchase.id }),
     valuesOf: { supplier_price: [SIGNED_URL] },
+  },
+  'recipe.get': {
+    permission: 'products.recipes.view',
+    prepare: () => Promise.resolve({ productId: latte.id }),
+    valuesOf: { cost: [RECIPE_COST, PER_GRAM] },
+  },
+  'recipe.save': {
+    permission: 'products.recipes.manage',
+    prepare: newRecipeInput,
+    valuesOf: { cost: [RECIPE_COST, PER_GRAM] },
+  },
+  'product.costs': {
+    permission: 'products.recipes.view',
+    prepare: () => Promise.resolve({ ids: [latte.id] }),
+    valuesOf: { cost: [RECIPE_COST] },
   },
   'attachment.add': {
     permission: 'purchases.documents.manage',
@@ -368,6 +406,30 @@ beforeAll(async () => {
     path: await uploaded(),
     fileName: 'receipt.png',
   })
+  beans = await asOwner<MaterialDto>('material.create', 'mutation', {
+    id: newId(),
+    name: 'Oracle beans',
+    unit: 'kg',
+  })
+  const beansBought = (
+    await asOwner<{ data: PurchaseDto }>('purchase.create', 'mutation', {
+      ...draftInput(),
+      lines: [
+        {
+          kind: 'material',
+          id: newId(),
+          materialId: beans.id,
+          qty: '1',
+          unit: 'kg',
+          unitPrice: BEANS_PRICE,
+        },
+      ],
+    })
+  ).data
+  await asOwner('purchase.post', 'mutation', { id: beansBought.id, version: beansBought.version })
+  const recipe = await newRecipeInput()
+  await asOwner('recipe.save', 'mutation', recipe)
+  latte = await asOwner<ProductDto>('product.get', 'query', { id: recipe.productId })
 }, 90_000)
 
 afterAll(async () => {

@@ -1,9 +1,9 @@
 # BizCost: Decision Log
 
 Purpose: a numbered record of every confirmed decision, why we made it, and what we rejected. The details live in the doc each entry links to.
-Last updated: 2026-09-28
+Last updated: 2026-09-29
 
-- **Status:** every entry is DECIDED. Implemented so far: the Step 0a repo scaffold, the Step 1 data foundation (D-047–D-053 and the data/tenancy entries they build on), the Step 2 API core (D-054–D-061), the Step 3 web auth (D-062–D-071), the owner's password rule (D-072), the "too soon" fix (D-073), Step 5 businesses & Smart Setup (D-074–D-079), Step 6 web settings (D-080–D-088), Step 7 the web shell (D-089–D-096) and the owner's answers after it (D-097, D-098), Step 9 hardening & docs (D-099–D-106), and M2 Step 1, the pure domain engines built as pre-approval groundwork (D-107–D-110). The owner's M2 answers of 2026-09-28 (D-111–D-120) are decided and built step by step in M2; M2 Step 2 has its data and API (D-121–D-125), its web screens (D-126–D-128) and the fixes of its review (D-129–D-132); M2 Step 3 has its data and API (D-133–D-140), its web screens (D-141) and the fixes of its reviews (D-142–D-145). "Open:" marks a sub-choice that is still unsettled, tracked in ROADMAP.md §Open, with deadline. Proposals (P-0xx, §Proposals at the end) are NOT decided: once the owner confirms one, it becomes the next D-entry with the owner's changes, and the proposal stays for history (P-001 became D-114 and D-115). None is awaiting the owner.
+- **Status:** every entry is DECIDED. Implemented so far: the Step 0a repo scaffold, the Step 1 data foundation (D-047–D-053 and the data/tenancy entries they build on), the Step 2 API core (D-054–D-061), the Step 3 web auth (D-062–D-071), the owner's password rule (D-072), the "too soon" fix (D-073), Step 5 businesses & Smart Setup (D-074–D-079), Step 6 web settings (D-080–D-088), Step 7 the web shell (D-089–D-096) and the owner's answers after it (D-097, D-098), Step 9 hardening & docs (D-099–D-106), and M2 Step 1, the pure domain engines built as pre-approval groundwork (D-107–D-110). The owner's M2 answers of 2026-09-28 (D-111–D-120) are decided and built step by step in M2; M2 Step 2 has its data and API (D-121–D-125), its web screens (D-126–D-128) and the fixes of its review (D-129–D-132); M2 Step 3 has its data and API (D-133–D-140), its web screens (D-141) and the fixes of its reviews (D-142–D-145). M2 Step 4 has its data, API and web screens with the fixes of its reviews (D-146–D-156). "Open:" marks a sub-choice that is still unsettled, tracked in ROADMAP.md §Open, with deadline. Proposals (P-0xx, §Proposals at the end) are NOT decided: once the owner confirms one, it becomes the next D-entry with the owner's changes, and the proposal stays for history (P-001 became D-114 and D-115). None is awaiting the owner.
 - **Editing:** append new entries with the next number and never renumber. To change a decision, add a new entry and mark the old one "Superseded by D-0xx".
 - **Sources:** the owner's spec, the owner's confirmations (2026-09-24), and the architecture panel as corrected by its critique.
 
@@ -1079,6 +1079,103 @@ Refines D-134 (MATERIAL_IN_USE) and D-139 (receipts go with a discarded draft).
   - **Receipts:** the last transaction of `attachment.add` closes the upload only while it is still open (`issued`; ATTACHMENT_INVALID otherwise), then locks the purchase (FOR NO KEY UPDATE) and checks it is live before it inserts the receipt: a discard in flight has taken the purchase out (NOT_FOUND; the upload stays open, so the clean-up of expired uploads removes the file) or waits and takes the new receipt with it. The per-record limit (20) is exact too. The trigger `check_target` refuses a receipt on a discarded purchase (23503) and locks the purchase FOR SHARE while it checks.
 - **Why:** the security review of Step 3 (`test/security/purchasing-integrity-races.api.test.ts`). The in-use check ran before the row lock, and neither a draft's foreign key (FOR KEY SHARE) nor a posting (FOR SHARE) waits for an update that is only queued for the row, so a purchase could be drafted and posted in litres while the material became kilograms (the ledger's 10 000 ml then read as 10 000 g). `attachment.add` checked the purchase without a lock and closed the upload whatever its status, so a receipt attached while its draft was discarded stayed live on the discarded draft with its upload closed as used, and its file was never removed.
 - **Rejected:** SERIALIZABLE transactions for these saves (retries on every save for two rare races); a separate SELECT … FOR UPDATE before the material's UPDATE (the UPDATE's own lock conflicts with the FOR SHARE that drafts and postings take); a foreign key from `attachments` to `purchases` (the table serves every kind of record later, D-139).
+
+## Costing Core, Step 4: recipes and product cost
+
+### D-146 · 2026-09-29 · One recipe structure: what one unit uses, lines kept as typed and in base units
+
+Builds on D-108 (units) and D-113 (one name).
+
+- **Decision:** `recipes` (one per product or service, made by its first save, with a version of its own) and `recipe_lines` (a material and the quantity ONE unit of the product uses, in a standard unit of the material's dimension, another through its cross factor, or one of its packs; exactly one of the two, a pack only of the line's own material by composite FK; `base_qty` the same in the material's base unit, from the domain units engine; one live line per material; lines taken out are soft-deleted). A recipe, a bill of materials and "what you use" are this one structure; the screens word it by the terminology profile: food "Recipe / الوصفة", every other profile "Materials used / المواد المستخدمة". Packaging is a material like any other. A service has one too (what one hour, one visit… uses). An item bought ready to sell has none (VALIDATION). `recipe.save` sends the whole recipe with the version it read (0 before the first save; CONFLICT otherwise), lines matched by their client ids; every write is audited (the recipe's row and each line).
+- **Why:** PRODUCT.md §4 ("Bill of Materials → Recipe / Materials") and ROADMAP.md Step 4. A version of the recipe's own lets the price and the recipe be edited apart. Keeping the typed unit shows the owner's words back ("0.5 carton"); the base quantity makes the cost one multiplication.
+- **Rejected:** a batch or yield field ("makes 12 slices", out of M2 scope; ROADMAP.md §Open); sub-recipes (M2 out of scope); a line cost typed by hand (material cost comes only from purchases, PRODUCT.md §4).
+
+### D-147 · 2026-09-29 · Product cost: Σ base quantity × the D-115 average, on read, never rounded
+
+- **Decision:** a line costs its base quantity × its material's average today, the same average `material.costs` shows (the 90-day purchase average until the first stock count, else the last purchase; D-115, D-138), as an exact product divided once and rounded once to 12 decimals (`costOfQty`, `rollUpRecipe` in `domain`); the total is the exact sum of the lines that have a price. Nothing is stored: `recipe.get` and `recipe.save` return each line's cost, its material's average per unit and per base unit, and the total; `product.costs` gives the totals of a page of products, and for an item bought ready to sell its material's average for one unit sold. A material never bought has no price (null, "no price yet", never 0); the total is then the sum of the others, with `unpricedLines` and `complete: false`. Screens round only what they show. Every cost is `cost`.
+- **Why:** the owner's examples (200 ml of the carton at AED 72 = 1.20 exactly; the WAC example: 1 L costs 6.666666666667, shown 6.67; reversing the second purchase gives exactly 6) and D-107 (one rounding). The Spanish Latte from real purchases: 1.17 + 1.20 + 0.257034632035 + 0.25 + 0.09 = 2.967034632035 with the straw not yet bought (incomplete), 3.002034632035 once it is (`recipes.api.test.ts`).
+- **Rejected:** storing a product cost (it would go stale with each purchase; Step 6 computes the full cost on read too); treating "no price" as 0 (a cost that looks cheaper than it is).
+
+### D-148 · 2026-09-29 · A material's units change under its recipes
+
+Refines D-145.
+
+- **Decision:** a recipe save locks its materials FOR SHARE by ascending id before it reads their units, as a posting does. `material.update` works every live recipe line in the material out again with its new units and updates the base quantities; a line that no longer converts (its pack or conversion taken out, or out of range) refuses the change with the new error UNIT_IN_USE (the recipe is changed first). A live recipe line keeps the material's kind of measure: MATERIAL_IN_USE in the API, and the trigger `keep_dimension` counts live recipe lines as well as stock movements (migration `recipes_security`).
+- **Why:** a base quantity in grams on a material now counted in litres, or a line in a pack that no longer exists, would cost the product wrongly and silently.
+- **Rejected:** keeping old base quantities (the recipe would say 0.5 carton while the carton changed); dropping the lines that no longer convert.
+
+### D-149 · 2026-09-29 · Recipe permission keys and templates; recipes need Materials on
+
+- **Decision:** `products.recipes.view` ("see what goes into each product or service", needs `products.items.view`) and `products.recipes.manage` ("change it", needs `.view`) in the Products & Services module, whose manifest now lists `cost` as a sensitive field. Templates: Admin and Manager both; Accountant and Supervisor see; Sales and Employee neither (ROADMAP.md §Open asks the owner). The migration `recipes_security` adds them to existing template roles and bumps their members' permissions version. `recipe.*` and `product.costs` need the Products & Services and Materials modules on (a recipe's lines are materials).
+- **Why:** PRODUCT.md §8: quantities are operational, costs stay behind `data.cost.view` (with supplier prices, D-144).
+
+### D-150 · 2026-09-29 · `product.costs` needs "see what goes into each product"
+
+Fix of the Step 4 security review.
+
+- **Decision:** `product.costs` needs `products.recipes.view` as well as the modules; members who may not see recipes get FORBIDDEN. The web asks for it only for them.
+- **Why:** with only `products.items.view` (every template), Sales and Employee read how many materials each recipe has, how many were never bought and whether an item bought ready to sell was bought (the average's basis): recipe and purchase facts they have no permission to see (`recipes.security-adversary.api.test.ts`).
+- **Rejected:** tagging those fields `cost` (a recipe viewer without costs still needs "No recipe yet" and the line count).
+- **Accepted residue:** a member who may see recipes but not costs sees which lines have no price yet (a line's cost is null or holds only its basis). The screens show them locks and no "incomplete" note.
+
+### D-151 · 2026-09-29 · A recipe line moved to another material keeps its own material's base quantity
+
+Fix of the Step 4 security review.
+
+- **Decision:** `recomputeRecipeLines` (inside `material.update`) reads the material's live lines FOR UPDATE by ascending id and updates a line only while it still names the material and is live. A recipe save that moves a line to another material or takes it out holds the line's row without locking the old material; the recompute waits for it and then reads the line again as committed (PostgreSQL re-checks the row), so it skips a line that left.
+- **Why:** it read the line as committed (still the old material), converted it with the old material's units and updated it by id alone, so after the save committed a millilitre line could carry a base quantity in grams (200 ml of milk costed as 500), reproduced with two API instances in `recipes.security-adversary.api.test.ts`.
+- **Rejected:** also locking the old materials in the save (it works, but one lock per line is enough and keeps the save's lock order unchanged).
+
+### D-152 · 2026-09-29 · UNIT_IN_USE names the products, for a member who may see recipes
+
+Fix of the Step 4 UX review.
+
+- **Decision:** `AppError` can carry `names` (sent as `error.data.names`, `apiErrorNames` in app-core). UNIT_IN_USE names up to 5 products whose recipes still use the pack or unit, sorted, only when the caller holds `products.recipes.view` (otherwise none: `materials.items.manage` alone does not show recipes). The material form says «ما زال مستخدمًا في وصفة: Spanish Latte. عدّل الوصفة أولًا، ثم احذف العبوة أو الوحدة.» (food), "Still used in what goes into: …" otherwise; without names, the generic message.
+- **Why:** an owner with many products could not tell which recipe to open, and the old message said to change "the product".
+
+### D-153 · 2026-09-29 · Items bought ready to sell and the retail wording, as built
+
+Builds D-117.
+
+- **Decision:** `product.create` with `resale` makes the product and its material in one transaction (the product's name and unit, the packs and conversions it is bought in; the Materials module on and `materials.items.manage` too; NAME_TAKEN for either name). `products_services.resale_material_id` links them (unique, only a product, never changed: trigger `keep_resale_link`). The API keeps them in step: a new name or unit, and archiving or bringing back either one, changes both (the product's row locked first, then the material's); a new kind of measure only while nothing uses the material. It has no recipe; its cost is its material's average for one unit sold. The retail profile "Goods / البضاعة": `recommend()` gives it to `sell_products` businesses and the migration moves existing retail businesses from `general`; every message the factory profile rewords has a retail overlay (an i18n test checks it), an item is «صنف».
+- **Why:** a shop enters each item once (D-117), and purchases of it update its cost.
+
+### D-154 · 2026-09-29 · Step 4 screens: what goes into a product, its cost, an item bought ready to sell
+
+- **Decision:**
+  - **Products list:** members who may see recipes see each product's material cost for one unit sold on its row ("Recipe cost: AED 2.97 per piece · incomplete", "No recipe yet", "Cost: AED 0.50 per piece" for an item bought ready to sell, "no price yet", a lock without costs) and a "Recipe" / "Materials used" button that opens the recipe; an item bought ready to sell is tagged and has no button. Under the price on phones and tablets; from 1280 px (the page beside the sidebar, D-095) the cost and the button are columns of the row, aligned between rows.
+  - **The recipe** (a sheet on phones, a wide side panel from 768 px): a line per material (a picker in the business's wording, a quantity read in either kind of digits, a unit list of the material's kinds of measure and its packs), said in words as it is typed ("200 ml = 0.2 L"), each line's cost and its material's average per unit, "No price yet" for a material never bought; each line's menu moves it up or down (the recipe keeps its order) or takes it out. From 768 px a line is one row (material, quantity, unit, cost, menu). The total stays in view at the bottom, with "Incomplete: 1 item has no price yet (Straw)". Costs while typing are the saved averages × the typed quantities, for the screen; the saved total is the API's. A member who may see recipes but not costs reads the quantities with locks; one who may not change it reads it. A version clash says so.
+  - **Bought ready to sell:** a switch under "Product" in the new-product form, on by default in the retail wording, with the packs editor of the material form (shared, `units-editor.tsx`). Once made, the form offers no type, only units of its kind of measure, and says its name and unit change in Materials (Goods) too.
+  - **Goods (retail):** "Add an item" opens the ready-to-sell form; "Add a supply you use" the material form. Items sold as they are carry the tag "Sold as it is", their form says their name, unit and archiving move with the product, and archiving says it leaves Products & Services too.
+  - **Roles editor:** groups, permissions and role summaries in the business's wording ("See recipes" for a café).
+  - Purchases posted, reversed, returned or credited refresh product costs and recipes.
+- **Why:** the Step 4 UX review (no recipe screen; the ready-to-sell choice, the retail wording and the resale product sheet missing).
+- **Rejected:** a recipe page of its own (a sheet keeps the list in view and matches the catalog's forms); costs worked out in the browser without the API's averages.
+
+## Costing Core, Step 4: fixes after the second security, costing and UX review
+
+### D-155 · 2026-09-29 · Seeing what goes into a product needs seeing its materials
+
+Refines D-149 and D-150. Open for the owner (ROADMAP.md §Open).
+
+- **Decision:** `PERMISSION_NEEDS` lists every key a key needs: `products.recipes.view` needs `products.items.view` and `materials.items.view` (`.manage` needs `.view`, so it needs both too). `role.updatePermissions` refuses a role without them (VALIDATION), and the Roles editor switches a key's needs on and its dependants off through every step. `recipe.*` and `product.costs` also check `materials.items.view` (FORBIDDEN), which holds for a member's own overrides (stored, no screen yet). The migration `recipes_need_materials` takes the recipe keys off any role saved without it (none: no template breaks the rule) and bumps its members' permissions version. The Products list offers recipes and costs only to members who hold both.
+- **Why:** the second review of Step 4 (`recipes.permission-adversary.api.test.ts`): a role saved with recipes and costs but not materials read each material's name, packs and average through `recipe.get` (`perUnit`, `perBaseUnit`, and `lineCost` ÷ `baseQty`), the numbers `material.get` and `material.costs` refuse it.
+- **Rejected:** hiding the averages from such a member (the line's cost over its visible quantity is the average again); only the router check (the Roles editor could save a role whose recipe button always fails).
+
+### D-156 · 2026-09-29 · Recipe screens after the second review: one unit, retail words, changes kept
+
+Refines D-146 and D-154.
+
+- **Decision:**
+  - **For one unit:** the recipe's "Quantities per piece" shows on phones too, each quantity's caption says it ("How much per piece" / «الكمية لكل قطعة»), and the empty recipe says "and how much per piece" instead of "one unit".
+  - **Retail words:** a shop reads "Items used / الأصناف المستخدمة", "Items cost / تكلفة الأصناف" and "No items added yet"; the Roles hints, "no access to materials" in the purchase editor and the Roles cost hint have food, factory and retail overlays; MATERIAL_IN_USE and a purchase line's lost unit say "it" instead of "material". An i18n test checks that no message of the catalog, purchases, errors, nav or Roles names materials in the retail wording. The recipe button has a list icon outside food (a pot only for food).
+  - **Changes kept:** closing a recipe with changes not saved (a tap beside the sheet, Escape, × or Cancel) asks "Discard your changes?" first. Saving with nothing changed only closes, and `recipe.save` writes nothing when the lines are the same (no new version, no audit row); a new order is a change. The recipe's lock is taken first as before (FOR NO KEY UPDATE, then the materials FOR SHARE).
+  - **Same words everywhere:** a read-only recipe says each line as the editor does ("0.5 bottle = 0.5 L", "18 g = 0.018 kg"), from the materials its reader may now see (D-155).
+  - **Prices:** the footer's "Incomplete" note says "Prices show once a first purchase is final" (it was a hover title only). An empty recipe shows no total (it said "No price yet").
+  - **The Products row:** "incomplete" is a small warning tag that wraps whole (no "·" left at a line's end), and the cost column is 20 rem wide from 1280 px.
+  - **Wording:** the tag of an item bought ready to sell is «يُشترى جاهزًا» (passive, like «يُباع كما هو»); its hint says you record buying it in Purchases ("No recipe needed" only for food); the cost basis says "or your last purchase if you didn't buy it in that time"; a unit still used names the products and says to change what goes into it first.
+- **Why:** the second UX review of Step 4 (phone screenshots at 375 px; a recipe lost by one tap above the sheet; phantom versions in the audit log; "Materials" in a shop's screens, against D-128).
+- **Rejected:** ignoring taps beside the sheet silently (a person would not know why it stays open); disabling Save when nothing changed (closing is what the person wants).
 
 ## Proposals
 

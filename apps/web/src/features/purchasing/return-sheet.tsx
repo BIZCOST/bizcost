@@ -235,6 +235,8 @@ function ReturnForm({
       queryClient.invalidateQueries({ queryKey: trpc.purchaseReturn.get.pathKey() }),
       queryClient.invalidateQueries({ queryKey: trpc.purchase.list.pathKey() }),
       queryClient.invalidateQueries({ queryKey: trpc.material.costs.pathKey() }),
+      queryClient.invalidateQueries({ queryKey: trpc.product.costs.pathKey() }),
+      queryClient.invalidateQueries({ queryKey: trpc.recipe.get.pathKey() }),
     ])
   }
 

@@ -67,8 +67,13 @@ export const APP_ERROR_CODES = [
   'has_later_returns',
   /** A return or credit note for more than is left of the purchase line (D-120). */
   'exceeds_purchase',
-  /** Changing the kind of measure (dimension) of a material that has purchases. */
+  /** Changing the kind of measure (dimension) of a material that purchases or recipes use. */
   'material_in_use',
+  /**
+   * Taking out or changing a pack or conversion of a material so that a recipe line in it no longer
+   * converts to the material's base unit (the recipe is changed first).
+   */
+  'unit_in_use',
   'internal',
 ] as const
 export type AppErrorCode = (typeof APP_ERROR_CODES)[number]
@@ -87,4 +92,9 @@ export function isAppErrorCode(value: unknown): value is AppErrorCode {
 export interface AppErrorData {
   appCode: AppErrorCode
   i18nKey: AppErrorI18nKey
+  /**
+   * What the refusal is about, by name, only when the caller may see those records: UNIT_IN_USE names
+   * the products whose recipes use the pack or conversion (at most 5). Absent otherwise.
+   */
+  names?: string[]
 }

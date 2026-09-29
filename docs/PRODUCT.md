@@ -1,7 +1,7 @@
 # BizCost: Product
 
 Purpose: what BizCost is, who it is for, and the product rules every screen and feature must follow.
-Last updated: 2026-09-28
+Last updated: 2026-09-29
 
 > **Status:** M1 is complete on the web (auth, account, businesses and Smart Setup, settings, and the app shell with the Dashboard checklist); mobile and the hosted deploy are deferred. M2 Costing Core is approved and in progress (D-111); no data module is released yet. **DECIDED** = confirmed by the owner. **PLANNED** = intended but not built. Phases and step status: ROADMAP.md. Decision history: DECISIONS.md. Technical design: ARCHITECTURE.md. Tables and entities: DATA_MODEL.md.
 
@@ -589,17 +589,17 @@ Only Dashboard and Settings are released (M1). The Phase column follows ROADMAP.
 - **Staff without email (DECIDED):** they sign in with a PIN on a shared branch device. From M1 the data model allows a member without a login account. The PIN sign-in screens come later.
 - Role templates are copied into each business and can be edited. Starter set (DECIDED in M1 Step 2; keys in `packages/modules`):
 
-  | Template   | Can do and see                                                                                                                                                                                                                             |
-  | ---------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-  | Owner      | Everything, including permissions added later; cannot be locked out. Only an owner can transfer ownership                                                                                                                                  |
-  | Admin      | Every permission (not ownership transfer)                                                                                                                                                                                                  |
-  | Manager    | Dashboard; view the business and the team; manage locations; see, add and edit products & services, materials and suppliers; see, enter, finalize and reverse purchases (not close the books); see cost, profit/margin and supplier prices |
-  | Accountant | Dashboard; view the business; see products & services, materials, suppliers and purchases; see cost, profit/margin, supplier prices and payroll (not employee personal data)                                                               |
-  | Sales      | Dashboard; see products & services                                                                                                                                                                                                         |
-  | Supervisor | Dashboard; view the team; see products & services and materials                                                                                                                                                                            |
-  | Employee   | Dashboard; see products & services (sees no sensitive field)                                                                                                                                                                               |
+  | Template   | Can do and see                                                                                                                                                                                                                                                            |
+  | ---------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+  | Owner      | Everything, including permissions added later; cannot be locked out. Only an owner can transfer ownership                                                                                                                                                                 |
+  | Admin      | Every permission (not ownership transfer)                                                                                                                                                                                                                                 |
+  | Manager    | Dashboard; view the business and the team; manage locations; see, add and edit products & services, what goes into them (recipes), materials and suppliers; see, enter, finalize and reverse purchases (not close the books); see cost, profit/margin and supplier prices |
+  | Accountant | Dashboard; view the business; see products & services and what goes into them, materials, suppliers and purchases; see cost, profit/margin, supplier prices and payroll (not employee personal data)                                                                      |
+  | Sales      | Dashboard; see products & services                                                                                                                                                                                                                                        |
+  | Supervisor | Dashboard; view the team; see products & services, what goes into them (quantities; costs locked) and materials                                                                                                                                                           |
+  | Employee   | Dashboard; see products & services (sees no sensitive field)                                                                                                                                                                                                              |
 
-  Modules add their own permissions to the templates when their build starts, and the Roles editor offers them once the module is released (D-124). Products & Services and Materials (M2 Step 2): "see" (`products.items.view`, `materials.items.view`) and "add and edit" (`products.items.manage`, `materials.items.manage`, which need "see"), as in the table; businesses made before got them by migration. Suppliers and Purchases (M2 Step 3, D-140): "see" and "add and edit" suppliers (`suppliers.items.view`, `.manage`); "see purchases" (`purchases.documents.view`: purchases, returns to suppliers, credit notes, their receipts and the books-closed date), "enter purchases" (`.manage`: drafts and receipts), "finalize" (`.post`), "reverse and correct" (`.reverse`; correcting also needs `.manage`) and "close the books" (`purchases.books.close`, Owner and Admin only, D-114 rule 6), each needing "see"; businesses made before got them by migration too. Costs and supplier prices are shown only together: someone who may see one but not the other sees neither (the prices paid reveal the average they make, and the average read over time reveals each price paid; D-140, D-144), and only someone who sees supplier prices records a credit note (its amount is checked against them, D-142). Every member can open Settings for their own profile and language.
+  Modules add their own permissions to the templates when their build starts, and the Roles editor offers them once the module is released (D-124). Products & Services and Materials (M2 Step 2): "see" (`products.items.view`, `materials.items.view`) and "add and edit" (`products.items.manage`, `materials.items.manage`, which need "see"), as in the table; businesses made before got them by migration. Suppliers and Purchases (M2 Step 3, D-140): "see" and "add and edit" suppliers (`suppliers.items.view`, `.manage`); "see purchases" (`purchases.documents.view`: purchases, returns to suppliers, credit notes, their receipts and the books-closed date), "enter purchases" (`.manage`: drafts and receipts), "finalize" (`.post`), "reverse and correct" (`.reverse`; correcting also needs `.manage`) and "close the books" (`purchases.books.close`, Owner and Admin only, D-114 rule 6), each needing "see"; businesses made before got them by migration too. Recipes (M2 Step 4, D-149, D-155): "see what goes into each product or service" (`products.recipes.view`, needs "see products" and "see materials": a recipe shows each material and, with costs, its average) and "change it" (`products.recipes.manage`, needs "see what goes into"); Admin and Manager hold both, Accountant and Supervisor "see"; Sales and Employee neither (whether they should: ROADMAP.md §Open); businesses made before got them by migration too. A product's material cost (the list's "Recipe cost") also needs "see what goes into" it (D-150). Costs and supplier prices are shown only together: someone who may see one but not the other sees neither (the prices paid reveal the average they make, and the average read over time reveals each price paid; D-140, D-144), and only someone who sees supplier prices records a credit note (its amount is checked against them, D-142). Every member can open Settings for their own profile and language.
 
 - Custom permissions, for example: View/Create/Edit Orders, View Customers, View Selling Price, View Product Cost, View Profit, Create/Approve Expenses, View Payroll, Manage Employees, Manage Projects.
 - **Never assume every user can see cost or profit.** Sensitive fields (cost, profit/margin, supplier price, payroll, employee personal data) are removed on the server. The UI shows a lock, not a misleading zero. Users can't filter, sort or search by a field they can't see. Mechanism: ARCHITECTURE.md §Permissions, modules & capabilities.
@@ -661,38 +661,40 @@ The design must handle all four without hacks. Use them to test the setup recomm
 - **Business names (DECIDED, D-097):** the Arabic app names a business by its Arabic legal name when it has one (Settings → Business profile), everywhere it names the business: the switcher, the sidebar, the Dashboard, page titles, Smart Setup's "ready" screen, the invitation page and the invitation email in Arabic. Otherwise, and always in English, it uses the legal name. The logo shows beside the name in the switcher and on the Dashboard, in a white square; without one, the switcher shows a store mark. Settings says a square logo on a light background works best.
 - **Default language (DECIDED, D-067):** a new visitor gets Arabic or English from the browser's language (Arabic when it is neither). The choice is remembered on the device; once signed in, the language saved in the account wins, and it is also the language of the emails we send. Implementation: ARCHITECTURE.md (i18n & RTL).
 
-| English (UI)          | Arabic (UI)           | Meaning / note                                                 |
-| --------------------- | --------------------- | -------------------------------------------------------------- |
-| Running Costs         | المصاريف التشغيلية    | Rent, utilities, salaries, licenses… Not "Overhead Allocation" |
-| Expenses              | المصروفات             | Individual expense entries                                     |
-| True Cost             | التكلفة الحقيقية      | All cost components (§4.7)                                     |
-| Real Profit           | الربح الحقيقي         | Revenue − True Cost                                            |
-| Theoretical Profit    | الربح النظري          | Profit at the standard recipe cost                             |
-| Actual Profit         | الربح الفعلي          | Profit after actual usage and waste                            |
-| Expected Usage        | الاستهلاك المتوقع     | Sales/production × recipe quantities                           |
-| Actual Usage          | الاستهلاك الفعلي      | Opening stock + purchases − closing stock                      |
-| Unexplained Usage     | استهلاك غير مبرر      | Actual − expected. Never "theft"                               |
-| Waste                 | الهدر                 | Usage the user explained as waste                              |
-| Recipe                | وصفة                  | Food wording for the product cost structure                    |
-| Materials             | المواد                | Food: Ingredients & supplies (D-118); retail: Goods (D-117)    |
-| Products & Services   | المنتجات والخدمات     |                                                                |
-| Purchases             | المشتريات             |                                                                |
-| Finalize              | اعتمد                 | Posting a document (a draft changes nothing until then)        |
-| Return (to supplier)  | مرتجع                 | Goods sent back, at the price paid for them (D-120)            |
-| Credit note           | إشعار تخفيض           | A price cut from the supplier, without goods (D-120)           |
-| Last purchase cost    | آخر تكلفة شراء        | What one unit really cost, with delivery and discounts (D-143) |
-| Suppliers             | الموردون              |                                                                |
-| Customers             | العملاء               |                                                                |
-| Sales                 | المبيعات              |                                                                |
-| Orders                | الطلبات               |                                                                |
-| Stock                 | المخزون               |                                                                |
-| Quotation             | عرض سعر               |                                                                |
-| Tax Invoice           | فاتورة ضريبية         |                                                                |
-| Petty Cash            | العهدة النقدية        | Employee cash custody                                          |
-| Machine Cost per Hour | تكلفة الآلة في الساعة |                                                                |
-| Team Members          | أعضاء الفريق          | People who can sign in                                         |
-| Location / Branch     | الفرع                 |                                                                |
-| Smart Setup           | الإعداد الذكي         |                                                                |
-| Customize BizCost     | تخصيص BizCost         | Settings screen for modules and capabilities                   |
-| Your BizCost is ready | BizCost جاهز لك       | Final line of Smart Setup                                      |
-| Dashboard             | الرئيسية              | The business home in the nav and tabs (D-098)                  |
+| English (UI)          | Arabic (UI)           | Meaning / note                                                                                                                                   |
+| --------------------- | --------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Running Costs         | المصاريف التشغيلية    | Rent, utilities, salaries, licenses… Not "Overhead Allocation"                                                                                   |
+| Expenses              | المصروفات             | Individual expense entries                                                                                                                       |
+| True Cost             | التكلفة الحقيقية      | All cost components (§4.7)                                                                                                                       |
+| Real Profit           | الربح الحقيقي         | Revenue − True Cost                                                                                                                              |
+| Theoretical Profit    | الربح النظري          | Profit at the standard recipe cost                                                                                                               |
+| Actual Profit         | الربح الفعلي          | Profit after actual usage and waste                                                                                                              |
+| Expected Usage        | الاستهلاك المتوقع     | Sales/production × recipe quantities                                                                                                             |
+| Actual Usage          | الاستهلاك الفعلي      | Opening stock + purchases − closing stock                                                                                                        |
+| Unexplained Usage     | استهلاك غير مبرر      | Actual − expected. Never "theft"                                                                                                                 |
+| Waste                 | الهدر                 | Usage the user explained as waste                                                                                                                |
+| Recipe                | الوصفة                | Food wording for what goes into a product; retail "Items used / الأصناف المستخدمة"; otherwise "Materials used / المواد المستخدمة" (D-146, D-156) |
+| Bought ready to sell  | تشتريه جاهزًا لتبيعه  | An item bought and sold as it is: one record, costed at what it is bought for; its tag on Products says «يُشترى جاهزًا» (D-117, D-156)           |
+| No price yet          | لا سعر بعد            | A material never bought: never shown as 0; the total says it is incomplete (D-147)                                                               |
+| Materials             | المواد                | Food: Ingredients & supplies (D-118); retail: Goods / البضاعة, an item / صنف (D-117)                                                             |
+| Products & Services   | المنتجات والخدمات     |                                                                                                                                                  |
+| Purchases             | المشتريات             |                                                                                                                                                  |
+| Finalize              | اعتمد                 | Posting a document (a draft changes nothing until then)                                                                                          |
+| Return (to supplier)  | مرتجع                 | Goods sent back, at the price paid for them (D-120)                                                                                              |
+| Credit note           | إشعار تخفيض           | A price cut from the supplier, without goods (D-120)                                                                                             |
+| Last purchase cost    | آخر تكلفة شراء        | What one unit really cost, with delivery and discounts (D-143)                                                                                   |
+| Suppliers             | الموردون              |                                                                                                                                                  |
+| Customers             | العملاء               |                                                                                                                                                  |
+| Sales                 | المبيعات              |                                                                                                                                                  |
+| Orders                | الطلبات               |                                                                                                                                                  |
+| Stock                 | المخزون               |                                                                                                                                                  |
+| Quotation             | عرض سعر               |                                                                                                                                                  |
+| Tax Invoice           | فاتورة ضريبية         |                                                                                                                                                  |
+| Petty Cash            | العهدة النقدية        | Employee cash custody                                                                                                                            |
+| Machine Cost per Hour | تكلفة الآلة في الساعة |                                                                                                                                                  |
+| Team Members          | أعضاء الفريق          | People who can sign in                                                                                                                           |
+| Location / Branch     | الفرع                 |                                                                                                                                                  |
+| Smart Setup           | الإعداد الذكي         |                                                                                                                                                  |
+| Customize BizCost     | تخصيص BizCost         | Settings screen for modules and capabilities                                                                                                     |
+| Your BizCost is ready | BizCost جاهز لك       | Final line of Smart Setup                                                                                                                        |
+| Dashboard             | الرئيسية              | The business home in the nav and tabs (D-098)                                                                                                    |

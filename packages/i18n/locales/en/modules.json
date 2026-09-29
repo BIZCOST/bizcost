@@ -7,6 +7,7 @@
     "name": "Materials",
     "name_food": "Ingredients & supplies",
     "name_factory": "Raw materials",
+    "name_retail": "Goods",
     "desc": "Track what you buy to make or sell, and what it costs."
   },
   "suppliers": {

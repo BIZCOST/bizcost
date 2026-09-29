@@ -8,6 +8,7 @@ import type {
   ProductDto,
   PurchaseDto,
   PurchaseReturnDto,
+  RecipeResultDto,
   RoleDto,
   SupplierDto,
 } from '@bizcost/contracts'
@@ -626,6 +627,18 @@ const AUDIT: Record<string, AuditProbe> = {
       return asOwner('attachment.remove', { id: added.data.id })
     },
   },
+  // Recipes (M2 Step 4): a recipe's first save writes its row and its lines (recipes, recipe_lines);
+  // a later save, a line moved to another material, is exercised below.
+  'recipe.save': {
+    run: async () => {
+      const [product, material] = [await newProduct(), await newMaterial()]
+      return asOwner('recipe.save', {
+        productId: product.id,
+        version: 0,
+        lines: [{ id: newId(), materialId: material.id, qty: '18', unit: 'g' }],
+      })
+    },
+  },
   'books.close': {
     run: async () => {
       // Yesterday: the purchases of the other probes (dated today) stay open.
@@ -687,6 +700,53 @@ describe('audit coverage', () => {
       expect(await auditRows(result.headers.get('x-request-id') ?? '')).toEqual([])
     },
   )
+})
+
+describe('recipe.save, a line moved and a line taken out (M2 Step 4)', () => {
+  it('audits the recipe’s new version and each line it changes, with the caller', async () => {
+    const [product, beans, sugar, cup] = [
+      await newProduct(),
+      await newMaterial(),
+      await newMaterial(),
+      await newMaterial(),
+    ]
+    const moved = newId()
+    const dropped = newId()
+    const first = await ok(
+      call<RecipeResultDto>(tenant.owner, 'recipe.save', 'mutation', {
+        productId: product.id,
+        version: 0,
+        lines: [
+          { id: moved, materialId: beans.id, qty: '18', unit: 'g' },
+          { id: dropped, materialId: cup.id, qty: '1', unit: 'kg' },
+        ],
+      }),
+    )
+    const result = await call<RecipeResultDto>(tenant.owner, 'recipe.save', 'mutation', {
+      productId: product.id,
+      version: first.data.version,
+      lines: [{ id: moved, materialId: sugar.id, qty: '5', unit: 'g' }],
+    })
+    expect(result.error, result.raw).toBeUndefined()
+    const rows = await api.admin<
+      {
+        entity: string
+        entity_id: string
+        action: string
+        actor_user_id: string
+        business_id: string
+      }[]
+    >`
+      select entity, entity_id, action, actor_user_id, business_id from app.audit_log
+       where request_id = ${result.headers.get('x-request-id') ?? ''} order by id`
+    for (const row of rows) {
+      expect(row).toMatchObject({ actor_user_id: tenant.owner.user.id, business_id: tenant.id })
+    }
+    expect(rows.filter((r) => r.entity === 'recipes').map((r) => r.action)).toEqual(['update'])
+    const lines = rows.filter((r) => r.entity === 'recipe_lines')
+    expect(new Set(lines.map((r) => r.entity_id))).toEqual(new Set([moved, dropped]))
+    expect(lines.every((r) => r.action === 'update')).toBe(true)
+  })
 })
 
 describe('the documented exceptions (D-103), exercised', () => {

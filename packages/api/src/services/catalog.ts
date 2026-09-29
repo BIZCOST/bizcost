@@ -47,13 +47,19 @@ export function requestHashOf(payload: unknown): string {
 
 /**
  * Runs a write; a unique violation of `constraint` (another record of the business already has the
- * name) becomes NAME_TAKEN instead of a plain CONFLICT.
+ * name) becomes NAME_TAKEN instead of a plain CONFLICT. An item bought ready to sell writes two names
+ * (its product's and its material's, D-117): pass both constraints.
  */
-export async function withUniqueName<T>(constraint: string, write: () => Promise<T>): Promise<T> {
+export async function withUniqueName<T>(
+  constraint: string | readonly string[],
+  write: () => Promise<T>,
+): Promise<T> {
+  const names: readonly string[] = typeof constraint === 'string' ? [constraint] : constraint
   try {
     return await write()
   } catch (error) {
-    if (sqlStateOf(error) === '23505' && constraintOf(error) === constraint) {
+    const violated = constraintOf(error)
+    if (sqlStateOf(error) === '23505' && violated !== undefined && names.includes(violated)) {
       throw new AppError('name_taken', { cause: error })
     }
     throw error

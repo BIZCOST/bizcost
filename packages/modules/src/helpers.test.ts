@@ -70,7 +70,7 @@ describe('lookups', () => {
   it('PERMISSION_NEEDS pairs catalog keys, and every role template is coherent', () => {
     for (const [key, needed] of Object.entries(PERMISSION_NEEDS)) {
       expect(isCatalogPermissionKey(key), key).toBe(true)
-      expect(isCatalogPermissionKey(needed), needed).toBe(true)
+      for (const n of needed ?? []) expect(isCatalogPermissionKey(n), n).toBe(true)
     }
     for (const template of ROLE_TEMPLATES) {
       expect(keysMissingNeeds(template.permissionKeys), template.key).toEqual([])
@@ -80,6 +80,13 @@ describe('lookups', () => {
       'settings.members.manage',
     ])
     expect(keysMissingNeeds(['settings.members.manage', 'settings.members.view'])).toEqual([])
+    // Seeing what goes into each product needs its materials too (D-155).
+    expect(keysMissingNeeds(['products.items.view', 'products.recipes.view'])).toEqual([
+      'products.recipes.view',
+    ])
+    expect(
+      keysMissingNeeds(['products.items.view', 'materials.items.view', 'products.recipes.view']),
+    ).toEqual([])
   })
 
   it('isRoleTemplateKey / roleTemplateByKey', () => {

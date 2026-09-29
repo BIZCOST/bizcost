@@ -56,6 +56,7 @@
     "materials": "المواد",
     "materials_food": "المكونات والمستلزمات",
     "materials_factory": "المواد الخام",
+    "materials_retail": "البضاعة",
     "suppliers": "الموردون",
     "purchases": "المشتريات",
     "more": "المزيد",
@@ -67,7 +68,8 @@
     "products_projects": "الخدمات",
     "materials": "المواد",
     "materials_food": "المكونات",
-    "materials_factory": "المواد"
+    "materials_factory": "المواد",
+    "materials_retail": "البضاعة"
   },
   "home": {
     "greeting": "مرحبًا، {{name}}",

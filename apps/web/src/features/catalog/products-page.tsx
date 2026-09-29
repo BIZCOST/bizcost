@@ -2,6 +2,7 @@
 
 import { apiErrorKey, useTRPC } from '@bizcost/app-core'
 import type { BusinessContextDto, ProductDto } from '@bizcost/contracts'
+import type { TerminologyProfile } from '@bizcost/domain'
 import { formatCurrency, type I18nKey } from '@bizcost/i18n'
 import {
   keepPreviousData,
@@ -10,7 +11,14 @@ import {
   useQuery,
   useQueryClient,
 } from '@tanstack/react-query'
-import { BriefcaseIcon, TagIcon } from 'lucide-react'
+import {
+  BriefcaseIcon,
+  ChevronRightIcon,
+  CookingPotIcon,
+  ListChecksIcon,
+  PackageCheckIcon,
+  TagIcon,
+} from 'lucide-react'
 import { Fragment, useState, type ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
@@ -19,6 +27,7 @@ import { ModuleGate } from '@/components/shell/module-gate'
 import { PageContainer } from '@/components/shell/page-container'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
+import { hasModule } from '@/features/purchasing/data'
 import { can } from '@/features/settings/sections'
 import { useLocale, useTerminology } from '@/lib/i18n/client'
 import { useBusinessContext } from '@/lib/trpc/client'
@@ -33,13 +42,20 @@ import {
   useFirstTime,
   useListParams,
 } from './catalog-list'
+import { ProductCostLine, useProductCosts } from './product-cost'
 import { ProductSheet } from './product-sheet'
+import { RecipeSheet } from './recipe-sheet'
 import { NBSP } from './units'
 
 // Products & Services (M2 Step 2; ROADMAP.md Step 2, D-121, D-123): what the business sells, with
 // its usual price in the business currency. VAT shows only for a VAT-registered business, and where
 // it is sold only for a business with branches. Everyone with products.items.view sees the list;
 // products.items.manage adds, edits and archives.
+//
+// M2 Step 4 (D-115, D-117): members who may see what goes into each product (products.recipes.view
+// with materials.items.view, and Materials on) also see its material cost on its row and open its recipe ("Materials used";
+// "Recipe" for food) from there: under the price, or columns of the row from 1280 px. An item
+// bought ready to sell is tagged so, costs what it is bought for, and has no recipe.
 
 const VAT_SHORT = {
   zero_rated: 'catalog.products.vat.zeroShort',
@@ -96,6 +112,25 @@ function ProductDetails({
 
 type Editing = { product?: ProductDto; key: string }
 
+/** The button under a row that opens what goes into it. */
+function RecipeButton({ profile, onOpen }: { profile: TerminologyProfile; onOpen: () => void }) {
+  const term = useTerminology()
+  return (
+    <Button
+      type="button"
+      variant="outline"
+      size="sm"
+      onClick={onOpen}
+      data-recipe-open
+      className="h-9 gap-1.5 rounded-full px-3"
+    >
+      {profile === 'food' ? <CookingPotIcon aria-hidden /> : <ListChecksIcon aria-hidden />}
+      {term('catalog.recipes.title', profile)}
+      <ChevronRightIcon aria-hidden className="text-muted-foreground rtl:-scale-x-100" />
+    </Button>
+  )
+}
+
 function ProductsList() {
   const { t } = useTranslation()
   const term = useTerminology()
@@ -120,15 +155,31 @@ function ProductsList() {
     nothingInUse,
     everything.isFetching ? undefined : everything.data,
   )
+  // What goes into each product, and its material cost: members who may see recipes (and so the
+  // materials they name, D-155).
+  const withRecipes =
+    context !== undefined &&
+    hasModule(context, 'materials') &&
+    can(context, 'materials.items.view') &&
+    can(context, 'products.recipes.view')
+  const costs = useProductCosts(list.data?.pages ?? [], withRecipes)
   const archive = useMutation(trpc.product.archive.mutationOptions())
   const unarchive = useMutation(trpc.product.unarchive.mutationOptions())
   const [editing, setEditing] = useState<Editing | null>(null)
+  const [recipeOf, setRecipeOf] = useState<ProductDto | null>(null)
   const [archiving, setArchiving] = useState<ProductDto | null>(null)
   const [archiveError, setArchiveError] = useState<I18nKey | null>(null)
   if (!context) return null
   const profile = context.terminologyProfile
   const canManage = can(context, 'products.items.manage')
-  const refresh = () => queryClient.invalidateQueries({ queryKey: trpc.product.list.pathKey() })
+  // A new product can be bought ready to sell while the member may add materials too (D-117).
+  const resale =
+    hasModule(context, 'materials') && can(context, 'materials.items.manage') ? 'offered' : 'none'
+  const refresh = () =>
+    Promise.all([
+      queryClient.invalidateQueries({ queryKey: trpc.product.list.pathKey() }),
+      queryClient.invalidateQueries({ queryKey: trpc.product.costs.pathKey() }),
+    ])
   const add = () => setEditing({ key: `new-${Date.now()}` })
 
   async function confirmArchive() {
@@ -186,15 +237,35 @@ function ProductsList() {
         }
         renderRow={(product: ProductDto) => (
           <ListRow
-            icon={product.type === 'service' ? BriefcaseIcon : TagIcon}
+            icon={
+              product.type === 'service'
+                ? BriefcaseIcon
+                : product.resaleMaterialId
+                  ? PackageCheckIcon
+                  : TagIcon
+            }
             name={product.name}
             archived={product.archivedAt !== null}
             badges={
               product.type === 'service' ? (
                 <Badge tone="primary">{t('catalog.products.type.service')}</Badge>
+              ) : product.resaleMaterialId ? (
+                <Badge>{t('catalog.products.resale.badge')}</Badge>
               ) : null
             }
             details={<ProductDetails product={product} context={context} />}
+            aside={
+              withRecipes ? (
+                <ProductCostLine cost={costs.get(product.id)} profile={profile} />
+              ) : undefined
+            }
+            footer={
+              withRecipes ? (
+                product.resaleMaterialId === null ? (
+                  <RecipeButton profile={profile} onOpen={() => setRecipeOf(product)} />
+                ) : null
+              ) : undefined
+            }
             onEdit={canManage ? () => setEditing({ product, key: product.id }) : undefined}
             onArchive={() => {
               setArchiveError(null)
@@ -209,11 +280,21 @@ function ProductsList() {
           key={editing.key}
           product={editing.product}
           profile={profile}
+          resale={resale}
           onClose={() => setEditing(null)}
+        />
+      ) : null}
+      {recipeOf ? (
+        <RecipeSheet
+          key={recipeOf.id}
+          product={recipeOf}
+          profile={profile}
+          onClose={() => setRecipeOf(null)}
         />
       ) : null}
       <ArchiveDialog
         name={archiving?.name ?? null}
+        body={archiving?.resaleMaterialId ? t('catalog.list.archiveBodyPair') : undefined}
         busy={archive.isPending}
         error={archiveError}
         onConfirm={() => void confirmArchive()}

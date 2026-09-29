@@ -28,7 +28,8 @@
   "purchase_has_returns": "This purchase has returns or credit notes. Reverse them first, then try again.",
   "has_later_returns": "The same goods have a later return that is still final. Reverse that return first, then try again.",
   "exceeds_purchase": "That's more than is left of this purchase. Check the quantity or the amount.",
-  "material_in_use": "This material has purchases, so its kind of measure can't change. You can still pick another unit of the same kind.",
+  "material_in_use": "It is already used in purchases or products, so its kind of measure can't change. You can still pick another unit of the same kind.",
+  "unit_in_use": "One of your products uses this in a pack or unit you took out or changed. Change what goes into it first, then try again.",
   "internal": "Something went wrong on our side. Please try again.",
   "network": "Can't connect. Check your internet and try again."
 }

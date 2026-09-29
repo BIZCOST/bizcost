@@ -344,9 +344,33 @@ const PROBES: Record<string, Probe> = {
   'product.create': {
     base: 'business',
     reason:
-      'an id already used anywhere is CONFLICT (insertIdempotent); its locations are looked up ' +
-      'in the x-business-id business',
+      'an id already used anywhere is CONFLICT (insertIdempotent), the material of an item bought ' +
+      'ready to sell and its pack ids too; its locations are looked up in the x-business-id business',
     variants: (victim) => [
+      // Bought ready to sell as the victim's material, or with the victim's pack as its own.
+      {
+        input: {
+          id: newId(),
+          name: `Pwned ${newId()}`,
+          type: 'product',
+          unit: 'l',
+          resale: { materialId: victim.material.id },
+        },
+        own: ['conflict'],
+      },
+      {
+        input: {
+          id: newId(),
+          name: `Pwned ${newId()}`,
+          type: 'product',
+          unit: 'l',
+          resale: {
+            materialId: newId(),
+            packs: [{ id: victim.material.packs[0]?.id, name: 'crate', qty: '1', ofUnit: 'l' }],
+          },
+        },
+        own: ['conflict'],
+      },
       {
         input: { id: victim.product.id, name: `Pwned ${newId()}`, type: 'product', unit: 'piece' },
         own: ['conflict'],
@@ -730,6 +754,72 @@ const PROBES: Record<string, Probe> = {
       { input: { ids: [attacker.material.id, victim.material.id] }, own: ['not_found'] },
     ],
   },
+  // Recipes and product costs (M2 Step 4): the product, each line's material and pack are looked up
+  // in the x-business-id business (a pack only among its own material's), and a line id used anywhere
+  // is CONFLICT (its primary key).
+  'recipe.get': {
+    base: 'business',
+    reason: 'the product is looked up in the x-business-id business',
+    variants: (victim) => [{ input: { productId: victim.product.id }, own: ['not_found'] }],
+  },
+  'recipe.save': {
+    base: 'business',
+    reason:
+      'the product and every material are looked up in the x-business-id business, a pack among ' +
+      'its own material’s packs, and a line id used anywhere is CONFLICT',
+    variants: (victim, attacker) => [
+      {
+        input: { productId: victim.product.id, version: victim.recipe.version, lines: [] },
+        own: ['not_found'],
+      },
+      {
+        input: {
+          productId: attacker.product.id,
+          version: attacker.recipe.version,
+          lines: [{ id: newId(), materialId: victim.material.id, qty: '1', unit: 'l' }],
+        },
+        own: ['not_found'],
+      },
+      {
+        input: {
+          productId: attacker.product.id,
+          version: attacker.recipe.version,
+          lines: [
+            {
+              id: newId(),
+              materialId: attacker.material.id,
+              qty: '1',
+              packId: victim.material.packs[0]?.id,
+            },
+          ],
+        },
+        own: ['validation'],
+      },
+      {
+        input: {
+          productId: attacker.product.id,
+          version: attacker.recipe.version,
+          lines: [
+            {
+              id: victim.recipe.lines[0]?.id,
+              materialId: attacker.material.id,
+              qty: '1',
+              unit: 'l',
+            },
+          ],
+        },
+        own: ['conflict'],
+      },
+    ],
+  },
+  'product.costs': {
+    base: 'business',
+    reason: 'every id is looked up in the x-business-id business (NOT_FOUND otherwise)',
+    variants: (victim, attacker) => [
+      { input: { ids: [victim.product.id] }, own: ['not_found'] },
+      { input: { ids: [attacker.product.id, victim.resaleProduct.id] }, own: ['not_found'] },
+    ],
+  },
 }
 
 // A stand-in tenant for reading the probes' shape before the fixture exists (never sent).
@@ -742,6 +832,7 @@ const STUB_FIELD = {
   packs: [{ id: newId(), name: 'stub' }],
   lines: [{ id: newId() }],
   businessDate: '2026-01-01',
+  resaleMaterialId: newId(),
 }
 const STUB = new Proxy({} as Tenant, {
   get: (_target, key) => (key === 'roles' ? new Proxy({}, { get: () => STUB_FIELD }) : STUB_FIELD),

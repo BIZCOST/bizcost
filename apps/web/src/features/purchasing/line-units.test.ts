@@ -23,6 +23,7 @@ function material(fields: Partial<MaterialDto> & Pick<MaterialDto, 'unit'>): Mat
     dimension: dimension[fields.unit as keyof typeof dimension],
     packs: [],
     crossFactors: [],
+    resaleProductId: null,
     archivedAt: null,
     version: 1,
     ...fields,

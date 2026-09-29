@@ -108,4 +108,21 @@ describe('switchPermission', () => {
     expect(switchPermission(members, 'settings.members.view', false).size).toBe(0)
     expect([...switchPermission(new Set(['data.cost.view']), 'data.cost.view', false)]).toEqual([])
   })
+
+  it('follows what a permission needs through every step (D-155)', () => {
+    const recipes = switchPermission(new Set(), 'products.recipes.manage', true)
+    expect([...recipes].sort()).toEqual([
+      'materials.items.view',
+      'products.items.view',
+      'products.recipes.manage',
+      'products.recipes.view',
+    ])
+    // Materials off takes recipes off, and changing them with it.
+    expect([...switchPermission(recipes, 'materials.items.view', false)]).toEqual([
+      'products.items.view',
+    ])
+    expect(switchPermission(recipes, 'products.items.view', false)).toEqual(
+      new Set(['materials.items.view']),
+    )
+  })
 })

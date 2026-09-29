@@ -4,6 +4,7 @@ import { apiErrorCode, apiErrorKey, useTRPC } from '@bizcost/app-core'
 import type { ProductDto } from '@bizcost/contracts'
 import {
   DIMENSIONS,
+  dimensionOf,
   newId,
   PRODUCT_TYPES,
   VAT_CATEGORIES,
@@ -15,7 +16,7 @@ import {
 import { currencySymbol, type I18nKey } from '@bizcost/i18n'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { BriefcaseIcon, TagIcon } from 'lucide-react'
-import { useId, useRef, useState, type FormEvent } from 'react'
+import { useId, useMemo, useRef, useState, type FormEvent } from 'react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
 import { FormAlert } from '@/components/form/form-alert'
@@ -39,14 +40,21 @@ import { can } from '@/features/settings/sections'
 import { useLocale, useTerminology } from '@/lib/i18n/client'
 import { useBusinessContext } from '@/lib/trpc/client'
 import { cn } from '@/lib/utils'
-import { formName } from './material-draft'
+import { draftUnits, formName, type MaterialDraft } from './material-draft'
 import { withLatinDigits, type FieldError } from './numbers'
-import { checkProduct, productDraft, type ProductDraft } from './product-draft'
+import { checkProduct, checkResaleUnits, productDraft, type ProductDraft } from './product-draft'
 import { UnitSelect } from './unit-parts'
+import { PacksAndConversions, useShownError } from './units-editor'
 
 // Add or edit a product or service (M2 Step 2; D-121, D-123): what it is, the unit it is sold by,
 // its usual price in the business currency, and, only where the business uses them, its VAT (VAT
 // registered) and the branches where it is sold (more than one branch).
+//
+// Bought ready to sell (M2 Step 4, D-117): a new product can be one, with the packs it is bought in,
+// and its material is made with it (one record from the owner's view, one name). On by default in the
+// retail wording, and always when the Goods page opens the form. Once made, it stays a product (the
+// type is not offered), sold in the kind of measure of its packs, and its name and unit change in
+// Materials too.
 
 const TYPE_ICONS = { product: TagIcon, service: BriefcaseIcon } as const
 
@@ -210,10 +218,17 @@ function WhereSold({
 export function ProductSheet({
   product,
   profile,
+  resale: resaleMode = 'offered',
   onClose,
 }: {
   product?: ProductDto
   profile: TerminologyProfile
+  /**
+   * A new product bought ready to sell: `offered` as a switch (on by default in the retail
+   * wording), `only` (the Goods page: nothing else), or `none` (a business without Materials, or
+   * a member who may not add them).
+   */
+  resale?: 'offered' | 'only' | 'none'
   onClose: () => void
 }) {
   const { t } = useTranslation()
@@ -226,6 +241,16 @@ export function ProductSheet({
   const update = useMutation(trpc.product.update.mutationOptions())
   const [newProductId] = useState(() => newId())
   const [draft, setDraft] = useState<ProductDraft>(() => productDraft(product))
+  const [newMaterialId] = useState(() => newId())
+  // A new product bought ready to sell, and the packs it is bought in (its material's).
+  const [resale, setResale] = useState(
+    () => !product && (resaleMode === 'only' || (resaleMode === 'offered' && profile === 'retail')),
+  )
+  const [units, setUnits] = useState<Pick<MaterialDraft, 'packs' | 'crossFactors'>>({
+    packs: [],
+    crossFactors: [],
+  })
+  const [lastChanged, setLastChanged] = useState<string | undefined>(undefined)
   const [submitted, setSubmitted] = useState(false)
   const [serverError, setServerError] = useState<I18nKey | null>(null)
   const [takenName, setTakenName] = useState<string | null>(null)
@@ -241,6 +266,18 @@ export function ProductSheet({
   const check = checkProduct(draft, access, product?.locationIds)
   const shown = (error: FieldError | undefined): string | undefined =>
     error && (submitted || !MISSING.has(error.key)) ? t(error.key, error.values) : undefined
+  // Bought ready to sell: new (with its packs), or made so (it stays a product in its kind of measure).
+  const isResale = product ? product.resaleMaterialId !== null : resale && draft.type === 'product'
+  const materialDraft: MaterialDraft = useMemo(
+    () => ({ name: draft.name, unit: draft.unit, ...units }),
+    [draft.name, draft.unit, units],
+  )
+  const unitsCheck = useMemo(
+    () => checkResaleUnits(draft, units, { lastChanged }),
+    [draft, units, lastChanged],
+  )
+  const unitsShown = useShownError(submitted)
+  const unitDimensions = product?.resaleMaterialId ? [dimensionOf(product.unit)] : DIMENSIONS
   const typedName = formName(draft.name).toLowerCase()
   const nameError =
     shown(check.errors.name) ??
@@ -254,18 +291,39 @@ export function ProductSheet({
     setSubmitted(true)
     setServerError(null)
     const { fields } = check
-    if (!fields || (takenName !== null && fields.name.toLowerCase() === takenName)) {
+    const resaleUnits = !product && isResale ? unitsCheck.fields : null
+    if (
+      !fields ||
+      (takenName !== null && fields.name.toLowerCase() === takenName) ||
+      (!product && isResale && !resaleUnits)
+    ) {
       focusFirstError()
       return
     }
     try {
       const saved = product
         ? await update.mutateAsync({ id: product.id, version: product.version, ...fields })
-        : await create.mutateAsync({ id: newProductId, ...fields })
+        : await create.mutateAsync({
+            id: newProductId,
+            ...fields,
+            resale: resaleUnits
+              ? {
+                  materialId: newMaterialId,
+                  packs: resaleUnits.packs,
+                  crossFactors: resaleUnits.crossFactors,
+                }
+              : null,
+          })
       toast.success(
         product ? t('catalog.list.saved') : t('catalog.list.added', { name: isolate(saved.name) }),
       )
-      await queryClient.invalidateQueries({ queryKey: trpc.product.list.pathKey() })
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: trpc.product.list.pathKey() }),
+        queryClient.invalidateQueries({ queryKey: trpc.product.costs.pathKey() }),
+        ...(saved.resaleMaterialId
+          ? [queryClient.invalidateQueries({ queryKey: trpc.material.list.pathKey() })]
+          : []),
+      ])
       onClose()
     } catch (error) {
       const code = apiErrorCode(error)
@@ -277,7 +335,10 @@ export function ProductSheet({
   }
 
   const hasShownErrors =
-    submitted && (check.fields === null || (takenName !== null && typedName === takenName))
+    submitted &&
+    (check.fields === null ||
+      (takenName !== null && typedName === takenName) ||
+      (!product && isResale && unitsCheck.fields === null))
 
   return (
     <Sheet open onOpenChange={(open) => !open && !busy && onClose()}>
@@ -291,7 +352,11 @@ export function ProductSheet({
         >
           <SheetHeader>
             <SheetTitle dir={product ? 'auto' : undefined}>
-              {product ? product.name : term('catalog.products.newTitle', profile)}
+              {product
+                ? product.name
+                : resaleMode === 'only'
+                  ? term('catalog.materials.newTitle', profile)
+                  : term('catalog.products.newTitle', profile)}
             </SheetTitle>
             <SheetDescription>
               {product ? t('catalog.form.editDescription') : t('catalog.products.newDescription')}
@@ -302,7 +367,36 @@ export function ProductSheet({
             {hasShownErrors && !serverError ? (
               <FormAlert tone="error">{t('catalog.form.fixErrors')}</FormAlert>
             ) : null}
-            <TypePicker value={draft.type} onChange={(type) => setDraft((d) => ({ ...d, type }))} />
+            {product?.resaleMaterialId ? (
+              <FormAlert tone="info">
+                {t('catalog.products.resale.readOnly')}{' '}
+                {term('catalog.products.resale.sameIn', profile)}
+              </FormAlert>
+            ) : resaleMode === 'only' ? null : (
+              <TypePicker
+                value={draft.type}
+                onChange={(type) => setDraft((d) => ({ ...d, type }))}
+              />
+            )}
+            {!product && resaleMode === 'offered' && draft.type === 'product' ? (
+              <div className="flex items-start justify-between gap-4 rounded-xl border bg-background/60 p-4">
+                <div className="min-w-0">
+                  <p id={`${vatId}-resale`} className="text-sm font-medium">
+                    {t('catalog.products.resale.label')}
+                  </p>
+                  <p id={`${vatId}-resale-hint`} className="mt-0.5 text-sm text-muted-foreground">
+                    {term('catalog.products.resale.hint', profile)}
+                  </p>
+                </div>
+                <Switch
+                  checked={resale}
+                  onCheckedChange={setResale}
+                  aria-labelledby={`${vatId}-resale`}
+                  aria-describedby={`${vatId}-resale-hint`}
+                  className="mt-1"
+                />
+              </div>
+            ) : null}
             <TextField
               label={t('catalog.form.name')}
               autoComplete="off"
@@ -320,7 +414,9 @@ export function ProductSheet({
               label={t('catalog.products.unit')}
               hint={(id) => (
                 <p id={id} className="text-sm text-muted-foreground">
-                  {t('catalog.products.unitHint')}
+                  {product?.resaleMaterialId
+                    ? t('catalog.products.resale.unitHint')
+                    : t('catalog.products.unitHint')}
                 </p>
               )}
               render={(a11y) => (
@@ -330,10 +426,25 @@ export function ProductSheet({
                   onValueChange={(value) =>
                     setDraft((d) => ({ ...d, unit: value as StandardUnit }))
                   }
-                  dimensions={DIMENSIONS}
+                  dimensions={unitDimensions}
                 />
               )}
             />
+            {!product && isResale ? (
+              <PacksAndConversions
+                draft={materialDraft}
+                onChange={(update) =>
+                  setUnits((current) => {
+                    const next = update({ name: draft.name, unit: draft.unit, ...current })
+                    return { packs: next.packs, crossFactors: next.crossFactors }
+                  })
+                }
+                check={unitsCheck}
+                units={draftUnits(materialDraft)}
+                shown={unitsShown}
+                onPackOfChanged={setLastChanged}
+              />
+            ) : null}
             <TextField
               label={t('catalog.products.price')}
               error={shown(check.errors.price)}

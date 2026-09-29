@@ -107,6 +107,7 @@ describe('Smart Setup keys (invariant 10)', () => {
       [
         'modules.materials.name_factory',
         'modules.materials.name_food',
+        'modules.materials.name_retail',
         'modules.products.name_projects',
         'setup.cap.jobs_and_tasks.on_maker',
         'setup.jobs.desc_maker',
