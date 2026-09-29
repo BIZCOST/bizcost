@@ -1,5 +1,5 @@
 import { sql } from 'drizzle-orm'
-import { boolean, char, check, date, text, uuid } from 'drizzle-orm/pg-core'
+import { boolean, char, check, date, numeric, text, uuid } from 'drizzle-orm/pg-core'
 import { app, rowMetaColumns, timestamptz } from './_app'
 
 // Tenant root: businesses.id is the business_id used by every tenant table.
@@ -26,11 +26,19 @@ export const businesses = app.table(
     // Expenses need approval before they are final (D-164). It applies only while the business has a
     // team (has_team); the setting is kept when the team is turned off.
     expenseApproval: boolean('expense_approval').notNull().default(false),
+    // How product costs are worked out (M2 Step 6). The owner's estimate of the materials bought in a
+    // month, used for the running-cost rate until 3 full months of purchases have passed (D-116), and
+    // the owner's hourly rate for the time line of a business without a team (D-119, sensitive cost).
+    // NULL: not set yet.
+    estimatedMonthlyPurchases: numeric('estimated_monthly_purchases', { precision: 20, scale: 4 }),
+    ownerHourlyRate: numeric('owner_hourly_rate', { precision: 20, scale: 4 }),
     ...rowMetaColumns(),
   },
   () => [
     check('businesses_trn_check', sql`trn ~ '^[0-9]{15}$'`),
     check('businesses_default_locale_check', sql`default_locale in ('en', 'ar')`),
+    check('businesses_estimated_monthly_purchases_check', sql`estimated_monthly_purchases > 0`),
+    check('businesses_owner_hourly_rate_check', sql`owner_hourly_rate > 0`),
   ],
 )
 

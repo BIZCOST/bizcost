@@ -44,7 +44,7 @@ export function Locked({
   category,
   className,
 }: {
-  category: Extract<SensitivityCategory, 'cost' | 'supplier_price'>
+  category: Extract<SensitivityCategory, 'cost' | 'supplier_price' | 'profit_margin'>
   className?: string
 }) {
   const { t } = useTranslation()

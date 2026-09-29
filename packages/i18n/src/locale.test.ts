@@ -6,7 +6,9 @@ import {
   formatDate,
   formatDecimal,
   formatNumber,
+  formatPercent,
   formatUnitCost,
+  formatWholeCurrency,
 } from './format'
 import { dir, intlLocale, negotiateLocale, resolveLocale } from './locale'
 
@@ -93,6 +95,31 @@ describe('formatters', () => {
     expect(formatCurrency('en', '9007199254740993.125', 'AED')).toContain(
       '9,007,199,254,740,993.13',
     )
+  })
+
+  it('show percentages rounded half up, from a percent or a fraction', () => {
+    const percent = (value: string, options?: Parameters<typeof formatPercent>[2]) =>
+      formatPercent('en', value, options).replace(/\s/g, ' ')
+    expect(percent('74.983044733039')).toBe('75.0%')
+    expect(percent('40.8625')).toBe('40.9%')
+    expect(percent('-13.25')).toBe('-13.3%')
+    expect(percent('0.5', { ratio: true, minDigits: 0 })).toBe('50%')
+    expect(percent('0.275', { ratio: true, minDigits: 0 })).toBe('27.5%')
+    expect(percent('0.333333333333', { ratio: true, minDigits: 0 })).toBe('33.3%')
+    // Exact beyond float precision.
+    expect(percent('9007199254740993.05')).toBe('9,007,199,254,740,993.1%')
+    expect(formatPercent('ar', '74.983044733039')).not.toMatch(ARABIC_INDIC)
+    expect(formatPercent('ar', '74.983044733039')).toContain('75.0')
+  })
+
+  it('write a round figure in the currency, rounded half up to whole units', () => {
+    const whole = (value: string) => formatWholeCurrency('en', value, 'AED').replace(/\s/g, ' ')
+    expect(whole('15000')).toBe('AED 15,000')
+    expect(whole('15712.666666666667')).toBe('AED 15,713')
+    expect(whole('32797.5')).toBe('AED 32,798')
+    expect(whole('1')).toBe('AED 1')
+    expect(formatWholeCurrency('ar', '15712.67', 'AED')).toMatch(/15,713/)
+    expect(formatWholeCurrency('ar', '15712.67', 'AED')).not.toMatch(ARABIC_INDIC)
   })
 
   it('show decimals with exactly the requested digits', () => {

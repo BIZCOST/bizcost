@@ -15,6 +15,7 @@ export const SETTINGS_SECTIONS = [
   'modules',
   'books',
   'approval',
+  'costing',
   'language',
 ] as const
 export type SettingsSection = (typeof SETTINGS_SECTIONS)[number]
@@ -63,6 +64,17 @@ export function isSectionVisible(access: Access, section: SettingsSection): bool
         (access.modules ?? []).some((module) => module.id === 'expenses') &&
         can(access, 'expenses.approval.manage')
       )
+    case 'costing':
+      // How product costs are worked out (M2 Step 6; D-116, D-119): the Cost Engine on, and the keys
+      // to see product costs and change how they are worked out (Owner, Admin, Manager), with running
+      // costs and purchases (the estimate and its rate reveal their monthly totals, D-186).
+      return (
+        (access.modules ?? []).some((module) => module.id === 'cost_engine') &&
+        can(access, 'cost_engine.product_costs.view') &&
+        can(access, 'cost_engine.settings.manage') &&
+        can(access, 'running_costs.items.view') &&
+        can(access, 'purchases.documents.view')
+      )
   }
 }
 
@@ -93,6 +105,7 @@ export const SECTION_TITLES: Readonly<Record<SettingsSection, I18nKey>> = {
   modules: 'settings.modules.title',
   books: 'settings.books.title',
   approval: 'settings.approval.title',
+  costing: 'settings.costing.title',
   language: 'settings.language.title',
 }
 
@@ -104,5 +117,6 @@ export const SECTION_DESCRIPTIONS: Readonly<Record<SettingsSection, I18nKey>> = 
   modules: 'settings.modules.description',
   books: 'settings.books.description',
   approval: 'settings.approval.description',
+  costing: 'settings.costing.description',
   language: 'settings.language.description',
 }

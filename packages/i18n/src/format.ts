@@ -51,6 +51,20 @@ export function formatCurrency(locale: Locale, amount: string, currency: string)
   }).format(roundHalfUp(amount, digits))
 }
 
+/**
+ * A round figure in `currency`: the amount rounded half up to whole units, with no decimals ("AED
+ * 15,713", «15,713 د.إ.»). For totals quoted in a sentence (a month of running costs), never for
+ * an amount the reader adds up.
+ */
+export function formatWholeCurrency(locale: Locale, amount: string, currency: string): string {
+  return new Intl.NumberFormat(intlLocale(locale), {
+    style: 'currency',
+    currency,
+    minimumFractionDigits: 0,
+    maximumFractionDigits: 0,
+  }).format(roundHalfUp(amount, 0))
+}
+
 /** Most decimals a unit cost shows (a price per ml or per gram can be a tiny amount). */
 const UNIT_COST_MAX_DIGITS = 6
 
@@ -96,6 +110,26 @@ export function formatDate(
   return new Intl.DateTimeFormat(intlLocale(locale), options).format(
     typeof value === 'string' ? new Date(value) : value,
   )
+}
+
+/**
+ * A percentage (decimal string) with at least `minDigits` and at most `maxDigits` decimals, as the
+ * locale writes it: "75.0%", "27.5%", «50٪». `value` is in percent (74.98 → "75.0%"), or with
+ * `ratio` a fraction (0.275 → "27.5%"). Rounded half up to the digits shown, then divided by 100
+ * exactly, so Intl only places the sign.
+ */
+export function formatPercent(
+  locale: Locale,
+  value: string,
+  { minDigits = 1, maxDigits = 1, ratio = false } = {},
+): string {
+  const percent = ratio ? new Decimal(value).times(100) : new Decimal(value)
+  const rounded = percent.toDecimalPlaces(maxDigits, Decimal.ROUND_HALF_UP)
+  return new Intl.NumberFormat(intlLocale(locale), {
+    style: 'percent',
+    minimumFractionDigits: minDigits,
+    maximumFractionDigits: maxDigits,
+  }).format(rounded.dividedBy(100).toString() as DecimalString)
 }
 
 /** "a, b and c" in the locale's words (Intl.ListFormat; joined with commas where it is missing). */

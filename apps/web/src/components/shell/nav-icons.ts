@@ -1,4 +1,5 @@
 import {
+  CalculatorIcon,
   HandCoinsIcon,
   LayoutDashboardIcon,
   LayoutGridIcon,
@@ -33,6 +34,8 @@ const NAV_ICONS: Readonly<Record<string, LucideIcon>> = {
   // Expenses and Running Costs (M2 Step 5).
   receipt: ReceiptIcon,
   repeat: RepeatIcon,
+  // Product costs (the Cost Engine, M2 Step 6).
+  calculator: CalculatorIcon,
 }
 
 export const FALLBACK_NAV_ICON: LucideIcon = LayoutGridIcon

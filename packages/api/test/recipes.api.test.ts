@@ -275,6 +275,8 @@ describe('the Spanish Latte, from real purchases', () => {
         unpricedLines: 1,
         complete: false,
       },
+      // A café has a team: no owner's time (D-119).
+      ownerMinutes: null,
     })
   })
 
@@ -674,7 +676,10 @@ describe('a material’s units change under a recipe', () => {
       await cafe.run('role.updatePermissions', {
         id: manager.id,
         version: manager.version,
-        permissionKeys: manager.permissionKeys.filter((key) => !key.startsWith('products.recipes')),
+        // Seeing product costs needs seeing recipes (M2 Step 6): they go off together.
+        permissionKeys: manager.permissionKeys.filter(
+          (key) => !key.startsWith('products.recipes') && !key.startsWith('cost_engine.'),
+        ),
       }),
     )
     const person: Person = await api.member({ id: cafe.id, owner: cafe.owner }, 'manager')
@@ -750,6 +755,7 @@ describe('an item bought ready to sell (D-117)', () => {
       lineCount: 1,
       basis: null,
       cost: { total: null, perUnit: null, tooLarge: false, unpricedLines: 1, complete: false },
+      ownerMinutes: null,
     })
     // 3 cartons of 24 at 18: 54 for 72 bottles, 0.75 a bottle.
     await shop.buy(

@@ -142,6 +142,7 @@ describe('the dev-only preview (D-125)', () => {
       'purchases',
       'expenses',
       'running_costs',
+      'cost_engine',
     ])
   })
 

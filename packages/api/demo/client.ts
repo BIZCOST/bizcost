@@ -1,5 +1,6 @@
 import type { Db } from '@bizcost/db'
 import type { Locale } from '@bizcost/domain'
+import { PREVIEWABLE_MODULE_IDS } from '@bizcost/modules'
 import type { Transporter } from 'nodemailer'
 import type { EmailMessage, EmailSender } from '../src'
 import type * as TestHelpers from '../test/helpers'
@@ -9,7 +10,8 @@ import { LOCAL_SMTP_PORT, useLocalStack, type LocalStack } from './local-stack'
 // The demo talks to the API exactly like the apps do: through the real fetch handler (every
 // middleware, permission, gate and audit row), as each demo account with an access token signed by the
 // local stack's key (like the API integration tests, so no sign-in counts against the local Auth rate
-// limit). Accounts are created and removed with the local Auth admin API only.
+// limit). Accounts are created and removed with the local Auth admin API only. The modules being built
+// (planned until M2 Step 7) are previewed as on `next dev` (D-125), so the demo fills them too.
 
 type Helpers = typeof TestHelpers
 type Handler = (req: Request) => Promise<Response>
@@ -58,6 +60,7 @@ export class DemoApi {
     private readonly db: Db,
     private readonly sql: Admin,
     readonly mail: DemoMail,
+    private readonly procedures: ReadonlySet<string>,
   ) {}
 
   /** Checks the local stack, then builds the API handler on it. */
@@ -65,15 +68,23 @@ export class DemoApi {
     const stack = await useLocalStack()
     // The helpers read the variables useLocalStack() has just set, so they load only now.
     const helpers = await import('../test/helpers')
+    const { appRouter } = await import('../src')
+    // The preview of the modules being built is honoured only in development and test (D-125).
+    process.env.NODE_ENV ??= 'development'
     const db = helpers.connectApi()
     const mail = new DemoMail(stack.smtpHost)
     const handler = helpers.handlerFor(
       db,
       undefined,
-      { supabaseSecretKey: helpers.SECRET_KEY, appUrl: 'http://localhost:3000' },
+      {
+        supabaseSecretKey: helpers.SECRET_KEY,
+        appUrl: 'http://localhost:3000',
+        previewModules: PREVIEWABLE_MODULE_IDS,
+      },
       { emailSender: mail },
     )
-    return new DemoApi(stack, helpers, handler, db, helpers.connectAdmin(), mail)
+    const procedures = new Set(Object.keys(appRouter._def.procedures))
+    return new DemoApi(stack, helpers, handler, db, helpers.connectAdmin(), mail, procedures)
   }
 
   async close(): Promise<void> {
@@ -149,12 +160,18 @@ export class DemoApi {
     })
   }
 
+  /** Whether this build of the API has the procedure (e.g. one of a step being built). */
+  hasProcedure(path: string): boolean {
+    return this.procedures.has(path)
+  }
+
   private unwrap<T>(path: string, result: Awaited<ReturnType<Helpers['query']>>): T {
     if (result.error) {
-      const error = new Error(`${path}: ${result.error.data.appCode}`) as Error & {
-        appCode: string
-      }
-      error.appCode = result.error.data.appCode
+      const { appCode } = result.error.data
+      const { message } = result.error
+      const detail = message && message !== appCode ? ` (${message})` : ''
+      const error = new Error(`${path}: ${appCode}${detail}`) as Error & { appCode: string }
+      error.appCode = appCode
       throw error
     }
     return result.data as T

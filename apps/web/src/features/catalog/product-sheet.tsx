@@ -3,6 +3,7 @@
 import { apiErrorCode, apiErrorKey, useTRPC } from '@bizcost/app-core'
 import type { ProductDto } from '@bizcost/contracts'
 import {
+  compareDecimal,
   DIMENSIONS,
   dimensionOf,
   newId,
@@ -38,13 +39,20 @@ import {
 } from '@/components/ui/sheet'
 import { Switch } from '@/components/ui/switch'
 import { Textarea } from '@/components/ui/textarea'
+import { hasModule } from '@/features/purchasing/data'
 import { can } from '@/features/settings/sections'
 import { useLocale, useTerminology } from '@/lib/i18n/client'
 import { useBusinessContext } from '@/lib/trpc/client'
 import { cn } from '@/lib/utils'
 import { draftUnits, formName, type MaterialDraft } from './material-draft'
 import { withLatinDigits, type FieldError } from './numbers'
-import { checkProduct, checkResaleUnits, productDraft, type ProductDraft } from './product-draft'
+import {
+  checkProduct,
+  checkResaleUnits,
+  productDraft,
+  readOwnerMinutes,
+  type ProductDraft,
+} from './product-draft'
 import { UnitSelect } from './unit-parts'
 import { PacksAndConversions, useShownError } from './units-editor'
 
@@ -57,6 +65,11 @@ import { PacksAndConversions, useShownError } from './units-editor'
 // retail wording, and always when the Goods page opens the form. Once made, it stays a product (the
 // type is not offered), sold in the kind of measure of its packs, and its name and unit change in
 // Materials too.
+//
+// The owner's time (M2 Step 6, D-119): a business without a team counts the owner's minutes for one
+// unit at the owner's hourly rate. The field shows only there, with the Cost Engine on, to a member
+// who sees costs (the minutes are `cost`), and it is sent only once changed: minutes the form never
+// read are never cleared.
 
 const TYPE_ICONS = { product: TagIcon, service: BriefcaseIcon } as const
 
@@ -262,6 +275,32 @@ export function ProductSheet({
   const vatId = useId()
   const busy = create.isPending || update.isPending
 
+  // The owner's time: without a team, with the Cost Engine on, for a member who sees costs (and
+  // product costs, where the minutes count). An existing product's minutes are read first.
+  const ownerTime =
+    context !== undefined &&
+    context.capabilities.has_team !== true &&
+    hasModule(context, 'cost_engine') &&
+    context.visibleCategories.includes('cost') &&
+    can(context, 'cost_engine.product_costs.view')
+  const storedCost = useQuery({
+    ...trpc.productCost.get.queryOptions({ productId: product?.id ?? '' }),
+    enabled: ownerTime && product !== undefined,
+  })
+  const storedMinutes = product ? storedCost.data?.data.cost.ownerTime.minutes : null
+  // Shown once what is stored is known (a new product has none).
+  const showMinutes = ownerTime && (product === undefined || typeof storedMinutes !== 'undefined')
+  const [minutesTyped, setMinutesTyped] = useState<string | null>(null)
+  const minutesValue = minutesTyped ?? storedMinutes ?? ''
+  const minutesRead = readOwnerMinutes(minutesValue)
+  const minutesChanged =
+    showMinutes &&
+    minutesTyped !== null &&
+    minutesRead.ok &&
+    !(minutesRead.value === null
+      ? (storedMinutes ?? null) === null
+      : typeof storedMinutes === 'string' && compareDecimal(minutesRead.value, storedMinutes) === 0)
+
   const vatRegistered = context?.capabilities.vat_registered === true
   const access = {
     multiLocation: context?.capabilities.multi_location === true,
@@ -299,17 +338,26 @@ export function ProductSheet({
     if (
       !fields ||
       (takenName !== null && fields.name.toLowerCase() === takenName) ||
-      (!product && isResale && !resaleUnits)
+      (!product && isResale && !resaleUnits) ||
+      (showMinutes && !minutesRead.ok)
     ) {
       focusFirstError()
       return false
     }
+    // The owner's minutes only once changed (left out, the API keeps them).
+    const minutes = minutesChanged && minutesRead.ok ? { ownerMinutes: minutesRead.value } : {}
     try {
       const saved = product
-        ? await update.mutateAsync({ id: product.id, version: product.version, ...fields })
+        ? await update.mutateAsync({
+            id: product.id,
+            version: product.version,
+            ...fields,
+            ...minutes,
+          })
         : await create.mutateAsync({
             id: newProductId,
             ...fields,
+            ...minutes,
             resale: resaleUnits
               ? {
                   materialId: newMaterialId,
@@ -324,6 +372,8 @@ export function ProductSheet({
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: trpc.product.list.pathKey() }),
         queryClient.invalidateQueries({ queryKey: trpc.product.costs.pathKey() }),
+        // Its cost moves with its price, VAT and minutes (Product costs).
+        queryClient.invalidateQueries({ queryKey: trpc.productCost.pathKey() }),
         ...(saved.resaleMaterialId
           ? [queryClient.invalidateQueries({ queryKey: trpc.material.list.pathKey() })]
           : []),
@@ -344,7 +394,9 @@ export function ProductSheet({
     !sameData(draft, initialDraft) ||
     resale !== initialResale ||
     units.packs.length > 0 ||
-    units.crossFactors.length > 0
+    units.crossFactors.length > 0 ||
+    minutesChanged ||
+    (showMinutes && !minutesRead.ok)
   const guard = useUnsavedChanges({ dirty, save, close: onClose })
 
   async function submit(event: FormEvent) {
@@ -356,7 +408,8 @@ export function ProductSheet({
     submitted &&
     (check.fields === null ||
       (takenName !== null && typedName === takenName) ||
-      (!product && isResale && unitsCheck.fields === null))
+      (!product && isResale && unitsCheck.fields === null) ||
+      (showMinutes && !minutesRead.ok))
 
   return (
     <Sheet open onOpenChange={(open) => !open && !busy && guard.requestLeave(onClose)}>
@@ -539,6 +592,42 @@ export function ProductSheet({
                   />
                 </div>
               </section>
+            ) : null}
+            {showMinutes ? (
+              <TextField
+                label={t('catalog.products.ownerTime.label', {
+                  per: t(`units.per.${draft.unit}`),
+                })}
+                error={
+                  !minutesRead.ok ? t(minutesRead.error.key, minutesRead.error.values) : undefined
+                }
+                hint={(id) => (
+                  <p id={id} className="text-sm text-muted-foreground">
+                    {t('catalog.products.ownerTime.hint')}
+                  </p>
+                )}
+                render={(a11y) => (
+                  <div data-owner-minutes className="flex">
+                    <Input
+                      {...a11y}
+                      inputMode="decimal"
+                      dir="ltr"
+                      autoComplete="off"
+                      spellCheck={false}
+                      value={minutesValue}
+                      onChange={(event) => setMinutesTyped(event.target.value)}
+                      onBlur={() => setMinutesTyped((typed) => typed && withLatinDigits(typed))}
+                      className="max-w-40 rounded-e-none tabular-nums rtl:text-end"
+                    />
+                    <span
+                      aria-hidden
+                      className="flex h-11 shrink-0 items-center rounded-e-lg border border-s-0 border-input bg-muted px-3 text-sm font-medium text-muted-foreground"
+                    >
+                      {t('catalog.products.ownerTime.minutes')}
+                    </span>
+                  </div>
+                )}
+              />
             ) : null}
             {access.multiLocation ? (
               <WhereSold

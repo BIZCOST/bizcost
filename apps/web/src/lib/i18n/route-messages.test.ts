@@ -15,6 +15,7 @@ import {
   CATALOG_MESSAGES,
   DASHBOARD_MESSAGES,
   EXPENSES_MESSAGES,
+  PRODUCT_COSTS_MESSAGES,
   PURCHASES_MESSAGES,
   ROOT_MESSAGES,
   RUNNING_COSTS_MESSAGES,
@@ -179,6 +180,21 @@ describe("each route's messages have the keys its code translates", () => {
     ).toEqual({})
   })
 
+  it('Product costs: the list, the breakdown, and the product form and recipe they open', () => {
+    expect(
+      missing(
+        [
+          'features/costing',
+          'features/catalog',
+          'features/purchasing/amounts.tsx',
+          'features/purchasing/panel.tsx',
+          'components/ui',
+        ],
+        PRODUCT_COSTS_MESSAGES,
+      ),
+    ).toEqual({})
+  })
+
   it('settings: the home and every section', () => {
     const settings = 'features/settings'
     const sections = {
@@ -189,6 +205,7 @@ describe("each route's messages have the keys its code translates", () => {
       modules: ['customize-settings.tsx', '../setup/review-parts.tsx'],
       books: ['books-settings.tsx'],
       approval: ['approval-settings.tsx'],
+      costing: ['costing-settings.tsx', 'costing-draft.ts', '../costing/words.tsx'],
       language: ['language-settings.tsx'],
     } as const
     expect(
@@ -224,6 +241,7 @@ describe("each route's messages have the keys its code translates", () => {
       PURCHASES_MESSAGES,
       EXPENSES_MESSAGES,
       RUNNING_COSTS_MESSAGES,
+      PRODUCT_COSTS_MESSAGES,
       SETTINGS_MESSAGES,
       ...Object.values(SETTINGS_SECTION_MESSAGES),
     ].flat()

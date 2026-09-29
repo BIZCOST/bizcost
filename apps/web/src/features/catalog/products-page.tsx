@@ -13,17 +13,21 @@ import {
 } from '@tanstack/react-query'
 import {
   BriefcaseIcon,
+  CalculatorIcon,
   ChevronRightIcon,
   CookingPotIcon,
   ListChecksIcon,
   PackageCheckIcon,
   TagIcon,
 } from 'lucide-react'
+import Link from 'next/link'
+import { useParams } from 'next/navigation'
 import { Fragment, useState, type ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
 import { isolate } from '@/components/form/use-message'
 import { ModuleGate } from '@/components/shell/module-gate'
+import { moduleAccess } from '@/components/shell/nav'
 import { PageContainer } from '@/components/shell/page-container'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -56,6 +60,9 @@ import { NBSP } from './units'
 // with materials.items.view, and Materials on) also see its material cost on its row and open its recipe ("Materials used";
 // "Recipe" for food) from there: under the price, or columns of the row from 1280 px. An item
 // bought ready to sell is tagged so, costs what it is bought for, and has no recipe.
+//
+// M2 Step 6: a way to Product costs (what each one really costs and earns), for members who may
+// open it.
 
 const VAT_SHORT = {
   zero_rated: 'catalog.products.vat.zeroShort',
@@ -137,6 +144,7 @@ function ProductsList() {
   const trpc = useTRPC()
   const queryClient = useQueryClient()
   const { data: context } = useBusinessContext()
+  const { businessId } = useParams<{ businessId: string }>()
   const { search, status, set } = useListParams()
   const list = useInfiniteQuery(
     trpc.product.list.infiniteQueryOptions(
@@ -208,6 +216,16 @@ function ProductsList() {
   }
 
   const title = term('common.nav.products', profile)
+  // What each one really costs and earns (Product costs, M2 Step 6), for members who may open it.
+  const seeCosts =
+    moduleAccess(context.modules, 'cost_engine', 'product_costs') === 'open' ? (
+      <Button asChild variant="outline" size="lg">
+        <Link href={`/b/${businessId}/product-costs`}>
+          <CalculatorIcon aria-hidden />
+          {t('catalog.products.seeCosts')}
+        </Link>
+      </Button>
+    ) : null
   return (
     <PageContainer>
       <ListHeader
@@ -215,6 +233,7 @@ function ProductsList() {
         intro={t('catalog.products.intro')}
         addLabel={canManage && !firstTime ? term('catalog.products.add', profile) : null}
         onAdd={add}
+        more={firstTime ? null : seeCosts}
       />
       {firstTime ? null : <ListToolbar search={search} status={status} onChange={set} />}
       <ListBody

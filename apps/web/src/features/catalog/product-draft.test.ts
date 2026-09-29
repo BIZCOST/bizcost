@@ -1,6 +1,6 @@
 import type { ProductDto } from '@bizcost/contracts'
 import { describe, expect, it } from 'vitest'
-import { checkProduct, productDraft } from './product-draft'
+import { checkProduct, productDraft, readOwnerMinutes } from './product-draft'
 
 // The product form's checks, and the fields a business doesn't use: kept as stored, never cleared.
 
@@ -73,6 +73,27 @@ describe('checkProduct', () => {
     expect(checkProduct(draft, SOLO).fields).toMatchObject({
       vatCategory: 'zero_rated',
       priceIncludesVat: true,
+    })
+  })
+})
+
+describe('readOwnerMinutes (a business without a team, D-119)', () => {
+  it('reads minutes in either language; empty clears them', () => {
+    expect(readOwnerMinutes('10')).toEqual({ ok: true, value: '10' })
+    expect(readOwnerMinutes('٧٫٥')).toEqual({ ok: true, value: '7.5' })
+    expect(readOwnerMinutes('  ')).toEqual({ ok: true, value: null })
+  })
+
+  it('refuses nothing, less than nothing and more decimals than the column keeps', () => {
+    expect(readOwnerMinutes('0')).toEqual({ ok: false, error: { key: 'catalog.numbers.positive' } })
+    expect(readOwnerMinutes('-3')).toMatchObject({ ok: false })
+    expect(readOwnerMinutes('1.1234567')).toEqual({
+      ok: false,
+      error: { key: 'catalog.numbers.tooManyDecimals' },
+    })
+    expect(readOwnerMinutes('ten')).toEqual({
+      ok: false,
+      error: { key: 'catalog.numbers.invalid' },
     })
   })
 })

@@ -902,6 +902,30 @@ const PROBES: Record<string, Probe> = {
       { input: { ids: [attacker.product.id, victim.resaleProduct.id] }, own: ['not_found'] },
     ],
   },
+  // Product costs (M2 Step 6): the product is looked up in the x-business-id business; everything
+  // else (recipes, the ledger, running costs, the settings) is read or written in that business.
+  'productCost.list': {
+    base: 'business',
+    reason: `${NO_ROWS}; the cursor only positions a page of that business's products`,
+    variants: () => [
+      { input: { search: 'latte', status: 'all' } },
+      { input: { sort: 'cost', order: 'desc', filter: 'incomplete' } },
+    ],
+  },
+  'productCost.get': {
+    base: 'business',
+    reason: 'the product is looked up in the x-business-id business',
+    variants: (victim) => [
+      { input: { productId: victim.product.id }, own: ['not_found'] },
+      { input: { productId: victim.resaleProduct.id }, own: ['not_found'] },
+    ],
+  },
+  'productCost.settings': { base: 'business', reason: NO_ROWS },
+  'productCost.updateSettings': {
+    base: 'business',
+    reason: NO_ROWS,
+    variants: () => [{ input: { estimatedMonthlyPurchases: '12345' } }],
+  },
   // Expenses, their categories and payments, and running costs (M2 Step 5): every reference is
   // looked up in the x-business-id business, ids used anywhere are CONFLICT, and composite foreign
   // keys keep a category, supplier, location and member inside their business.

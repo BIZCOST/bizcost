@@ -333,6 +333,34 @@ const RUNNING_COSTS = {
   requiresCapabilities: [],
 } as const satisfies ModuleManifest
 
+// Cost Engine (M2 Step 6; planned until Step 7): "Product costs", each product's cost for one unit
+// sold, line by line (its materials at their averages, D-115; the running-cost share of its material
+// cost, D-116; the owner's time without a team, D-119) and its margin on the price before VAT, worked
+// out on read; and how it is worked out (the owner's estimate of monthly purchases and hourly rate).
+// Costs are `cost`, margins `profit_margin`, the monthly purchases `supplier_price`. Its breakdown
+// shows recipes, so seeing it needs seeing what goes into each product (PERMISSION_NEEDS).
+const COST_ENGINE = {
+  id: 'cost_engine',
+  kind: 'core',
+  availability: 'planned',
+  phase: 2,
+  deps: ['products'],
+  permissionKeys: ['cost_engine.product_costs.view', 'cost_engine.settings.manage'],
+  nav: [
+    {
+      id: 'product_costs',
+      labelKey: 'nav.product_costs',
+      path: 'product-costs',
+      icon: 'calculator',
+      group: 'main',
+      permission: 'cost_engine.product_costs.view',
+    },
+  ],
+  quickActions: [],
+  sensitiveFields: ['cost', 'profit_margin', 'supplier_price'],
+  requiresCapabilities: [],
+} as const satisfies ModuleManifest
+
 interface PlannedManifest extends ModuleManifest {
   readonly availability: 'planned'
   readonly permissionKeys: readonly []
@@ -375,7 +403,7 @@ export const MODULES = [
   EXPENSES,
   RUNNING_COSTS,
   planned('files', 'core', 2),
-  planned('cost_engine', 'core', 2),
+  COST_ENGINE,
   planned('customers', 'core', 3),
   planned('sales', 'core', 3),
   planned('payments', 'core', 3),

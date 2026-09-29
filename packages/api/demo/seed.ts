@@ -9,6 +9,7 @@ import type {
 import { newId } from '@bizcost/domain'
 import { NO_ADJUSTMENTS, QUESTION_SET_VERSION } from '@bizcost/modules'
 import { DemoApi } from './client'
+import { seedCosting, type CostingResult, type CostingSummary } from './costing'
 import {
   DEMO_PASSWORD,
   DEMO_PERSONAS,
@@ -20,7 +21,9 @@ import {
 // `pnpm demo:seed`: the local demo businesses of demo/personas.ts, on the current local database
 // (no reset). Idempotent: what exists is kept, what is missing is added, and every demo account's
 // password is set back to the demo password. Each business is created by Smart Setup's real confirm
-// step (business.createFromSetup), and members join through real invitations.
+// step (business.createFromSetup), and members join through real invitations. Then each business gets
+// its Costing Core data (demo/costing.ts): suppliers, materials, products, recipes, posted purchases,
+// returns, payments, running costs and expenses, through the same API.
 
 interface Row {
   business: string
@@ -161,7 +164,30 @@ async function ensureTeam(api: DemoApi, persona: DemoPersona, token: string, bus
   return rows
 }
 
-async function seedPersona(api: DemoApi, persona: DemoPersona): Promise<Row[]> {
+/** Its suppliers, materials, products, purchases, running costs, expenses… (M2). */
+function ensureCosting(api: DemoApi, persona: DemoPersona, token: string, businessId: string) {
+  if (!persona.costing) return undefined
+  return seedCosting(
+    {
+      api,
+      token,
+      businessId,
+      label: persona.legalNameAr,
+      locale: persona.owner.locale,
+      tokenOf: async (email) => {
+        const member = persona.team?.find((m) => m.email === email && m.joined)
+        if (!member) throw new Error(`${email} is not a member who joined`)
+        return (await signedIn(api, member)).token
+      },
+    },
+    persona.costing,
+  )
+}
+
+async function seedPersona(
+  api: DemoApi,
+  persona: DemoPersona,
+): Promise<{ rows: Row[]; costing?: CostingResult }> {
   const { user, token, me } = await signedIn(api, persona.owner)
   const { businessId, created } = await ensureBusiness(api, persona, token, me)
   await ensureProfile(api, persona, token, businessId)
@@ -172,32 +198,64 @@ async function seedPersona(api: DemoApi, persona: DemoPersona): Promise<Row[]> {
     role: `owner · ${persona.title}`,
     state: created ? 'created' : 'exists',
   }
-  return [owner, ...(await ensureTeam(api, persona, token, businessId))]
+  const rows = [owner, ...(await ensureTeam(api, persona, token, businessId))]
+  return { rows, costing: await ensureCosting(api, persona, token, businessId) }
 }
 
-function printTable(rows: Row[]): void {
-  const columns: (keyof Row)[] = ['email', 'role', 'state', 'business']
-  const width = (key: keyof Row) => Math.max(key.length, ...rows.map((r) => r[key].length))
-  const line = (r: Record<keyof Row, string>) =>
-    columns
-      .map((key) => r[key].padEnd(width(key)))
+function printTable<K extends string>(columns: readonly [K, string][], rows: Record<K, string>[]) {
+  const width = ([key, title]: [K, string]) =>
+    Math.max(title.length, ...rows.map((r) => r[key].length))
+  const line = (cells: string[]) =>
+    cells
+      .map((cell, i) => cell.padEnd(width(columns[i]!)))
       .join('  ')
       .trimEnd()
-  console.log(line({ business: 'business', email: 'email', role: 'role', state: 'state' }))
-  console.log(columns.map((key) => '-'.repeat(width(key))).join('  '))
-  for (const row of rows) console.log(line(row))
+  console.log(line(columns.map(([, title]) => title)))
+  console.log(columns.map((column) => '-'.repeat(width(column))).join('  '))
+  for (const row of rows) console.log(line(columns.map(([key]) => row[key])))
 }
+
+const ACCOUNT_COLUMNS: [keyof Row, string][] = [
+  ['email', 'email'],
+  ['role', 'role'],
+  ['state', 'state'],
+  ['business', 'business'],
+]
+
+const COSTING_COLUMNS: [keyof CostingSummary, string][] = [
+  ['business', 'business'],
+  ['materials', 'materials'],
+  ['products', 'products'],
+  ['purchases', 'posted purchases'],
+  ['runningCosts', 'running costs'],
+  ['expenses', 'final expenses'],
+]
 
 async function main() {
   const api = await DemoApi.open()
   try {
     const rows: Row[] = []
+    const costing: CostingResult[] = []
     for (const persona of DEMO_PERSONAS) {
       process.stdout.write(`… ${persona.title}\n`)
-      rows.push(...(await seedPersona(api, persona)))
+      const seeded = await seedPersona(api, persona)
+      rows.push(...seeded.rows)
+      if (seeded.costing) costing.push(seeded.costing)
     }
     console.log('')
-    printTable(rows)
+    printTable(ACCOUNT_COLUMNS, rows)
+    console.log('')
+    printTable(
+      COSTING_COLUMNS,
+      costing.map((c) => c.summary),
+    )
+    const notes = costing.flatMap((c) => c.notes)
+    const warnings = costing.flatMap((c) => c.warnings)
+    if (notes.length > 0) console.log(['', ...notes.map((n) => `· ${n}`)].join('\n'))
+    if (warnings.length > 0) {
+      console.log(['', 'Not written:', ...warnings.map((w) => `✗ ${w}`)].join('\n'))
+      process.exitCode = 1
+    }
     console.log('')
     console.log(`Password of every demo account: ${DEMO_PASSWORD}`)
     console.log('Sign in at http://localhost:3000/login (your dev server).')

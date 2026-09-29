@@ -164,6 +164,31 @@ export function averageBasisOf(r: CostRecord): AverageBasis | null {
   return null
 }
 
+/**
+ * The material's last purchase still standing and what one of the unit the material is counted in
+ * cost on it (after discounts, with delivery, VAT when in cost): shown beside the average (D-115).
+ * Null when it was never bought.
+ */
+export function lastPurchaseOf(
+  r: CostRecord,
+): { purchaseId: string; businessDate: string; pricePerUnit: string } | null {
+  if (
+    r.last_purchase_id === null ||
+    r.last_date === null ||
+    r.last_net_qty === null ||
+    r.last_net_value === null
+  ) {
+    return null
+  }
+  const pricePerUnit = costRatio(
+    [r.last_net_value, STANDARD_UNITS[r.unit].factor],
+    [r.last_net_qty],
+  )
+  return pricePerUnit === null
+    ? null
+    : { purchaseId: r.last_purchase_id, businessDate: r.last_date, pricePerUnit }
+}
+
 /** The days the 90-day average covers: from, and to (today in the business's time zone). */
 export async function averageWindowOf(
   tx: Tx,

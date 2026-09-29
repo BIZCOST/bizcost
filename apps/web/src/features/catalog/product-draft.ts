@@ -13,7 +13,7 @@ import {
   type MaterialCheckOptions,
   type MaterialDraft,
 } from './material-draft'
-import { readPrice, type FieldError } from './numbers'
+import { readPrice, readQuantity, type FieldError } from './numbers'
 
 // The product and service form (M2 Step 2; D-121, D-123): what the person typed, checked, and
 // turned into product.create / product.update's fields. Fields a business doesn't use are hidden and
@@ -130,6 +130,19 @@ export function checkProduct(
       locationIds,
     },
   }
+}
+
+/**
+ * The owner's minutes for one unit (M2 Step 6, D-119), as typed: empty for none (null, which clears
+ * them), else more than zero with at most 6 decimals (numeric(24,6)), in either language's digits.
+ * Only for a business without a team whose member sees costs; the form sends them only once changed,
+ * so minutes it never showed are never cleared.
+ */
+export function readOwnerMinutes(
+  input: string,
+): { ok: true; value: string | null } | { ok: false; error: FieldError } {
+  if (input.trim() === '') return { ok: true, value: null }
+  return readQuantity(input)
 }
 
 /**

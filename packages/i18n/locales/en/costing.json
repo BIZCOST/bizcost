@@ -1,0 +1,184 @@
+{
+  "intro": "What each thing you sell really costs you, and what you keep from its price.",
+  "hidden": "Your role doesn't show costs or margins. You can see names and prices.",
+  "how": {
+    "title": "How your costs are worked out",
+    "materials": "Materials: the average of what you paid for them from {{from}} to {{to}}, or your last purchase.",
+    "change": "Change",
+    "setEstimate": "Set your monthly purchases",
+    "setRate": "Set your hourly rate",
+    "addRunningCosts": "Add your running costs",
+    "askOwner": "Ask the owner to set it in Settings.",
+    "more": "How?",
+    "less": "Show less",
+    "noTime_one": "{{count}} product has none of your time yet: add the minutes it takes you on the product.",
+    "noTime_other": "{{count}} products have none of your time yet: add the minutes each takes you on the product."
+  },
+  "rate": {
+    "rule": "Every {{one}} you spend on materials adds {{rate}} of running costs ({{percent}} of the materials).",
+    "short": "Running costs add {{percent}} to the cost of materials.",
+    "why": {
+      "estimate": "Why: your running costs are {{running}} a month and you buy about {{purchases}} of materials a month.",
+      "last_3_months": "Why: your running costs are {{running}} a month and you bought {{purchases}} of materials a month on average from {{from}} to {{to}}."
+    },
+    "tooLarge": "Your running costs are {{running}} a month and you buy about {{purchases}} of materials a month: too little to share them across.",
+    "tooLarge_hidden": "Your running costs are too large for what you buy in materials to share them across.",
+    "not_set": "Your running costs ({{running}} a month) aren't in your product costs yet: BizCost needs to know about how much you buy in materials a month.",
+    "not_set_hidden": "Your running costs aren't in your product costs yet: BizCost needs to know about how much you buy in materials a month.",
+    "not_entered": "You haven't entered your running costs yet (rent, electricity…), so your product costs don't include them.",
+    "none": "You have no running costs right now, so none are added to what you sell.",
+    "noMaterials": "Your running costs ({{running}} a month) aren't in your service costs yet: BizCost shares them by the materials each product uses, and your services use none. Sharing them by working time comes later.",
+    "noMaterials_hidden": "Your running costs aren't in your service costs yet: BizCost shares them by the materials each product uses, and your services use none. Sharing them by working time comes later.",
+    "estimateUntil": "BizCost uses your estimate until you have 3 full months of purchases: from {{date}}, it can use what you really bought.",
+    "estimateUntilUnknown": "BizCost uses your estimate until you have 3 full months of purchases, then what you really bought.",
+    "estimateMonthsMissing": "Some months from {{from}} to {{to}} have no purchases recorded, so BizCost uses your estimate. Once each of the last 3 full months has purchases, it uses what you really bought.",
+    "estimateNothingBought": "What you bought from {{from}} to {{to}} comes to nothing after returns, so BizCost uses your estimate.",
+    "fromPurchases": "You have 3 full months of purchases, so BizCost uses what you really bought."
+  },
+  "time": {
+    "rate": "Your time: {{amount}} an hour.",
+    "rateNotSet": "Your time: your hourly rate isn't set yet."
+  },
+  "list": {
+    "sort": {
+      "label": "Sort by",
+      "name_asc": "Name, A to Z",
+      "name_desc": "Name, Z to A",
+      "price_desc": "Highest price first",
+      "price_asc": "Lowest price first",
+      "cost_desc": "Highest cost first",
+      "cost_asc": "Lowest cost first",
+      "margin_percent_asc": "Lowest margin % first",
+      "margin_percent_desc": "Highest margin % first",
+      "margin_asc": "Smallest margin first",
+      "margin_desc": "Biggest margin first"
+    },
+    "show": {
+      "label": "Show",
+      "active": "In use",
+      "incomplete": "Incomplete",
+      "incompleteCount": "Incomplete ({{count}})",
+      "loss": "Sold at a loss",
+      "lossCount": "Sold at a loss ({{count}})",
+      "archived": "Archived",
+      "all": "All"
+    },
+    "attention": "Needs a look:",
+    "columns": {
+      "name": "Name",
+      "price": "Price",
+      "cost": "Cost per unit",
+      "margin": "Margin",
+      "marginPercent": "Margin %"
+    },
+    "row": {
+      "price": "Price",
+      "cost": "Cost",
+      "margin": "Margin",
+      "beforeVat": "{{amount}} before VAT",
+      "notCounted": "Not worked out yet",
+      "tooLarge": "Too large to count",
+      "none": "None",
+      "atMost": "at most",
+      "timeMissing": "Your time not added"
+    },
+    "empty": {
+      "title": "Nothing to work out yet",
+      "body": "Add what you sell, and what each one costs you shows here."
+    },
+    "noMatches": {
+      "incomplete": "Every cost here is complete.",
+      "loss": "Nothing here is sold at a loss.",
+      "hint": "Try another choice or search."
+    }
+  },
+  "reasons": {
+    "short": {
+      "no_recipe_service": "No materials added (if it uses any)",
+      "unpriced_materials": "Some materials have no price yet",
+      "unpriced_materials_food": "Some ingredients have no price yet",
+      "unpriced_materials_retail": "Some items have no price yet",
+      "running_costs_not_entered": "Running costs not entered yet",
+      "running_costs_not_set": "Running costs not added yet",
+      "running_costs_need_materials": "No share of running costs yet: it uses no materials",
+      "hourly_rate_not_set": "Your hourly rate isn't set",
+      "nothing_counted": "Nothing counted yet"
+    },
+    "long": {
+      "no_recipe": "Add what it uses, so the materials count.",
+      "no_recipe_food": "Write its recipe, so its ingredients count.",
+      "no_recipe_retail": "Add the items it uses, so they count.",
+      "no_recipe_service": "If it uses materials, add them, so they count.",
+      "unpriced_materials": "Some of what it uses was never bought, so it has no price yet. It counts once you buy it.",
+      "unpriced_named": "Never bought, so no price yet: {{names}}. It counts once you buy it.",
+      "running_costs_not_entered": "Enter your running costs (rent, electricity…), so a share of them is added to it.",
+      "running_costs_not_set": "Your running costs aren't in it yet: tell BizCost about how much you buy in materials a month.",
+      "running_costs_need_materials": "BizCost shares your running costs by the materials each product uses. This one uses none, so it carries no running costs for now. Sharing them by working time comes later.",
+      "hourly_rate_not_set": "It has your minutes, but your hourly rate isn't set yet.",
+      "nothing_counted": "Nothing of its cost is known yet."
+    }
+  },
+  "detail": {
+    "intro": "What it really costs you {{per}}, part by part.",
+    "pageTitle": "Product cost",
+    "cost": "Cost {{per}}",
+    "margin": "Margin {{per}}",
+    "loss": "Loss {{per}}",
+    "ofPrice": "{{percent}} of the price before VAT",
+    "ofPriceNoVat": "{{percent}} of the price",
+    "atMost": "At most {{percent}} of the price before VAT",
+    "atMostNoVat": "At most {{percent}} of the price",
+    "marginAtMost": "The real margin is lower until what's missing is added.",
+    "atPrice": "At your price of {{price}}.",
+    "atPriceBeforeVat": "At your price of {{price}}, which is {{beforeVat}} before VAT.",
+    "noPrice": "It has no price yet, so there's no margin. Set its usual price on the product.",
+    "incomplete": "This cost is incomplete: see what's missing.",
+    "incompleteShort": "incomplete",
+    "lines": {
+      "title": "What its cost is made of",
+      "materials": "Materials",
+      "materials_food": "Ingredients & supplies",
+      "materials_retail": "Items",
+      "resale": "What you buy it for",
+      "resaleHint": "The average of what you paid for it.",
+      "whole": "All the materials cost {{total}} and make {{qty}}.",
+      "whole_food": "The whole recipe costs {{total}} and makes {{qty}}.",
+      "whole_retail": "All the items cost {{total}} and make {{qty}}.",
+      "withoutUnpriced": "Without what has no price yet.",
+      "noMaterials": "It uses no materials.",
+      "running": "Running costs",
+      "runningShare": "Its materials cost {{materials}}, so {{share}} of running costs is added to it.",
+      "runningWaiting": "Worked out once its materials have a price.",
+      "runningNoRecipe": "Worked out once what it uses is in.",
+      "runningNoRecipe_food": "Worked out once its recipe is in.",
+      "runningNoRecipe_retail": "Worked out once its items are in.",
+      "time": "Your time",
+      "timeApplied": "{{minutes}} at {{rate}} an hour.",
+      "timeNone": "No time added for it. Add the minutes it takes you on the product.",
+      "timeRateNotSet": "{{minutes}}, but your hourly rate isn't set yet.",
+      "notCounted": "Not counted yet",
+      "noPrice": "No price yet",
+      "total": "Cost {{per}}",
+      "price": "Price",
+      "priceBeforeVat": "Price before VAT",
+      "margin": "Margin"
+    },
+    "missing": {
+      "title": "What's missing"
+    },
+    "materials": {
+      "qty": "How much",
+      "average": "Average cost",
+      "line": "Cost in this product",
+      "last": "Last purchase cost",
+      "neverBought": "Never bought",
+      "lastBasis": "last purchase",
+      "basis": "Average costs come from your purchases from {{from}} to {{to}}, or your last purchase for anything you didn't buy then. Shown rounded; BizCost keeps the exact amounts."
+    },
+    "editProduct": "Edit product",
+    "notFound": {
+      "title": "This product isn't here",
+      "body": "It may have been removed, or the link is wrong."
+    }
+  }
+}

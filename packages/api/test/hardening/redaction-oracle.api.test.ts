@@ -6,6 +6,8 @@ import {
   type CostCategoryDto,
   type ExpenseDto,
   type MaterialDto,
+  type ProductCostBreakdownDto,
+  type ProductCostSettingsDto,
   type ProductDto,
   type PurchaseDto,
   type PurchaseReturnDto,
@@ -133,6 +135,38 @@ let spent: ExpenseDto
 let owedExpense: ExpenseDto
 let running: RunningCostDto
 const ownExpenses = new Map<RoleTemplateKey, string>()
+let costed: ProductDto
+
+// Product costs (M2 Step 6): a product of 18 g of the beans (1.02834 of materials) sold at 99.99,
+// with the owner's estimate of 48 271.37 of purchases a month (`supplier_price`). Its running-cost
+// share, total and margin move as the running-cost cases below add running costs, so the values
+// are what the owner reads just before each call.
+const PRODUCT_PRICE = '99.99'
+const ESTIMATE = '48271.37'
+const costedValues = {
+  cost: [] as string[],
+  profit_margin: [] as string[],
+  supplier_price: [ESTIMATE],
+}
+const settingsValues = { cost: [] as string[], supplier_price: [ESTIMATE] }
+
+/** Reads the costed product's numbers as the owner (costedValues); its search input for the list. */
+async function readCosted() {
+  const { data } = await asOwner<ProductCostBreakdownDto>('productCost.get', 'query', {
+    productId: costed.id,
+  })
+  expect(data.cost.complete, JSON.stringify(data.cost)).toBe(true)
+  costedValues.cost = [data.cost.materials!, data.cost.total!, data.cost.runningCosts.share!]
+  costedValues.profit_margin = [data.margin.amount!, data.margin.percent!]
+  return { productId: costed.id, search: costed.name }
+}
+
+/** Reads the settings as the owner (settingsValues): the monthly running costs and the rate. */
+async function readSettings() {
+  const { data } = await asOwner<ProductCostSettingsDto>('productCost.settings', 'query')
+  expect(data.rate.state).toBe('ready')
+  settingsValues.cost = [data.rate.monthlyRunningCosts!, data.rate.rate!]
+}
 
 /** Calls a procedure as the owner (fixture set-up). */
 async function asOwner<T>(path: string, type: 'query' | 'mutation', input?: unknown): Promise<T> {
@@ -440,6 +474,32 @@ const PRODUCTION_ORACLE: Record<string, OracleEntry> = {
     prepare: () => Promise.resolve({ ids: [latte.id] }),
     valuesOf: { cost: [RECIPE_COST] },
   },
+  'productCost.list': {
+    permission: 'cost_engine.product_costs.view',
+    prepare: async () => ({ search: (await readCosted()).search }),
+    valuesOf: costedValues,
+  },
+  'productCost.get': {
+    permission: 'cost_engine.product_costs.view',
+    prepare: async () => ({ productId: (await readCosted()).productId }),
+    valuesOf: costedValues,
+  },
+  'productCost.settings': {
+    permission: 'cost_engine.settings.manage',
+    prepare: async () => {
+      await readSettings()
+      return undefined
+    },
+    valuesOf: settingsValues,
+  },
+  'productCost.updateSettings': {
+    permission: 'cost_engine.settings.manage',
+    prepare: async () => {
+      await readSettings()
+      return { estimatedMonthlyPurchases: ESTIMATE }
+    },
+    valuesOf: settingsValues,
+  },
   'payable.list': {
     permission: 'purchases.payments.view',
     input: { party: 'supplier' },
@@ -719,6 +779,19 @@ beforeAll(async () => {
   const recipe = await newRecipeInput()
   await asOwner('recipe.save', 'mutation', recipe)
   latte = await asOwner<ProductDto>('product.get', 'query', { id: recipe.productId })
+  costed = await asOwner<ProductDto>('product.create', 'mutation', {
+    id: newId(),
+    name: `Oracle costed ${newId().slice(-8)}`,
+    type: 'product',
+    unit: 'piece',
+    defaultPrice: PRODUCT_PRICE,
+  })
+  await asOwner('recipe.save', 'mutation', {
+    ...recipe,
+    productId: costed.id,
+    lines: [{ ...recipe.lines[0], id: newId() }],
+  })
+  await asOwner('productCost.updateSettings', 'mutation', { estimatedMonthlyPurchases: ESTIMATE })
   cream = await asOwner<MaterialDto>('material.create', 'mutation', {
     id: newId(),
     name: 'Oracle cream',

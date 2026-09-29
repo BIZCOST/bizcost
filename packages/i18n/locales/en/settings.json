@@ -240,8 +240,10 @@
     "expenses_approval_manage": "Choose whether expenses need approval",
     "running_costs_items_view": "See running costs",
     "running_costs_items_manage": "Change running costs",
+    "cost_engine_product_costs_view": "See product costs",
+    "cost_engine_settings_manage": "Change how product costs are worked out",
     "data_cost_view": "See costs",
-    "data_profit_margin_view": "See profit",
+    "data_profit_margin_view": "See profit and margins",
     "data_supplier_price_view": "See supplier prices",
     "data_payroll_view": "See payroll",
     "data_employee_pii_view": "See employees' personal details"
@@ -293,6 +295,8 @@
     "expenses_approval_manage": "Turn on or off the approval of expenses before they are final.",
     "running_costs_items_view": "What you pay regularly to run the business, like rent and salaries.",
     "running_costs_items_manage": "Add, change or remove running costs, and the categories they share with expenses.",
+    "cost_engine_product_costs_view": "What one of each product or service really costs, line by line, and what it earns.",
+    "cost_engine_settings_manage": "What you expect to buy a month, used to share running costs until 3 months of purchases count, and your hourly rate when you work alone.",
     "data_cost_view": "What products, materials and work really cost.",
     "data_cost_view_food": "What products, ingredients, supplies and work really cost.",
     "data_cost_view_factory": "What products, raw materials and work really cost.",
@@ -365,5 +369,28 @@
     "on": "Expenses now need approval.",
     "off": "Expenses no longer need approval.",
     "noTeam": "Approval is only for a business with a team."
+  },
+  "costing": {
+    "title": "How costs are worked out",
+    "description": "How BizCost works out the full cost of what you sell.",
+    "running": {
+      "title": "Running costs in your product costs",
+      "explain": "BizCost shares your running costs (rent, electricity, salaries…) across what you sell by the cost of the materials each product uses: a product whose materials cost more carries more.",
+      "estimate": "About how much do you buy in materials a month?",
+      "estimateHint": "Everything you buy to make or sell: ingredients, packaging, goods. A rough figure is fine.",
+      "off": "Running Costs is turned off, so no running costs are added to what you sell.",
+      "estimateHintVat": "Leave out the VAT you get back: count what you pay before VAT.",
+      "estimateUnused": "Your estimate ({{estimate}} a month) isn’t used now.",
+      "notEntered": "Enter your running costs first (rent, electricity…): BizCost then shares them across what you sell.",
+      "goToRunningCosts": "Go to Running Costs"
+    },
+    "time": {
+      "title": "Your time",
+      "explain": "You work alone, so your time is part of what each product costs you.",
+      "rate": "How much is an hour of your time worth?",
+      "rateHint": "Then add, on each product, how many minutes it takes you. BizCost adds those minutes at this rate."
+    },
+    "hidden": "Your role doesn't show costs, so you can't change these.",
+    "saved": "Saved."
   }
 }

@@ -178,6 +178,11 @@ export const productCostDto = z.object({
   /** For an item bought ready to sell: which average its cost is (null: never bought). */
   basis: averageBasisDto.nullable(),
   cost: materialsCostDto,
+  /**
+   * The owner's minutes for one unit (D-119; M2 Step 6), for the product form of a business without
+   * a team; null: none, or a business with a team (kept, not counted).
+   */
+  ownerMinutes: sensitive(zDecimal.nullable(), 'cost'),
 })
 export type ProductCostDto = z.infer<typeof productCostDto>
 

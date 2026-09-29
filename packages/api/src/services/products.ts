@@ -38,7 +38,7 @@ import {
 import type { z } from 'zod'
 import type { BusinessCtx } from '../business-context'
 import { AppError } from '../errors'
-import { assertModuleActive, assertPermission } from '../trpc'
+import { assertModuleActive, assertPermission, assertQueryable } from '../trpc'
 import {
   containsPattern,
   decodeCursor,
@@ -270,7 +270,21 @@ function columnsOf(fields: Fields) {
     defaultPrice: fields.defaultPrice,
     vatCategory: fields.vatCategory,
     priceIncludesVat: fields.priceIncludesVat,
+    // Written only when given (assertOwnerMinutes); left out, what is stored is kept.
+    ...(fields.ownerMinutes !== undefined ? { ownerMinutes: fields.ownerMinutes } : {}),
   }
+}
+
+/**
+ * The owner's minutes for one unit (M2 Step 6, D-119) are written only when given: they are `cost`
+ * (FORBIDDEN unless costs are visible, before anything is read) and count only without a team
+ * (CAPABILITY_DISABLED with one: they are kept as they are, and a form of a business with a team
+ * never shows them).
+ */
+function assertOwnerMinutes(ctx: BusinessCtx, fields: Fields): void {
+  if (fields.ownerMinutes === undefined) return
+  assertQueryable(ctx, [{ name: 'ownerMinutes', category: 'cost' }])
+  if (ctx.access.capabilities.has_team) throw new AppError('capability_disabled')
 }
 
 /** `product.list`: a page by name (case ignored). */
@@ -362,6 +376,7 @@ async function createResaleMaterial(
  */
 export async function createProduct(ctx: BusinessCtx, input: CreateInput): Promise<ProductDto> {
   const { id, resale, ...fields } = input
+  assertOwnerMinutes(ctx, fields)
   if (resale) {
     assertModuleActive(ctx, 'materials')
     assertPermission(ctx, 'materials.items.manage')
@@ -400,6 +415,7 @@ export async function createProduct(ctx: BusinessCtx, input: CreateInput): Promi
  */
 export async function updateProduct(ctx: BusinessCtx, input: UpdateInput): Promise<ProductDto> {
   const { id, version, ...fields } = input
+  assertOwnerMinutes(ctx, fields)
   return withUniqueName([NAME_KEY, MATERIAL_NAME_KEY], () =>
     ctx.tx(async (tx) => {
       // As read: the update below matches only this version, so this is what it changes.

@@ -46,6 +46,8 @@ beforeAll(async () => {
       { key: 'expenses.documents.post', effect: 'allow' },
       { key: 'data.cost.view', effect: 'allow' },
       { key: 'data.supplier_price.view', effect: 'allow' },
+      // Costs, supplier prices and margins are visible only together (D-187).
+      { key: 'data.profit_margin.view', effect: 'allow' },
     ],
   })
   manager = await api.member(shop, 'manager')
@@ -146,6 +148,8 @@ describe('the books-closed date for expenses (D-114 rule 6, D-166)', () => {
         { key: 'expenses.documents.manage', effect: 'allow' },
         { key: 'data.cost.view', effect: 'allow' },
         { key: 'data.supplier_price.view', effect: 'allow' },
+        // Costs, supplier prices and margins are visible only together (D-187).
+        { key: 'data.profit_margin.view', effect: 'allow' },
       ],
     })
     ok(await scope.run('expense.updateSettings', { approval: true }))

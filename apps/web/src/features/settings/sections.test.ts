@@ -105,6 +105,47 @@ describe('settings sections', () => {
     ])
   })
 
+  it('offers how costs are worked out with the Cost Engine on and its keys (M2 Step 6)', () => {
+    const costEngine = { modules: [{ id: 'products' }, { id: 'cost_engine' }] }
+    expect(isSectionVisible({ ...access('all'), ...costEngine }, 'costing')).toBe(true)
+    // A solo business too: its owner's hourly rate is set here (D-119).
+    expect(isSectionVisible({ ...access('all', SOLO), ...costEngine }, 'costing')).toBe(true)
+    expect(isSectionVisible(access('all'), 'costing')).toBe(false)
+    // Seeing product costs is not changing how they are worked out (an Accountant).
+    expect(
+      isSectionVisible(
+        { ...access(['cost_engine.product_costs.view', 'products.recipes.view']), ...costEngine },
+        'costing',
+      ),
+    ).toBe(false)
+    const manage = [
+      'cost_engine.product_costs.view',
+      'cost_engine.settings.manage',
+      'running_costs.items.view',
+      'purchases.documents.view',
+    ] as const
+    expect(isSectionVisible({ ...access([...manage]), ...costEngine }, 'costing')).toBe(true)
+    // The estimate and its rate reveal the monthly running costs and purchases (D-186): without
+    // those keys, not offered (the API refuses it too).
+    for (const missing of ['running_costs.items.view', 'purchases.documents.view'] as const) {
+      expect(
+        isSectionVisible(
+          { ...access(manage.filter((key) => key !== missing)), ...costEngine },
+          'costing',
+        ),
+        missing,
+      ).toBe(false)
+    }
+    expect(visibleSections({ ...access('all', SOLO), ...costEngine })).toEqual([
+      'business',
+      'modules',
+      'costing',
+      'language',
+    ])
+    const id = '0190a4f2-7b5c-7c3e-9b1a-2f3c4d5e6f70'
+    expect(sectionOfPath(`/b/${id}/settings/costing`)).toBe('costing')
+  })
+
   it('reads the section from a settings path', () => {
     const id = '0190a4f2-7b5c-7c3e-9b1a-2f3c4d5e6f70'
     expect(sectionOfPath(`/b/${id}/settings`)).toBeNull()

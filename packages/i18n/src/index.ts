@@ -8,6 +8,8 @@ export {
   formatDecimal,
   formatList,
   formatNumber,
+  formatPercent,
+  formatWholeCurrency,
   formatUnitCost,
 } from './format'
 export {

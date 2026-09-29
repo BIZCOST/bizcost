@@ -185,6 +185,12 @@ const priceInput = zDecimal.refine(
   { message: 'must be zero or more, with at most 4 decimals' },
 )
 
+/** Minutes: more than zero, numeric(24,6). */
+const minutesInput = zDecimal.refine(
+  (value) => checkDecimal(value, 'quantity') === null && compareDecimal(value, '0') > 0,
+  { message: 'more than zero, with at most 6 decimals' },
+)
+
 const productFields = {
   name: nameInput(CATALOG_NAME_MAX_LENGTH),
   /** Optional; several lines are fine. */
@@ -203,6 +209,13 @@ const productFields = {
   vatCategory: z.enum(VAT_CATEGORIES).default('standard'),
   /** Whether defaultPrice includes VAT (D-121). */
   priceIncludesVat: z.boolean().default(false),
+  /**
+   * The owner's minutes for one unit, for a business without a team (M2 Step 6, D-119): the cost of
+   * the owner's time. More than zero, at most 6 decimals; null clears it; left out, it is kept (a
+   * hidden field is never cleared). Sensitive (`cost`): saving it needs costs visible (FORBIDDEN),
+   * and a business with a team keeps it without counting it (CAPABILITY_DISABLED to change it).
+   */
+  ownerMinutes: minutesInput.nullable().optional(),
   /**
    * Where it is sold (capability multi_location; CAPABILITY_DISABLED otherwise): empty = every
    * location, including ones added later.

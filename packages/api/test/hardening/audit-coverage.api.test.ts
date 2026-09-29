@@ -879,6 +879,14 @@ const AUDIT: Record<string, AuditProbe> = {
       return asOwner('expensePayment.reverse', { id })
     },
   },
+  // Product costs (M2 Step 6): the settings are the business's row. The owner's time only without a
+  // team (the fixture has one), so the estimate is what changes here.
+  'productCost.updateSettings': {
+    run: () =>
+      asOwner('productCost.updateSettings', {
+        estimatedMonthlyPurchases: String((Date.now() % 100_000) + 1),
+      }),
+  },
   'runningCost.create': { run: () => asOwner('runningCost.create', runningCostInput()) },
   'runningCost.update': {
     run: async () => {

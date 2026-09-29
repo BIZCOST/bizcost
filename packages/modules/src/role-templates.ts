@@ -9,7 +9,8 @@ import { PERMISSION_CATALOG, type PermissionKey } from './permissions'
 // purchasing_security for the suppliers and purchases keys of M2 Step 3, recipes_security for the
 // recipe keys of M2 Step 4, purchasing_payments_security for the payment keys of 2026-09-29,
 // expenses_security for the expenses and running-costs keys of M2 Step 5, owners_answers_access for
-// the Employee keys of the owner's answers of 2026-09-29).
+// the Employee keys of the owner's answers of 2026-09-29, product_costs_access for the product-cost
+// keys of M2 Step 6).
 
 export const ROLE_TEMPLATE_KEYS = [
   OWNER_TEMPLATE_KEY,
@@ -65,6 +66,8 @@ export const ROLE_TEMPLATES: readonly RoleTemplate[] = [
       'expenses.payments.record',
       'running_costs.items.view',
       'running_costs.items.manage',
+      'cost_engine.product_costs.view',
+      'cost_engine.settings.manage',
       'data.cost.view',
       'data.profit_margin.view',
       'data.supplier_price.view',
@@ -83,6 +86,7 @@ export const ROLE_TEMPLATES: readonly RoleTemplate[] = [
       'purchases.documents.view',
       'expenses.documents.view',
       'running_costs.items.view',
+      'cost_engine.product_costs.view',
       'data.cost.view',
       'data.profit_margin.view',
       'data.supplier_price.view',

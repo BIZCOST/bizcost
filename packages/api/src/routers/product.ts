@@ -50,8 +50,8 @@ export const productRouter = router({
     .query(({ ctx, input }) => getProduct(ctx, input)),
   /**
    * `product.costs`: what the materials of one unit of each product cost today (its recipe, or its
-   * material's average when bought ready to sell), unrounded, and whether it is complete. `cost`
-   * (withMeta).
+   * material's average when bought ready to sell), unrounded, and whether it is complete; and the
+   * owner's minutes for one unit (a business without a team, D-119). `cost` (withMeta).
    */
   costs: viewProductCosts
     .input(productCostsInput)
@@ -62,7 +62,10 @@ export const productRouter = router({
     .input(createProductInput)
     .output(productDto)
     .mutation(({ ctx, input }) => createProduct(ctx, input)),
-  /** `product.update`: the whole record, `version` as read. */
+  /**
+   * `product.update`: the whole record, `version` as read. `ownerMinutes` (either procedure) is
+   * written only when given: costs visible (FORBIDDEN) and no team (CAPABILITY_DISABLED).
+   */
   update: manageProducts
     .input(updateProductInput)
     .output(productDto)

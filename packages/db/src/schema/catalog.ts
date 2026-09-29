@@ -146,6 +146,9 @@ export const productsServices = tenantTable(
     archivedAt: timestamptz('archived_at'),
     // Bought ready to sell: the material bought for it (D-117); NULL for anything made or done.
     resaleMaterialId: uuid('resale_material_id'),
+    // The owner's minutes for one unit, for a business without a team (M2 Step 6, D-119): its cost
+    // has a line for the owner's time. NULL: none. Kept, and hidden, when the business has a team.
+    ownerMinutes: numeric('owner_minutes', { precision: 24, scale: 6 }),
   },
   (t) => [
     tenantRef(
@@ -167,6 +170,7 @@ export const productsServices = tenantTable(
     check('products_services_type_check', sql`type in (${quoted(PRODUCT_TYPES)})`),
     check('products_services_unit_check', sql`unit in (${STANDARD_UNIT_LIST})`),
     check('products_services_default_price_check', sql`default_price >= 0`),
+    check('products_services_owner_minutes_check', sql`owner_minutes > 0`),
     check('products_services_vat_category_check', sql`vat_category in (${quoted(VAT_CATEGORIES)})`),
   ],
 )

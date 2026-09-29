@@ -40,6 +40,8 @@ beforeAll(async () => {
       { key: 'expenses.documents.post', effect: 'allow' },
       { key: 'data.cost.view', effect: 'allow' },
       { key: 'data.supplier_price.view', effect: 'allow' },
+      // Costs, supplier prices and margins are visible only together (D-187).
+      { key: 'data.profit_margin.view', effect: 'allow' },
     ],
   })
   manager = await api.member(shop, 'manager')

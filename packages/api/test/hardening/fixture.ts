@@ -58,7 +58,7 @@ import { CapturedEmails, join, setupBusiness, WORKSHOP } from '../settings'
 // and a purchase bought on credit with a payment recorded on it (the owner's requests of 2026-09-29).
 // M2 Step 5: expenses need approval in each business; each has a category of its own, an expense
 // bought on credit with a receipt and a payment, a draft expense, one sent for approval, and a
-// running cost.
+// running cost. M2 Step 6: the Cost Engine is previewed too (product costs and their settings).
 
 export type Handler = ReturnType<typeof handlerFor>
 
@@ -84,6 +84,7 @@ export const PREVIEW_MODULES = [
   'purchases',
   'expenses',
   'running_costs',
+  'cost_engine',
 ] as const
 
 /**
@@ -673,6 +674,7 @@ export function queryInputOf(path: string, tenant: Tenant): unknown {
   if (path === 'expense.getMine') return { id: tenant.expense.id }
   if (path === 'expensePayment.list') return { expenseId: tenant.expense.id }
   if (path === 'runningCost.get') return { id: tenant.runningCost.id }
+  if (path === 'productCost.get') return { productId: tenant.product.id }
   return undefined
 }
 

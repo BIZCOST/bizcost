@@ -44,9 +44,12 @@ describe('sensitivity categories', () => {
     expect(Object.keys(SENSITIVITY_REQUIRES).sort()).toEqual([...SENSITIVITY_CATEGORIES].sort())
   })
 
-  it('pairs costs and supplier prices (D-144)', () => {
+  it('groups costs, supplier prices and margins (D-144, D-187)', () => {
     expect(SENSITIVITY_REQUIRES.cost).toContain('supplier_price')
     expect(SENSITIVITY_REQUIRES.supplier_price).toContain('cost')
+    // Prices are not sensitive: price − cost would reveal a hidden margin.
+    expect(SENSITIVITY_REQUIRES.cost).toContain('profit_margin')
+    expect(SENSITIVITY_REQUIRES.profit_margin).toContain('cost')
   })
 
   it('isSensitivityCategory accepts only the categories', () => {
@@ -74,8 +77,12 @@ describe('visibleCategories', () => {
   it('shows each category whose key is granted', () => {
     expect(sorted(visibleCategories(withKeys('data.payroll.view')))).toEqual(['payroll'])
     expect(
-      sorted(visibleCategories(withKeys('data.supplier_price.view', 'data.cost.view'))),
-    ).toEqual(['cost', 'supplier_price'])
+      sorted(
+        visibleCategories(
+          withKeys('data.supplier_price.view', 'data.cost.view', 'data.profit_margin.view'),
+        ),
+      ),
+    ).toEqual(['cost', 'profit_margin', 'supplier_price'])
     expect(sorted(visibleCategories(withKeys('data.employee_pii.view')))).toEqual(['employee_pii'])
   })
 
@@ -89,6 +96,17 @@ describe('visibleCategories', () => {
       'payroll',
     ])
     expect(visibleCategories(withKeys('data.cost.view', 'data.profit_margin.view')).size).toBe(0)
+  })
+
+  it('hides costs and supplier prices when margins are hidden (price − cost reveals the margin, D-187)', () => {
+    expect(visibleCategories(withKeys('data.cost.view', 'data.supplier_price.view')).size).toBe(0)
+    const effective = resolveEffective({
+      roleTemplateKey: 'manager',
+      rolePermissionKeys: ['data.cost.view', 'data.profit_margin.view', 'data.supplier_price.view'],
+      overrides: [{ key: 'data.profit_margin.view', effect: 'deny' }],
+      catalog: SENSITIVITY_PERMISSION_KEYS,
+    })
+    expect(visibleCategories(effective).size).toBe(0)
   })
 
   it('a deny on data.supplier_price.view also hides costs and profit/margin', () => {
@@ -132,12 +150,14 @@ describe('visibleCategories', () => {
             SENSITIVITY_REQUIRES[c].every((r) => visible.has(r))
           expect(visible.has(c)).toBe(expected)
         }
-        if (visible.has('profit_margin')) expect(visible.has('cost')).toBe(true)
+        expect(visible.has('profit_margin')).toBe(visible.has('cost'))
         expect(visible.has('cost')).toBe(visible.has('supplier_price'))
-        // The largest such set: costs and supplier prices show whenever both keys are granted.
-        const both =
-          granted.includes('data.cost.view') && granted.includes('data.supplier_price.view')
-        expect(visible.has('cost')).toBe(both)
+        // The largest such set: costs, supplier prices and margins show whenever the 3 keys are.
+        const all =
+          granted.includes('data.cost.view') &&
+          granted.includes('data.supplier_price.view') &&
+          granted.includes('data.profit_margin.view')
+        expect(visible.has('cost')).toBe(all)
       }),
     )
   })

@@ -358,3 +358,49 @@ describe('businessSubpath', () => {
     expect(businessSubpath('/setup', ID)).toBeNull()
   })
 })
+
+describe('Product costs (the Cost Engine, M2 Step 6), in the dev-only preview', () => {
+  const registry = withPreviewModules(['products', 'materials', 'running_costs', 'cost_engine'])
+  const on = new Set(['products', 'materials', 'running_costs', 'cost_engine'])
+
+  it('shows after the costing sections with its own icon, active on a product breakdown', () => {
+    const items = shellNav(
+      buildModuleNav(on, owner, registry),
+      ID,
+      `${ROOT}/product-costs/0190a4f2-7b5c-7c3e-9b1a-2f3c4d5e6f71`,
+    )
+    expect(labels(items)).toEqual([
+      'dashboard',
+      'products',
+      'materials',
+      'running_costs',
+      'product_costs',
+      'settings',
+    ])
+    expect(active(items)).toBe('product_costs')
+    for (const item of items) expect(navIcon(item.icon)).not.toBe(FALLBACK_NAV_ICON)
+    expect(moduleAccess(buildModuleNav(on, owner, registry), 'cost_engine', 'product_costs')).toBe(
+      'open',
+    )
+  })
+
+  it('is open to the templates that see product costs; Sales, Supervisor and Employee get none', () => {
+    const access = (template: string) =>
+      moduleAccess(buildModuleNav(on, canFor(template), registry), 'cost_engine', 'product_costs')
+    expect(access('admin')).toBe('open')
+    expect(access('manager')).toBe('open')
+    expect(access('accountant')).toBe('open')
+    for (const template of ['sales', 'supervisor', 'employee']) {
+      expect(access(template), template).toBe('forbidden')
+    }
+    // Off for a business without it, and still planned in the released code.
+    expect(
+      moduleAccess(
+        buildModuleNav(new Set(['products']), owner, registry),
+        'cost_engine',
+        'product_costs',
+      ),
+    ).toBe('off')
+    expect(moduleAccess(buildModuleNav(on, owner), 'cost_engine', 'product_costs')).toBe('off')
+  })
+})

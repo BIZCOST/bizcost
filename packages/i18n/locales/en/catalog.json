@@ -216,7 +216,13 @@
       "readOnlySome_one": "Sold at {{count}} branch.",
       "readOnlySome_other": "Sold at {{count}} branches.",
       "readOnlyNote": "Only people who manage branches can change this."
-    }
+    },
+    "ownerTime": {
+      "label": "Your time {{per}}",
+      "minutes": "minutes",
+      "hint": "How many minutes each one takes you. BizCost adds them at your hourly rate, set in Settings → How costs are worked out."
+    },
+    "seeCosts": "See product costs"
   },
   "recipes": {
     "title": "Materials used",

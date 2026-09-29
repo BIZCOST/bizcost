@@ -82,6 +82,12 @@ export const RUNNING_COSTS_MESSAGES: readonly MessageSpec[] = [
   STARTER_CATEGORIES,
 ]
 
+/**
+ * Product costs (M2 Step 6; its layout): its own words, and the catalog's (the list frame, the
+ * product form and the recipe, which open from a product's cost) with the unit names.
+ */
+export const PRODUCT_COSTS_MESSAGES: readonly MessageSpec[] = ['costing', 'catalog', 'units']
+
 /** Settings of a business (layout): the section list, the settings home and every section's frame. */
 export const SETTINGS_MESSAGES: readonly MessageSpec[] = ['settings']
 
@@ -104,5 +110,13 @@ export const SETTINGS_SECTION_MESSAGES: Readonly<Record<SettingsSection, readonl
     books: [],
     // Whether expenses need approval: its own words (settings) only.
     approval: [],
+    // How product costs are worked out: how running costs reach products (costing), the money box's
+    // placeholder and "per hour".
+    costing: [
+      { namespace: 'costing', paths: ['rate', 'time'] },
+      { namespace: 'purchasing', paths: ['editor.amountPlaceholder'] },
+      { namespace: 'units', paths: ['per.h'] },
+      { namespace: 'catalog', paths: ['numbers'] },
+    ],
     language: [],
   }

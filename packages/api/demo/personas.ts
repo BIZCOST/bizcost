@@ -1,9 +1,20 @@
 import type { Locale } from '@bizcost/domain'
 import type { RoleTemplateKey, SetupAdjustments, SetupAnswers } from '@bizcost/modules'
+import {
+  BAKER_COSTING,
+  CAFE_COSTING,
+  DESIGNER_COSTING,
+  FACTORY_COSTING,
+  FITOUT_COSTING,
+  GROCERY_COSTING,
+  PRINT3D_COSTING,
+  WORKSHOP_COSTING,
+  type DemoCosting,
+} from './costing-data'
 
 // Local demo businesses: one per persona of docs/PRODUCT.md §6.11, with the persona's exact Smart
 // Setup answers (the server recomputes everything from them), an Arabic legal name, a TRN when
-// VAT-registered, and a team where the persona has one. Every account is local only and shares
+// VAT-registered, a team where the persona has one, and its Costing Core data (demo/costing-data.ts). Every account is local only and shares
 // DEMO_PASSWORD; demo:reset deletes exactly the accounts under DEMO_EMAIL_DOMAIN.
 
 export const DEMO_EMAIL_DOMAIN = 'demo.bizcost.local'
@@ -36,6 +47,8 @@ export interface DemoPersona {
   /** Locations beyond the default one (needs multi_location). */
   readonly branches?: readonly string[]
   readonly team?: readonly DemoTeamMember[]
+  /** Suppliers, materials, products, recipes, purchases, running costs, expenses… (M2). */
+  readonly costing?: DemoCosting
 }
 
 const email = (local: string) => `${local}@${DEMO_EMAIL_DOMAIN}`
@@ -43,6 +56,7 @@ const email = (local: string) => `${local}@${DEMO_EMAIL_DOMAIN}`
 export const DEMO_PERSONAS: readonly DemoPersona[] = [
   {
     title: 'Home baker, alone',
+    costing: BAKER_COSTING,
     owner: { email: email('baker'), name: 'سارة الحمادي', locale: 'ar' },
     legalName: "Sara's Home Sweets",
     legalNameAr: 'حلويات سارة المنزلية',
@@ -58,6 +72,7 @@ export const DEMO_PERSONAS: readonly DemoPersona[] = [
   },
   {
     title: 'Coffee shop, POS + staff (two branches)',
+    costing: CAFE_COSTING,
     owner: { email: email('cafe'), name: 'خالد المنصوري', locale: 'ar' },
     legalName: 'Bean Corner Cafe',
     legalNameAr: 'مقهى ركن البن',
@@ -102,6 +117,7 @@ export const DEMO_PERSONAS: readonly DemoPersona[] = [
   },
   {
     title: '3D printing maker (one helper)',
+    costing: PRINT3D_COSTING,
     owner: { email: email('print3d'), name: 'Mariam Al Suwaidi', locale: 'en' },
     legalName: 'Layer Lab 3D',
     legalNameAr: 'مختبر الطبقات للطباعة ثلاثية الأبعاد',
@@ -128,6 +144,7 @@ export const DEMO_PERSONAS: readonly DemoPersona[] = [
   },
   {
     title: 'Fit-out / decor project company',
+    costing: FITOUT_COSTING,
     owner: { email: email('fitout'), name: 'عبدالله الكعبي', locale: 'ar' },
     legalName: 'Modern Touch Interiors',
     legalNameAr: 'لمسة عصرية للديكور',
@@ -167,6 +184,7 @@ export const DEMO_PERSONAS: readonly DemoPersona[] = [
   },
   {
     title: 'Freelance designer (services only)',
+    costing: DESIGNER_COSTING,
     owner: { email: email('designer'), name: 'Noura Al Ali', locale: 'en' },
     legalName: 'Noura Design Studio',
     legalNameAr: 'استوديو نورة للتصميم',
@@ -182,6 +200,7 @@ export const DEMO_PERSONAS: readonly DemoPersona[] = [
   },
   {
     title: 'Retail shop with stock',
+    costing: GROCERY_COSTING,
     owner: { email: email('retail'), name: 'أحمد الشامسي', locale: 'ar' },
     legalName: 'Al Khair Grocery',
     legalNameAr: 'بقالة الخير',
@@ -216,6 +235,7 @@ export const DEMO_PERSONAS: readonly DemoPersona[] = [
   },
   {
     title: 'Small factory (cleaning products)',
+    costing: FACTORY_COSTING,
     owner: { email: email('factory'), name: 'سلطان المزروعي', locale: 'ar' },
     legalName: 'Al Naqaa Cleaning Products Factory',
     legalNameAr: 'مصنع النقاء لمواد التنظيف',
@@ -257,6 +277,7 @@ export const DEMO_PERSONAS: readonly DemoPersona[] = [
   },
   {
     title: 'Workshop with many jobs (carpentry)',
+    costing: WORKSHOP_COSTING,
     owner: { email: email('workshop'), name: 'حمد الظاهري', locale: 'ar' },
     legalName: 'Al Itqan Carpentry',
     legalNameAr: 'نجارة الإتقان',

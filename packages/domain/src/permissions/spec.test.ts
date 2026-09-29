@@ -459,9 +459,19 @@ describe('visibleCategories', () => {
 
   it('hides supplier_price when cost is hidden (the prices paid would reveal the average cost)', () => {
     expect(visibleFor(['data.supplier_price.view'])).toEqual([])
-    expect(visibleFor(['data.cost.view', 'data.supplier_price.view'])).toEqual(
-      sorted(['cost', 'supplier_price']),
-    )
+    expect(
+      visibleFor(['data.cost.view', 'data.supplier_price.view', 'data.profit_margin.view']),
+    ).toEqual(sorted(['cost', 'profit_margin', 'supplier_price']))
+  })
+
+  it('hides cost and supplier_price when profit_margin is hidden (price − cost reveals the margin, D-187)', () => {
+    expect(visibleFor(['data.cost.view', 'data.supplier_price.view'])).toEqual([])
+    expect(
+      visibleFor(
+        ['data.cost.view', 'data.profit_margin.view', 'data.supplier_price.view'],
+        [deny('data.profit_margin.view')],
+      ),
+    ).toEqual([])
   })
 
   it('hides cost when supplier_price is hidden (the average over time reveals each price, D-144)', () => {
@@ -525,7 +535,7 @@ describe('visibleCategories', () => {
     expect(visibleCategories(effective).size).toBe(0)
   })
 
-  it('property: follows data.<category>.view; cost and supplier_price together; profit_margin needs cost', () => {
+  it('property: follows data.<category>.view; cost, supplier_price and profit_margin only together', () => {
     fc.assert(
       fc.property(nonOwnerInputArb, (input) => {
         const effective = resolveEffective(input)
@@ -534,7 +544,9 @@ describe('visibleCategories', () => {
         for (const category of SENSITIVITY_CATEGORIES) {
           const granted = can(effective, `data.${category}.view`)
           const costs =
-            can(effective, 'data.cost.view') && can(effective, 'data.supplier_price.view')
+            can(effective, 'data.cost.view') &&
+            can(effective, 'data.supplier_price.view') &&
+            can(effective, 'data.profit_margin.view')
           const grouped =
             category === 'cost' || category === 'profit_margin' || category === 'supplier_price'
           const expected = grouped ? granted && costs : granted
@@ -543,6 +555,7 @@ describe('visibleCategories', () => {
         if (visible.has('profit_margin')) expect(visible.has('cost')).toBe(true)
         if (visible.has('supplier_price')) expect(visible.has('cost')).toBe(true)
         if (visible.has('cost')) expect(visible.has('supplier_price')).toBe(true)
+        if (visible.has('cost')) expect(visible.has('profit_margin')).toBe(true)
       }),
     )
   })

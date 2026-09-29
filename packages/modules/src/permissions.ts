@@ -21,8 +21,9 @@ export function isCatalogPermissionKey(value: unknown): value is PermissionKey {
 /**
  * Permissions that make sense only with others: changing something needs seeing it, and seeing what
  * goes into each product needs seeing the materials it names (a recipe shows their averages with its
- * costs, D-155). A role that grants a key here must also grant every key it needs, and the keys those
- * need (role.updatePermissions refuses anything else; the Roles editor switches them together).
+ * costs, D-155), and seeing product costs needs seeing what goes into them (their breakdown shows
+ * it). A role that grants a key here must also grant every key it needs, and the keys those need
+ * (role.updatePermissions refuses anything else; the Roles editor switches them together).
  */
 export const PERMISSION_NEEDS: Readonly<Partial<Record<PermissionKey, readonly PermissionKey[]>>> =
   {
@@ -47,6 +48,9 @@ export const PERMISSION_NEEDS: Readonly<Partial<Record<PermissionKey, readonly P
     'expenses.payments.record': ['expenses.payments.view'],
     'expenses.approval.manage': ['expenses.documents.view'],
     'running_costs.items.manage': ['running_costs.items.view'],
+    // Product costs (M2 Step 6): each product's breakdown names what goes into it (its recipe).
+    'cost_engine.product_costs.view': ['products.recipes.view'],
+    'cost_engine.settings.manage': ['cost_engine.product_costs.view'],
   }
 
 /** The keys of `keys` granted without a key they need (empty when the set is coherent). */

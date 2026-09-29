@@ -153,15 +153,20 @@ export function ListHeader({
   )
 }
 
-/** The search box (it searches as you type, a moment after) and the status choice. */
+/**
+ * The search box (it searches as you type, a moment after) and the status choice; or, without a
+ * status, the page's own choices (`children`) beside the search.
+ */
 export function ListToolbar({
   search,
   status,
   onChange,
+  children,
 }: {
   search: string
-  status: ListStatus
+  status?: ListStatus
   onChange: (next: { search?: string; status?: ListStatus }) => void
+  children?: ReactNode
 }) {
   const { t } = useTranslation()
   const [text, setText] = useState(search)
@@ -183,7 +188,13 @@ export function ListToolbar({
     return () => clearTimeout(timer)
   }, [text, search])
   return (
-    <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center">
+    <div
+      className={cn(
+        'mb-4 flex flex-col gap-3 sm:flex-row',
+        // Choices with their labels above: the search lines up with their boxes.
+        children ? 'sm:items-end' : 'sm:items-center',
+      )}
+    >
       <div role="search" className="relative min-w-0 flex-1">
         <SearchIcon
           aria-hidden
@@ -222,31 +233,34 @@ export function ListToolbar({
           </button>
         ) : null}
       </div>
-      <fieldset className="flex shrink-0 rounded-lg bg-muted p-1">
-        <legend className="sr-only">{t('catalog.list.statusLabel')}</legend>
-        {LIST_STATUSES.map((value) => (
-          <label key={value} className="relative flex-1 sm:flex-none">
-            <input
-              type="radio"
-              name="catalog-status"
-              value={value}
-              checked={status === value}
-              onChange={() => onChange({ status: value })}
-              className="peer sr-only"
-            />
-            <span
-              className={cn(
-                'flex h-9 cursor-pointer items-center justify-center rounded-md px-3 text-sm font-medium whitespace-nowrap text-muted-foreground transition-colors',
-                'peer-checked:bg-card peer-checked:text-foreground peer-checked:shadow-sm',
-                'peer-focus-visible:ring-3 peer-focus-visible:ring-ring',
-                'after:absolute after:inset-x-0 after:-inset-y-1 after:content-[""]',
-              )}
-            >
-              {t(`catalog.list.status.${value}`)}
-            </span>
-          </label>
-        ))}
-      </fieldset>
+      {children}
+      {status === undefined ? null : (
+        <fieldset className="flex shrink-0 rounded-lg bg-muted p-1">
+          <legend className="sr-only">{t('catalog.list.statusLabel')}</legend>
+          {LIST_STATUSES.map((value) => (
+            <label key={value} className="relative flex-1 sm:flex-none">
+              <input
+                type="radio"
+                name="catalog-status"
+                value={value}
+                checked={status === value}
+                onChange={() => onChange({ status: value })}
+                className="peer sr-only"
+              />
+              <span
+                className={cn(
+                  'flex h-9 cursor-pointer items-center justify-center rounded-md px-3 text-sm font-medium whitespace-nowrap text-muted-foreground transition-colors',
+                  'peer-checked:bg-card peer-checked:text-foreground peer-checked:shadow-sm',
+                  'peer-focus-visible:ring-3 peer-focus-visible:ring-ring',
+                  'after:absolute after:inset-x-0 after:-inset-y-1 after:content-[""]',
+                )}
+              >
+                {t(`catalog.list.status.${value}`)}
+              </span>
+            </label>
+          ))}
+        </fieldset>
+      )}
     </div>
   )
 }

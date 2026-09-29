@@ -46,8 +46,8 @@ describe('module manifests', () => {
     const started = MODULES.filter(
       (m) => m.availability === 'planned' && (m.permissionKeys.length > 0 || m.nav.length > 0),
     )
-    // M2 Steps 2, 3 and 5 build Products & Services, Materials, Suppliers, Purchases, Expenses and
-    // Running Costs; they stay planned until Step 7 (D-124).
+    // M2 Steps 2, 3, 5 and 6 build Products & Services, Materials, Suppliers, Purchases, Expenses,
+    // Running Costs and the Cost Engine; they stay planned until Step 7 (D-124).
     expect(started.map((m) => m.id)).toEqual([
       'products',
       'materials',
@@ -55,6 +55,7 @@ describe('module manifests', () => {
       'purchases',
       'expenses',
       'running_costs',
+      'cost_engine',
     ])
     for (const m of started) {
       expect(m.permissionKeys.length, m.id).toBeGreaterThan(0)
@@ -179,6 +180,7 @@ describe('module manifests', () => {
       ['expenses', 'main'],
       ['payables', 'main'],
       ['running_costs', 'main'],
+      ['product_costs', 'main'],
     ])
   })
 
@@ -228,6 +230,8 @@ describe('permission catalog', () => {
         'expenses.approval.manage',
         'running_costs.items.view',
         'running_costs.items.manage',
+        'cost_engine.product_costs.view',
+        'cost_engine.settings.manage',
         'data.cost.view',
         'data.profit_margin.view',
         'data.supplier_price.view',
@@ -338,6 +342,8 @@ describe('role templates', () => {
         'expenses.payments.record',
         'running_costs.items.view',
         'running_costs.items.manage',
+        'cost_engine.product_costs.view',
+        'cost_engine.settings.manage',
         'data.cost.view',
         'data.profit_margin.view',
         'data.supplier_price.view',
@@ -354,6 +360,7 @@ describe('role templates', () => {
         'purchases.documents.view',
         'expenses.documents.view',
         'running_costs.items.view',
+        'cost_engine.product_costs.view',
         'data.cost.view',
         'data.profit_margin.view',
         'data.supplier_price.view',
@@ -383,6 +390,9 @@ describe('role templates', () => {
       ].sort(),
     )
     expect(keysMissingNeeds(keysOf('employee'))).toEqual([])
+    for (const key of ['admin', 'manager', 'accountant', 'supervisor', 'sales']) {
+      expect(keysMissingNeeds(keysOf(key)), key).toEqual([])
+    }
   })
 })
 
