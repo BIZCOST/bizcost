@@ -15,7 +15,6 @@ import {
   codeOf,
   ok,
   purchaseInput,
-  PURCHASING_PREVIEW,
   PurchasingApi,
   Scope,
   type Handler,
@@ -148,12 +147,7 @@ describe('a recipe line moved to another material while the old one’s units ch
 
   beforeAll(() => {
     dbs = [connectApi(), connectApi()]
-    handlers = dbs.map((db) =>
-      handlerFor(db, undefined, {
-        previewModules: PURCHASING_PREVIEW,
-        supabaseSecretKey: SECRET_KEY,
-      }),
-    )
+    handlers = dbs.map((db) => handlerFor(db, undefined, { supabaseSecretKey: SECRET_KEY }))
     holder = connectAdmin()
   })
 

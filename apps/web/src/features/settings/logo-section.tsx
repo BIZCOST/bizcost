@@ -1,6 +1,6 @@
 'use client'
 
-import { apiErrorKey, useTRPC } from '@bizcost/app-core'
+import { apiErrorKey, useMe, useTRPC } from '@bizcost/app-core'
 import {
   LOGO_CONTENT_TYPES,
   LOGO_MAX_BYTES,
@@ -8,8 +8,10 @@ import {
   type LogoContentType,
 } from '@bizcost/contracts'
 import type { I18nKey } from '@bizcost/i18n'
+import { isRoleTemplateKey } from '@bizcost/modules'
 import { useMutation } from '@tanstack/react-query'
-import { ImageUpIcon, Loader2Icon, StoreIcon, Trash2Icon } from 'lucide-react'
+import { CropIcon, ImageUpIcon, Loader2Icon, StoreIcon, Trash2Icon } from 'lucide-react'
+import { useParams } from 'next/navigation'
 import { useEffect, useId, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
@@ -28,13 +30,19 @@ import {
 } from '@/components/ui/alert-dialog'
 import { Button } from '@/components/ui/button'
 import { Section } from '@/features/account/section'
+import { useBusinessName } from '@/features/business/use-business-name'
+import { LOGO_SOURCE_MAX_BYTES } from './logo-crop'
+import { LogoCropDialog } from './logo-cropper'
 import { useProfileSaved } from './profile-data'
 
-// The business logo (ROADMAP.md Step 6): a PNG, JPEG or WebP of up to 2 MB, uploaded straight to the
-// private bucket with a signed URL the API issues (business.logoUploadUrl), then checked and saved by
-// the API (business.setLogo). The picture shows at once from the chosen file; the saved logo comes back
-// as a short-lived signed URL with the profile. A saved logo that fails to load (its URL expired while
-// the page stayed open) refetches the profile, which brings a new URL (useSignedUrlFailure).
+// The business logo (ROADMAP.md Step 6): a PNG, JPEG or WebP, first placed in its square ("Adjust
+// your logo", the owner's request of 2026-09-30: zoom and move, with how it looks beside the name),
+// then drawn by the browser as a square picture of 512 × 512 and uploaded straight to the private
+// bucket with a signed URL the API issues (business.logoUploadUrl), then checked and saved by the API
+// (business.setLogo; its checks and limits unchanged). The saved logo can be adjusted again. The
+// picture shows at once; the saved logo comes back as a short-lived signed URL with the profile. A
+// saved logo that fails to load (its URL expired while the page stayed open) refetches the profile,
+// which brings a new URL (useSignedUrlFailure).
 
 function isLogoType(type: string): type is LogoContentType {
   return (LOGO_CONTENT_TYPES as readonly string[]).includes(type)
@@ -69,6 +77,14 @@ export function LogoSection({
   const [error, setError] = useState<I18nKey | null>(null)
   const [preview, setPreview] = useState<string | null>(null)
   const [confirmOpen, setConfirmOpen] = useState(false)
+  // The picture being placed in its square: a chosen file (its object URL, freed after) or the
+  // saved logo.
+  const [cropping, setCropping] = useState<{ src: string; file: boolean } | null>(null)
+  const { businessId } = useParams<{ businessId: string }>()
+  const businessName = useBusinessName(businessId)
+  const { data: me } = useMe()
+  const template = me?.memberships.find((m) => m.businessId === businessId)?.roleTemplateKey ?? null
+  const role = t(isRoleTemplateKey(template) ? `roles.${template}` : 'roles.custom')
   const savedLogo = useSignedUrlFailure(
     profile.logoUrl,
     trpc.business.profile.queryKey(),
@@ -81,10 +97,31 @@ export function LogoSection({
     return () => URL.revokeObjectURL(preview)
   }, [preview])
 
-  async function upload(file: File) {
+  useEffect(() => {
+    if (!cropping?.file) return
+    const src = cropping.src
+    return () => URL.revokeObjectURL(src)
+  }, [cropping])
+
+  /** A chosen file: checked, then placed in its square. */
+  function choose(file: File) {
     setError(null)
     if (!isLogoType(file.type)) return setError('settings.business.logo.wrongType')
-    if (file.size > LOGO_MAX_BYTES) return setError('settings.business.logo.tooBig')
+    if (file.size > LOGO_SOURCE_MAX_BYTES) return setError('settings.business.logo.tooBig')
+    setCropping({ src: URL.createObjectURL(file), file: true })
+  }
+
+  /** Uploads the square picture; true once saved (the section says what went wrong otherwise). */
+  async function upload(file: Blob): Promise<boolean> {
+    setError(null)
+    if (!isLogoType(file.type)) {
+      setError('settings.business.logo.wrongType')
+      return false
+    }
+    if (file.size > LOGO_MAX_BYTES) {
+      setError('settings.business.logo.tooBig')
+      return false
+    }
     setBusy('uploading')
     setPreview(URL.createObjectURL(file))
     try {
@@ -97,12 +134,14 @@ export function LogoSection({
       if (!response.ok) {
         setError(uploadErrorKey(response.status))
         setPreview(null)
-        return
+        return false
       }
       saved(await setLogo.mutateAsync({ path: target.path }))
       toast.success(t('settings.business.logo.saved'))
+      return true
     } catch (caught) {
       setError(caught instanceof TypeError ? 'errors.network' : apiErrorKey(caught))
+      return false
     } finally {
       setPreview(null)
       setBusy(null)
@@ -133,13 +172,13 @@ export function LogoSection({
       description={t('settings.business.logo.description')}
     >
       <div className="flex flex-col gap-5 sm:flex-row sm:items-center">
-        <div className="relative flex size-24 shrink-0 items-center justify-center overflow-hidden rounded-2xl border bg-background">
+        <div className="relative flex size-24 shrink-0 items-center justify-center overflow-hidden rounded-2xl border bg-white">
           {shown ? (
             // A signed URL of the private bucket (or the chosen file): a plain image, not next/image.
             <img
               src={shown}
               alt={t('settings.business.logo.alt')}
-              className="size-full object-contain p-2"
+              className="size-full object-contain p-1"
               data-testid="business-logo"
               onError={preview ? undefined : savedLogo.onError}
             />
@@ -169,7 +208,7 @@ export function LogoSection({
                 onChange={(event) => {
                   const file = event.target.files?.[0]
                   event.target.value = ''
-                  if (file) void upload(file)
+                  if (file) choose(file)
                 }}
               />
               <Button
@@ -185,6 +224,20 @@ export function LogoSection({
                     ? t('settings.business.logo.replace')
                     : t('settings.business.logo.upload')}
               </Button>
+              {profile.logoUrl && !broken ? (
+                <Button
+                  type="button"
+                  variant="outline"
+                  disabled={busy !== null}
+                  onClick={() => {
+                    setError(null)
+                    setCropping({ src: profile.logoUrl!, file: false })
+                  }}
+                >
+                  <CropIcon aria-hidden />
+                  {t('settings.business.logo.adjust')}
+                </Button>
+              ) : null}
               {profile.logoUrl ? (
                 <AlertDialog
                   open={confirmOpen}
@@ -239,10 +292,27 @@ export function LogoSection({
           </div>
         ) : null}
       </div>
-      {error && !confirmOpen ? (
+      {error && !confirmOpen && !cropping ? (
         <FormAlert tone="error" className="mt-4">
           {t(error)}
         </FormAlert>
+      ) : null}
+      {cropping ? (
+        <LogoCropDialog
+          src={cropping.src}
+          businessName={businessName}
+          role={role}
+          error={error ? t(error) : null}
+          onCancel={() => {
+            setError(null)
+            setCropping(null)
+          }}
+          onSave={async (picture) => {
+            const done = await upload(picture)
+            if (done) setCropping(null)
+            return done
+          }}
+        />
       ) : null}
     </Section>
   )

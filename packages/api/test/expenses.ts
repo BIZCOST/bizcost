@@ -6,31 +6,14 @@ import type {
   RunningCostDto,
 } from '@bizcost/contracts'
 import { newId } from '@bizcost/domain'
-import { handlerFor, SECRET_KEY } from './helpers'
 import { ok, PurchasingApi, Scope } from './purchasing'
 
 // Helpers of the expenses and running-costs tests (ROADMAP.md M2 Step 5): the purchasing tests' API
-// with Expenses and Running Costs previewed too (they stay planned until Step 7, D-125), and
-// expenses, categories and running costs made through the API.
-
-/** The modules being built that the expenses tests preview. */
-export const EXPENSES_PREVIEW = [
-  'materials',
-  'products',
-  'suppliers',
-  'purchases',
-  'expenses',
-  'running_costs',
-] as const
+// (released since M2 Step 7), and expenses, categories and running costs made through the API.
 
 export type Envelope<T> = { data: T; meta: { redacted: string[] } }
 
-export class ExpensesApi extends PurchasingApi {
-  override readonly handler = handlerFor(this.db, undefined, {
-    previewModules: EXPENSES_PREVIEW,
-    supabaseSecretKey: SECRET_KEY,
-  })
-}
+export class ExpensesApi extends PurchasingApi {}
 
 /** A business, its owner and a way to call as them, with expense helpers. */
 export class ExpenseScope extends Scope {

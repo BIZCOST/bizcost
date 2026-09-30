@@ -17,8 +17,7 @@ import {
 import { businessProcedure, requireModule, requirePermission, router } from '../trpc'
 
 /**
- * Suppliers (services/suppliers.ts): module `suppliers` (planned until M2 Step 7, so only the dev-only
- * preview reaches it before then, D-125), then suppliers.items.view to read and
+ * Suppliers (services/suppliers.ts): module `suppliers` (released in M2 Step 7), then suppliers.items.view to read and
  * suppliers.items.manage to write.
  */
 const suppliersModule = businessProcedure.use(requireModule('suppliers'))

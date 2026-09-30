@@ -50,11 +50,11 @@ export function isSectionVisible(access: Access, section: SettingsSection): bool
       return can(access, 'settings.modules.manage')
     case 'books':
       // "Books closed up to": purchases and expenses obey it, so either module on shows it (D-137,
-      // D-176); the key is still Purchases' until Step 7.
+      // D-176), with the Settings key to close them (D-201).
       return (
         (access.modules ?? []).some(
           (module) => module.id === 'purchases' || module.id === 'expenses',
-        ) && can(access, 'purchases.books.close')
+        ) && can(access, 'settings.books.close')
       )
     case 'approval':
       // Whether expenses need approval: Expenses on, a team (without one nothing is approved, D-164),

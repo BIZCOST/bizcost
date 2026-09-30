@@ -3,16 +3,7 @@ import type { Db } from '@bizcost/db'
 import { newId, replayWac, sumDecimals } from '@bizcost/domain'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { connectApi, handlerFor, mutate, type CallResult } from './helpers'
-import {
-  codeOf,
-  line,
-  ok,
-  purchaseInput,
-  PURCHASING_PREVIEW,
-  PurchasingApi,
-  Scope,
-  type Handler,
-} from './purchasing'
+import { codeOf, line, ok, purchaseInput, PurchasingApi, Scope, type Handler } from './purchasing'
 import { WORKSHOP } from './settings'
 
 // Postings at the same time (D-110 rule 3; ROADMAP.md M2 Step 3 and the Step 8 definition of done):
@@ -33,7 +24,7 @@ let today: string
 beforeAll(async () => {
   api = new PurchasingApi()
   dbs = Array.from({ length: INSTANCES }, () => connectApi())
-  handlers = dbs.map((db) => handlerFor(db, undefined, { previewModules: PURCHASING_PREVIEW }))
+  handlers = dbs.map((db) => handlerFor(db))
   shop = await Scope.open(api, WORKSHOP)
   today = await shop.today()
 }, 60_000)

@@ -287,6 +287,26 @@ function assertOwnerMinutes(ctx: BusinessCtx, fields: Fields): void {
   if (ctx.access.capabilities.has_team) throw new AppError('capability_disabled')
 }
 
+/**
+ * A product's VAT fields are shown only to a VAT-registered business (PRODUCT.md §5; M2 Step 7): one
+ * that is not keeps what is stored (a new product: the standard rate, a price without VAT), and any
+ * other value is CAPABILITY_DISABLED. What is stored counts again once it registers.
+ */
+function assertVatFields(
+  ctx: BusinessCtx,
+  fields: Pick<Fields, 'vatCategory' | 'priceIncludesVat'>,
+  stored: Pick<ProductRow, 'vatCategory' | 'priceIncludesVat'> | null,
+): void {
+  if (ctx.access.capabilities.vat_registered) return
+  const kept = stored ?? { vatCategory: 'standard', priceIncludesVat: false }
+  if (
+    fields.vatCategory !== kept.vatCategory ||
+    fields.priceIncludesVat !== kept.priceIncludesVat
+  ) {
+    throw new AppError('capability_disabled', { message: 'VAT needs a VAT-registered business' })
+  }
+}
+
 /** `product.list`: a page by name (case ignored). */
 export async function listProducts(ctx: BusinessCtx, input: ListInput): Promise<ProductListDto> {
   const conditions: SQL[] = [
@@ -377,6 +397,7 @@ async function createResaleMaterial(
 export async function createProduct(ctx: BusinessCtx, input: CreateInput): Promise<ProductDto> {
   const { id, resale, ...fields } = input
   assertOwnerMinutes(ctx, fields)
+  assertVatFields(ctx, fields, null)
   if (resale) {
     assertModuleActive(ctx, 'materials')
     assertPermission(ctx, 'materials.items.manage')
@@ -420,6 +441,7 @@ export async function updateProduct(ctx: BusinessCtx, input: UpdateInput): Promi
     ctx.tx(async (tx) => {
       // As read: the update below matches only this version, so this is what it changes.
       const before = await findProduct(tx, ctx.businessId, id)
+      if (before) assertVatFields(ctx, fields, before)
       const [row] = await tx
         .update(productsServices)
         .set(columnsOf(fields))

@@ -16,10 +16,10 @@ import {
   withValue,
   type TestUser,
 } from '../helpers'
-import { previewBaseURL } from '../stack'
+import { baseURL } from '../stack'
 
-// Expenses and Running Costs (M2 Step 5; D-116, D-164–D-169), on the development server with the
-// dev-only preview (D-125, D-127):
+// Expenses and Running Costs (M2 Step 5; D-116, D-164–D-169), on the production build since the
+// Costing Core was released (M2 Step 7, D-188):
 //   - a home baker (solo, no VAT) answers "What do you pay to run your business?" with rent and
 //     electricity from the quick picks: each in its own frequency, what they make a month and the
 //     monthly total; a change not saved is asked about (English, desktop; Arabic, phone);
@@ -90,17 +90,11 @@ async function openAs(
   displayName: string,
 ): Promise<Page> {
   const context = await browser.newContext({
-    baseURL: previewBaseURL,
+    baseURL,
     locale: locale === 'ar' ? 'ar-AE' : 'en-US',
     viewport,
   })
   contexts.push(context)
-  // The development server's own badge and overlay are not part of the app.
-  await context.addInitScript(() => {
-    const sheet = new CSSStyleSheet()
-    sheet.replaceSync('[data-nextjs-dev-overlay] { display: none !important; }')
-    document.adoptedStyleSheets = [...document.adoptedStyleSheets, sheet]
-  })
   await useLanguage(context, 'en')
   const page = await context.newPage()
   await signIn(page, user)

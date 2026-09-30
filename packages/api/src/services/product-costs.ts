@@ -13,6 +13,7 @@ import type {
 } from '@bizcost/contracts'
 import { businesses, type Tx } from '@bizcost/db'
 import {
+  awaitsServiceShare,
   can,
   checkDecimal,
   compareDecimal,
@@ -409,7 +410,13 @@ function sortValue(costed: Costed, sort: ListInput['sort']): string | null {
  * without the owner's minutes. Sorting and filtering on costs or margins need them visible
  * (FORBIDDEN otherwise, before anything is read).
  */
-export async function listProductCosts(
+export function listProductCosts(ctx: BusinessCtx, input: ListInput): Promise<ProductCostListDto> {
+  return ctx.tx((tx) => listProductCostsIn(tx, ctx, input))
+}
+
+/** `productCost.list` inside the caller's transaction (also the Dashboard's cost checklist). */
+export async function listProductCostsIn(
+  tx: Tx,
   ctx: BusinessCtx,
   input: ListInput,
 ): Promise<ProductCostListDto> {
@@ -425,124 +432,121 @@ export async function listProductCosts(
   const counting = ctx.access.visibleCategories.has('cost')
   const byName = input.sort === 'name'
   const pagedInSql = byName && input.filter === undefined && !counting
-  return ctx.tx(async (tx) => {
-    const costing = await costingOf(tx, businessId)
-    const rate = await rateOf(tx, ctx, costing)
-    const conditions: SQL[] = [sql`p.business_id = ${businessId}`, sql`p.deleted_at is null`]
-    if (input.status === 'active') conditions.push(sql`p.archived_at is null`)
-    if (input.status === 'archived') conditions.push(sql`p.archived_at is not null`)
-    if (input.type) conditions.push(sql`p.type = ${input.type}`)
-    if (input.search) conditions.push(sql`p.name ilike ${containsPattern(input.search)}`)
-    const order =
-      byName && input.order === 'desc'
-        ? sql`lower(p.name) desc, p.id desc`
-        : sql`lower(p.name), p.id`
-    const page = pagedInSql ? sql`limit ${input.limit + 1} offset ${offset}` : sql``
-    const products = (await tx.execute(sql`
+  const costing = await costingOf(tx, businessId)
+  const rate = await rateOf(tx, ctx, costing)
+  const conditions: SQL[] = [sql`p.business_id = ${businessId}`, sql`p.deleted_at is null`]
+  if (input.status === 'active') conditions.push(sql`p.archived_at is null`)
+  if (input.status === 'archived') conditions.push(sql`p.archived_at is not null`)
+  if (input.type) conditions.push(sql`p.type = ${input.type}`)
+  if (input.search) conditions.push(sql`p.name ilike ${containsPattern(input.search)}`)
+  const order =
+    byName && input.order === 'desc' ? sql`lower(p.name) desc, p.id desc` : sql`lower(p.name), p.id`
+  const page = pagedInSql ? sql`limit ${input.limit + 1} offset ${offset}` : sql``
+  const products = (await tx.execute(sql`
       select ${productColumns}
         from app.products_services p
        where ${sql.join(conditions, sql` and `)}
        order by ${order}
        ${page}
     `)) as unknown as ProductRow[]
-    const counted = pagedInSql ? products.slice(0, input.limit) : products
+  const counted = pagedInSql ? products.slice(0, input.limit) : products
 
-    const materials = passes(ctx, ['materials'])
-      ? await materialCostsOf(
-          tx,
-          businessId,
-          counted.map((p) => ({ id: p.id, unit: p.unit, resaleMaterialId: p.resale_material_id })),
-        )
-      : new Map<string, ProductMaterialCost>()
+  const materials = passes(ctx, ['materials'])
+    ? await materialCostsOf(
+        tx,
+        businessId,
+        counted.map((p) => ({ id: p.id, unit: p.unit, resaleMaterialId: p.resale_material_id })),
+      )
+    : new Map<string, ProductMaterialCost>()
 
-    let costed: Costed[] = counted.map((product, sortKey) => {
-      const material = materials.get(product.id)
-      const part: MaterialsPart = material
-        ? {
-            state: 'on',
-            perUnit: material.cost.perUnit,
-            lineCount: material.lineCount,
-            unpricedLines: material.cost.unpricedLines,
-            tooLarge: material.cost.tooLarge,
-          }
-        : { state: 'off' }
-      const sale = saleOf(product, costing)
-      const time = ownerTimeOf(ctx, product, costing)
-      const cost = productCost({
-        type: product.type,
-        materials: part,
-        runningCosts: rate.part,
-        ownerTime: time,
-        sale,
-      })
-      const row: ProductCostRowDto = {
-        productId: product.id,
-        name: product.name,
-        type: product.type,
-        unit: product.unit,
-        kind: product.resale_material_id === null ? 'recipe' : 'resale',
-        archived: product.archived,
-        yieldQty: material?.yieldQty ?? '1',
-        lineCount: material?.lineCount ?? 0,
-        unpricedLines: material?.cost.unpricedLines ?? 0,
-        price: salePriceDtoOf(sale),
-        cost: unitCostDtoOf(cost, time),
-        margin: { amount: cost.margin, percent: cost.marginPercent },
-      }
-      return { product, sortKey, row, cost }
+  let costed: Costed[] = counted.map((product, sortKey) => {
+    const material = materials.get(product.id)
+    const part: MaterialsPart = material
+      ? {
+          state: 'on',
+          perUnit: material.cost.perUnit,
+          lineCount: material.lineCount,
+          unpricedLines: material.cost.unpricedLines,
+          tooLarge: material.cost.tooLarge,
+        }
+      : { state: 'off' }
+    const sale = saleOf(product, costing)
+    const time = ownerTimeOf(ctx, product, costing)
+    const cost = productCost({
+      type: product.type,
+      materials: part,
+      runningCosts: rate.part,
+      ownerTime: time,
+      sale,
     })
-    const atLoss = (c: Costed) => c.cost.margin !== null && compareDecimal(c.cost.margin, '0') < 0
-    const counts = {
-      all: pagedInSql ? 0 : costed.length,
-      incomplete: costed.filter((c) => !c.cost.complete).length,
-      loss: costed.filter(atLoss).length,
-      noTime: costed.filter((c) => c.cost.ownerTime.state === 'none').length,
+    const row: ProductCostRowDto = {
+      productId: product.id,
+      name: product.name,
+      type: product.type,
+      unit: product.unit,
+      kind: product.resale_material_id === null ? 'recipe' : 'resale',
+      archived: product.archived,
+      yieldQty: material?.yieldQty ?? '1',
+      lineCount: material?.lineCount ?? 0,
+      unpricedLines: material?.cost.unpricedLines ?? 0,
+      price: salePriceDtoOf(sale),
+      cost: unitCostDtoOf(cost, time),
+      margin: { amount: cost.margin, percent: cost.marginPercent },
     }
-    if (pagedInSql) {
-      const [row] = (await tx.execute(sql`
+    return { product, sortKey, row, cost }
+  })
+  const atLoss = (c: Costed) => c.cost.margin !== null && compareDecimal(c.cost.margin, '0') < 0
+  const counts = {
+    all: pagedInSql ? 0 : costed.length,
+    incomplete: costed.filter((c) => !c.cost.complete).length,
+    loss: costed.filter(atLoss).length,
+    noTime: costed.filter((c) => c.cost.ownerTime.state === 'none').length,
+    servicesAwaitingShare: costed.filter((c) => awaitsServiceShare(c.product.type, c.cost)).length,
+  }
+  if (pagedInSql) {
+    const [row] = (await tx.execute(sql`
         select count(*)::int as total from app.products_services p
          where ${sql.join(conditions, sql` and `)}
       `)) as unknown as { total: number }[]
-      counts.all = row?.total ?? 0
-    }
-    if (input.filter === 'incomplete') costed = costed.filter((c) => !c.cost.complete)
-    if (input.filter === 'loss') costed = costed.filter(atLoss)
-    if (!byName) {
-      const sign = input.order === 'asc' ? 1 : -1
-      const byMargin = input.sort === 'margin' || input.sort === 'margin_percent'
-      costed.sort((a, b) => {
-        const x = sortValue(a, input.sort)
-        const y = sortValue(b, input.sort)
-        // By margin, an incomplete cost's margin is "at most": after the complete ones.
-        if (byMargin && x !== null && y !== null && a.cost.complete !== b.cost.complete) {
-          return a.cost.complete ? -1 : 1
-        }
-        if (x !== null && y !== null) {
-          const order = compareDecimal(x, y)
-          if (order !== 0) return sign * order
-        } else if (x !== null || y !== null) {
-          return x === null ? 1 : -1
-        }
-        // Ties: by name, as the database orders it.
-        return a.sortKey - b.sortKey
-      })
-    }
-    const items = pagedInSql ? costed : costed.slice(offset, offset + input.limit)
-    const more = pagedInSql ? products.length > input.limit : offset + input.limit < costed.length
-    return {
-      data: {
-        items: items.map((c) => c.row),
-        nextCursor: more ? encodeCursor(input, offset + input.limit) : null,
-        counts,
-        currency: costing.currency,
-        today: costing.today,
-        averageFrom: averageFromOf(costing.today),
-        rate: rate.dto,
-        ownerTime: ownerTimeSettingOf(ctx, costing),
-      },
-      meta: { redacted: [] },
-    }
-  })
+    counts.all = row?.total ?? 0
+  }
+  if (input.filter === 'incomplete') costed = costed.filter((c) => !c.cost.complete)
+  if (input.filter === 'loss') costed = costed.filter(atLoss)
+  if (!byName) {
+    const sign = input.order === 'asc' ? 1 : -1
+    const byMargin = input.sort === 'margin' || input.sort === 'margin_percent'
+    costed.sort((a, b) => {
+      const x = sortValue(a, input.sort)
+      const y = sortValue(b, input.sort)
+      // By margin, an incomplete cost's margin is "at most": after the complete ones.
+      if (byMargin && x !== null && y !== null && a.cost.complete !== b.cost.complete) {
+        return a.cost.complete ? -1 : 1
+      }
+      if (x !== null && y !== null) {
+        const order = compareDecimal(x, y)
+        if (order !== 0) return sign * order
+      } else if (x !== null || y !== null) {
+        return x === null ? 1 : -1
+      }
+      // Ties: by name, as the database orders it.
+      return a.sortKey - b.sortKey
+    })
+  }
+  const items = pagedInSql ? costed : costed.slice(offset, offset + input.limit)
+  const more = pagedInSql ? products.length > input.limit : offset + input.limit < costed.length
+  return {
+    data: {
+      items: items.map((c) => c.row),
+      nextCursor: more ? encodeCursor(input, offset + input.limit) : null,
+      counts,
+      currency: costing.currency,
+      today: costing.today,
+      averageFrom: averageFromOf(costing.today),
+      rate: rate.dto,
+      ownerTime: ownerTimeSettingOf(ctx, costing),
+    },
+    meta: { redacted: [] },
+  }
 }
 
 // ---------------------------------------------------------------------------------------------------

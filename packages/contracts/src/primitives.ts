@@ -1,4 +1,4 @@
-import { normalizeDigits } from '@bizcost/domain'
+import { BUSINESS_MONTH_PATTERN, normalizeDigits } from '@bizcost/domain'
 import { z } from 'zod'
 
 // Wire primitives (docs/ARCHITECTURE.md §API & request flow): plain JSON, decimals as strings,
@@ -28,3 +28,10 @@ export const zDecimal = z
 
 /** The local business day of a document: a real calendar date as YYYY-MM-DD. */
 export const zBusinessDate = z.iso.date()
+
+/** A month, `YYYY-MM` (the month an expense is for). Arabic-Indic digits are normalized. */
+export const zBusinessMonth = z
+  .string()
+  .trim()
+  .overwrite((value) => normalizeDigits(value))
+  .regex(BUSINESS_MONTH_PATTERN)

@@ -204,6 +204,48 @@
       "when": 1790710143106,
       "tag": "20260929192903_product_costs_access",
       "breakpoints": true
+    },
+    {
+      "idx": 29,
+      "version": "7",
+      "when": 1790756284447,
+      "tag": "20260930081804_expense_period_month",
+      "breakpoints": true
+    },
+    {
+      "idx": 30,
+      "version": "7",
+      "when": 1790758017490,
+      "tag": "20260930084657_costing_core_release",
+      "breakpoints": true
+    },
+    {
+      "idx": 31,
+      "version": "7",
+      "when": 1790759129779,
+      "tag": "20260930090529_expense_period_default",
+      "breakpoints": true
+    },
+    {
+      "idx": 32,
+      "version": "7",
+      "when": 1790770725625,
+      "tag": "20260930121845_expense_reversal_month",
+      "breakpoints": true
+    },
+    {
+      "idx": 33,
+      "version": "7",
+      "when": 1790770915344,
+      "tag": "20260930122155_payments_need_prices",
+      "breakpoints": true
+    },
+    {
+      "idx": 34,
+      "version": "7",
+      "when": 1790801707071,
+      "tag": "20260930205507_books_close_setting",
+      "breakpoints": true
     }
   ]
 }

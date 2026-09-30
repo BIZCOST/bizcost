@@ -2,13 +2,13 @@
 
 import type { BusinessContextDto, RoleDto } from '@bizcost/contracts'
 import { formatList } from '@bizcost/i18n'
-import { isRoleTemplateKey, PERMISSION_CATALOG } from '@bizcost/modules'
+import { isRoleTemplateKey } from '@bizcost/modules'
 import { CheckIcon } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { useLocale, useTerminology } from '@/lib/i18n/client'
 import { useBusinessContext } from '@/lib/trpc/client'
 import { cn } from '@/lib/utils'
-import { permissionLabelKey } from './permission-groups'
+import { permissionLabelKeys } from './permission-groups'
 import { canGrantRole, isTemplateDefault, roleNameKey } from './role-labels'
 
 /** A role's name: the template's name in the page's language, or the custom role's own name. */
@@ -38,13 +38,13 @@ export function useRoleSummary() {
     if (isRoleTemplateKey(role.templateKey) && isTemplateDefault(role)) {
       return t(`settings.roleInfo.${role.templateKey}`)
     }
-    const granted = new Set(role.permissionKeys)
-    const keys = PERMISSION_CATALOG.filter((key) => granted.has(key))
+    // In catalog order; costs, supplier prices and margins as their one switch (D-190).
+    const keys = permissionLabelKeys(role.permissionKeys)
     if (keys.length === 0) return t('settings.roleInfo.customNone')
     const shown = keys.length > SUMMARY_LABELS + 1 ? keys.slice(0, SUMMARY_LABELS) : keys
     // The labels start a sentence ("See costs"); inside one, English writes them in lower case.
     const labels = shown.map((key) => {
-      const label = term(permissionLabelKey(key), profile)
+      const label = term(key, profile)
       return locale === 'en' ? label.charAt(0).toLowerCase() + label.slice(1) : label
     })
     const rest = keys.length - shown.length

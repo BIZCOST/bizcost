@@ -50,9 +50,12 @@ test('a solo home business sees only its own settings; team screens are refused'
   await page.getByRole('link', { name: 'Settings' }).click()
   await expect(page).toHaveURL(settings())
   await expect(page.getByRole('heading', { level: 1, name: 'Settings' })).toBeVisible()
+  // With the Costing Core (released in M2 Step 7): closing the books and how costs are worked out.
   await expect(sectionLinks(page)).toHaveText([
     /^Business profile/,
     /^Customize BizCost/,
+    /^Closing the books/,
+    /^How costs are worked out/,
     /^Language/,
   ])
   await expect(page.getByRole('link', { name: /^Your account/ })).toHaveAttribute(
@@ -114,16 +117,20 @@ test('logo: upload with a preview, replace, refuse other types, remove', async (
   const logo = page.getByTestId('business-logo')
   await expect(page.getByText('No logo', { exact: true })).toBeVisible()
   const input = page.locator('input[type=file]')
+  // Each picture is placed in its square first, and saved as a square of 512 (O-A, 2026-09-30).
+  const cropper = page.getByRole('dialog', { name: 'Adjust your logo' })
 
   await input.setInputFiles({ name: 'logo.png', mimeType: 'image/png', buffer: pngImage() })
+  await cropper.getByRole('button', { name: 'Save logo' }).click()
   await expect(page.getByText('Logo saved.')).toBeVisible()
   await expect(logo).toHaveAttribute('src', /\/storage\/v1\/object\/sign\/business-files\//)
   await expect
     .poll(() => logo.evaluate((img: HTMLImageElement) => img.complete && img.naturalWidth))
-    .toBe(64)
+    .toBe(512)
   const first = await logo.getAttribute('src')
 
   await input.setInputFiles({ name: 'logo.png', mimeType: 'image/png', buffer: pngImage(48) })
+  await cropper.getByRole('button', { name: 'Save logo' }).click()
   await expect
     .poll(async () => {
       const src = (await logo.getAttribute('src')) ?? ''
@@ -132,7 +139,7 @@ test('logo: upload with a preview, replace, refuse other types, remove', async (
     .toBe(true)
   await expect
     .poll(() => logo.evaluate((img: HTMLImageElement) => img.complete && img.naturalWidth))
-    .toBe(48)
+    .toBe(512)
 
   // A saved logo whose link no longer works (it expired while the page stayed open): the profile is
   // fetched again and the logo shows.
@@ -152,7 +159,7 @@ test('logo: upload with a preview, replace, refuse other types, remove', async (
   await expect.poll(() => profiles).toBeGreaterThanOrEqual(2)
   await expect
     .poll(() => logo.evaluate((img: HTMLImageElement) => img.complete && img.naturalWidth))
-    .toBe(48)
+    .toBe(512)
   await page.unroute(signed)
   page.off('request', countProfiles)
 
@@ -168,9 +175,9 @@ test('logo: upload with a preview, replace, refuse other types, remove', async (
   await input.setInputFiles({
     name: 'big.png',
     mimeType: 'image/png',
-    buffer: Buffer.concat([pngImage(), Buffer.alloc(2 * 1024 * 1024)]),
+    buffer: Buffer.concat([pngImage(), Buffer.alloc(10 * 1024 * 1024)]),
   })
-  await expect(page.getByText('This image is larger than 2 MB.')).toBeVisible()
+  await expect(page.getByText('This image is larger than 10 MB.')).toBeVisible()
 
   await page.getByRole('button', { name: 'Remove logo' }).click()
   const dialog = page.getByRole('alertdialog', { name: 'Remove the logo?' })
@@ -233,6 +240,8 @@ test('Customize BizCost: dependency warnings, Team and Branches appear, guards',
     /^Team/,
     /^Roles/,
     /^Customize BizCost/,
+    /^Closing the books/,
+    /^Expense approval/,
     /^Language/,
   ])
   await sectionLinks(page).filter({ hasText: 'Branches' }).click()
@@ -269,9 +278,11 @@ test('Customize BizCost: dependency warnings, Team and Branches appear, guards',
   await confirm.getByRole('button', { name: 'Turn off' }).click()
   await expect(team).not.toBeChecked()
   await page.goto(settings())
+  // Expense approval goes with the team; Products & Services is off (above), so Product costs too.
   await expect(sectionLinks(page)).toHaveText([
     /^Business profile/,
     /^Customize BizCost/,
+    /^Closing the books/,
     /^Language/,
   ])
 })
@@ -297,7 +308,7 @@ test('in Arabic, right to left', async () => {
   await expect(page.getByRole('heading', { level: 1, name: 'الإعدادات' })).toBeVisible()
   await expect(
     page.getByRole('list', { name: 'إعدادات العمل التجاري' }).getByRole('link'),
-  ).toHaveText([/^بيانات العمل التجاري/, /^تخصيص BizCost/, /^اللغة/])
+  ).toHaveText([/^بيانات العمل التجاري/, /^تخصيص BizCost/, /^إغلاق الدفاتر/, /^اللغة/])
   await page.goto(settings('/business'))
   const trn = page.getByRole('textbox', { name: 'رقم التسجيل الضريبي (TRN)' })
   await expect(trn).toHaveValue('100123456700003')

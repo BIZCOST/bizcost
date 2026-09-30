@@ -7,7 +7,12 @@ import type {
   updateCostCategoryInput,
 } from '@bizcost/contracts'
 import { costCategories, createIdempotent, type Tx } from '@bizcost/db'
-import { newId, STARTER_COST_CATEGORIES, type Locale } from '@bizcost/domain'
+import {
+  BILLED_NEXT_MONTH_CATEGORIES,
+  newId,
+  STARTER_COST_CATEGORIES,
+  type Locale,
+} from '@bizcost/domain'
 import { createI18n, type I18nKey } from '@bizcost/i18n'
 import { and, asc, eq, ilike, isNotNull, isNull, sql, type SQL } from 'drizzle-orm'
 import type { z } from 'zod'
@@ -27,7 +32,10 @@ import {
 // people read it (app.name_key, archived ones included; NAME_TAKEN), lists by name with a cursor,
 // idempotent creates, versioned renames, archive and unarchive, never a delete. The routers let a
 // member who may see expenses or running costs list them, and one who may enter expenses or change
-// running costs add, rename or archive them (each with its module on).
+// running costs add, rename or archive them (each with its module on). A category may say its bills
+// usually come the month after the month they are for (`billedNextMonth`: electricity, water, internet
+// and phone of the starter list), so a new expense in it is for the month before its bill's date
+// unless the person says otherwise (the owner's request of 2026-09-30).
 
 type ListInput = z.output<typeof costCategoryListInput>
 type IdInput = z.output<typeof catalogIdInput>
@@ -40,16 +48,24 @@ const NAME_KEY = 'cost_categories_name_key'
 const columns = {
   id: costCategories.id,
   name: costCategories.name,
+  billedNextMonth: costCategories.billedNextMonth,
   archivedAt: costCategories.archivedAt,
   version: costCategories.version,
 }
 
-type Row = { id: string; name: string; archivedAt: Date | null; version: number }
+type Row = {
+  id: string
+  name: string
+  billedNextMonth: boolean
+  archivedAt: Date | null
+  version: number
+}
 
 function toDto(row: Row): CostCategoryDto {
   return {
     id: row.id,
     name: row.name,
+    billedNextMonth: row.billedNextMonth,
     archivedAt: row.archivedAt?.toISOString() ?? null,
     version: row.version,
   }
@@ -57,7 +73,9 @@ function toDto(row: Row): CostCategoryDto {
 
 /**
  * The starter categories of a new business, named in its language (Smart Setup; D-113: then plain
- * data). The expenses_security migration gave businesses that existed before the same names.
+ * data), the utilities marked as billed the month after (BILLED_NEXT_MONTH_CATEGORIES). The
+ * expenses_security migration gave businesses that existed before the same names, and
+ * costing_core_release the same marks.
  */
 export async function seedCostCategories(
   tx: Tx,
@@ -70,6 +88,7 @@ export async function seedCostCategories(
       id: newId(),
       businessId,
       name: i18n.t(`setup.cost_categories.${key}` as I18nKey),
+      billedNextMonth: BILLED_NEXT_MONTH_CATEGORIES.includes(key),
     })),
   )
 }
@@ -104,17 +123,22 @@ export async function assertCategory(
   businessId: string,
   categoryId: string,
   current: string | null = null,
-): Promise<{ id: string; name: string }> {
+): Promise<{ id: string; name: string; billedNextMonth: boolean }> {
   const [row] = (await tx.execute(sql`
-    select c.id, c.name, c.archived_at from app.cost_categories c
+    select c.id, c.name, c.billed_next_month, c.archived_at from app.cost_categories c
      where c.business_id = ${businessId} and c.id = ${categoryId} and c.deleted_at is null
        for share
-  `)) as unknown as { id: string; name: string; archived_at: Date | string | null }[]
+  `)) as unknown as {
+    id: string
+    name: string
+    billed_next_month: boolean
+    archived_at: Date | string | null
+  }[]
   if (!row) throw new AppError('not_found')
   if (row.archived_at !== null && row.id !== current) {
     throw new AppError('validation', { message: 'categoryId: archived' })
   }
-  return { id: row.id, name: row.name }
+  return { id: row.id, name: row.name, billedNextMonth: row.billed_next_month }
 }
 
 /** A filter names a category of this business (NOT_FOUND otherwise), archived ones too. */
@@ -194,7 +218,7 @@ async function withName<T>(ctx: BusinessCtx, name: string, write: () => Promise<
  * one with that name as people read it, archived ones included.
  */
 export function createCostCategory(ctx: BusinessCtx, input: CreateInput): Promise<CostCategoryDto> {
-  const values = { name: input.name }
+  const values = { name: input.name, billedNextMonth: input.billedNextMonth }
   return withName(ctx, input.name, () =>
     ctx.tx(async (tx) => {
       const { row } = await createIdempotent(tx, costCategories, {
@@ -210,13 +234,21 @@ export function createCostCategory(ctx: BusinessCtx, input: CreateInput): Promis
   )
 }
 
-/** `costCategory.update`: a new name, `version` as read (CONFLICT when it changed since). */
+/**
+ * `costCategory.update`: a new name and, when given, whether its bills come the month after (the
+ * expenses already entered keep their month); `version` as read (CONFLICT when it changed since).
+ */
 export function updateCostCategory(ctx: BusinessCtx, input: UpdateInput): Promise<CostCategoryDto> {
   return withName(ctx, input.name, () =>
     ctx.tx(async (tx) => {
       const [row] = await tx
         .update(costCategories)
-        .set({ name: input.name })
+        .set({
+          name: input.name,
+          ...(input.billedNextMonth === undefined
+            ? {}
+            : { billedNextMonth: input.billedNextMonth }),
+        })
         .where(
           and(
             eq(costCategories.businessId, ctx.businessId),

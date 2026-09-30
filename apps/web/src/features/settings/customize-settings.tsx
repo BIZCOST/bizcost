@@ -476,7 +476,17 @@ export function CustomizeSettings({ businessId }: { businessId: string }) {
             <ul className="divide-y">{groups.basics.map(moduleRow)}</ul>
           ) : (
             <div className="pt-2">
-              <Chips labels={groups.basics.filter((r) => r.enabled).map((r) => tt(r.nameKey))} />
+              <Chips
+                labels={groups.basics.filter((r) => r.enabled).map((r) => tt(r.nameKey))}
+                soon={{
+                  labels: new Set(
+                    groups.basics
+                      .filter((r) => r.enabled && r.planned && !allPlanned)
+                      .map((r) => tt(r.nameKey)),
+                  ),
+                  tag: t('setup.review.soon'),
+                }}
+              />
             </div>
           )}
         </Group>

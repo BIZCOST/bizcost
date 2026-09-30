@@ -501,3 +501,27 @@ export function productCost(input: ProductCostInput): ProductCost {
     marginPercent,
   }
 }
+
+/** What a service without materials cannot have yet, and its optional materials (D-186). */
+const SERVICE_WAITS: ReadonlySet<IncompleteReason> = new Set([
+  'no_recipe',
+  'running_costs_not_entered',
+  'running_costs_need_materials',
+])
+
+/**
+ * A service whose cost is complete but for what it cannot carry yet (D-200): it uses no materials,
+ * so with the method "a share of the material cost" (D-116) no running costs reach it until the owner
+ * decides how services carry them, and its materials are optional (D-186). Something is counted (the
+ * owner's time), so its cost is not empty. The Product costs page still says it is incomplete, and
+ * why; the Dashboard's "see your product costs" does not wait for it.
+ */
+export function awaitsServiceShare(type: ProductType, cost: ProductCost): boolean {
+  return (
+    type === 'service' &&
+    cost.materials === null &&
+    cost.total !== null &&
+    cost.reasons.length > 0 &&
+    cost.reasons.every((reason) => SERVICE_WAITS.has(reason))
+  )
+}

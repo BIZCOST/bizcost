@@ -15,7 +15,7 @@ import type {
 import { newId, STARTER_COST_CATEGORIES } from '@bizcost/domain'
 import { createI18n, type I18nKey } from '@bizcost/i18n'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
-import { EXPENSES_PREVIEW, ExpenseScope, ExpensesApi, type Envelope } from './expenses'
+import { ExpenseScope, ExpensesApi, type Envelope } from './expenses'
 import { PNG, uploadTo } from './hardening/fixture'
 import { addMember, handlerFor } from './helpers'
 import { codeOf, line, ok, purchaseInput, type Person } from './purchasing'
@@ -211,11 +211,28 @@ describe('an expense’s amounts and what it costs (D-114 rule 4, D-157)', () =>
         vatInCost: cost === '105',
       })
     }
-    // A business that isn't VAT-registered: what was paid is the cost.
+    // A business that isn't VAT-registered types what it paid, with no VAT (M2 Step 7): a VAT rate
+    // is refused, and what was paid is the cost.
     const baker = await ExpenseScope.open(api, BAKER)
     const flour = (await baker.categories())[0]!
-    const posted = await baker.spend(baker.expenseInput(flour.id, await baker.today()))
-    expect(posted).toMatchObject({ total: '105', costTotal: '105', vatInCost: true })
+    const bakerToday = await baker.today()
+    expect(
+      codeOf(await baker.run('expense.create', baker.expenseInput(flour.id, bakerToday))),
+    ).toBe('capability_disabled')
+    const posted = await baker.spend(
+      baker.expenseInput(flour.id, bakerToday, { amount: '105', vatRate: '0' }),
+    )
+    expect(posted).toMatchObject({ total: '105', costTotal: '105', vatTotal: '0' })
+    // VAT on a draft saved while the business was registered is part of the cost once it is not.
+    const other = await ExpenseScope.open(api, WORKSHOP)
+    const otherRent = (await other.categories()).find((c) => c.name === 'Rent')!
+    const draft = await other.expenseDraft(other.expenseInput(otherRent.id, await other.today()))
+    await other.deregisterVat()
+    expect(await other.postExpense(draft)).toMatchObject({
+      total: '105',
+      costTotal: '105',
+      vatInCost: true,
+    })
   })
 
   it('an amount the currency cannot hold as typed, zero or negative is refused', async () => {
@@ -1177,31 +1194,27 @@ describe('who may see and do what', () => {
     expect(costs.meta.redacted).toEqual(['items.*.amount', 'items.*.monthlyAmount', 'monthlyTotal'])
   })
 
-  it('the modules stay unreleased: without the preview every procedure is MODULE_DISABLED', async () => {
-    for (const path of [
-      'expense.list',
-      'runningCost.list',
-      'costCategory.list',
-      'expense.settings',
-    ]) {
-      const result = await api.call(shop.owner, shop.id, path, undefined, api.released)
-      expect(codeOf(result), path).toBe('module_disabled')
+  it('the modules are released (M2 Step 7): served without the preview, MODULE_DISABLED once turned off', async () => {
+    const other = await ExpenseScope.open(api, WORKSHOP)
+    const paths = ['expense.list', 'runningCost.list', 'costCategory.list', 'expense.settings']
+    const released = handlerFor(api.db)
+    for (const path of paths) {
+      expect((await api.call(other.owner, other.id, path, undefined, released)).error, path).toBe(
+        undefined,
+      )
     }
-    const released = await api.call(
-      shop.owner,
-      shop.id,
-      'payable.list',
-      { party: 'supplier' },
-      api.released,
-    )
-    expect(codeOf(released)).toBe('module_disabled')
-    // The preview names them.
-    expect(EXPENSES_PREVIEW).toContain('expenses')
-    const onlyPurchases = handlerFor(api.db, undefined, {
-      previewModules: ['materials', 'suppliers', 'purchases'],
-    })
+    for (const id of ['expenses', 'running_costs']) {
+      ok(await other.run('business.customize', { item: { kind: 'module', id }, enabled: false }))
+    }
+    for (const path of paths) {
+      expect(codeOf(await api.call(other.owner, other.id, path, undefined, released)), path).toBe(
+        'module_disabled',
+      )
+    }
+    // Amounts owed stays with Purchases.
     expect(
-      codeOf(await api.call(shop.owner, shop.id, 'costCategory.list', undefined, onlyPurchases)),
-    ).toBe('module_disabled')
+      (await api.call(other.owner, other.id, 'payable.list', { party: 'supplier' }, released))
+        .error,
+    ).toBeUndefined()
   })
 })

@@ -1,6 +1,13 @@
 import type { ExpenseDto } from '@bizcost/contracts'
 import { describe, expect, it } from 'vitest'
-import { checkExpense, expenseDraft, withDocumentType, type ExpenseDraft } from './expense-draft'
+import {
+  checkExpense,
+  expenseDraft,
+  periodMonthOptions,
+  withDocumentType,
+  withPeriodDefault,
+  type ExpenseDraft,
+} from './expense-draft'
 
 // The expense form (M2 Step 5; D-114, D-157, D-159, D-168): checked as the API checks it, with the
 // amounts of the domain's maths as it is typed.
@@ -153,6 +160,7 @@ describe('the fields to save', () => {
       categoryId: RENT,
       supplierId: null,
       businessDate: TODAY,
+      periodMonth: '2026-09',
       documentType: 'tax_invoice',
       reference: null,
       description: 'Delivery',
@@ -216,5 +224,100 @@ describe('the fields to save', () => {
       vatNotReclaimable: false,
       notes: '',
     })
+  })
+})
+
+describe('"For which month?" (the request of 2026-09-30, D-194)', () => {
+  it('starts at the month of the bill, and follows the category and the day until one is picked', () => {
+    const draft = expenseDraft(undefined, { today: TODAY, vatRegistered: true })
+    expect(draft.periodMonth).toBe('2026-09')
+    // Electricity: its bills come the month after, so a bill of 3 October is for September.
+    const electricity = withPeriodDefault(
+      { ...draft, businessDate: '2026-10-03' },
+      { chosen: false, billedNextMonth: true },
+    )
+    expect(electricity.periodMonth).toBe('2026-09')
+    // Rent: the bill's own month.
+    expect(
+      withPeriodDefault(
+        { ...draft, businessDate: '2026-10-03' },
+        { chosen: false, billedNextMonth: false },
+      ).periodMonth,
+    ).toBe('2026-10')
+    // A January bill of the month after is for December of the year before.
+    expect(
+      withPeriodDefault(
+        { ...draft, businessDate: '2027-01-05' },
+        { chosen: false, billedNextMonth: true },
+      ).periodMonth,
+    ).toBe('2026-12')
+    // Picked by the person: kept.
+    expect(
+      withPeriodDefault(
+        { ...draft, periodMonth: '2026-06', businessDate: '2026-10-03' },
+        { chosen: true, billedNextMonth: true },
+      ).periodMonth,
+    ).toBe('2026-06')
+  })
+
+  it('is sent, from 12 months before the bill to 1 after it', () => {
+    expect(checkExpense(filled({ periodMonth: '2026-08' }), REGISTERED).fields?.periodMonth).toBe(
+      '2026-08',
+    )
+    expect(checkExpense(filled({ periodMonth: '2025-09' }), REGISTERED).fields?.periodMonth).toBe(
+      '2025-09',
+    )
+    expect(checkExpense(filled({ periodMonth: '2026-10' }), REGISTERED).fields?.periodMonth).toBe(
+      '2026-10',
+    )
+    for (const periodMonth of ['2025-08', '2026-11', '', '2026-13']) {
+      const checked = checkExpense(filled({ periodMonth }), REGISTERED)
+      expect(checked.fields, periodMonth).toBeNull()
+      expect(checked.errors.periodMonth).toEqual({ key: 'expenses.editor.errors.periodMonth' })
+    }
+  })
+})
+
+describe('"For which month?" and the closed books (D-200)', () => {
+  it('defaults to the first open month, never a closed one', () => {
+    // The books closed through the end of August: a new expense on 30 September is for September.
+    const draft = expenseDraft(undefined, {
+      today: '2026-09-30',
+      vatRegistered: false,
+      closedThrough: '2026-08-31',
+    })
+    expect(draft.periodMonth).toBe('2026-09')
+    // August's electricity, billed in September after the close: September.
+    expect(
+      withPeriodDefault(draft, {
+        chosen: false,
+        billedNextMonth: true,
+        closedThrough: '2026-08-31',
+      }).periodMonth,
+    ).toBe('2026-09')
+    // Not closed yet: August.
+    expect(
+      withPeriodDefault(draft, { chosen: false, billedNextMonth: true, closedThrough: null })
+        .periodMonth,
+    ).toBe('2026-08')
+  })
+
+  it('offers the open months only, and the saved one when it is not among them', () => {
+    expect(periodMonthOptions('2026-09', '2026-09', null)).toHaveLength(14)
+    expect(periodMonthOptions('2026-09', '2026-09', '2026-08-31')).toEqual(['2026-10', '2026-09'])
+    // Closed only in part: August still offered.
+    expect(periodMonthOptions('2026-09', '2026-09', '2026-08-15')).toEqual([
+      '2026-10',
+      '2026-09',
+      '2026-08',
+    ])
+    // A correction's copy for a closed month: kept, last.
+    expect(periodMonthOptions('2026-09', '2026-07', '2026-08-31')).toEqual([
+      '2026-10',
+      '2026-09',
+      '2026-07',
+    ])
+    // A bill dated in the closed period: its months as before (its date says it cannot be finalized).
+    expect(periodMonthOptions('2026-03', '2026-03', '2026-12-31')).toHaveLength(14)
   })
 })

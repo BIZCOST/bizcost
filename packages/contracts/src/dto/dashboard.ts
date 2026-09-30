@@ -1,7 +1,8 @@
 import { z } from 'zod'
 
-// Dashboard (ROADMAP.md Step 7, docs/PRODUCT.md §10): in M1, the getting-started checklist, built
-// from real data.
+// Dashboard (ROADMAP.md Step 7, docs/PRODUCT.md §10): the getting-started checklists, built from real
+// data. "Finish setting up" (M1: the business's profile, TRN, team and branches) and, since the
+// Costing Core's release (M2 Step 7), "Let's find the real cost of what you sell".
 
 /**
  * The checklist's steps, in the order shown: complete the business profile, add the TRN, invite the
@@ -23,6 +24,47 @@ export const checklistItemDto = z.object({
 })
 export type ChecklistItemDto = z.infer<typeof checklistItemDto>
 
+/**
+ * "Let's find the real cost of what you sell" (PRODUCT.md §10, M2 Step 7), in the order shown: add
+ * what you sell → what you use to make it → purchase prices → your regular running costs → your time
+ * (without a team) → see your product costs. Which of them a member sees: `costStepIds` in
+ * @bizcost/modules (the modules on, the keys to do it, and for the last two the costs visible).
+ */
+export const COST_STEP_IDS = [
+  'products',
+  'recipes',
+  'purchases',
+  'running_costs',
+  'owner_time',
+  'product_costs',
+] as const
+export type CostStepId = (typeof COST_STEP_IDS)[number]
+
+/**
+ * What a cost step still needs: running costs not entered yet, the estimate of monthly purchases
+ * (running costs entered, fewer than 3 months of purchases, no estimate; only for a member who may
+ * set it), the owner's hourly rate, their minutes on any product or service.
+ */
+export const COST_STEP_PARTS = ['runningCosts', 'estimate', 'hourlyRate', 'minutes'] as const
+export type CostStepPart = (typeof COST_STEP_PARTS)[number]
+
+export const costStepDto = z.object({
+  id: z.enum(COST_STEP_IDS),
+  done: z.boolean(),
+  missing: z.array(z.enum(COST_STEP_PARTS)),
+  /**
+   * How many are still left, where it counts them (null otherwise): products made here without what
+   * goes into them (`recipes`), materials they use never bought (`purchases`), products and services
+   * whose cost is incomplete (`product_costs`).
+   */
+  remaining: z.int().nonnegative().nullable(),
+})
+export type CostStepDto = z.infer<typeof costStepDto>
+
 /** `dashboard.checklist`: the steps this member can act on in this business, with their state. */
-export const dashboardChecklistDto = z.object({ items: z.array(checklistItemDto) })
+export const dashboardChecklistDto = z.object({
+  items: z.array(checklistItemDto),
+  /** "Let's find the real cost of what you sell": empty when the member can act on none. */
+  costSteps: z.array(costStepDto),
+})
 export type DashboardChecklistDto = z.infer<typeof dashboardChecklistDto>

@@ -2,6 +2,7 @@
 
 import { useTRPC } from '@bizcost/app-core'
 import type { ExpenseListItemDto } from '@bizcost/contracts'
+import { addMonths, monthOf } from '@bizcost/domain'
 import { keepPreviousData, useInfiniteQuery, useQuery } from '@tanstack/react-query'
 import {
   ChevronDownIcon,
@@ -27,7 +28,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { NativeSelect } from '@/components/ui/native-select'
 import { ListEmpty, ListSkeleton } from '@/features/catalog/catalog-list'
-import { Money, useBusinessDate } from '@/features/purchasing/amounts'
+import { Money, useBusinessDate, useBusinessMonth } from '@/features/purchasing/amounts'
 import { can, isSectionVisible, sectionPath } from '@/features/settings/sections'
 import { useBusinessContext } from '@/lib/trpc/client'
 import { cn } from '@/lib/utils'
@@ -212,8 +213,17 @@ function FilterBar({
   const { t } = useTranslation()
   const id = useId()
   const { categories } = useCostCategories()
-  // On a phone the category and the days fold away under one button (open while one is set).
-  const narrowing = [filters.categoryId, filters.from, filters.to].filter(Boolean).length
+  const monthName = useBusinessMonth()
+  // The months the filter offers: next month and the 12 before this one (the months a new bill can
+  // be for, D-194), and the one in the address.
+  const [thisMonth] = useState(() => new Date().toISOString().slice(0, 7))
+  const months = Array.from({ length: 14 }, (_, index) => addMonths(thisMonth, 1 - index))
+  if (filters.month && !months.includes(filters.month)) months.push(filters.month)
+  // On a phone the category, the month and the days fold away under one button (open while one is
+  // set).
+  const narrowing = [filters.categoryId, filters.month, filters.from, filters.to].filter(
+    Boolean,
+  ).length
   const [open, setOpen] = useState(narrowing > 0)
   return (
     <div className="mb-4 space-y-3">
@@ -256,11 +266,11 @@ function FilterBar({
       <div
         id={`${id}-more`}
         className={cn(
-          'grid grid-cols-2 items-end gap-3 sm:grid-cols-[minmax(0,2fr)_minmax(0,1fr)_minmax(0,1fr)]',
+          'grid grid-cols-2 items-end gap-3 lg:grid-cols-[minmax(0,3fr)_minmax(0,2fr)_minmax(0,2fr)_minmax(0,2fr)]',
           !open && 'max-sm:hidden',
         )}
       >
-        <div className="col-span-2 flex flex-col gap-1 sm:col-span-1">
+        <div className="flex flex-col gap-1 max-sm:col-span-2">
           <label htmlFor={`${id}-category`} className="text-sm text-muted-foreground">
             {t('expenses.list.filters.category')}
           </label>
@@ -273,6 +283,23 @@ function FilterBar({
             {categories.map((category) => (
               <option key={category.id} value={category.id}>
                 {category.name}
+              </option>
+            ))}
+          </NativeSelect>
+        </div>
+        <div className="flex flex-col gap-1 max-sm:col-span-2">
+          <label htmlFor={`${id}-month`} className="text-sm text-muted-foreground">
+            {t('expenses.list.filters.month')}
+          </label>
+          <NativeSelect
+            id={`${id}-month`}
+            value={filters.month ?? ''}
+            onChange={(event) => onChange({ month: event.target.value || null })}
+          >
+            <option value="">{t('expenses.list.filters.anyMonth')}</option>
+            {months.map((month) => (
+              <option key={month} value={month}>
+                {monthName(month)}
               </option>
             ))}
           </NativeSelect>
@@ -303,7 +330,14 @@ function FilterBar({
           variant="link"
           className="h-auto px-0"
           onClick={() =>
-            onChange({ status: 'all', categoryId: null, from: null, to: null, search: '' })
+            onChange({
+              status: 'all',
+              categoryId: null,
+              month: null,
+              from: null,
+              to: null,
+              search: '',
+            })
           }
         >
           {t('expenses.list.filters.clear')}
@@ -328,9 +362,16 @@ function ExpenseRow({
 }) {
   const { t } = useTranslation()
   const businessDate = useBusinessDate()
+  const monthName = useBusinessMonth()
   const parts = [
     expense.description ? <bdi key="category">{expense.categoryName}</bdi> : null,
     <span key="date">{businessDate(expense.businessDate)}</span>,
+    // The month the bill is for, when it is not the bill's own month (D-194).
+    expense.periodMonth !== monthOf(expense.businessDate) ? (
+      <span key="month" data-period-month={expense.periodMonth}>
+        {t('expenses.list.forMonth', { month: monthName(expense.periodMonth) })}
+      </span>
+    ) : null,
     expense.supplierName ? <bdi key="supplier">{expense.supplierName}</bdi> : null,
     expense.reference ? (
       <bdi key="reference" dir="auto">

@@ -70,6 +70,11 @@
     "expenses": "Expenses",
     "running_costs": "Running Costs",
     "product_costs": "Product costs",
+    "new_product": "New product or service",
+    "new_product_projects": "New service or work item",
+    "new_product_services": "New service",
+    "new_purchase": "New purchase",
+    "new_expense": "New expense",
     "more": "More",
     "moreTitle": "More sections",
     "quickAdd": "Add new"
@@ -77,10 +82,12 @@
   "navShort": {
     "products": "Products",
     "products_projects": "Services",
+    "products_services": "Services",
     "materials": "Materials",
     "materials_food": "Ingredients",
     "materials_factory": "Materials",
-    "materials_retail": "Goods"
+    "materials_retail": "Goods",
+    "product_costs": "Costs"
   },
   "home": {
     "greeting": "Hello, {{name}}",
@@ -96,7 +103,6 @@
   "business": {
     "switch": "Switch business",
     "create": "Create another business",
-    "sectionsNote": "Your sections will appear here as soon as they are ready.",
     "lost": {
       "title": "This business isn't open to you",
       "body": "You're not a member of it any more, or it was removed. Ask its owner if you need access."

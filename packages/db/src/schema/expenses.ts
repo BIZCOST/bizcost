@@ -52,6 +52,10 @@ export const costCategories = tenantTable(
   {
     name: text('name').notNull(),
     archivedAt: timestamptz('archived_at'),
+    // Its bills usually come the month after the month they are for (electricity, water, internet,
+    // phone among the starter categories): a new expense's month defaults to the month before its
+    // bill's date (the owner's request of 2026-09-30).
+    billedNextMonth: boolean('billed_next_month').notNull().default(false),
   },
   (t) => [
     uniqueIndex('cost_categories_name_key')
@@ -78,6 +82,10 @@ export const expenses = tenantTable(
     supplierId: uuid('supplier_id'),
     locationId: uuid('location_id').notNull(),
     businessDate: date('business_date', { mode: 'string' }).notNull(),
+    // The month the bill is for (its first day): this month's electricity, billed next month, is for
+    // this month. From 12 months before the bill's month to 1 month after it (the owner's request of
+    // 2026-09-30). Real profit (Phase 3) counts the expense in this month.
+    periodMonth: date('period_month', { mode: 'string' }).notNull(),
     documentType: text('document_type').$type<PurchaseDocumentType>().notNull(),
     // The supplier's invoice or receipt number.
     reference: text('reference'),
@@ -112,6 +120,10 @@ export const expenses = tenantTable(
     reversedAt: timestamptz('reversed_at'),
     reversedBy: uuid('reversed_by'),
     reversalDate: date('reversal_date', { mode: 'string' }),
+    // The month the reversal counts in (its first day): the expense's own month, or the first open
+    // month when the books were closed through the end of it (D-200). Null (a row reversed before it
+    // was added, or written directly): the expense's own month.
+    reversalPeriodMonth: date('reversal_period_month', { mode: 'string' }),
     // A draft made by "correct": the reversed expense it replaces.
     copiedFromId: uuid('copied_from_id'),
   },
@@ -132,6 +144,8 @@ export const expenses = tenantTable(
     index('expenses_paid_by_member_idx').on(t.businessId, t.paidByMemberId),
     // A member's own expenses ("My expenses", D-181): the ones they entered.
     index('expenses_created_by_idx').on(t.businessId, t.createdBy),
+    // Expenses by the month they are for.
+    index('expenses_period_month_idx').on(t.businessId, t.periodMonth),
     check(
       'expenses_document_type_check',
       sql`document_type in (${quoted(PURCHASE_DOCUMENT_TYPES)})`,
@@ -190,6 +204,19 @@ export const expenses = tenantTable(
         and (status = 'reversed') = (reversal_date is not null)`,
     ),
     check('expenses_copied_from_check', sql`copied_from_id <> id`),
+    check(
+      'expenses_period_month_check',
+      sql`period_month = date_trunc('month', period_month)::date
+        and period_month >= (date_trunc('month', business_date) - interval '12 months')::date
+        and period_month <= (date_trunc('month', business_date) + interval '1 month')::date`,
+    ),
+    check(
+      'expenses_reversal_period_month_check',
+      sql`reversal_period_month is null
+        or (status = 'reversed'
+          and reversal_period_month = date_trunc('month', reversal_period_month)::date
+          and reversal_period_month >= period_month)`,
+    ),
   ],
 )
 

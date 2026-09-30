@@ -18,8 +18,7 @@ import {
 import { businessProcedure, requireModule, requirePermission, router } from '../trpc'
 
 /**
- * Running costs (services/running-costs.ts; D-116): module `running_costs` (planned until M2 Step 7;
- * the dev-only preview reaches it before then, D-125), then running_costs.items.view to read and
+ * Running costs (services/running-costs.ts; D-116): module `running_costs` (released in M2 Step 7), then running_costs.items.view to read and
  * .manage to add, change or remove one. Outputs are withMeta(): amounts are `cost` (D-165).
  */
 const runningCostsModule = businessProcedure.use(requireModule('running_costs'))

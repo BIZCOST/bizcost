@@ -1,6 +1,6 @@
 import { compareDecimal, newId, parseNumber } from '@bizcost/domain'
 import { describe, expect, it } from 'vitest'
-import { DECIMAL_MAX_LENGTH, zBusinessDate, zDecimal, zUuid } from './primitives'
+import { DECIMAL_MAX_LENGTH, zBusinessDate, zBusinessMonth, zDecimal, zUuid } from './primitives'
 
 describe('zDecimal', () => {
   it('accepts negative values and trims surrounding whitespace', () => {
@@ -53,5 +53,15 @@ describe('zUuid', () => {
 describe('zBusinessDate', () => {
   it('outputs the same YYYY-MM-DD string', () => {
     expect(zBusinessDate.parse('2026-09-25')).toBe('2026-09-25')
+  })
+})
+
+describe('zBusinessMonth', () => {
+  it('reads YYYY-MM, Arabic-Indic digits too, and nothing else', () => {
+    expect(zBusinessMonth.parse('2026-09')).toBe('2026-09')
+    expect(zBusinessMonth.parse(' ٢٠٢٦-١٠ ')).toBe('2026-10')
+    for (const bad of ['2026-13', '2026-00', '2026-9', '2026-09-01', '26-09', '']) {
+      expect(zBusinessMonth.safeParse(bad).success, bad).toBe(false)
+    }
   })
 })

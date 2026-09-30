@@ -7,7 +7,9 @@ import type { CapabilityKey } from './capabilities'
 // A planned module gets its permission keys and nav when its build starts (Products & Services and
 // Materials in M2 Step 2, D-124) and stays hidden until it is released: nav, tabs, "+" and the API
 // gates count only released modules (the dev-only preview of registry.ts aside, D-125). Modules not
-// being built carry no permission keys, nav or actions.
+// being built carry no permission keys, nav or actions. M2 Step 7 released the Costing Core
+// (Products & Services, Materials, Suppliers, Purchases, Expenses, Running Costs, Files and the Cost
+// Engine) together.
 
 export const MODULE_IDS = [
   'dashboard',
@@ -50,9 +52,13 @@ export type ModuleAvailability = 'released' | 'planned'
 /**
  * A navigation entry (sidebar, tabs). Without `permission` every member of the business sees it.
  * `labelKey` is a common `nav.*` key; `icon` a lucide icon name the web app maps to its icon (an
- * unknown name gets a neutral one, so a new module shows without changes to the shell).
+ * unknown name gets a neutral one, so a new module shows without changes to the shell). `tab`: its
+ * claim to a place in the phone's tab bar when the member's entries do not all fit (1 first); without
+ * it the entry goes under "More" then. The tabs keep the nav's order (M2 Step 7: an owner gets Home,
+ * Products, "+", Product costs, More; an employee keeps Expenses, D-184).
  */
-export interface NavEntry extends NavEntryDto {
+export interface NavEntry extends Omit<NavEntryDto, 'tab'> {
+  readonly tab?: number
   readonly permission?: string
   /**
    * Also shown, whatever the member's keys, to a member the business owes (or paid back) for
@@ -99,6 +105,7 @@ const DASHBOARD = {
       path: '',
       icon: 'layout-dashboard',
       group: 'main',
+      tab: 1,
       permission: 'dashboard.home.view',
     },
   ],
@@ -108,7 +115,9 @@ const DASHBOARD = {
 } as const satisfies ModuleManifest
 
 // Settings includes Locations (PRODUCT.md §7). Its nav entry has no permission: every member reaches
-// their own profile and language there; each section checks its own key.
+// their own profile and language there; each section checks its own key. Closing the books
+// (`settings.books.close`, D-114 rule 6) is a Settings key since M2 Step 7 (D-201): purchases and
+// expenses both obey the date, so it works with either of them on.
 const SETTINGS = {
   id: 'settings',
   kind: 'core',
@@ -123,6 +132,7 @@ const SETTINGS = {
     'settings.members.manage',
     'settings.roles.manage',
     'settings.modules.manage',
+    'settings.books.close',
   ],
   nav: [
     {
@@ -138,13 +148,13 @@ const SETTINGS = {
   requiresCapabilities: [],
 } as const satisfies ModuleManifest
 
-// Products & Services (M2 Step 2; planned until Step 7 releases the M2 modules together). Recipes (M2
-// Step 4, D-149): what each product or service uses, and what its materials cost (`cost`). A recipe
-// names materials, so its procedures also need the Materials module on.
+// Products & Services (M2 Step 2; released with the Costing Core in Step 7). Recipes (M2 Step 4,
+// D-149): what each product or service uses, and what its materials cost (`cost`). A recipe names
+// materials, so its procedures also need the Materials module on. "+": a new product or service.
 const PRODUCTS = {
   id: 'products',
   kind: 'core',
-  availability: 'planned',
+  availability: 'released',
   phase: 2,
   deps: [],
   permissionKeys: [
@@ -160,21 +170,30 @@ const PRODUCTS = {
       path: 'products',
       icon: 'tag',
       group: 'main',
+      tab: 3,
       permission: 'products.items.view',
     },
   ],
-  quickActions: [],
+  quickActions: [
+    {
+      id: 'new_product',
+      labelKey: 'nav.new_product',
+      path: 'products/new',
+      icon: 'tag',
+      permission: 'products.items.manage',
+    },
+  ],
   // The product cost (M2 Step 4): what its materials cost at their average.
   sensitiveFields: ['cost'],
   requiresCapabilities: [],
 } as const satisfies ModuleManifest
 
-// Materials (M2 Step 2; planned until Step 7). Material cost comes only from purchases (PRODUCT.md
+// Materials (M2 Step 2; released in Step 7). Material cost comes only from purchases (PRODUCT.md
 // §4.8), hence the dependency.
 const MATERIALS = {
   id: 'materials',
   kind: 'core',
-  availability: 'planned',
+  availability: 'released',
   phase: 2,
   deps: ['purchases'],
   permissionKeys: ['materials.items.view', 'materials.items.manage'],
@@ -185,6 +204,7 @@ const MATERIALS = {
       path: 'materials',
       icon: 'package',
       group: 'main',
+      tab: 6,
       permission: 'materials.items.view',
     },
   ],
@@ -194,11 +214,11 @@ const MATERIALS = {
   requiresCapabilities: [],
 } as const satisfies ModuleManifest
 
-// Suppliers (M2 Step 3; planned until Step 7): a list of its own, separate from customers (D-112).
+// Suppliers (M2 Step 3; released in Step 7): a list of its own, separate from customers (D-112).
 const SUPPLIERS = {
   id: 'suppliers',
   kind: 'core',
-  availability: 'planned',
+  availability: 'released',
   phase: 2,
   deps: [],
   permissionKeys: ['suppliers.items.view', 'suppliers.items.manage'],
@@ -217,16 +237,16 @@ const SUPPLIERS = {
   requiresCapabilities: [],
 } as const satisfies ModuleManifest
 
-// Purchases (M2 Step 3; planned until Step 7): purchases, supplier returns and credit notes, posted
-// with the weighted average (D-114, D-120), their receipts (attachments), the "books closed up to"
-// date, and what the business still owes on purchases bought on credit or paid by a member, with the
-// payments of it (the owner's request of 2026-09-29, D-160; its own nav entry, "Amounts owed").
+// Purchases (M2 Step 3; released in Step 7): purchases, supplier returns and credit notes, posted
+// with the weighted average (D-114, D-120), their receipts (attachments), and what the business still
+// owes on purchases bought on credit or paid by a member, with the payments of it (the owner's request of 2026-09-29, D-160; its own nav entry, "Amounts owed").
 // Materials depend on it (their cost comes from purchases); the reverse would be a cycle, so
-// Purchases lists no deps. The supplier of a purchase is optional (no dependency either).
+// Purchases lists no deps. The supplier of a purchase is optional (no dependency either). "+": a new
+// purchase.
 const PURCHASES = {
   id: 'purchases',
   kind: 'core',
-  availability: 'planned',
+  availability: 'released',
   phase: 2,
   deps: [],
   permissionKeys: [
@@ -234,7 +254,6 @@ const PURCHASES = {
     'purchases.documents.manage',
     'purchases.documents.post',
     'purchases.documents.reverse',
-    'purchases.books.close',
     'purchases.payments.view',
     'purchases.payments.record',
   ],
@@ -245,6 +264,7 @@ const PURCHASES = {
       path: 'purchases',
       icon: 'shopping-cart',
       group: 'main',
+      tab: 5,
       permission: 'purchases.documents.view',
     },
     {
@@ -257,21 +277,30 @@ const PURCHASES = {
       payees: true,
     },
   ],
-  quickActions: [],
+  quickActions: [
+    {
+      id: 'new_purchase',
+      labelKey: 'nav.new_purchase',
+      path: 'purchases/new',
+      icon: 'shopping-cart',
+      permission: 'purchases.documents.manage',
+    },
+  ],
   sensitiveFields: ['cost', 'supplier_price'],
   requiresCapabilities: [],
 } as const satisfies ModuleManifest
 
-// Expenses (M2 Step 5; planned until Step 7): one amount in a category (shared with Running Costs,
+// Expenses (M2 Step 5; released in Step 7): one amount in a category (shared with Running Costs,
 // D-116), its document type apart from how it was paid (PRODUCT.md §4 rule 13), receipts, and an
 // optional approval before it is final (with a team, D-164). An expense bought on credit or paid by a
 // member is owed until paid, next to purchases in "Amounts owed" (D-166): the page is one, listed by
 // whichever module comes first (the registry lists a path once). Amounts are `supplier_price`
-// (D-165). The supplier is optional, so no dependency on Suppliers.
+// (D-165). The supplier is optional, so no dependency on Suppliers. "+": a new expense (staff enter
+// theirs, D-180).
 const EXPENSES = {
   id: 'expenses',
   kind: 'core',
-  availability: 'planned',
+  availability: 'released',
   phase: 2,
   deps: [],
   permissionKeys: [
@@ -291,6 +320,7 @@ const EXPENSES = {
       path: 'expenses',
       icon: 'receipt',
       group: 'main',
+      tab: 4,
       permission: 'expenses.documents.view',
     },
     {
@@ -303,18 +333,26 @@ const EXPENSES = {
       payees: true,
     },
   ],
-  quickActions: [],
+  quickActions: [
+    {
+      id: 'new_expense',
+      labelKey: 'nav.new_expense',
+      path: 'expenses/new',
+      icon: 'receipt',
+      permission: 'expenses.documents.manage',
+    },
+  ],
   sensitiveFields: ['supplier_price'],
   requiresCapabilities: [],
 } as const satisfies ModuleManifest
 
-// Running Costs (M2 Step 5; planned until Step 7): "What do you pay to run your business?" Regular
+// Running Costs (M2 Step 5; released in Step 7): "What do you pay to run your business?" Regular
 // amounts per period in the categories shared with Expenses, turned into monthly amounts that Step 6
 // shares over product costs (D-116). Never posted. Amounts are `cost` (D-165).
 const RUNNING_COSTS = {
   id: 'running_costs',
   kind: 'core',
-  availability: 'planned',
+  availability: 'released',
   phase: 2,
   deps: [],
   permissionKeys: ['running_costs.items.view', 'running_costs.items.manage'],
@@ -333,7 +371,7 @@ const RUNNING_COSTS = {
   requiresCapabilities: [],
 } as const satisfies ModuleManifest
 
-// Cost Engine (M2 Step 6; planned until Step 7): "Product costs", each product's cost for one unit
+// Cost Engine (M2 Step 6; released in Step 7): "Product costs", each product's cost for one unit
 // sold, line by line (its materials at their averages, D-115; the running-cost share of its material
 // cost, D-116; the owner's time without a team, D-119) and its margin on the price before VAT, worked
 // out on read; and how it is worked out (the owner's estimate of monthly purchases and hourly rate).
@@ -342,7 +380,7 @@ const RUNNING_COSTS = {
 const COST_ENGINE = {
   id: 'cost_engine',
   kind: 'core',
-  availability: 'planned',
+  availability: 'released',
   phase: 2,
   deps: ['products'],
   permissionKeys: ['cost_engine.product_costs.view', 'cost_engine.settings.manage'],
@@ -353,11 +391,30 @@ const COST_ENGINE = {
       path: 'product-costs',
       icon: 'calculator',
       group: 'main',
+      tab: 2,
       permission: 'cost_engine.product_costs.view',
     },
   ],
   quickActions: [],
   sensitiveFields: ['cost', 'profit_margin', 'supplier_price'],
+  requiresCapabilities: [],
+} as const satisfies ModuleManifest
+
+// Files (released with the Costing Core in Step 7): receipts and documents attached to records. It
+// has no page of its own: its files show inside the records they belong to (a purchase's or an
+// expense's receipts), and attachment.* need it on as well as the record's own module and keys. With
+// it off, receipts are hidden in those screens and the API refuses them (MODULE_DISABLED). A
+// receipt's download URL is a supplier price (it shows what was paid).
+const FILES = {
+  id: 'files',
+  kind: 'core',
+  availability: 'released',
+  phase: 2,
+  deps: [],
+  permissionKeys: [],
+  nav: [],
+  quickActions: [],
+  sensitiveFields: ['supplier_price'],
   requiresCapabilities: [],
 } as const satisfies ModuleManifest
 
@@ -402,7 +459,7 @@ export const MODULES = [
   PURCHASES,
   EXPENSES,
   RUNNING_COSTS,
-  planned('files', 'core', 2),
+  FILES,
   COST_ENGINE,
   planned('customers', 'core', 3),
   planned('sales', 'core', 3),

@@ -6,7 +6,6 @@ import {
   PERMISSION_CATALOG,
   releasedModules,
   roleTemplateByKey,
-  withPreviewModules,
   type ModuleManifest,
 } from '@bizcost/modules'
 import { hasMessage, terminologyKey, type I18nKey } from '@bizcost/i18n'
@@ -180,8 +179,8 @@ describe('a module released later shows with no change to the shell', () => {
   })
 })
 
-describe('the modules being built (M2 Step 2), in the dev-only preview', () => {
-  const registry = withPreviewModules(['products', 'materials'])
+describe('Products & Services and Materials (released with the Costing Core, M2 Step 7)', () => {
+  const registry = MODULES
   const on = new Set(['products', 'materials'])
 
   it('show before Settings with their own icons, for members with their permission', () => {
@@ -207,8 +206,12 @@ describe('the modules being built (M2 Step 2), in the dev-only preview', () => {
       'materials',
       'settings',
     ])
-    // Released code: not there, whatever the business chose.
-    expect(labels(shellNav(buildModuleNav(on, owner), ID, ROOT))).toEqual(['dashboard', 'settings'])
+    // Only where the business has them on.
+    expect(labels(shellNav(buildModuleNav(new Set(['products']), owner), ID, ROOT))).toEqual([
+      'dashboard',
+      'products',
+      'settings',
+    ])
   })
 
   it('are named in the business wording', () => {
@@ -261,7 +264,7 @@ describe('bottomTabs', () => {
 })
 
 describe('a page two modules share: Amounts owed (Purchases and Expenses, D-166)', () => {
-  const registry = withPreviewModules(['materials', 'suppliers', 'purchases', 'expenses'])
+  const registry = MODULES
   const both = new Set(['materials', 'suppliers', 'purchases', 'expenses'])
   const shared = ['purchases', 'expenses'] as const
 
@@ -291,13 +294,7 @@ describe('a page two modules share: Amounts owed (Purchases and Expenses, D-166)
 
   it('owed for a purchase, an employee keeps Expenses in the phone bar; Amounts owed goes to More (D-184)', () => {
     const on = new Set(['products', 'materials', 'suppliers', 'purchases', 'expenses'])
-    const catalog = withPreviewModules([
-      'products',
-      'materials',
-      'suppliers',
-      'purchases',
-      'expenses',
-    ])
+    const catalog = MODULES
     const before = shellNav(buildModuleNav(on, canFor('employee'), catalog), ID, ROOT)
     expect(labels(before)).toEqual(['dashboard', 'products', 'materials', 'expenses', 'settings'])
     const owedTo = buildModuleNav(on, canFor('employee'), catalog, new Set(['purchases']))
@@ -342,9 +339,10 @@ describe('wayBack', () => {
 
 describe('navSlots: the placeholder while a business loads', () => {
   it('has a place for each released entry, by group', () => {
-    expect(navSlots(releasedModules())).toEqual({ main: 1, system: 1 })
+    // Home, the Costing Core's eight sections (Amounts owed once) and Settings.
+    expect(navSlots(releasedModules())).toEqual({ main: 9, system: 1 })
     expect(navSlots(released(ORDERS).filter((m) => m.availability === 'released'))).toEqual({
-      main: 2,
+      main: 10,
       system: 1,
     })
   })
@@ -359,8 +357,8 @@ describe('businessSubpath', () => {
   })
 })
 
-describe('Product costs (the Cost Engine, M2 Step 6), in the dev-only preview', () => {
-  const registry = withPreviewModules(['products', 'materials', 'running_costs', 'cost_engine'])
+describe('Product costs (the Cost Engine, M2 Step 6; released in Step 7)', () => {
+  const registry = MODULES
   const on = new Set(['products', 'materials', 'running_costs', 'cost_engine'])
 
   it('shows after the costing sections with its own icon, active on a product breakdown', () => {
@@ -393,7 +391,7 @@ describe('Product costs (the Cost Engine, M2 Step 6), in the dev-only preview', 
     for (const template of ['sales', 'supervisor', 'employee']) {
       expect(access(template), template).toBe('forbidden')
     }
-    // Off for a business without it, and still planned in the released code.
+    // Off for a business without it; open without the dev-only preview since the release.
     expect(
       moduleAccess(
         buildModuleNav(new Set(['products']), owner, registry),
@@ -401,6 +399,117 @@ describe('Product costs (the Cost Engine, M2 Step 6), in the dev-only preview', 
         'product_costs',
       ),
     ).toBe('off')
-    expect(moduleAccess(buildModuleNav(on, owner), 'cost_engine', 'product_costs')).toBe('off')
+    expect(moduleAccess(buildModuleNav(on, owner), 'cost_engine', 'product_costs')).toBe('open')
+  })
+})
+
+describe('the phone tab bar and "+" of the Costing Core (M2 Step 7, D-189)', () => {
+  const costing = new Set([
+    'products',
+    'materials',
+    'suppliers',
+    'purchases',
+    'expenses',
+    'running_costs',
+    'files',
+    'cost_engine',
+  ])
+  const bar = (template: string) => {
+    const modules = buildModuleNav(costing, canFor(template))
+    const items = shellNav(modules, ID, ROOT)
+    const actions = shellQuickActions(modules, ID)
+    const tabs = bottomTabs(items, actions)
+    return {
+      items: labels(items),
+      tabs: labels(tabs.tabs),
+      more: labels(tabs.more),
+      quickAdd: tabs.quickAdd,
+      actions: actions.map((action) => action.id),
+    }
+  }
+
+  it('gives the owner and a manager Home | Products | + | Product costs | More', () => {
+    for (const template of [OWNER_TEMPLATE_KEY, 'admin', 'manager']) {
+      const shown = bar(template)
+      expect(shown.items, template).toEqual([
+        'dashboard',
+        'products',
+        'materials',
+        'suppliers',
+        'purchases',
+        'payables',
+        'expenses',
+        'running_costs',
+        'product_costs',
+        'settings',
+      ])
+      expect(shown.tabs, template).toEqual(['dashboard', 'products', 'product_costs'])
+      expect(shown.more, template).toEqual([
+        'materials',
+        'suppliers',
+        'purchases',
+        'payables',
+        'expenses',
+        'running_costs',
+        'settings',
+      ])
+      expect(shown.quickAdd, template).toBe(true)
+      expect(shown.actions, template).toEqual(['new_product', 'new_purchase', 'new_expense'])
+    }
+  })
+
+  it('keeps Expenses in an employee bar, with "+" for a new expense only', () => {
+    const shown = bar('employee')
+    expect(shown.tabs).toEqual(['dashboard', 'products', 'expenses'])
+    expect(shown.more).toEqual(['materials', 'settings'])
+    expect(shown.actions).toEqual(['new_expense'])
+  })
+
+  it('gives an accountant four tabs and no "+" (they enter nothing)', () => {
+    const shown = bar('accountant')
+    expect(shown.quickAdd).toBe(false)
+    expect(shown.actions).toEqual([])
+    expect(shown.tabs).toEqual(['dashboard', 'products', 'expenses', 'product_costs'])
+    expect(shown.more[shown.more.length - 1]).toBe('settings')
+  })
+
+  it('shows every section of a member whose sections fit (Sales)', () => {
+    const shown = bar('sales')
+    expect(shown.tabs).toEqual(['dashboard', 'products', 'settings'])
+    expect(shown.more).toEqual([])
+    expect(shown.quickAdd).toBe(false)
+  })
+
+  it('offers only what the business has on: no purchase without Purchases', () => {
+    const modules = buildModuleNav(new Set(['products', 'expenses']), owner)
+    expect(shellQuickActions(modules, ID).map((action) => [action.id, action.href])).toEqual([
+      ['new_product', `${ROOT}/products/new`],
+      ['new_expense', `${ROOT}/expenses/new`],
+    ])
+  })
+
+  it('names "+" actions in the business wording', () => {
+    const modules = buildModuleNav(costing, owner)
+    const projects = (key: I18nKey) =>
+      terminologyKey(key, 'projects', (overlay) => hasMessage('en', overlay))
+    expect(shellQuickActions(modules, ID, projects).map((action) => action.labelKey)).toEqual([
+      'common.nav.new_product_projects',
+      'common.nav.new_purchase',
+      'common.nav.new_expense',
+    ])
+    for (const action of shellQuickActions(modules, ID)) {
+      expect(navIcon(action.icon)).not.toBe(FALLBACK_NAV_ICON)
+      expect(hasMessage('en', action.labelKey)).toBe(true)
+      expect(hasMessage('ar', action.labelKey)).toBe(true)
+    }
+  })
+
+  it('marks "More" when the page is under it (Purchases on an owner phone)', () => {
+    const modules = buildModuleNav(costing, owner)
+    const tabs = bottomTabs(
+      shellNav(modules, ID, `${ROOT}/purchases/new`),
+      shellQuickActions(modules, ID),
+    )
+    expect(tabs.more.find((item) => item.active)?.id).toBe('purchases')
   })
 })

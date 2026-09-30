@@ -86,8 +86,11 @@ describe('a member who sees costs but not supplier prices reads the prices paid'
         'business.context',
       ),
     )
-    expect(context.permissions.keys).toContain('data.cost.view')
+    // Since M2 Step 7 the data keys need each other (PERMISSION_NEEDS): the ones left alone grant
+    // nothing, so the member holds none of the three.
+    expect(context.permissions.keys).not.toContain('data.cost.view')
     expect(context.permissions.keys).not.toContain('data.supplier_price.view')
+    expect(context.permissions.keys).not.toContain('data.profit_margin.view')
     expect(context.visibleCategories).toEqual([])
     const milk = await a.material()
     const supplier = await a.supplier()

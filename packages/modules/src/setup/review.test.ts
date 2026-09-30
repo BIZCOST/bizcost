@@ -201,11 +201,16 @@ describe('buildSetupReview', () => {
     expect(textOf(withPos, 'orders')).toBe('modules.orders.desc')
   })
 
-  it('shows one banner while every listed item is planned (M1), and no per-row tags', () => {
+  it('tags each planned module "soon" once some listed modules are released (M2 Step 7), without the banner', () => {
     const { review } = reviewOf(WORKSHOP)
-    expect(review.banner).toBe(true)
-    for (const row of [...review.chosen, ...review.basics, ...review.more]) {
-      expect(row.soon).toBe(false)
+    expect(review.banner).toBe(false)
+    const rows = [...review.chosen, ...review.basics, ...review.more]
+    const soon = rows.filter((r) => r.soon).map((r) => rowIds([r])[0])
+    const now = rows.filter((r) => !r.soon && r.item.kind === 'module').map((r) => rowIds([r])[0])
+    expect(now).toEqual(expect.arrayContaining(['products', 'materials', 'purchases', 'expenses']))
+    expect(soon).toContain('orders')
+    for (const id of ['products', 'materials', 'suppliers', 'purchases', 'running_costs']) {
+      expect(soon, id).not.toContain(id)
     }
   })
 

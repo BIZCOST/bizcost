@@ -222,6 +222,11 @@ export const productCostCountsDto = z.object({
   incomplete: sensitive(z.int().min(0), 'cost'),
   loss: sensitive(z.int().min(0), 'profit_margin'),
   noTime: sensitive(z.int().min(0), 'cost'),
+  /**
+   * Of the incomplete ones, services without materials missing only what they cannot carry yet: running
+   * costs, with this method, and their optional materials (awaitsServiceShare, D-200).
+   */
+  servicesAwaitingShare: sensitive(z.int().min(0), 'cost'),
 })
 
 export const productCostListDto = withMeta(

@@ -18,9 +18,15 @@ import {
   can,
   checkDecimal,
   computeExpense,
+  defaultPeriodMonth,
   expenseError,
   expenseTransition,
+  firstDayOf,
+  firstOpenMonth,
   isCurrencyCode,
+  monthOf,
+  periodMonthAllowed,
+  periodMonthClosed,
   vatInCost,
   type CurrencyCode,
   type ExpenseAction,
@@ -41,11 +47,19 @@ import { assertCategory, assertCategoryExists } from './cost-categories'
 import {
   assertActivePayer,
   assertPaidBy,
+  assertPaidByShown,
   assertSupplier,
+  assertVatShown,
   draftContext,
   resolveLocation,
 } from './purchases'
-import { assertPostable, isoOf, lockPostingBusiness, reversalDateOf } from './stock'
+import {
+  assertPostable,
+  isoOf,
+  lockPostingBusiness,
+  reversalDateOf,
+  type PostingBusiness,
+} from './stock'
 
 // Expenses (ROADMAP.md M2 Step 5; PRODUCT.md §4 rule 13; DATA_MODEL.md §6; D-114, D-116, D-164–D-166).
 // Module `expenses`: expenses.documents.view to read, .manage to save, discard and send drafts for
@@ -57,6 +71,16 @@ import { assertPostable, isoOf, lockPostingBusiness, reversalDateOf } from './st
 // computed on every save (computeExpense: the purchase line's maths). How it was paid is required,
 // with the purchase's methods (D-159): on credit it needs its supplier, paid personally names an
 // active member, and either leaves it owed (payments.ts, "Amounts owed", D-166).
+//
+// The month an expense is for (`period_month`, "For which month?", the owner's request of 2026-09-30):
+// apart from its bill's date, since a bill often comes after the month it covers. Left out, it is the
+// month before the bill's date in a category billed the month after (electricity, water, internet,
+// phone), else the bill's month; up to 12 months before the bill's month and 1 month after it.
+// Anything that counts expenses by month counts them in this month (real profit, Phase 3). Closed
+// books close months too (D-200): once the books are closed through a month's last day, no expense
+// for it is sent for approval or finalized (BOOKS_CLOSED, as for a bill dated then), the default
+// month is the first open one instead, and a reversal of one finalized before counts in the first
+// open month (`reversal_period_month`), as its date moves to the first open day (D-114 rule 3).
 //
 // Approval (D-164): optional, a business setting that applies only while the business has a team.
 // The transitions are expenseTransition's (@bizcost/domain): with approval on, a member who may not
@@ -128,6 +152,7 @@ interface ExpenseRecord extends Record<string, unknown> {
   supplier_name: string | null
   location_id: string
   business_date: string
+  period_month: string
   document_type: PurchaseDocumentType
   reference: string | null
   description: string | null
@@ -177,6 +202,7 @@ export async function readExpense(tx: Tx, ctx: BusinessCtx, id: string): Promise
   const [row] = (await tx.execute(sql`
     select e.id, e.status, e.category_id, c.name as category_name, e.supplier_id,
            s.name as supplier_name, e.location_id, e.business_date::text as business_date,
+           to_char(e.period_month, 'YYYY-MM') as period_month,
            e.document_type, e.reference, e.description, e.payment_method, e.paid_by_member_id,
            pm.display_name as paid_by_member_name, e.prices_include_vat, e.vat_not_reclaimable,
            trim(e.currency) as currency, trim_scale(e.amount)::text as amount,
@@ -219,6 +245,7 @@ export async function readExpense(tx: Tx, ctx: BusinessCtx, id: string): Promise
     supplierName: row.supplier_name,
     locationId: row.location_id,
     businessDate: row.business_date,
+    periodMonth: row.period_month,
     documentType: row.document_type,
     reference: row.reference,
     description: row.description,
@@ -269,6 +296,7 @@ interface ListRecord extends Record<string, unknown> {
   id: string
   status: ExpenseStatus
   business_date: string
+  period_month: string
   category_id: string
   category_name: string
   supplier_id: string | null
@@ -284,7 +312,10 @@ interface ListRecord extends Record<string, unknown> {
   version: number
 }
 
-/** `expense.list`: newest business day first, with filters and a cursor. */
+/**
+ * `expense.list`: newest business day first, with filters (among them the month the expenses are for,
+ * whatever their bills' dates) and a cursor.
+ */
 export async function listExpenses(ctx: BusinessCtx, input: ListInput): Promise<ExpenseListDto> {
   const conditions = [sql`e.business_id = ${ctx.businessId}`, sql`e.deleted_at is null`]
   if (input.status !== 'all') conditions.push(sql`e.status = ${input.status}`)
@@ -293,6 +324,9 @@ export async function listExpenses(ctx: BusinessCtx, input: ListInput): Promise<
   }
   if (input.categoryId) conditions.push(sql`e.category_id = ${input.categoryId}`)
   if (input.supplierId) conditions.push(sql`e.supplier_id = ${input.supplierId}`)
+  if (input.periodMonth) {
+    conditions.push(sql`e.period_month = ${firstDayOf(input.periodMonth)}::date`)
+  }
   if (input.from) conditions.push(sql`e.business_date >= ${input.from}::date`)
   if (input.to) conditions.push(sql`e.business_date <= ${input.to}::date`)
   if (input.search) {
@@ -312,7 +346,8 @@ export async function listExpenses(ctx: BusinessCtx, input: ListInput): Promise<
     if (input.categoryId) await assertCategoryExists(tx, ctx.businessId, input.categoryId)
     if (input.supplierId) await assertSupplier(tx, ctx.businessId, input.supplierId)
     const rows = (await tx.execute(sql`
-      select e.id, e.status, e.business_date::text as business_date, e.category_id,
+      select e.id, e.status, e.business_date::text as business_date,
+             to_char(e.period_month, 'YYYY-MM') as period_month, e.category_id,
              c.name as category_name, e.supplier_id, s.name as supplier_name, e.description,
              e.reference, e.document_type, e.payment_method, trim(e.currency) as currency,
              trim_scale(e.total)::text as total, cb.id as created_by_id,
@@ -334,6 +369,7 @@ export async function listExpenses(ctx: BusinessCtx, input: ListInput): Promise<
           id: r.id,
           status: r.status,
           businessDate: r.business_date,
+          periodMonth: r.period_month,
           categoryId: r.category_id,
           categoryName: r.category_name,
           supplierId: r.supplier_id,
@@ -385,17 +421,70 @@ function amountsOf(
 }
 
 /**
+ * The month a draft is for, as its first day: the one given (VALIDATION unless from 12 months before
+ * the bill's month to 1 month after it; a closed month is refused only when it is sent or finalized);
+ * left out, the one it has when that still fits its bill's date (`stored`, an update), else the month
+ * before the bill's date in a category billed the month after, else the bill's month, never a month
+ * the books are closed through (then the first open one, D-200).
+ */
+function periodMonthOf(
+  input: Pick<Fields, 'periodMonth' | 'businessDate'>,
+  billedNextMonth: boolean,
+  stored: string | null,
+  closedThrough: string | null,
+): string {
+  if (input.periodMonth !== undefined) {
+    if (!periodMonthAllowed(input.periodMonth, input.businessDate)) {
+      throw invalid('periodMonth: from 12 months before the bill to 1 month after it')
+    }
+    return firstDayOf(input.periodMonth)
+  }
+  if (stored !== null && periodMonthAllowed(monthOf(stored), input.businessDate)) return stored
+  const month = defaultPeriodMonth(input.businessDate, billedNextMonth, closedThrough)
+  // The month before a bill of January of year 1 would be in year 0, which no date has.
+  if (!periodMonthAllowed(month, input.businessDate)) {
+    throw invalid('periodMonth: the month before the bill is not a month a date can have')
+  }
+  return firstDayOf(month)
+}
+
+/**
+ * An expense is sent for approval or finalized only for a month still open (D-200): BOOKS_CLOSED once
+ * the books are closed through the last day of its month (`periodMonth`, its first day), as for a bill
+ * dated on or before the books-closed date (assertPostable).
+ */
+function assertPeriodOpen(business: PostingBusiness, periodMonth: string): void {
+  if (periodMonthClosed(monthOf(periodMonth), business.closedThrough)) {
+    throw new AppError('books_closed')
+  }
+}
+
+/**
  * Checks a draft's category (a live one; an archived one only when it already has it), supplier,
- * who paid and location, and computes its amounts. Returns its columns.
+ * who paid, location, month and VAT (none unless VAT-registered), and computes its amounts. Returns its columns. `current`: what the
+ * expense being saved has (its category and month), null for a new one.
  */
 async function prepareDraft(
   tx: Tx,
   ctx: BusinessCtx,
   input: Fields,
-  currentCategoryId: string | null,
+  current: { categoryId: string; periodMonth: string; paymentMethod: string } | null,
 ) {
-  const { currency, defaultLocationId } = await draftContext(tx, ctx.businessId)
-  await assertCategory(tx, ctx.businessId, input.categoryId, currentCategoryId)
+  assertVatShown(ctx, [input.vatRate])
+  assertPaidByShown(ctx, input.paymentMethod, current?.paymentMethod ?? null)
+  const { currency, defaultLocationId, closedThrough } = await draftContext(tx, ctx.businessId)
+  const category = await assertCategory(
+    tx,
+    ctx.businessId,
+    input.categoryId,
+    current?.categoryId ?? null,
+  )
+  const periodMonth = periodMonthOf(
+    input,
+    category.billedNextMonth,
+    current?.periodMonth ?? null,
+    closedThrough,
+  )
   await assertSupplier(tx, ctx.businessId, input.supplierId)
   await assertPaidBy(tx, ctx.businessId, input)
   const locationId = await resolveLocation(tx, ctx, input.locationId, defaultLocationId)
@@ -406,6 +495,7 @@ async function prepareDraft(
     supplierId: input.supplierId,
     locationId,
     businessDate: input.businessDate,
+    periodMonth,
     documentType: input.documentType,
     reference: input.reference,
     description: input.description,
@@ -447,6 +537,8 @@ interface HeadRecord extends Record<string, unknown> {
   status: ExpenseStatus
   version: number
   business_date: string
+  /** The first day of the month it is for. */
+  period_month: string
   category_id: string
   location_id: string
   document_type: PurchaseDocumentType
@@ -466,7 +558,8 @@ interface HeadRecord extends Record<string, unknown> {
 /** The expense row, locked FOR UPDATE; NOT_FOUND when not live. */
 async function lockExpense(tx: Tx, businessId: string, id: string): Promise<HeadRecord> {
   const [row] = (await tx.execute(sql`
-    select e.id, e.status, e.version, e.business_date::text as business_date, e.category_id,
+    select e.id, e.status, e.version, e.business_date::text as business_date,
+           e.period_month::text as period_month, e.category_id,
            e.location_id, e.document_type, e.payment_method, e.paid_by_member_id,
            e.prices_include_vat, e.vat_not_reclaimable, trim(e.currency) as currency,
            trim_scale(e.amount)::text as amount, trim_scale(e.vat_rate)::text as vat_rate,
@@ -535,7 +628,11 @@ export function updateExpense(ctx: BusinessCtx, input: UpdateInput): Promise<Exp
     assertMayChange(ctx, head)
     const transition = transitionOf(ctx, 'update', head, false)
     assertVersion(head, version)
-    const values = await prepareDraft(tx, ctx, fields, head.category_id)
+    const values = await prepareDraft(tx, ctx, fields, {
+      categoryId: head.category_id,
+      periodMonth: head.period_month,
+      paymentMethod: head.payment_method,
+    })
     await setColumns(tx, ctx.businessId, id, { ...values, status: transition.to })
     return result(await readExpense(tx, ctx, id))
   })
@@ -567,7 +664,8 @@ export async function discardExpense(ctx: BusinessCtx, input: VersionInput): Pro
 /**
  * `expense.submit`: a draft (or rejected expense) is sent for approval, `version` as read.
  * APPROVAL_OFF when the business does not require approval; FUTURE_DATE for a day after today and
- * BOOKS_CLOSED for one on or before the books-closed date (it could not be finalized); FORBIDDEN for
+ * BOOKS_CLOSED for one on or before the books-closed date, or for a month the books are closed through
+ * (it could not be finalized, D-200); FORBIDDEN for
  * another member's expense when the caller may not see supplier prices. Idempotent: an expense
  * already sent (or approved) is returned as it is.
  */
@@ -583,6 +681,7 @@ export function submitExpense(ctx: BusinessCtx, input: VersionInput): Promise<Ex
       // it is frozen, and only a rejection would let its day be changed (D-176).
       const business = await lockPostingBusiness(tx, ctx.businessId)
       assertPostable(business, head.business_date)
+      assertPeriodOpen(business, head.period_month)
       if (head.paid_by_member_id !== null) {
         await assertActivePayer(tx, ctx.businessId, head.paid_by_member_id)
       }
@@ -659,7 +758,8 @@ export function rejectExpense(ctx: BusinessCtx, input: RejectInput): Promise<Exp
  * required, an approved expense is posted by anyone who may post; a draft or a submitted one only by
  * a member who may also approve (their approval is recorded with it), APPROVAL_REQUIRED otherwise,
  * and who sees its amounts (FORBIDDEN otherwise, D-175). A rejection it had is cleared. Idempotent: an expense already posted (or reversed since) is returned as it is. Refused: a date
- * after today (FUTURE_DATE) or on or before the books-closed date (BOOKS_CLOSED), paid by a member
+ * after today (FUTURE_DATE) or on or before the books-closed date, or for a month the books are closed
+ * through (BOOKS_CLOSED, D-200), paid by a member
  * who is no longer an active member (NOT_FOUND), a location removed since it was saved (VALIDATION).
  */
 export function postExpense(ctx: BusinessCtx, input: VersionInput): Promise<ExpenseResultDto> {
@@ -675,6 +775,7 @@ export function postExpense(ctx: BusinessCtx, input: VersionInput): Promise<Expe
     if (approvedNow) assertSeesWhatIsReviewed(ctx)
     const business = await lockPostingBusiness(tx, ctx.businessId)
     assertPostable(business, head.business_date)
+    assertPeriodOpen(business, head.period_month)
     if (head.paid_by_member_id !== null) {
       await assertActivePayer(tx, ctx.businessId, head.paid_by_member_id)
     }
@@ -719,7 +820,8 @@ export function postExpense(ctx: BusinessCtx, input: VersionInput): Promise<Expe
 
 /**
  * Reverses a posted expense in `tx` (already reversed: nothing to do): it stops counting, dated on
- * its own day or the first open day (D-114 rule 3; BOOKS_CLOSED when that is after today).
+ * its own day or the first open day (D-114 rule 3; BOOKS_CLOSED when that is after today), counted in
+ * its own month or the first open month (D-200).
  * EXPENSE_HAS_PAYMENTS while payments recorded on it stand (they are reversed first; the expense is
  * locked first, as recording a payment locks it, so neither slips past the other).
  */
@@ -735,11 +837,18 @@ async function reverseInTx(tx: Tx, ctx: BusinessCtx, id: string): Promise<void> 
   if ((paid?.n ?? 0) > 0) throw new AppError('expense_has_payments')
   const business = await lockPostingBusiness(tx, ctx.businessId)
   const reversalDate = reversalDateOf(business, head.business_date)
+  // It counts in the expense's own month, or the first open month when the books are closed through
+  // the end of it (D-200), as its date moves to the first open day.
+  const month = monthOf(head.period_month)
+  const reversalMonth = periodMonthClosed(month, business.closedThrough)
+    ? (firstOpenMonth(business.closedThrough) ?? month)
+    : month
   await setColumns(tx, ctx.businessId, id, {
     status: 'reversed',
     reversedAt: sql`now()`,
     reversedBy: sql`app.current_user_id()`,
     reversalDate,
+    reversalPeriodMonth: firstDayOf(reversalMonth),
   })
 }
 
@@ -811,6 +920,7 @@ export function correctExpense(ctx: BusinessCtx, input: CorrectInput): Promise<E
       supplierId: source.supplierId,
       locationId: location?.id ?? defaultLocationId ?? source.locationId,
       businessDate: source.businessDate,
+      periodMonth: source.periodMonth,
       documentType: source.documentType,
       reference: source.reference,
       description: source.description,

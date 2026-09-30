@@ -13,10 +13,10 @@ import {
   useLanguage,
   type TestUser,
 } from '../helpers'
-import { previewBaseURL } from '../stack'
+import { baseURL } from '../stack'
 
-// Recipes and product cost (ROADMAP.md M2 Step 4; D-115, D-117, D-147, D-154), on the development
-// server with the dev-only preview (D-125; the `preview` project of playwright.config.ts).
+// Recipes and product cost (ROADMAP.md M2 Step 4; D-115, D-117, D-147, D-154), on the production
+// build since the Costing Core was released (M2 Step 7, D-188).
 //
 // A café writes the owner's Spanish Latte from what it really bought, in Arabic on a phone: beans
 // from 1 kg bags, milk from the carton of 12 bottles, condensed milk from a box of 24 cans, a cup, a
@@ -93,17 +93,11 @@ async function open(
   const who = user ?? (await createUser(`recipes-${locale}`, { locale: 'en' }))
   if (!user) users.push(who)
   const context = await browser.newContext({
-    baseURL: previewBaseURL,
+    baseURL,
     locale: locale === 'ar' ? 'ar-AE' : 'en-US',
     viewport,
   })
   contexts.push(context)
-  // The development server's own badge and overlay are not part of the app.
-  await context.addInitScript(() => {
-    const sheet = new CSSStyleSheet()
-    sheet.replaceSync('[data-nextjs-dev-overlay] { display: none !important; }')
-    document.adoptedStyleSheets = [...document.adoptedStyleSheets, sheet]
-  })
   await useLanguage(context, 'en')
   const page = await context.newPage()
   await signIn(page, who)

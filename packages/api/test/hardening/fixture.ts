@@ -50,9 +50,8 @@ import { CapturedEmails, join, setupBusiness, WORKSHOP } from '../settings'
 // business; query or mutation) straight from the router, the strings that identify a business's data
 // in a response, and a digest of everything a business has in the database and in Storage.
 //
-// Materials, Products & Services, Suppliers and Purchases are still planned (M2 Steps 2–3, released with
-// Step 7): the suites run the API with the dev-only preview of them (D-125), so their procedures are
-// attacked like the others. Each business also has a supplier, a posted purchase with a receipt
+// The Costing Core is released (M2 Step 7), so the suites run the API as deployed, without the
+// dev-only preview (D-125). Each business also has a supplier, a posted purchase with a receipt
 // attached, a draft purchase, a posted return and a draft return (M2 Step 3), a recipe for its product
 // (a line in the material's carton) and an item bought ready to sell with its material (M2 Step 4),
 // and a purchase bought on credit with a payment recorded on it (the owner's requests of 2026-09-29).
@@ -76,31 +75,12 @@ export interface Api {
   close: () => Promise<void>
 }
 
-/** The modules still being built that the suites preview (D-125). */
-export const PREVIEW_MODULES = [
-  'materials',
-  'products',
-  'suppliers',
-  'purchases',
-  'expenses',
-  'running_costs',
-  'cost_engine',
-] as const
-
-/**
- * The API as deployed (secret key for Storage, emails kept instead of sent), with the modules still
- * being built previewed, and its test users.
- */
+/** The API as deployed (secret key for Storage, emails kept instead of sent), and its test users. */
 export function openApi(router?: AnyRouter): Api {
   const db = connectApi()
   const admin = connectAdmin()
   const emails = new CapturedEmails()
-  const handler = handlerFor(
-    db,
-    router,
-    { supabaseSecretKey: SECRET_KEY, previewModules: PREVIEW_MODULES },
-    { emailSender: emails },
-  )
+  const handler = handlerFor(db, router, { supabaseSecretKey: SECRET_KEY }, { emailSender: emails })
   const users: TestUser[] = []
   return {
     db,
@@ -538,7 +518,7 @@ export async function createTenant(api: Api, label: string): Promise<Tenant> {
     documentType: 'tax_invoice',
     paymentMethod: 'cash',
     amount: '100',
-    vatRate: '5',
+    vatRate: '0',
     ...extra,
   })
   const expenseDraft = async (extra: object) =>
@@ -675,6 +655,7 @@ export function queryInputOf(path: string, tenant: Tenant): unknown {
   if (path === 'expensePayment.list') return { expenseId: tenant.expense.id }
   if (path === 'runningCost.get') return { id: tenant.runningCost.id }
   if (path === 'productCost.get') return { productId: tenant.product.id }
+  if (path === 'member.permissions') return { memberId: tenant.employeeMemberId }
   return undefined
 }
 

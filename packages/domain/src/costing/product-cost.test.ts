@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest'
 import { PRODUCT_TYPES, VAT_CATEGORIES, type ProductType, type VatCategory } from '../catalog/keys'
 import { toDec } from '../numbers/decimal'
 import {
+  awaitsServiceShare,
   hoursAndMinutes,
   INCOMPLETE_REASONS,
   monthlyPurchases,
@@ -298,6 +299,62 @@ describe('each line’s states, never 0 for what is missing', () => {
       reasons: ['hourly_rate_not_set'],
       complete: false,
     })
+  })
+
+  it('a service without materials waits only for what it cannot carry yet (D-200)', () => {
+    const NO_LINES: MaterialsPart = {
+      state: 'on',
+      perUnit: null,
+      lineCount: 0,
+      unpricedLines: 0,
+      tooLarge: false,
+    }
+    const mine: OwnerTimePart = { state: 'solo', minutes: '60', hourlyRate: '100' }
+    const service = (over: Partial<ProductCostInput>) =>
+      productCost(base({ type: 'service', ownerTime: mine, ...over }))
+    // Its time counts; running costs cannot reach it (Materials on or off, entered or not).
+    for (const materials of [NO_LINES, { state: 'off' } as const]) {
+      expect(awaitsServiceShare('service', service({ materials })), JSON.stringify(materials)).toBe(
+        true,
+      )
+      expect(
+        awaitsServiceShare(
+          'service',
+          service({ materials, runningCosts: { ...ON, entered: false, monthlyRunningCosts: '0' } }),
+        ),
+      ).toBe(true)
+    }
+    // Nothing counted, a product, a service with materials, or anything else missing: it waits.
+    expect(awaitsServiceShare('service', service({ materials: NO_LINES, ownerTime: TEAM }))).toBe(
+      false,
+    )
+    expect(
+      awaitsServiceShare(
+        'product',
+        productCost(base({ materials: { state: 'off' }, ownerTime: mine })),
+      ),
+    ).toBe(false)
+    expect(awaitsServiceShare('service', service({ materials: PRICED('4') }))).toBe(false)
+    expect(
+      awaitsServiceShare(
+        'service',
+        service({ materials: NO_LINES, ownerTime: { ...mine, hourlyRate: null } }),
+      ),
+    ).toBe(false)
+    // Only its optional materials missing (Running Costs off): it waits for nothing else.
+    expect(
+      awaitsServiceShare(
+        'service',
+        service({ materials: NO_LINES, runningCosts: { state: 'off' } }),
+      ),
+    ).toBe(true)
+    // Complete: nothing to wait for.
+    expect(
+      awaitsServiceShare(
+        'service',
+        service({ materials: { state: 'off' }, runningCosts: { state: 'off' } }),
+      ),
+    ).toBe(false)
   })
 
   it('nothing counted: no total and no margin, never 0', () => {

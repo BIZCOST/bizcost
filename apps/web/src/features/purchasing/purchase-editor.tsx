@@ -6,7 +6,6 @@ import {
   defaultPricesIncludeVat,
   isOwedPaymentMethod,
   newId,
-  PAYMENT_METHODS,
   PURCHASE_DOCUMENT_TYPES,
   type CurrencyCode,
   type PaymentMethod,
@@ -54,6 +53,7 @@ import {
   MISSING_KEYS,
   newDeliveryLine,
   newMaterialLine,
+  paymentMethodsFor,
   purchaseDraft,
   type LineDraft,
   type PurchaseDraft,
@@ -104,6 +104,11 @@ export function PurchaseEditor({
   const { businessId } = useParams<{ businessId: string }>()
   const { data: context } = useBusinessContext()
   const vatRegistered = context?.capabilities.vat_registered === true
+  // "Paid by an employee" only with a team (D-200), or when it is already the one saved.
+  const paymentMethods = paymentMethodsFor(
+    context?.capabilities.has_team === true,
+    purchase?.paymentMethod,
+  )
   const canPost = context ? can(context, 'purchases.documents.post') : false
   // Seeing the materials is enough to add one from a line (material.quickCreate: any member who
   // enters purchases).
@@ -605,7 +610,7 @@ export function PurchaseEditor({
                   <option value="" disabled>
                     {t('purchasing.editor.paymentPick')}
                   </option>
-                  {PAYMENT_METHODS.map((method) => (
+                  {paymentMethods.map((method) => (
                     <option key={method} value={method}>
                       {t(`purchasing.paymentMethods.${method}`)}
                     </option>
@@ -814,13 +819,16 @@ export function PurchaseEditor({
           </div>
         </Panel>
 
-        <Panel title={t('purchasing.receipts.title')} hint={t('purchasing.receipts.hint')}>
-          {version === null ? (
-            <PendingReceipts files={pending} onChange={setPending} />
-          ) : (
-            <Receipts recordId={purchaseId} canManage />
-          )}
-        </Panel>
+        {/* Receipts only with the Files module on (D-188). */}
+        {hasModule(context, 'files') ? (
+          <Panel title={t('purchasing.receipts.title')} hint={t('purchasing.receipts.hint')}>
+            {version === null ? (
+              <PendingReceipts files={pending} onChange={setPending} />
+            ) : (
+              <Receipts recordId={purchaseId} canManage />
+            )}
+          </Panel>
+        ) : null}
 
         <div className="sticky bottom-[calc(4.75rem+env(safe-area-inset-bottom))] z-10 flex items-center gap-3 rounded-2xl bg-card/95 p-3 shadow-lg ring-1 ring-foreground/10 backdrop-blur md:bottom-4">
           <div className="min-w-0 flex-1">

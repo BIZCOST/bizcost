@@ -49,6 +49,19 @@ test.afterAll(async () => {
 })
 
 const home = () => `/b/${businessId}`
+/** The workshop's sections since the Costing Core's release (M2 Step 7, D-188), in nav order. */
+const SECTIONS = [
+  'Dashboard',
+  'Products & Services',
+  'Materials',
+  'Suppliers',
+  'Purchases',
+  'Amounts owed',
+  'Expenses',
+  'Running Costs',
+  'Product costs',
+  'Settings',
+]
 const mainNav = (p: Page, name = 'Main') => p.getByRole('navigation', { name })
 const checklist = (p: Page) => p.getByRole('region', { name: 'Finish setting up' })
 const step = (p: Page, id: string) => p.locator(`[data-step="${id}"]`)
@@ -94,7 +107,7 @@ test('desktop: the sidebar lists the business’s sections, Settings last, the c
   await page.setViewportSize({ width: 1440, height: 900 })
   await page.goto(home())
   const nav = mainNav(page)
-  await expect(nav.getByRole('link')).toHaveText(['Dashboard', 'Settings'])
+  await expect(nav.getByRole('link')).toHaveText(SECTIONS)
   await expect(nav.getByRole('link', { name: 'Dashboard' })).toHaveAttribute('aria-current', 'page')
   // On the start side, 16rem wide, beside the page; the switcher is in it, not in the top bar.
   const sidebar = await box(nav)
@@ -121,7 +134,18 @@ test('desktop in Arabic: the same sections on the right, in Arabic', async () =>
   await page.goto(home())
   await expect(page.locator('html')).toHaveAttribute('dir', 'rtl')
   const nav = mainNav(page, 'القائمة الرئيسية')
-  await expect(nav.getByRole('link')).toHaveText(['الرئيسية', 'الإعدادات'])
+  await expect(nav.getByRole('link')).toHaveText([
+    'الرئيسية',
+    'المنتجات والخدمات',
+    'المواد',
+    'الموردون',
+    'المشتريات',
+    'المستحقات',
+    'المصروفات',
+    'المصاريف التشغيلية',
+    'تكاليف المنتجات',
+    'الإعدادات',
+  ])
   await expect(nav.getByRole('link', { name: 'الرئيسية' })).toHaveAttribute('aria-current', 'page')
   const sidebar = await box(nav)
   expect(sidebar.x + sidebar.width).toBeGreaterThan(1420)
@@ -136,7 +160,7 @@ test('desktop in Arabic: the same sections on the right, in Arabic', async () =>
   await setLanguage(page, 'en')
 })
 
-test('keyboard: skip link first, then the sidebar in order; Enter opens a section', async () => {
+test('keyboard: skip link first, then "Add new" and the sidebar in order; Enter opens a section', async () => {
   await page.setViewportSize({ width: 1440, height: 900 })
   await page.goto(home())
   // The business has arrived (while it loads, the shell's placeholder takes no focus).
@@ -149,9 +173,14 @@ test('keyboard: skip link first, then the sidebar in order; Enter opens a sectio
   await expect(page.getByRole('button', { name: /^Switch business: / })).toBeFocused()
   await page.keyboard.press('Tab')
   const nav = mainNav(page)
-  await expect(nav.getByRole('link', { name: 'Dashboard' })).toBeFocused()
+  // "Add new" above the sections (D-195).
+  await expect(nav.getByRole('button', { name: 'Add new' })).toBeFocused()
   await page.keyboard.press('Tab')
-  await expect(nav.getByRole('link', { name: 'Settings' })).toBeFocused()
+  await expect(nav.getByRole('link', { name: 'Dashboard' })).toBeFocused()
+  for (const name of SECTIONS.slice(1)) {
+    await page.keyboard.press('Tab')
+    await expect(nav.getByRole('link', { name })).toBeFocused()
+  }
   await page.keyboard.press('Enter')
   await expect(page).toHaveURL(`${home()}/settings`)
   await expect(page.getByRole('heading', { level: 1, name: 'Settings' })).toBeVisible()
@@ -188,16 +217,21 @@ test('tablet: an icon rail whose names show in tooltips; the switcher in the top
   expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(768)
 })
 
-test('phone: tabs at the bottom, 44px tall, no "+" or "More", nothing off the screen', async () => {
+test('phone: tabs at the bottom, 44px tall, "+" and "More", nothing off the screen', async () => {
   await page.setViewportSize({ width: 375, height: 812 })
   await page.goto(home())
   const tabs = mainNav(page)
   const bar = await box(tabs)
   expect(bar.y + bar.height).toBeGreaterThan(800)
-  await expect(tabs.getByRole('link')).toHaveText(['Dashboard', 'Settings'])
-  await expect(tabs.getByRole('button')).toHaveCount(0)
-  for (const link of await tabs.getByRole('link').all()) {
-    expect((await box(link)).height).toBeGreaterThanOrEqual(44)
+  // The tabs the claims give (D-189), "+" in the middle, the rest under "More".
+  await expect(tabs.getByRole('link')).toHaveText(['Dashboard', 'Products', 'Costs'])
+  await expect(tabs.getByRole('button')).toHaveText(['', 'More'])
+  await expect(tabs.getByRole('button').first()).toHaveAccessibleName('Add new')
+  for (const tab of [
+    ...(await tabs.getByRole('link').all()),
+    ...(await tabs.getByRole('button').all()),
+  ]) {
+    expect((await box(tab)).height).toBeGreaterThanOrEqual(44)
   }
   await expect(tabs.getByRole('link', { name: 'Dashboard' })).toHaveAttribute(
     'aria-current',
@@ -206,12 +240,19 @@ test('phone: tabs at the bottom, 44px tall, no "+" or "More", nothing off the sc
   expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(375)
   // The last of the page is not hidden behind the tabs.
   await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight))
-  const note = page.getByText('Your sections will appear here as soon as they are ready.')
-  expect((await box(note)).y + (await box(note)).height).toBeLessThanOrEqual(bar.y)
+  // The last of "About your business" (no "coming soon" line after it since the release, D-200).
+  const last = page.locator('[data-statement]').last()
+  expect((await box(last)).y + (await box(last)).height).toBeLessThanOrEqual(bar.y)
 
-  await tabs.getByRole('link', { name: 'Settings' }).click()
+  await tabs.getByRole('button', { name: 'More' }).click()
+  await page.getByRole('menuitem', { name: 'Settings' }).click()
   await expect(page).toHaveURL(`${home()}/settings`)
-  await expect(tabs.getByRole('link', { name: 'Settings' })).toHaveAttribute('aria-current', 'page')
+  await tabs.getByRole('button', { name: 'More' }).click()
+  await expect(page.getByRole('menuitem', { name: 'Settings' })).toHaveAttribute(
+    'aria-current',
+    'page',
+  )
+  await page.keyboard.press('Escape')
   await page.setViewportSize({ width: 1280, height: 720 })
 })
 
@@ -297,6 +338,11 @@ test('checklist: each step is done as the owner does it, then "You’re all set"
     mimeType: 'image/png',
     buffer: pngImage(),
   })
+  // Placed in its square first (the owner's request of 2026-09-30).
+  await page
+    .getByRole('dialog', { name: 'Adjust your logo' })
+    .getByRole('button', { name: 'Save logo' })
+    .click()
   await expect(page.getByText('Logo saved.')).toBeVisible()
   await mainNav(page).getByRole('link', { name: 'Dashboard' }).click()
   await expect(step(page, 'profile')).toContainText('Add your business name in Arabic.')
@@ -400,8 +446,16 @@ test('an employee sees no checklist, and settings sections are not open (403)', 
   await expect(employeePage.getByRole('progressbar')).toHaveCount(0)
   expect(
     (await callApi(employeePage, 'dashboard.checklist', {}, { businessId, query: true })).data,
-  ).toEqual({ items: [] })
-  await expect(mainNav(employeePage).getByRole('link')).toHaveText(['Dashboard', 'Settings'])
+  ).toEqual({ items: [], costSteps: [] })
+  // Their one "+" action is a link straight to it above the sections (D-200), then the sections.
+  await expect(mainNav(employeePage).getByRole('link')).toHaveText([
+    'New expense',
+    'Dashboard',
+    'Products & Services',
+    'Materials',
+    'Expenses',
+    'Settings',
+  ])
 
   for (const section of ['business', 'members', 'modules']) {
     await employeePage.goto(`${home()}/settings/${section}`)
@@ -439,13 +493,12 @@ test('an employee sees no checklist, and settings sections are not open (403)', 
 
 test('an address that does not exist inside the business: "Page not found" inside the shell', async () => {
   await page.setViewportSize({ width: 1440, height: 900 })
-  // Materials and Products & Services have pages, but a production build serves them only once
-  // they are released (D-125, D-126): their address is not found either, title included.
-  for (const path of ['orders', 'settings/nothing-here', 'materials', 'products']) {
+  // A module not released yet (Orders) has no pages: its address is not found, title included.
+  for (const path of ['orders', 'settings/nothing-here']) {
     await page.goto(`${home()}/${path}`)
     await expect(page.getByRole('heading', { level: 1, name: 'Page not found' })).toBeVisible()
     await expect(page).toHaveTitle('Page not found · BizCost')
-    await expect(mainNav(page).getByRole('link')).toHaveText(['Dashboard', 'Settings'])
+    await expect(mainNav(page).getByRole('link')).toHaveText(SECTIONS)
   }
   await page.getByRole('link', { name: 'Go to Dashboard' }).click()
   await expect(page).toHaveURL(home())

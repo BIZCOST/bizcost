@@ -36,6 +36,17 @@ export function useBusinessDate() {
     formatDate(locale, `${day}T00:00:00Z`, { dateStyle: 'medium', timeZone: 'UTC' })
 }
 
+/** A month (YYYY-MM) as the page's language writes it: "September 2026" (an expense's month, D-194). */
+export function useBusinessMonth() {
+  const { locale } = useLocale()
+  return (month: string) =>
+    formatDate(locale, `${month}-01T00:00:00Z`, {
+      month: 'long',
+      year: 'numeric',
+      timeZone: 'UTC',
+    })
+}
+
 /**
  * In place of a value this member may not see: a lock and "Hidden", with the reason for screen
  * readers and on hover.

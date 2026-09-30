@@ -6,8 +6,14 @@ import {
   type ExpenseDto,
 } from '@bizcost/contracts'
 import {
+  addMonths,
   computeExpense,
+  defaultPeriodMonth,
   defaultPricesIncludeVat,
+  PERIOD_MONTHS_AFTER,
+  PERIOD_MONTHS_BEFORE,
+  periodMonthAllowed,
+  periodMonthClosed,
   type CurrencyCode,
   type ExpenseAmounts,
   type Money,
@@ -36,6 +42,11 @@ export interface ExpenseDraft {
   /** '' until chosen. */
   readonly categoryId: string
   readonly businessDate: string
+  /**
+   * "For which month?" (`YYYY-MM`, the owner's request of 2026-09-30, D-194): the month the bill is
+   * for. Follows the bill's date and category (`withPeriodDefault`) until the person picks one.
+   */
+  readonly periodMonth: string
   readonly documentType: PurchaseDocumentType
   /** '' until one is picked (required before a save). */
   readonly paymentMethod: PaymentMethod | ''
@@ -56,6 +67,7 @@ export interface ExpenseErrors {
   amount?: FieldError
   category?: FieldError
   businessDate?: FieldError
+  periodMonth?: FieldError
   paymentMethod?: FieldError
   description?: FieldError
   reference?: FieldError
@@ -98,12 +110,12 @@ export const EXPENSE_MISSING: ReadonlySet<I18nKey> = new Set<I18nKey>([
 /**
  * The form's first state: a new expense dated today (the document type a VAT-registered business
  * usually gets is a tax invoice, with the standard VAT; the amount typed before VAT on a tax invoice
- * and with it otherwise, D-157; no category and no payment method until picked), or a saved draft as
- * it is stored.
+ * and with it otherwise, D-157; no category and no payment method until picked; this month, or the
+ * first open one once the books are closed through it, D-200), or a saved draft as it is stored.
  */
 export function expenseDraft(
   expense: ExpenseDto | undefined,
-  defaults: { today: string; vatRegistered: boolean },
+  defaults: { today: string; vatRegistered: boolean; closedThrough?: string | null },
 ): ExpenseDraft {
   if (!expense) {
     const documentType: PurchaseDocumentType = defaults.vatRegistered
@@ -115,6 +127,8 @@ export function expenseDraft(
       pricesIncludeVat: defaultPricesIncludeVat(documentType),
       categoryId: '',
       businessDate: defaults.today,
+      // No category yet: the bill's own month until one is picked.
+      periodMonth: defaultPeriodMonth(defaults.today, false, defaults.closedThrough ?? null),
       documentType,
       paymentMethod: '',
       paidByMemberId: '',
@@ -132,6 +146,7 @@ export function expenseDraft(
     pricesIncludeVat: expense.pricesIncludeVat,
     categoryId: expense.categoryId,
     businessDate: expense.businessDate,
+    periodMonth: expense.periodMonth,
     documentType: expense.documentType,
     paymentMethod: expense.paymentMethod,
     paidByMemberId: expense.paidByMemberId ?? '',
@@ -164,6 +179,25 @@ export function withDocumentType(
   }
 }
 
+/**
+ * The draft's month when the person has not picked one (`chosen` false): the month before the bill's
+ * date for a category billed the month after (electricity, water, internet, phone), else the bill's
+ * month, never one the books are closed through (then the first open one), as the API would default
+ * it (D-194, D-200). A month the person picked is kept.
+ */
+export function withPeriodDefault(
+  draft: ExpenseDraft,
+  {
+    chosen,
+    billedNextMonth,
+    closedThrough = null,
+  }: { chosen: boolean; billedNextMonth: boolean; closedThrough?: string | null },
+): ExpenseDraft {
+  if (chosen || !BUSINESS_DAY.test(draft.businessDate)) return draft
+  const periodMonth = defaultPeriodMonth(draft.businessDate, billedNextMonth, closedThrough)
+  return periodMonth === draft.periodMonth ? draft : { ...draft, periodMonth }
+}
+
 const BUSINESS_DAY = /^\d{4}-\d{2}-\d{2}$/
 const ZERO = { net: '0', vat: '0', total: '0' } as Pick<ExpenseAmounts, 'net' | 'vat' | 'total'>
 
@@ -184,6 +218,9 @@ export function checkExpense(draft: ExpenseDraft, context: ExpenseFormContext): 
     errors.businessDate = { key: 'purchasing.editor.errors.date' }
   } else if (draft.businessDate > context.today) {
     errors.businessDate = { key: 'errors.future_date' }
+  } else if (!periodMonthAllowed(draft.periodMonth, draft.businessDate)) {
+    // From 12 months before the bill's month to 1 after it (the API refuses the rest).
+    errors.periodMonth = { key: 'expenses.editor.errors.periodMonth' }
   }
   // How it was paid is required (the API refuses a save without it); on credit needs the supplier,
   // paid by a member needs the member (D-159, D-166).
@@ -242,6 +279,7 @@ export function checkExpense(draft: ExpenseDraft, context: ExpenseFormContext): 
           categoryId: draft.categoryId,
           supplierId: draft.supplierId || null,
           businessDate: draft.businessDate,
+          periodMonth: draft.periodMonth,
           documentType: draft.documentType,
           reference: reference || null,
           description: description || null,
@@ -259,4 +297,23 @@ export function checkExpense(draft: ExpenseDraft, context: ExpenseFormContext): 
         }
       : null,
   }
+}
+
+/**
+ * The months "For which month?" offers (D-194, D-200), newest first: from 1 month after the bill's
+ * month to 12 before it, without those the books are closed through (unless every one of them is: a
+ * bill dated in the closed period, whose date says so), and the draft's own month when it is not
+ * among them (a saved one; the field then says why it cannot be finalized).
+ */
+export function periodMonthOptions(
+  billMonth: string,
+  current: string,
+  closedThrough: string | null,
+): string[] {
+  const all = Array.from({ length: PERIOD_MONTHS_BEFORE + PERIOD_MONTHS_AFTER + 1 }, (_, index) =>
+    addMonths(billMonth, PERIOD_MONTHS_AFTER - index),
+  )
+  const open = all.filter((month) => !periodMonthClosed(month, closedThrough))
+  const months = open.length > 0 ? open : all
+  return months.includes(current) ? months : [...months, current]
 }

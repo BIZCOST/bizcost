@@ -804,7 +804,13 @@ describe('the Product costs list: sorted, filtered and in pages', () => {
   it('filters: incomplete, at a loss; how many of each, whatever the filter', async () => {
     const incomplete = await shop.costList({ search: prefix, filter: 'incomplete' })
     expect(names(incomplete)).toEqual(['D', 'E', 'F'])
-    expect(incomplete.counts).toEqual({ all: 6, incomplete: 3, loss: 1, noTime: 0 })
+    expect(incomplete.counts).toEqual({
+      all: 6,
+      incomplete: 3,
+      loss: 1,
+      noTime: 0,
+      servicesAwaitingShare: 0,
+    })
     const loss = await shop.costList({ search: prefix, filter: 'loss' })
     expect(names(loss)).toEqual(['C'])
     expect(loss.counts).toEqual(incomplete.counts)
@@ -967,6 +973,7 @@ const LIST_HIDDEN = [
   'counts.incomplete',
   'counts.loss',
   'counts.noTime',
+  'counts.servicesAwaitingShare',
   ...COST_PATHS.map((path) => `items.*.cost.${path}`),
   'items.*.margin.amount',
   'items.*.margin.percent',
@@ -1245,10 +1252,22 @@ describe('who sees and may do what', () => {
     expect(codeOf(await other.run('productCost.get', { productId: product.id }))).toBe('not_found')
   })
 
-  it('the Cost Engine is not released: MODULE_DISABLED without the dev-only preview', async () => {
+  it('the Cost Engine is released (M2 Step 7): served without the preview, MODULE_DISABLED only when turned off', async () => {
+    const other = await CostScope.open(api, WORKSHOP)
     const released = handlerFor(api.db)
     for (const path of ['productCost.list', 'productCost.settings'] as const) {
-      expect(codeOf(await api.call(shop.owner, shop.id, path, undefined, released))).toBe(
+      expect((await api.call(other.owner, other.id, path, undefined, released)).error, path).toBe(
+        undefined,
+      )
+    }
+    ok(
+      await other.run('business.customize', {
+        item: { kind: 'module', id: 'cost_engine' },
+        enabled: false,
+      }),
+    )
+    for (const path of ['productCost.list', 'productCost.settings'] as const) {
+      expect(codeOf(await api.call(other.owner, other.id, path, undefined, released)), path).toBe(
         'module_disabled',
       )
     }

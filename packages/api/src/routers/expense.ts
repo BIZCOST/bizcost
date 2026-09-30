@@ -52,8 +52,7 @@ import {
 } from '../trpc'
 
 /**
- * Expenses (services/expenses.ts): module `expenses` (planned until M2 Step 7; the dev-only preview
- * reaches it before then, D-125), then expenses.documents.view to read, .manage for drafts and to send
+ * Expenses (services/expenses.ts): module `expenses` (released in M2 Step 7), then expenses.documents.view to read, .manage for drafts and to send
  * them for approval (without supplier prices, only one's own: the service checks it, D-184), .approve to approve or reject, .post to finalize, .reverse to reverse, and
  * .reverse with .manage to correct; expenses.approval.manage (with a team) for the approval setting.
  * Outputs are withMeta(): amounts are removed for members without data.supplier_price.view (D-165).

@@ -23,10 +23,10 @@ import {
   WORKSHOP_ANSWERS,
   type TestUser,
 } from '../helpers'
-import { previewBaseURL } from '../stack'
+import { baseURL } from '../stack'
 
-// Suppliers and Purchases (ROADMAP.md M2 Step 3), on the development server with the dev-only preview
-// (D-125, D-127): the owner's milk example end to end (50 L at AED 6, then 100 L at AED 7: the
+// Suppliers and Purchases (ROADMAP.md M2 Step 3), on the production build since the Costing Core
+// was released (M2 Step 7, D-188): the owner's milk example end to end (50 L at AED 6, then 100 L at AED 7: the
 // average is 6.67; reversing the second brings it back to 6.00), a supplier, a receipt, correcting a
 // purchase and the books-closed date, in English on a desktop; a café buying coffee beans in 1 kg
 // bags priced per bag, sending a bag back and getting a credit note, in Arabic on a phone (no VAT: the
@@ -85,17 +85,11 @@ async function open(
   const who = user ?? (await createUser(`purchasing-${locale}`, { locale: 'en' }))
   if (!user) users.push(who)
   const context = await browser.newContext({
-    baseURL: previewBaseURL,
+    baseURL,
     locale: locale === 'ar' ? 'ar-AE' : 'en-US',
     viewport,
   })
   contexts.push(context)
-  // The development server's own badge and overlay are not part of the app.
-  await context.addInitScript(() => {
-    const sheet = new CSSStyleSheet()
-    sheet.replaceSync('[data-nextjs-dev-overlay] { display: none !important; }')
-    document.adoptedStyleSheets = [...document.adoptedStyleSheets, sheet]
-  })
   await useLanguage(context, 'en')
   const page = await context.newPage()
   await signIn(page, who)

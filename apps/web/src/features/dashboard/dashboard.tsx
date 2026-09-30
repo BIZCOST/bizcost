@@ -10,7 +10,6 @@ import {
   type Capabilities,
 } from '@bizcost/modules'
 import { useQuery } from '@tanstack/react-query'
-import { InfoIcon } from 'lucide-react'
 import { useParams, usePathname, useRouter } from 'next/navigation'
 import { createContext, useContext, useEffect, useRef, type ReactNode, type Ref } from 'react'
 import { useTranslation } from 'react-i18next'
@@ -25,24 +24,34 @@ import { STATEMENT_ICONS } from '@/features/setup/icons'
 import { useLocale, useTerminology } from '@/lib/i18n/client'
 import { useBusinessContext } from '@/lib/trpc/client'
 import { cn } from '@/lib/utils'
+import { COSTS_READY_HIDDEN_COOKIE } from './all-set-cookie'
 import { AllSet, Checklist, ChecklistSkeleton } from './checklist'
 import { progressOf } from './checklist-steps'
+import { CostChecklist, CostsReady } from './cost-checklist'
+import { costProgress, costStepIdsFor } from './cost-steps'
 import { useAllSetHidden } from './hidden-all-set'
 
-// The Dashboard in M1 (ROADMAP.md Step 7, docs/PRODUCT.md §9–10): a welcome with the business's name
-// (its Arabic name in Arabic, D-097), its logo and the member's role, the getting-started checklist
-// from real data (only the steps the member can act on), and what the setup says about the business
-// (§6.8). No cards for sections that are not released yet: they arrive with their modules.
+// The Dashboard (ROADMAP.md Step 7, docs/PRODUCT.md §9–10): a welcome with the business's name (its
+// Arabic name in Arabic, D-097), its logo and the member's role; "Let's find the real cost of what you
+// sell" (M2 Step 7, D-193) and "Finish setting up" (M1), both from real data and only with the steps
+// the member can act on; and what the setup says about the business (§6.8). No cards for sections
+// that are not released yet: they arrive with their modules.
 
 /** What the server knows for the Dashboard's first render (its layout loads it, D-090, D-091). */
 interface DashboardServerData {
-  /** The checklist, when the member has steps and the API answered. */
+  /** The checklists, when the member has steps and the API answered. */
   readonly checklist: DashboardChecklistDto | null
   /** Whether this user hid "You're all set" here (the cookie). */
   readonly allSetHidden: boolean
+  /** Whether this user hid "Your product costs are ready" here (its cookie). */
+  readonly costsReadyHidden: boolean
 }
 
-const ServerData = createContext<DashboardServerData>({ checklist: null, allSetHidden: false })
+const ServerData = createContext<DashboardServerData>({
+  checklist: null,
+  allSetHidden: false,
+  costsReadyHidden: false,
+})
 
 /**
  * Hands the server's data to the Dashboard ((home)/layout.tsx), for the page and its loading state
@@ -51,9 +60,10 @@ const ServerData = createContext<DashboardServerData>({ checklist: null, allSetH
 export function DashboardServerDataProvider({
   checklist,
   allSetHidden,
+  costsReadyHidden,
   children,
 }: DashboardServerData & { children: ReactNode }) {
-  return <ServerData value={{ checklist, allSetHidden }}>{children}</ServerData>
+  return <ServerData value={{ checklist, allSetHidden, costsReadyHidden }}>{children}</ServerData>
 }
 
 type SummaryKey = keyof typeof STATEMENT_ICONS
@@ -175,10 +185,6 @@ function AboutBusiness({
           )
         })}
       </ul>
-      <p className="mt-5 flex items-start gap-2.5 border-t pt-4 text-sm leading-relaxed text-muted-foreground">
-        <InfoIcon aria-hidden className="mt-0.5 size-4 shrink-0" />
-        {t('business.sectionsNote')}
-      </p>
     </section>
   )
 }
@@ -192,28 +198,49 @@ function DashboardView({ businessId }: { businessId: string }) {
   const { data: context } = useBusinessContext()
   const aboutTitle = useRef<HTMLHeadingElement>(null)
   const steps = context ? checklistItemIds(context.capabilities, (key) => can(context, key)) : []
+  const costIds = context ? costStepIdsFor(context) : []
   const checklist = useQuery({
     ...trpc.dashboard.checklist.queryOptions(),
-    enabled: steps.length > 0,
+    enabled: steps.length > 0 || costIds.length > 0,
     // From the server (used when this business's cache has none yet).
     initialData: server.checklist ?? undefined,
   })
-  const [hidden, hide] = useAllSetHidden(me?.profile.id ?? '', businessId, server.allSetHidden)
+  const userId = me?.profile.id ?? ''
+  const [hidden, hide] = useAllSetHidden(userId, businessId, server.allSetHidden)
+  const [costsHidden, hideCosts] = useAllSetHidden(
+    userId,
+    businessId,
+    server.costsReadyHidden,
+    COSTS_READY_HIDDEN_COOKIE,
+  )
   const membership = me?.memberships.find((m) => m.businessId === businessId)
   if (!membership || !context) return null
 
   const items = checklist.data?.items ?? []
   const complete = progressOf(items).complete
-  let top: 'checklist' | 'loading' | 'error' | 'allSet' | null = null
-  if (steps.length > 0) {
+  const failed = checklist.isError && (steps.length > 0 || costIds.length > 0)
+  let top: 'checklist' | 'loading' | 'allSet' | null = null
+  if (steps.length > 0 && !failed) {
     // A member who hid "You're all set" sees no placeholder while the state loads.
     if (checklist.isPending) top = hidden ? null : 'loading'
-    else if (checklist.isError) top = 'error'
     else if (items.length === 0) top = null
     else if (!complete) top = 'checklist'
     else top = hidden ? null : 'allSet'
   }
-  const beside = top === 'checklist' || top === 'loading'
+  // "Let's find the real cost of what you sell": once every step is done, "Your product costs are
+  // ready" for a member who sees them (the last step), and nothing for the others.
+  const costSteps = checklist.data?.costSteps ?? []
+  const costs = costProgress(costSteps)
+  const readyOffered = costIds.includes('product_costs')
+  let costTop: 'checklist' | 'loading' | 'ready' | null = null
+  if (costIds.length > 0 && !failed) {
+    if (checklist.isPending) costTop = readyOffered && costsHidden ? null : 'loading'
+    else if (costSteps.length === 0) costTop = null
+    else if (!costs.complete) costTop = 'checklist'
+    else costTop = readyOffered && !costsHidden ? 'ready' : null
+  }
+  const beside =
+    top === 'checklist' || top === 'loading' || costTop === 'checklist' || costTop === 'loading'
 
   return (
     <PageContainer>
@@ -232,16 +259,39 @@ function DashboardView({ businessId }: { businessId: string }) {
             }}
           />
         ) : null}
-        {top === 'error' ? (
+        {costTop === 'ready' ? (
+          <CostsReady
+            businessId={businessId}
+            servicesOnly={context.sellsOnlyServices}
+            ownerTime={context.capabilities.has_team !== true}
+            onHide={() => {
+              hideCosts()
+              // The Hide button goes away with the card: the focus goes to what follows it.
+              aboutTitle.current?.focus()
+            }}
+          />
+        ) : null}
+        {failed ? (
           <LoadError error={checklist.error} onRetry={() => void checklist.refetch()} />
         ) : null}
         {/* Side by side from 1280px: below that the page area beside the sidebar is too narrow. */}
         <div className={cn(beside && 'grid gap-6 xl:grid-cols-5 xl:items-start')}>
-          {top === 'checklist' ? (
-            <Checklist businessId={businessId} items={items} className="xl:col-span-3" />
-          ) : null}
-          {top === 'loading' ? (
-            <ChecklistSkeleton steps={steps.length} className="xl:col-span-3" />
+          {beside ? (
+            <div className="space-y-6 xl:col-span-3">
+              {costTop === 'checklist' ? (
+                <CostChecklist
+                  businessId={businessId}
+                  steps={costSteps}
+                  profile={context.terminologyProfile}
+                  servicesOnly={context.sellsOnlyServices}
+                />
+              ) : null}
+              {costTop === 'loading' ? (
+                <ChecklistSkeleton steps={costIds.length} kind="costs" />
+              ) : null}
+              {top === 'checklist' ? <Checklist businessId={businessId} items={items} /> : null}
+              {top === 'loading' ? <ChecklistSkeleton steps={steps.length} /> : null}
+            </div>
           ) : null}
           <AboutBusiness
             context={context}

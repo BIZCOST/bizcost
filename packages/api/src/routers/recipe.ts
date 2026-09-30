@@ -5,8 +5,7 @@ import { businessProcedure, requireModule, requirePermission, router } from '../
 /**
  * Recipes (services/recipes.ts; M2 Step 4): what one unit of a product or service uses. Module
  * `products` and module `materials` (a recipe's lines are materials), each released and on for the
- * business (MODULE_DISABLED otherwise; both planned until M2 Step 7, so only the dev-only preview
- * reaches them before then, D-125), then materials.items.view (a recipe names its materials and shows
+ * business (MODULE_DISABLED otherwise; both released in M2 Step 7), then materials.items.view (a recipe names its materials and shows
  * their averages; a role cannot hold products.recipes.view without it, PERMISSION_NEEDS, and this
  * holds for a member's own overrides too, D-155), products.recipes.view to read and
  * products.recipes.manage to write. Costs are `cost` (withMeta).

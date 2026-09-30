@@ -19,10 +19,9 @@ import {
   WORKSHOP_ANSWERS,
   type TestUser,
 } from '../helpers'
-import { previewBaseURL } from '../stack'
+import { baseURL } from '../stack'
 
-// Materials and Products & Services (ROADMAP.md M2 Step 2), on the development server with the
-// dev-only preview (D-125; the `preview` project of playwright.config.ts): the lists with their
+// Materials and Products & Services (ROADMAP.md M2 Step 2), on the production build since the Costing Core was released (M2 Step 7, D-188): the lists with their
 // first-time empty states, the sheet on a phone and the side panel on a desktop, a material bought
 // in cartons of 12 one-litre bottles with its chain said in words as it is typed, a product and a
 // service, editing, searching, a name already used, archiving and bringing back, the business's
@@ -63,18 +62,11 @@ async function open(
   const user = await createUser(`catalog-${locale}`, { locale: 'en' })
   users.push(user)
   const context = await browser.newContext({
-    baseURL: previewBaseURL,
+    baseURL,
     locale: locale === 'ar' ? 'ar-AE' : 'en-US',
     viewport,
   })
   contexts.push(context)
-  // The development server's own badge and overlay are not part of the app.
-  await context.addInitScript(() => {
-    // A sheet the page adopts: React never removes it, as it may a <style> in <head>.
-    const sheet = new CSSStyleSheet()
-    sheet.replaceSync('[data-nextjs-dev-overlay] { display: none !important; }')
-    document.adoptedStyleSheets = [...document.adoptedStyleSheets, sheet]
-  })
   await useLanguage(context, 'en')
   const page = await context.newPage()
   await signIn(page, user)
@@ -342,9 +334,16 @@ test('Arabic, phone: a workshop with branches adds a material, a product and a s
   await expect(page.getByText(withValue('تمت إعادة ', 'حليب', ' إلى قائمتك.'))).toBeVisible()
   await expectSound(page, 'ar')
 
-  // Products & Services from the phone's tab bar.
+  // Products & Services from the phone's tab bar. Materials is under "More" there (the tabs follow
+  // the claims, D-189), which is marked while its page is open.
   const tabs = page.getByRole('navigation', { name: 'القائمة الرئيسية' })
-  await expect(tabs.getByRole('link', { name: 'المواد' })).toHaveAttribute('aria-current', 'page')
+  await expect(tabs.getByRole('link', { name: 'المواد' })).toHaveCount(0)
+  await tabs.getByRole('button', { name: 'المزيد' }).click()
+  await expect(page.getByRole('menuitem', { name: 'المواد' })).toHaveAttribute(
+    'aria-current',
+    'page',
+  )
+  await page.keyboard.press('Escape')
   // A long section name shows its short name on its tab (D-132).
   await expect(tabs.getByRole('link', { name: 'المنتجات والخدمات' })).toHaveText('المنتجات')
   await tabs.getByRole('link', { name: 'المنتجات والخدمات' }).click()

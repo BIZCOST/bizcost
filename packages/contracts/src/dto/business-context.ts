@@ -35,8 +35,13 @@ export type QuickActionDto = z.infer<typeof quickActionDto>
 /**
  * A navigation entry of a module manifest. `path` is relative to the business root
  * ('' = business home; the web app prefixes /b/[businessId]/). `icon` is a lucide icon name.
+ * `tab`: its claim to a place in the phone's tab bar when not every entry fits (1 first; null: only
+ * when there is room, else under "More"). The tabs keep the nav's order (M2 Step 7).
  */
-export const navEntryDto = quickActionDto.extend({ group: z.enum(NAV_GROUPS) })
+export const navEntryDto = quickActionDto.extend({
+  group: z.enum(NAV_GROUPS),
+  tab: z.int().positive().nullable(),
+})
 export type NavEntryDto = z.infer<typeof navEntryDto>
 
 /** A module that is released and enabled for the business, with the entries this member may use. */
@@ -57,6 +62,12 @@ export const businessContextDto = z.object({
   modules: z.array(enabledModuleDto),
   /** The business's wording (businesses.terminology_profile): overlays of @bizcost/i18n. */
   terminologyProfile: z.enum(TERMINOLOGY_PROFILES),
+  /**
+   * The business sells only services (D-200): every product or service in use is a service; with none
+   * in use yet, it was set up as a services business. What it sells is then worded as services (a
+   * phone's tab, "Add a service").
+   */
+  sellsOnlyServices: z.boolean(),
   /** businesses.currency (ISO 4217, e.g. AED): the business's amounts are shown in it. */
   currency: z.string().regex(/^[A-Z]{3}$/),
   /** Every capability of the registry (stored and derived) → on/off. */

@@ -12,6 +12,7 @@ import {
   defaultPricesIncludeVat,
   lineError,
   newId,
+  PAYMENT_METHODS,
   purchaseError,
   type CurrencyCode,
   type LineDiscount,
@@ -167,6 +168,18 @@ export const MISSING_KEYS: ReadonlySet<I18nKey> = new Set<I18nKey>([
   'purchasing.editor.errors.paymentMethod',
   'purchasing.editor.errors.paymentMethodMember',
 ])
+
+/**
+ * How a purchase or an expense may say it was paid: "Paid by an employee from their own money" only
+ * with a team (D-200; the API refuses it otherwise), or when the saved one already says so (kept).
+ */
+export function paymentMethodsFor(
+  hasTeam: boolean,
+  saved: PaymentMethod | '' | null | undefined,
+): readonly PaymentMethod[] {
+  if (hasTeam || saved === 'paid_by_member') return PAYMENT_METHODS
+  return PAYMENT_METHODS.filter((method) => method !== 'paid_by_member')
+}
 
 /** The VAT rate a new line starts with: the standard rate on a VAT-registered tax invoice. */
 export function defaultVatRate(vatRegistered: boolean, documentType: PurchaseDocumentType): string {

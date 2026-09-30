@@ -66,7 +66,7 @@ describe('settings sections', () => {
       isSectionVisible({ ...access(['purchases.documents.view']), ...purchases }, 'books'),
     ).toBe(false)
     expect(
-      isSectionVisible({ ...access(['purchases.books.close'], SOLO), ...purchases }, 'books'),
+      isSectionVisible({ ...access(['settings.books.close'], SOLO), ...purchases }, 'books'),
     ).toBe(true)
     expect(visibleSections({ ...access('all', SOLO), ...purchases })).toEqual([
       'business',

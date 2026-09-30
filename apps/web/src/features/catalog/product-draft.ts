@@ -55,11 +55,14 @@ export interface ProductFormAccess {
   readonly canPickLocations: boolean
 }
 
-/** The form's first state: a new product sold by the piece, or the record as it is stored. */
-export function productDraft(product?: ProductDto): ProductDraft {
+/**
+ * The form's first state: a new product sold by the piece (a new service for a business that sells
+ * only services, `type`, D-200), or the record as it is stored.
+ */
+export function productDraft(product?: ProductDto, type: ProductType = 'product'): ProductDraft {
   if (!product) {
     return {
-      type: 'product',
+      type,
       name: '',
       unit: 'piece',
       price: '',

@@ -24,8 +24,7 @@ import {
 import { businessProcedure, requireModule, requirePermission, router } from '../trpc'
 
 /**
- * Purchases (services/purchases.ts): module `purchases` (planned until M2 Step 7; the dev-only
- * preview reaches it before then, D-125), then purchases.documents.view to read, .manage for drafts,
+ * Purchases (services/purchases.ts): module `purchases` (released in M2 Step 7), then purchases.documents.view to read, .manage for drafts,
  * .post to post, .reverse to reverse, and .reverse with .manage to correct. Outputs are withMeta(): supplier prices are
  * removed for members without data.supplier_price.view.
  */

@@ -27,12 +27,13 @@ import { isolate } from '@/components/form/use-message'
 import { PageContainer } from '@/components/shell/page-container'
 import { Button } from '@/components/ui/button'
 import { Textarea } from '@/components/ui/textarea'
-import { Money, useBusinessDate, useMoney } from '@/features/purchasing/amounts'
+import { Money, useBusinessDate, useBusinessMonth, useMoney } from '@/features/purchasing/amounts'
 import { closedFor, nextDay } from '@/features/purchasing/books'
 import { ConfirmDialog } from '@/features/purchasing/confirm-dialog'
 import { useLocationOptions, useRefreshOwnRecords } from '@/features/purchasing/data'
 import { Panel } from '@/features/purchasing/panel'
 import { PaymentsPanel } from '@/features/purchasing/payments-panel'
+import { hasModule } from '@/features/purchasing/data'
 import { Receipts } from '@/features/purchasing/receipts'
 import { Totals } from '@/features/purchasing/totals'
 import { can } from '@/features/settings/sections'
@@ -86,6 +87,7 @@ export function ExpenseView({
   const queryClient = useQueryClient()
   const money = useMoney()
   const businessDate = useBusinessDate()
+  const monthName = useBusinessMonth()
   const { locale } = useLocale()
   const { businessId } = useParams<{ businessId: string }>()
   const { data: context } = useBusinessContext()
@@ -438,6 +440,9 @@ export function ExpenseView({
             <Detail label={t('purchasing.editor.date')}>
               {businessDate(expense.businessDate)}
             </Detail>
+            <Detail label={t('expenses.view.periodMonth')}>
+              <span data-period-month={expense.periodMonth}>{monthName(expense.periodMonth)}</span>
+            </Detail>
             <Detail label={t('purchasing.editor.documentType')}>
               {t(`purchasing.documentTypes.${expense.documentType}`)}
             </Detail>
@@ -538,19 +543,22 @@ export function ExpenseView({
           </p>
         ) : null}
 
-        <Panel title={t('expenses.editor.receipt')} hint={t('expenses.editor.receiptHint')}>
-          {/* Frozen while it is reviewed, receipts included (D-176). */}
-          <Receipts
-            entity="expense"
-            recordId={expense.id}
-            canManage={
-              !inApproval &&
-              (seesPrices
-                ? canManage
-                : mayChange && (expense.status === 'draft' || expense.status === 'rejected'))
-            }
-          />
-        </Panel>
+        {/* Receipts only with the Files module on (D-188). */}
+        {hasModule(context, 'files') ? (
+          <Panel title={t('expenses.editor.receipt')} hint={t('expenses.editor.receiptHint')}>
+            {/* Frozen while it is reviewed, receipts included (D-176). */}
+            <Receipts
+              entity="expense"
+              recordId={expense.id}
+              canManage={
+                !inApproval &&
+                (seesPrices
+                  ? canManage
+                  : mayChange && (expense.status === 'draft' || expense.status === 'rejected'))
+              }
+            />
+          </Panel>
+        ) : null}
       </div>
 
       <ConfirmDialog

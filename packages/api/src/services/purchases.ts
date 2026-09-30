@@ -19,6 +19,7 @@ import {
   type Tx,
 } from '@bizcost/db'
 import {
+  compareDecimal,
   computePurchase,
   isCurrencyCode,
   newId,
@@ -408,18 +409,60 @@ export async function listPurchases(ctx: BusinessCtx, input: ListInput): Promise
 // Drafts
 // ---------------------------------------------------------------------------------------------------
 
-/** The business's currency and default location, as a draft save needs them (expenses too). */
+/**
+ * The business's currency, default location and books-closed date (not locked: an expense's default
+ * month keeps out of closed months, D-200; posting checks the date again under its lock), as a draft
+ * save needs them (expenses too).
+ */
 export async function draftContext(tx: Tx, businessId: string) {
   const [row] = (await tx.execute(sql`
     select trim(b.currency) as currency,
+           b.books_closed_through::text as closed_through,
            (select l.id from app.locations l
              where l.business_id = b.id and l.is_default and l.deleted_at is null) as default_location_id
       from app.businesses b
      where b.id = ${businessId} and b.deleted_at is null
-  `)) as unknown as { currency: string; default_location_id: string | null }[]
+  `)) as unknown as {
+    currency: string
+    closed_through: string | null
+    default_location_id: string | null
+  }[]
   if (!row) throw new AppError('forbidden')
   if (!isCurrencyCode(row.currency)) throw invalid(`currency: ${row.currency} is not supported`)
-  return { currency: row.currency, defaultLocationId: row.default_location_id }
+  return {
+    currency: row.currency,
+    defaultLocationId: row.default_location_id,
+    closedThrough: row.closed_through,
+  }
+}
+
+/**
+ * VAT is shown only to a VAT-registered business (PRODUCT.md §5; M2 Step 7): any other types what it
+ * paid, with no VAT (its screens send a rate of 0). A draft of such a business with another VAT rate
+ * is CAPABILITY_DISABLED. A draft saved while the business was registered keeps its VAT until it is
+ * saved again, and posting it counts that VAT as cost (D-114 rule 4). Expenses too.
+ */
+export function assertVatShown(ctx: BusinessCtx, rates: readonly string[]): void {
+  if (ctx.access.capabilities.vat_registered) return
+  if (rates.some((rate) => compareDecimal(rate, '0') !== 0)) {
+    throw new AppError('capability_disabled', { message: 'VAT needs a VAT-registered business' })
+  }
+}
+
+/**
+ * "Paid by a member from their own money" is offered only to a business with a team (D-200): a
+ * business run alone has no employees to pay for it (its owner records how they paid). A draft of such
+ * a business that picks it is CAPABILITY_DISABLED; a draft that already has it (saved while there was
+ * a team, `stored`) keeps it, and posting takes it as before. Expenses too.
+ */
+export function assertPaidByShown(
+  ctx: BusinessCtx,
+  paymentMethod: string,
+  stored: string | null,
+): void {
+  if (ctx.access.capabilities.has_team || paymentMethod !== 'paid_by_member') return
+  if (stored === 'paid_by_member') return
+  throw new AppError('capability_disabled', { message: 'paid_by_member needs a team' })
 }
 
 /**
@@ -547,7 +590,17 @@ function amountsOf(
  * Checks a draft's supplier, location and materials (their units convert to base units), and
  * computes its amounts. Returns the columns of the purchase and of each line.
  */
-async function prepareDraft(tx: Tx, ctx: BusinessCtx, input: Fields) {
+async function prepareDraft(
+  tx: Tx,
+  ctx: BusinessCtx,
+  input: Fields,
+  storedPaymentMethod: string | null,
+) {
+  assertVatShown(
+    ctx,
+    input.lines.map((line) => line.vatRate),
+  )
+  assertPaidByShown(ctx, input.paymentMethod, storedPaymentMethod)
   const { currency, defaultLocationId } = await draftContext(tx, ctx.businessId)
   await assertSupplier(tx, ctx.businessId, input.supplierId)
   await assertPaidBy(tx, ctx.businessId, input)
@@ -651,7 +704,7 @@ export async function createPurchase(
 ): Promise<PurchaseResultDto> {
   const { id, ...fields } = input
   return ctx.tx(async (tx) => {
-    const { header, lines } = await prepareDraft(tx, ctx, fields)
+    const { header, lines } = await prepareDraft(tx, ctx, fields, null)
     const { row, created } = await createIdempotent(tx, purchases, {
       id,
       businessId: ctx.businessId,
@@ -680,6 +733,8 @@ interface HeadRecord extends Record<string, unknown> {
   vat_not_reclaimable: boolean
   discount_percent: string | null
   discount_amount: string | null
+  /** The caller entered it (created_by). */
+  entered_by_me: boolean
 }
 
 /** The purchase row, locked FOR UPDATE (lock 1 of a posting); NOT_FOUND when not live. */
@@ -688,13 +743,26 @@ async function lockPurchase(tx: Tx, businessId: string, id: string): Promise<Hea
     select p.id, p.status, p.version, p.business_date::text as business_date, p.location_id,
            p.document_type, p.payment_method, p.paid_by_member_id, p.prices_include_vat,
            p.vat_not_reclaimable, trim_scale(p.discount_percent)::text as discount_percent,
-           trim_scale(p.discount_amount)::text as discount_amount
+           trim_scale(p.discount_amount)::text as discount_amount,
+           coalesce(p.created_by = app.current_user_id(), false) as entered_by_me
       from app.purchases p
      where p.business_id = ${businessId} and p.id = ${id} and p.deleted_at is null
        for update
   `)) as unknown as HeadRecord[]
   if (!row) throw new AppError('not_found')
   return row
+}
+
+/**
+ * A member who may not see supplier prices changes only the purchase drafts they entered themselves
+ * (D-184, D-200, as expenses): never another member's, whose prices they cannot see (a whole save would
+ * replace prices they never read; a discard would take out what they cannot check). FORBIDDEN
+ * otherwise, under the row lock, before anything is changed.
+ */
+function assertMayChange(ctx: BusinessCtx, head: HeadRecord) {
+  if (!ctx.access.visibleCategories.has('supplier_price') && !head.entered_by_me) {
+    throw new AppError('forbidden')
+  }
 }
 
 /** A draft that may still change: DOCUMENT_POSTED once posted, CONFLICT for another version. */
@@ -706,6 +774,7 @@ function assertDraft(head: HeadRecord, version: number) {
 /**
  * `purchase.update`: the whole draft, `version` as read. Lines are matched by id: new ids are added,
  * changed ones updated, missing ones taken out (soft-deleted). An id used anywhere else is CONFLICT.
+ * FORBIDDEN for another member's draft when the caller may not see supplier prices.
  */
 export async function updatePurchase(
   ctx: BusinessCtx,
@@ -713,8 +782,10 @@ export async function updatePurchase(
 ): Promise<PurchaseResultDto> {
   const { id, version, ...fields } = input
   return ctx.tx(async (tx) => {
-    assertDraft(await lockPurchase(tx, ctx.businessId, id), version)
-    const { header, lines } = await prepareDraft(tx, ctx, fields)
+    const head = await lockPurchase(tx, ctx.businessId, id)
+    assertMayChange(ctx, head)
+    assertDraft(head, version)
+    const { header, lines } = await prepareDraft(tx, ctx, fields, head.payment_method)
     await tx
       .update(purchases)
       .set(header)
@@ -772,11 +843,14 @@ export async function updatePurchase(
 
 /**
  * `purchase.discard`: a draft is taken out (soft-deleted, with its lines); never a posted one. Its
- * receipts go with it: taken off in the same transaction, their files removed after it.
+ * receipts go with it: taken off in the same transaction, their files removed after it. FORBIDDEN for
+ * another member's draft when the caller may not see supplier prices.
  */
 export async function discardPurchase(ctx: BusinessCtx, input: VersionInput): Promise<OkDto> {
   const files = await ctx.tx(async (tx) => {
-    assertDraft(await lockPurchase(tx, ctx.businessId, input.id), input.version)
+    const head = await lockPurchase(tx, ctx.businessId, input.id)
+    assertMayChange(ctx, head)
+    assertDraft(head, input.version)
     const paths = await detachAll(tx, ctx.businessId, 'purchase', input.id)
     await tx
       .update(purchaseLines)

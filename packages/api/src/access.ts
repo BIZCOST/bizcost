@@ -14,6 +14,7 @@ import {
   PERMISSION_CATALOG,
   resolveCapabilities,
   resolveEnabledModules,
+  withNeededKeys,
   type Capabilities,
   type ModuleState,
 } from '@bizcost/modules'
@@ -113,12 +114,16 @@ export async function loadBusinessAccess(
   const row = rows[0]
   if (!row) return null
 
-  const effective = resolveEffective({
-    roleTemplateKey: row.template_key,
-    rolePermissionKeys: row.role_keys,
-    overrides: row.overrides,
-    catalog: PERMISSION_CATALOG,
-  })
+  // A key missing a key it needs grants nothing (a member's overrides or a later change of their role
+  // can leave one so; PERMISSION_NEEDS).
+  const effective = withNeededKeys(
+    resolveEffective({
+      roleTemplateKey: row.template_key,
+      rolePermissionKeys: row.role_keys,
+      overrides: row.overrides,
+      catalog: PERMISSION_CATALOG,
+    }),
+  )
   return {
     memberId: row.member_id,
     roleTemplateKey: row.template_key,

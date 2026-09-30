@@ -72,12 +72,14 @@ describe('businessContextDto', () => {
             path: '',
             icon: 'layout-dashboard',
             group: 'main',
+            tab: 1,
           },
         ],
         quickActions: [],
       },
     ],
     terminologyProfile: 'food',
+    sellsOnlyServices: false,
     currency: 'AED',
     capabilities: { has_team: true, vat_registered: false },
     permissionsVersion: 3,
@@ -94,6 +96,7 @@ describe('businessContextDto', () => {
       path: 'settings',
       icon: 'settings',
       group: 'system',
+      tab: null,
     }
     const parsed = businessContextDto.parse({
       ...context,
@@ -124,14 +127,33 @@ describe('dashboardChecklistDto', () => {
         { id: 'profile', done: false, missing: ['logo'] },
         { id: 'trn', done: true, missing: [] },
       ],
+      costSteps: [
+        { id: 'products', done: true, missing: [], remaining: null },
+        { id: 'running_costs', done: false, missing: ['estimate'], remaining: null },
+        { id: 'product_costs', done: false, missing: [], remaining: 2 },
+      ],
     }
     expect(dashboardChecklistDto.parse(checklist)).toEqual(checklist)
   })
 
+  it('rejects unknown cost steps and parts, and counts that are not whole', () => {
+    const base = { items: [] }
+    const step = (extra: object) => ({
+      ...base,
+      costSteps: [{ id: 'products', done: false, missing: [], remaining: null, ...extra }],
+    })
+    expect(dashboardChecklistDto.safeParse(step({})).success).toBe(true)
+    expect(dashboardChecklistDto.safeParse(step({ id: 'sales' })).success).toBe(false)
+    expect(dashboardChecklistDto.safeParse(step({ missing: ['logo'] })).success).toBe(false)
+    expect(dashboardChecklistDto.safeParse(step({ remaining: 1.5 })).success).toBe(false)
+    expect(dashboardChecklistDto.safeParse(step({ remaining: -1 })).success).toBe(false)
+    expect(dashboardChecklistDto.safeParse(base).success).toBe(false)
+  })
+
   it('rejects unknown steps and profile parts', () => {
     const step = { id: 'products', done: false, missing: [] }
-    expect(dashboardChecklistDto.safeParse({ items: [step] }).success).toBe(false)
+    expect(dashboardChecklistDto.safeParse({ items: [step], costSteps: [] }).success).toBe(false)
     const part = { id: 'profile', done: false, missing: ['email'] }
-    expect(dashboardChecklistDto.safeParse({ items: [part] }).success).toBe(false)
+    expect(dashboardChecklistDto.safeParse({ items: [part], costSteps: [] }).success).toBe(false)
   })
 })

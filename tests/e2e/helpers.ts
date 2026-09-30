@@ -538,3 +538,39 @@ export function pngImage(size = 64): Buffer {
     chunk('IEND', Buffer.alloc(0)),
   ])
 }
+
+/**
+ * A PNG of `width` × `height` whose pixel at (x, y) is `pixel(x, y)` (RGBA): e.g. a wide logo, or a
+ * small mark on a lot of white (the logo's crop, the owner's request of 2026-09-30).
+ */
+export function pngPicture(
+  width: number,
+  height: number,
+  pixel: (x: number, y: number) => readonly [number, number, number, number],
+): Buffer {
+  const row = width * 4 + 1
+  const raw = Buffer.alloc(row * height)
+  for (let y = 0; y < height; y++) {
+    raw[y * row] = 0
+    for (let x = 0; x < width; x++) raw.set(pixel(x, y), y * row + 1 + x * 4)
+  }
+  const chunk = (type: string, data: Buffer) => {
+    const length = Buffer.alloc(4)
+    length.writeUInt32BE(data.length)
+    const body = Buffer.concat([Buffer.from(type, 'ascii'), data])
+    const crc = Buffer.alloc(4)
+    crc.writeUInt32BE(crc32(body))
+    return Buffer.concat([length, body, crc])
+  }
+  const header = Buffer.alloc(13)
+  header.writeUInt32BE(width, 0)
+  header.writeUInt32BE(height, 4)
+  header[8] = 8 // bit depth
+  header[9] = 6 // RGBA
+  return Buffer.concat([
+    Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]),
+    chunk('IHDR', header),
+    chunk('IDAT', deflateSync(raw)),
+    chunk('IEND', Buffer.alloc(0)),
+  ])
+}

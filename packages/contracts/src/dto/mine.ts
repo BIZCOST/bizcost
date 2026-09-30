@@ -1,7 +1,7 @@
 import { z } from 'zod'
 import { withMeta } from '../envelope'
 import { DOCUMENT_PAGE_SIZE, DOCUMENT_PAGE_SIZE_MAX } from '../purchasing'
-import { zBusinessDate, zDecimal, zUuid } from '../primitives'
+import { zBusinessDate, zBusinessMonth, zDecimal, zUuid } from '../primitives'
 import { expenseDto, expenseStatusDto } from './expenses'
 import {
   documentStatusDto,
@@ -41,6 +41,8 @@ export const mineExpenseDto = z.object({
   id: zUuid,
   status: expenseStatusDto,
   businessDate: zBusinessDate,
+  /** The month the bill is for (`YYYY-MM`). */
+  periodMonth: zBusinessMonth,
   categoryName: z.string(),
   description: z.string().nullable(),
   reference: z.string().nullable(),

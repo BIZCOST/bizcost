@@ -582,9 +582,17 @@ describe('role.list / role.updatePermissions', () => {
         ]),
       ),
     ).toBe('forbidden')
+    // Costs, supplier prices and margins only together (D-144, D-187; the Roles editor's one switch).
+    expect(
+      appCode(
+        await update(lead.token, supervisor, [...supervisor.permissionKeys, 'data.cost.view']),
+      ),
+    ).toBe('validation')
     const ok = await update(lead.token, supervisor, [
       ...supervisor.permissionKeys,
       'data.cost.view',
+      'data.supplier_price.view',
+      'data.profit_margin.view',
     ])
     expect(ok.error).toBeUndefined()
     // Nor raise their own role.

@@ -2,7 +2,7 @@
 
 import { useTRPC } from '@bizcost/app-core'
 import type { MineExpenseDto } from '@bizcost/contracts'
-import { compareDecimal } from '@bizcost/domain'
+import { compareDecimal, monthOf } from '@bizcost/domain'
 import { useInfiniteQuery, useQuery } from '@tanstack/react-query'
 import { ArrowRightIcon, ReceiptIcon } from 'lucide-react'
 import Link from 'next/link'
@@ -13,7 +13,7 @@ import { LoadError } from '@/components/states/query-state'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { ListEmpty, ListSkeleton } from '@/features/catalog/catalog-list'
-import { Money, useBusinessDate, useMoney } from '@/features/purchasing/amounts'
+import { Money, useBusinessDate, useBusinessMonth, useMoney } from '@/features/purchasing/amounts'
 import { cn } from '@/lib/utils'
 import { ExpenseStatusBadge } from './status-badge'
 
@@ -67,9 +67,16 @@ function Settlement({ expense, className }: { expense: MineExpenseDto; className
 function MineRow({ expense, href }: { expense: MineExpenseDto; href: string }) {
   const { t } = useTranslation()
   const businessDate = useBusinessDate()
+  const monthName = useBusinessMonth()
   const parts = [
     expense.description ? <bdi key="category">{expense.categoryName}</bdi> : null,
     <span key="date">{businessDate(expense.businessDate)}</span>,
+    // The month the bill is for, when it is not the bill's own month (D-194).
+    expense.periodMonth !== monthOf(expense.businessDate) ? (
+      <span key="month">
+        {t('expenses.list.forMonth', { month: monthName(expense.periodMonth) })}
+      </span>
+    ) : null,
     expense.reference ? (
       <bdi key="reference" dir="auto">
         {expense.reference}

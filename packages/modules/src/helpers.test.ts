@@ -10,8 +10,11 @@ import { MODULES, type ModuleManifest } from './manifests'
 import {
   isCatalogPermissionKey,
   keysMissingNeeds,
+  offeredSensitiveDataSwitches,
   PERMISSION_CATALOG,
   PERMISSION_NEEDS,
+  SENSITIVE_DATA_SWITCHES,
+  withNeededKeys,
 } from './permissions'
 import { isRoleTemplateKey, ROLE_TEMPLATES, roleTemplateByKey } from './role-templates'
 import {
@@ -56,7 +59,18 @@ describe('lookups', () => {
   })
 
   it('releasedModules lists released manifests in manifest order', () => {
-    expect(releasedModules().map((m) => m.id)).toEqual(['dashboard', 'settings'])
+    expect(releasedModules().map((m) => m.id)).toEqual([
+      'dashboard',
+      'settings',
+      'products',
+      'materials',
+      'suppliers',
+      'purchases',
+      'expenses',
+      'running_costs',
+      'files',
+      'cost_engine',
+    ])
     expect(releasedModules().every(isModuleReleased)).toBe(true)
   })
 
@@ -87,6 +101,75 @@ describe('lookups', () => {
     expect(
       keysMissingNeeds(['products.items.view', 'materials.items.view', 'products.recipes.view']),
     ).toEqual([])
+    // Costs, supplier prices and margins are granted only together (D-144, D-187).
+    expect(keysMissingNeeds(['data.cost.view', 'data.supplier_price.view'])).toEqual([
+      'data.cost.view',
+    ])
+    expect(keysMissingNeeds(['data.profit_margin.view'])).toEqual(['data.profit_margin.view'])
+    expect(keysMissingNeeds(['data.supplier_price.view'])).toEqual(['data.supplier_price.view'])
+    expect(
+      keysMissingNeeds(['data.cost.view', 'data.supplier_price.view', 'data.profit_margin.view']),
+    ).toEqual([])
+    expect(keysMissingNeeds(['data.payroll.view'])).toEqual([])
+  })
+
+  it('withNeededKeys takes out, until nothing changes, every key that misses a key it needs', () => {
+    const effective = (keys: string[]) =>
+      withNeededKeys(
+        resolveEffective({
+          roleTemplateKey: 'custom',
+          rolePermissionKeys: keys,
+          overrides: [],
+          catalog: PERMISSION_CATALOG,
+        }),
+      )
+    // A chain: product costs need recipes, which need materials; without materials none stands.
+    expect([
+      ...effective([
+        'products.items.view',
+        'products.recipes.view',
+        'cost_engine.product_costs.view',
+        'cost_engine.settings.manage',
+      ]).keys,
+    ]).toEqual(['products.items.view'])
+    // One data key alone of the three grants nothing; payroll stands alone.
+    expect([...effective(['data.cost.view', 'data.payroll.view']).keys]).toEqual([
+      'data.payroll.view',
+    ])
+    const whole = resolveEffective({
+      roleTemplateKey: 'manager',
+      rolePermissionKeys: roleTemplateByKey('manager')!.permissionKeys,
+      overrides: [],
+      catalog: PERMISSION_CATALOG,
+    })
+    expect(withNeededKeys(whole)).toBe(whole)
+    const owner = resolveEffective({
+      roleTemplateKey: OWNER_TEMPLATE_KEY,
+      rolePermissionKeys: [],
+      overrides: [{ key: 'data.cost.view', effect: 'deny' }],
+      catalog: PERMISSION_CATALOG,
+    })
+    expect(withNeededKeys(owner)).toBe(owner)
+  })
+
+  it('offers costs, supplier prices and margins as one sensitive-data switch, with a module that shows them on', () => {
+    expect(SENSITIVE_DATA_SWITCHES.map((s) => [s.id, [...s.keys]])).toEqual([
+      ['costs', ['data.cost.view', 'data.supplier_price.view', 'data.profit_margin.view']],
+      ['payroll', ['data.payroll.view']],
+      ['employee_pii', ['data.employee_pii.view']],
+    ])
+    // Each data key is in exactly one switch, and a switch holds every key its keys need.
+    const keys = SENSITIVE_DATA_SWITCHES.flatMap((s) => s.keys)
+    expect([...keys].sort()).toEqual(PERMISSION_CATALOG.filter((k) => k.startsWith('data.')).sort())
+    for (const s of SENSITIVE_DATA_SWITCHES) expect(keysMissingNeeds(s.keys), s.id).toEqual([])
+    expect(offeredSensitiveDataSwitches(['dashboard', 'settings']).map((s) => s.id)).toEqual([])
+    expect(offeredSensitiveDataSwitches(['dashboard', 'expenses']).map((s) => s.id)).toEqual([
+      'costs',
+    ])
+    expect(
+      offeredSensitiveDataSwitches(MODULES.map((m) => m.id)).map((s) => s.id),
+      'payroll and personal data come with the modules that show them (Phase 5)',
+    ).toEqual(['costs'])
   })
 
   it('isRoleTemplateKey / roleTemplateByKey', () => {
@@ -131,82 +214,153 @@ describe('module gates', () => {
 })
 
 describe('the dev-only preview (D-125)', () => {
-  const products = moduleById('products')!
-  const materials = moduleById('materials')!
+  // No module is being built between M2 Step 7 and Phase 3: a test registry starts the build of Orders
+  // (its keys and nav) while it stays planned.
+  const building: ModuleManifest = {
+    ...orders,
+    permissionKeys: ['orders.view'],
+    nav: [
+      {
+        id: 'orders',
+        labelKey: 'nav.orders',
+        path: 'orders',
+        icon: 'shopping-bag',
+        group: 'main',
+        permission: 'orders.view',
+      },
+    ],
+  }
+  const registry = MODULES.map((m) => (m.id === 'orders' ? building : m))
+  const ordersOn = resolveEnabledModules([{ key: 'orders', enabled: true }])
 
-  it('may show only planned modules whose build started', () => {
-    expect(PREVIEWABLE_MODULE_IDS).toEqual([
-      'products',
-      'materials',
-      'suppliers',
-      'purchases',
-      'expenses',
-      'running_costs',
-      'cost_engine',
-    ])
+  it('may show only planned modules whose build started: none since the Costing Core was released', () => {
+    expect(PREVIEWABLE_MODULE_IDS).toEqual([])
   })
 
-  it('parses a comma or space separated list, and names what it cannot preview', () => {
-    expect(parsePreviewModules(undefined)).toEqual({ ids: [], invalid: [] })
-    expect(parsePreviewModules('  ')).toEqual({ ids: [], invalid: [] })
-    expect(parsePreviewModules('materials,products')).toEqual({
-      ids: ['products', 'materials'],
+  it('parses a comma or space separated list, ignores released modules, and names what it cannot preview', () => {
+    expect(parsePreviewModules(undefined, registry)).toEqual({ ids: [], released: [], invalid: [] })
+    expect(parsePreviewModules('  ', registry)).toEqual({ ids: [], released: [], invalid: [] })
+    expect(parsePreviewModules(' orders , orders', registry)).toEqual({
+      ids: ['orders'],
+      released: [],
       invalid: [],
     })
-    expect(parsePreviewModules(' materials , materials products')).toEqual({
-      ids: ['products', 'materials'],
+    // A list written before the Costing Core's release (a local server's environment): its modules
+    // are released now, so there is nothing to preview and the server keeps starting.
+    expect(parsePreviewModules('materials,products', registry)).toEqual({
+      ids: [],
+      released: ['products', 'materials'],
       invalid: [],
     })
-    // Unknown, released, or planned without a build: refused by name.
-    expect(parsePreviewModules('materials,orders,settings,Materials,nope')).toEqual({
-      ids: ['materials'],
-      invalid: ['orders', 'settings', 'Materials', 'nope'],
+    // Unknown, or planned without a build: refused by name.
+    expect(parsePreviewModules('orders,quotations,Orders,nope', registry)).toEqual({
+      ids: ['orders'],
+      released: [],
+      invalid: ['quotations', 'Orders', 'nope'],
+    })
+    // The real registry has nothing to preview.
+    expect(parsePreviewModules('orders,materials')).toEqual({
+      ids: [],
+      released: ['materials'],
+      invalid: ['orders'],
     })
   })
 
   it('counts the named modules as released, and nothing else', () => {
-    const registry = withPreviewModules(['materials'])
-    const enabled = resolveEnabledModules([])
+    const previewed = withPreviewModules(['orders', 'quotations'], registry)
     expect(
       isModuleActive(
-        registry.find((m) => m.id === 'materials')!,
-        enabled,
+        previewed.find((m) => m.id === 'orders')!,
+        ordersOn,
       ),
     ).toBe(true)
-    expect(
-      isModuleActive(
-        registry.find((m) => m.id === 'products')!,
-        enabled,
-      ),
-    ).toBe(false)
-    expect(registry.find((m) => m.id === 'orders')?.availability).toBe('planned')
-    // The global registry is untouched.
-    expect(materials.availability).toBe('planned')
-    expect(isModuleActive(materials, enabled)).toBe(false)
-    // A module that cannot be previewed stays planned.
-    expect(withPreviewModules(['orders']).find((m) => m.id === 'orders')?.availability).toBe(
-      'planned',
-    )
-    expect(withPreviewModules([])).toBe(MODULES)
+    expect(previewed.find((m) => m.id === 'quotations')?.availability).toBe('planned')
+    // The registry passed in is untouched.
+    expect(building.availability).toBe('planned')
+    expect(isModuleActive(building, ordersOn)).toBe(false)
+    expect(withPreviewModules([], registry)).toBe(registry)
+    // With the real registry nothing changes.
+    expect(withPreviewModules(['orders', 'materials'])).toBe(MODULES)
   })
 
   it('still needs the business to have the module on and the member its permission', () => {
-    const registry = withPreviewModules(['products', 'materials'])
-    const off = resolveEnabledModules([{ key: 'materials', enabled: false }])
-    const ids = (enabled: ReadonlySet<string>, can: (key: string) => boolean) =>
-      buildModuleNav(enabled, can, registry).map((m) => [m.id, m.nav.map((e) => e.id)])
-    expect(ids(resolveEnabledModules([]), canFor('sales'))).toEqual([
+    const previewed = withPreviewModules(['orders'], registry)
+    const entries = (enabled: ReadonlySet<string>, can: (key: string) => boolean) =>
+      buildModuleNav(enabled, can, previewed)
+        .find((m) => m.id === 'orders')
+        ?.nav.map((e) => e.id)
+    expect(entries(ordersOn, everybody)).toEqual(['orders'])
+    expect(entries(ordersOn, (key) => key !== 'orders.view')).toEqual([])
+    // An optional module is off until the business turns it on.
+    expect(entries(resolveEnabledModules([]), everybody)).toBeUndefined()
+  })
+})
+
+describe('the Costing Core, released (M2 Step 7)', () => {
+  const core = resolveEnabledModules([])
+  const entries = (enabled: ReadonlySet<string>, can: (key: string) => boolean) =>
+    buildModuleNav(enabled, can).map((m): [string, string[]] => [m.id, m.nav.map((e) => e.id)])
+  const plus = (enabled: ReadonlySet<string>, can: (key: string) => boolean) =>
+    buildModuleNav(enabled, can).flatMap((m) => m.quickActions.map((a) => a.id))
+
+  it('shows without the preview: the owner gets every section and "+" for a product, a purchase and an expense', () => {
+    expect(entries(core, canFor(OWNER_TEMPLATE_KEY))).toEqual([
       ['dashboard', ['dashboard']],
       ['settings', ['settings']],
       ['products', ['products']],
-      ['materials', []],
+      ['materials', ['materials']],
+      ['suppliers', ['suppliers']],
+      ['purchases', ['purchases', 'payables']],
+      ['expenses', ['expenses']],
+      ['running_costs', ['running_costs']],
+      ['files', []],
+      ['cost_engine', ['product_costs']],
     ])
-    expect(ids(off, canFor('manager')).map(([id]) => id)).toEqual([
-      'dashboard',
-      'settings',
-      'products',
+    expect(plus(core, canFor(OWNER_TEMPLATE_KEY))).toEqual([
+      'new_product',
+      'new_purchase',
+      'new_expense',
     ])
-    expect(isModuleVisible(products, resolveEnabledModules([]), everybody)).toBe(false)
+  })
+
+  it('is still gated by the module being on and the permission of the member', () => {
+    // An employee: what goes into products, their materials, and entering expenses (D-179, D-180).
+    expect(entries(core, canFor('employee')).filter(([, ids]) => ids.length > 0)).toEqual([
+      ['dashboard', ['dashboard']],
+      ['settings', ['settings']],
+      ['products', ['products']],
+      ['materials', ['materials']],
+      ['expenses', ['expenses']],
+    ])
+    expect(plus(core, canFor('employee'))).toEqual(['new_expense'])
+    expect(plus(core, canFor('sales'))).toEqual([])
+    expect(plus(core, canFor('accountant'))).toEqual([])
+    // Turned off by the business (a services business without Purchases and Materials): gone.
+    const off = resolveEnabledModules([
+      { key: 'purchases', enabled: false },
+      { key: 'materials', enabled: false },
+    ])
+    expect(entries(off, canFor(OWNER_TEMPLATE_KEY)).map(([id]) => id)).not.toContain('purchases')
+    expect(plus(off, canFor(OWNER_TEMPLATE_KEY))).toEqual(['new_product', 'new_expense'])
+  })
+
+  it('claims phone tabs so that an owner keeps Product costs and an employee Expenses', () => {
+    const tabs = (can: (key: string) => boolean) =>
+      buildModuleNav(core, can)
+        .flatMap((m) => m.nav)
+        .map((e) => [e.id, e.tab])
+    expect(tabs(canFor(OWNER_TEMPLATE_KEY))).toEqual([
+      ['dashboard', 1],
+      ['settings', null],
+      ['products', 3],
+      ['materials', 6],
+      ['suppliers', null],
+      ['purchases', 5],
+      ['payables', null],
+      ['expenses', 4],
+      ['running_costs', null],
+      ['product_costs', 2],
+    ])
   })
 })
 
@@ -256,6 +410,7 @@ describe('buildModuleNav', () => {
             path: '',
             icon: 'layout-dashboard',
             group: 'main',
+            tab: 1,
           },
         ],
         quickActions: [],
@@ -269,6 +424,7 @@ describe('buildModuleNav', () => {
             path: 'settings',
             icon: 'settings',
             group: 'system',
+            tab: null,
           },
         ],
         quickActions: [],
@@ -328,7 +484,7 @@ describe('buildModuleNav', () => {
   })
 
   it('lists a page two modules share (Amounts owed, D-166) once, through the first the member may use', () => {
-    const registry = withPreviewModules(['purchases', 'expenses'])
+    const registry: readonly ModuleManifest[] = MODULES
     const entries = (enabled: Set<string>, can: (key: string) => boolean) =>
       buildModuleNav(enabled, can, registry).map((m) => [m.id, m.nav.map((e) => e.id)])
     // Core modules are on unless switched off.
@@ -357,7 +513,7 @@ describe('buildModuleNav', () => {
   })
 
   it('shows "Amounts owed" to a member it owes, without its keys, once (D-181)', () => {
-    const registry = withPreviewModules(['purchases', 'expenses'])
+    const registry: readonly ModuleManifest[] = MODULES
     const all = new Set(['purchases', 'expenses'])
     const employee = canFor('employee')
     const entries = (payeeIn: Set<string>, enabled: ReadonlySet<string> = all) =>

@@ -19,8 +19,14 @@ export {
   checklistItem,
   checklistItemIds,
   checklistItems,
+  COST_STEP_RULES,
+  costStep,
+  costStepIds,
+  costSteps,
   hasArabicName,
   type ChecklistFacts,
+  type CostFacts,
+  type CostStepAccess,
 } from './checklist'
 export {
   ALWAYS_ENABLED_MODULE_IDS,
@@ -38,9 +44,13 @@ export {
 export {
   isCatalogPermissionKey,
   keysMissingNeeds,
+  offeredSensitiveDataSwitches,
   PERMISSION_CATALOG,
   PERMISSION_NEEDS,
+  SENSITIVE_DATA_SWITCHES,
+  withNeededKeys,
   type PermissionKey,
+  type SensitiveDataSwitch,
 } from './permissions'
 export {
   isRoleTemplateKey,

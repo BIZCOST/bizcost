@@ -3,10 +3,16 @@ import { PERMISSION_CATALOG, type PermissionKey } from '@bizcost/modules'
 import { describe, expect, it } from 'vitest'
 import {
   groupTitleKey,
+  isSwitchOn,
+  offeredSensitiveSwitches,
   permissionGroups,
   permissionHintKey,
   permissionLabelKey,
+  permissionLabelKeys,
+  sensitiveHintKey,
+  sensitiveLabelKey,
   switchPermission,
+  switchSensitive,
   visiblePermissionGroups,
 } from './permission-groups'
 
@@ -107,6 +113,22 @@ describe('visiblePermissionGroups', () => {
       visiblePermissionGroups(capabilities, [...M1, 'products']).map((g) => g.id),
     ).not.toContain('materials')
   })
+
+  it('offers closing the books under business settings with Purchases or Expenses on (D-201)', () => {
+    const capabilities = { has_team: true, multi_location: false }
+    const business = (modules: string[]) =>
+      visiblePermissionGroups(capabilities, [...M1, ...modules]).find((g) => g.id === 'business')
+        ?.keys
+    expect(business([])).not.toContain('settings.books.close')
+    expect(business(['products'])).not.toContain('settings.books.close')
+    expect(business(['purchases'])).toContain('settings.books.close')
+    expect(business(['expenses'])).toContain('settings.books.close')
+    expect(
+      visiblePermissionGroups(capabilities, [...M1, 'purchases'])
+        .find((g) => g.id === 'purchases')
+        ?.keys.some((key) => key.includes('books')),
+    ).toBe(false)
+  })
 })
 
 describe('switchPermission', () => {
@@ -138,5 +160,59 @@ describe('switchPermission', () => {
     expect(switchPermission(recipes, 'products.items.view', false)).toEqual(
       new Set(['materials.items.view']),
     )
+  })
+})
+
+describe('the sensitive-data section (M2 Step 7, D-190)', () => {
+  const costs = offeredSensitiveSwitches(['dashboard', 'settings', 'products'])
+
+  it('offers "See costs, supplier prices and margins" once a Costing Core module is on', () => {
+    expect(offeredSensitiveSwitches(['dashboard', 'settings'])).toEqual([])
+    expect(costs.map((s) => s.id)).toEqual(['costs'])
+    expect(offeredSensitiveSwitches(['expenses']).map((s) => s.id)).toEqual(['costs'])
+    for (const locale of LOCALES) {
+      for (const item of costs) {
+        expect(hasMessage(locale, sensitiveLabelKey(item))).toBe(true)
+        expect(hasMessage(locale, sensitiveHintKey(item))).toBe(true)
+      }
+    }
+    // Payroll and personal details wait for the module that shows them (Phase 5).
+    expect(costs.map((s) => s.id)).not.toContain('payroll')
+  })
+
+  it('switches costs, supplier prices and margins together, and only together', () => {
+    const [item] = costs
+    const on = switchSensitive(new Set(['products.items.view']), item!, true)
+    expect([...on].sort()).toEqual([
+      'data.cost.view',
+      'data.profit_margin.view',
+      'data.supplier_price.view',
+      'products.items.view',
+    ])
+    expect(isSwitchOn(on, item!)).toBe(true)
+    // One of them alone (a role saved before the release) reads as off.
+    expect(isSwitchOn(new Set(['data.cost.view']), item!)).toBe(false)
+    expect([...switchSensitive(on, item!, false)]).toEqual(['products.items.view'])
+    // Switching one of its keys off alone takes the others with it.
+    expect([...switchPermission(on, 'data.profit_margin.view', false)]).toEqual([
+      'products.items.view',
+    ])
+  })
+
+  it('names a set of permissions as the editors switch them', () => {
+    expect(
+      permissionLabelKeys([
+        'data.supplier_price.view',
+        'dashboard.home.view',
+        'data.cost.view',
+        'data.profit_margin.view',
+      ]),
+    ).toEqual(['settings.permissionLabels.dashboard_home_view', 'settings.sensitive.costs.label'])
+    expect(permissionLabelKeys(['data.cost.view'])).toEqual([
+      'settings.permissionLabels.data_cost_view',
+    ])
+    expect(permissionLabelKeys(['data.payroll.view'])).toEqual([
+      'settings.permissionLabels.data_payroll_view',
+    ])
   })
 })

@@ -15,7 +15,6 @@ import {
   milkInput,
   ok,
   purchaseInput,
-  PURCHASING_PREVIEW,
   PurchasingApi,
   Scope,
   type Handler,
@@ -37,10 +36,7 @@ let today: string
 
 beforeAll(async () => {
   api = new PurchasingApi()
-  files = handlerFor(api.db, undefined, {
-    previewModules: PURCHASING_PREVIEW,
-    supabaseSecretKey: SECRET_KEY,
-  })
+  files = handlerFor(api.db, undefined, { supabaseSecretKey: SECRET_KEY })
   a = await Scope.open(api, WORKSHOP)
   b = await Scope.open(api, WORKSHOP)
   today = await a.today()

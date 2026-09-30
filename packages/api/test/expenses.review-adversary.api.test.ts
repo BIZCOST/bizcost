@@ -174,11 +174,15 @@ describe('what was sent is what is approved (D-164): the approver must see it (D
       ),
     ).data
     // With approval on, a draft is posted only by a member who may approve (D-164), and their
-    // approval is recorded with it: never for 7 777 they cannot see (D-175).
+    // approval is recorded with it: never for 7 777 they cannot see (D-175). Since D-200 approving
+    // needs supplier prices, so the key this member was given grants nothing: they are a member who
+    // may not approve, and the draft needs approval first.
     const posted = await shop.as(blindApprover, 'expense.post', {
       id: draft.id,
       version: draft.version,
     })
-    expect(codeOf(posted)).toBe('forbidden')
+    expect(codeOf(posted)).toBe('approval_required')
+    const still = ok(await shop.run<Envelope<ExpenseDto>>('expense.get', { id: draft.id })).data
+    expect(still).toMatchObject({ status: 'draft', approvedAt: null, postedAt: null })
   })
 })

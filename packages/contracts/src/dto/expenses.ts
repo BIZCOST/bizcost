@@ -7,7 +7,7 @@ import {
   REJECTION_REASON_MAX_LENGTH,
   RUNNING_COST_NAME_MAX_LENGTH,
 } from '../expenses'
-import { zBusinessDate, zDecimal, zUuid } from '../primitives'
+import { zBusinessDate, zBusinessMonth, zDecimal, zUuid } from '../primitives'
 import {
   DOCUMENT_PAGE_SIZE,
   DOCUMENT_PAGE_SIZE_MAX,
@@ -50,21 +50,37 @@ export type CostCategoryListInput = z.input<typeof costCategoryListInput>
 
 const costCategoryFields = { name: nameInput(COST_CATEGORY_NAME_MAX_LENGTH) }
 
-/** `costCategory.create` (also from an expense or running cost being entered): idempotent on `id`. */
-export const createCostCategoryInput = z.object({ id: zUuid, ...costCategoryFields })
+/**
+ * Its bills usually come the month after the month they are for: a new expense in it is for the month
+ * before its bill's date unless said otherwise (the owner's request of 2026-09-30).
+ */
+const billedNextMonth = z.boolean()
+
+/**
+ * `costCategory.create` (also from an expense or running cost being entered): idempotent on `id`.
+ * `billedNextMonth` defaults to false.
+ */
+export const createCostCategoryInput = z.object({
+  id: zUuid,
+  ...costCategoryFields,
+  billedNextMonth: billedNextMonth.default(false),
+})
 export type CreateCostCategoryInput = z.input<typeof createCostCategoryInput>
 
-/** `costCategory.update`: a new name, `version` as read. */
+/** `costCategory.update`: a new name, `version` as read; `billedNextMonth` left out: kept. */
 export const updateCostCategoryInput = z.object({
   id: zUuid,
   version: z.int().positive(),
   ...costCategoryFields,
+  billedNextMonth: billedNextMonth.optional(),
 })
 export type UpdateCostCategoryInput = z.input<typeof updateCostCategoryInput>
 
 export const costCategoryDto = z.object({
   id: zUuid,
   name: z.string(),
+  /** Its bills usually come the month after (a new expense's month defaults to the one before). */
+  billedNextMonth: z.boolean(),
   /** When it was archived (hidden from pickers); null while active. */
   archivedAt: isoTimestamp.nullable(),
   version: z.int().positive(),
@@ -91,6 +107,13 @@ const expenseFields = {
   /** Optional (on credit needs one): a supplier of the business. */
   supplierId: zUuid.nullable().default(null),
   businessDate: zBusinessDate,
+  /**
+   * The month the bill is for, "For which month?" (the owner's request of 2026-09-30): from 12 months
+   * before the bill's month to 1 month after it (VALIDATION otherwise). Left out: the month before the
+   * bill's date for a category billed the month after (electricity, water, internet, phone), else the
+   * bill's month.
+   */
+  periodMonth: zBusinessMonth.optional(),
   /** What it came with, independent of how it was paid (PRODUCT.md §4 rule 13). */
   documentType: purchaseDocumentTypeDto,
   /** The supplier's invoice or receipt number. */
@@ -166,6 +189,8 @@ export const expenseListInput = z
     enteredBy: z.enum(['anyone', 'others']).default('anyone'),
     categoryId: zUuid.optional(),
     supplierId: zUuid.optional(),
+    /** Only the expenses for this month (the month the bill is for, not its date). */
+    periodMonth: zBusinessMonth.optional(),
     /** Business days from and to (both included). */
     from: zBusinessDate.optional(),
     to: zBusinessDate.optional(),
@@ -189,6 +214,8 @@ export const expenseDto = z.object({
   supplierName: z.string().nullable(),
   locationId: zUuid,
   businessDate: zBusinessDate,
+  /** The month the bill is for (`YYYY-MM`). */
+  periodMonth: zBusinessMonth,
   documentType: purchaseDocumentTypeDto,
   reference: z.string().nullable(),
   description: z.string().nullable(),
@@ -242,6 +269,8 @@ export const expenseListItemDto = z.object({
   id: zUuid,
   status: expenseStatusDto,
   businessDate: zBusinessDate,
+  /** The month the bill is for (`YYYY-MM`). */
+  periodMonth: zBusinessMonth,
   categoryId: zUuid,
   categoryName: z.string(),
   supplierId: zUuid.nullable(),

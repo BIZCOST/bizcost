@@ -22,12 +22,14 @@ import {
   type ShellQuickAction,
 } from './nav'
 import { navIcon } from './nav-icons'
+import { useNavWording } from './use-nav-wording'
 
 // The phone's tab bar (below 768px, D-089): the released sections the business has on and the member
 // may use, fixed at the bottom above the home indicator (safe-area inset). Each tab is at least 44px
 // tall. "More" holds what does not fit; "+" shows only when a module has "+" actions. A section with a
-// long name shows its short name on its tab (`common.navShort`, in the business's wording, D-132);
-// the tab is still called by its full name.
+// long name shows its short name on its tab (`common.navShort`, in the business's wording, D-132;
+// "Services" for a business that sells only services, D-200); the tab is still called by its full
+// name. With only one "+" action, "+" goes there directly, named after it (D-200).
 
 const TAB =
   'flex min-h-11 w-full flex-col items-center justify-center gap-1 rounded-xl px-1 py-1.5 text-[0.6875rem] leading-none font-medium transition-colors outline-none focus-visible:ring-3 focus-visible:ring-ring'
@@ -71,9 +73,10 @@ function shortLabelKey(labelKey: I18nKey, has: (key: string) => boolean): I18nKe
 
 function Tab({ item }: { item: ShellNavItem }) {
   const { t, i18n } = useTranslation()
+  const wording = useNavWording()
   const label = t(item.labelKey)
   const short = shortLabelKey(item.labelKey, (key) => hasKey(i18n, key))
-  const shown = short ? t(short) : label
+  const shown = short ? t(wording(short)) : label
   return (
     <Link
       href={item.href}
@@ -107,6 +110,13 @@ function MenuTab({
   )
 }
 
+/** The face of the "+" tab. */
+const PLUS = (
+  <span className="flex size-11 items-center justify-center rounded-full bg-primary text-primary-foreground shadow-md">
+    <PlusIcon aria-hidden className="size-6" />
+  </span>
+)
+
 /** A tab's place while the business loads. */
 function TabPlaceholder() {
   return (
@@ -135,19 +145,20 @@ export function BottomNav({
         <TabPlaceholder key={index} />
       ))
     : tabs.map((item) => <Tab key={item.id} item={item} />)
-  if (quickAdd) {
+  const [only] = quickActions.length === 1 ? quickActions : []
+  if (quickAdd && only && !slots) {
     cells.splice(
       middle,
       0,
-      <MenuTab
-        key="quick-add"
-        label={t('nav.quickAdd')}
-        trigger={
-          <span className="flex size-11 items-center justify-center rounded-full bg-primary text-primary-foreground shadow-md">
-            <PlusIcon aria-hidden className="size-6" />
-          </span>
-        }
-      >
+      <Link key="quick-add" href={only.href} aria-label={t(only.labelKey)} className={TAB}>
+        {PLUS}
+      </Link>,
+    )
+  } else if (quickAdd) {
+    cells.splice(
+      middle,
+      0,
+      <MenuTab key="quick-add" label={t('nav.quickAdd')} trigger={PLUS}>
         {quickActions.map((action) => {
           const Icon = navIcon(action.icon)
           return (

@@ -15,6 +15,11 @@ export interface ShellNavItem {
   /** A lucide icon name (nav-icons.ts maps it). */
   readonly icon: string
   readonly group: NavGroup
+  /**
+   * Its claim to a place in the phone's tab bar when not every item fits (1 first; null: a place only
+   * when the claims leave one). From the manifest's nav entry (D-189).
+   */
+  readonly tab: number | null
   readonly active: boolean
 }
 
@@ -89,19 +94,25 @@ export function shellNav(
     href: businessHref(businessId, entry.path),
     icon: entry.icon,
     group: entry.group,
+    tab: entry.tab,
     active: entry === active,
   }))
 }
 
-/** The "+" actions of every module the member may use, in manifest order. */
+/**
+ * The "+" actions of every module the member may use, in manifest order (business.context lists only
+ * those whose key the member holds: a new product, purchase or expense, D-189), in the business's
+ * wording when `wording` is given ("New service or work item" for a projects business).
+ */
 export function shellQuickActions(
   modules: readonly EnabledModuleDto[],
   businessId: string,
+  wording: NavWording = asIs,
 ): ShellQuickAction[] {
   return modules.flatMap((module) =>
     module.quickActions.map((action) => ({
       id: action.id,
-      labelKey: commonKey(action.labelKey),
+      labelKey: wording(commonKey(action.labelKey)),
       href: businessHref(businessId, action.path),
       icon: action.icon,
     })),
@@ -116,12 +127,21 @@ export interface NavSlots {
 
 /**
  * The placeholder's sections: the released modules' entries (`releasedModules()` of the registry),
- * the most a member can have. Not the business's own (not known yet), and not a fixed number.
+ * the most a member can have, a page two modules share (Amounts owed, D-166) once. Not the business's
+ * own (not known yet), and not a fixed number.
  */
 export function navSlots(
-  manifests: readonly { readonly nav: readonly { readonly group: NavGroup }[] }[],
+  manifests: readonly {
+    readonly nav: readonly { readonly group: NavGroup; readonly path: string }[]
+  }[],
 ): NavSlots {
-  const groups = manifests.flatMap((manifest) => manifest.nav.map((entry) => entry.group))
+  const byPath = new Map<string, NavGroup>()
+  for (const manifest of manifests) {
+    for (const entry of manifest.nav) {
+      if (!byPath.has(entry.path)) byPath.set(entry.path, entry.group)
+    }
+  }
+  const groups = [...byPath.values()]
   return {
     main: groups.filter((group) => group === 'main').length,
     system: groups.filter((group) => group === 'system').length,
@@ -141,8 +161,11 @@ export interface BottomTabs {
 }
 
 /**
- * The phone's tab bar: every item when they fit, else the first ones and a "More" tab with the rest
- * (docs/PRODUCT.md §9: Home | Sales | + | Costs | More). No "+" without actions.
+ * The phone's tab bar (D-189): every item when they fit; else the items with the strongest claims
+ * (`tab`, 1 first; places the claims leave go to the first items without one) and a "More" tab with
+ * the rest. The tabs keep the nav's order, and there is no "+" without actions. With the Costing Core
+ * an owner gets Home | Products | + | Product costs | More and an employee Home | Products | + |
+ * Expenses | More (docs/PRODUCT.md §9's idea "Home | Sales | + | Costs | More").
  */
 export function bottomTabs(
   items: readonly ShellNavItem[],
@@ -151,7 +174,21 @@ export function bottomTabs(
   const quickAdd = quickActions.length > 0
   const slots = TAB_SLOTS - (quickAdd ? 1 : 0)
   if (items.length <= slots) return { tabs: items, more: [], quickAdd }
-  return { tabs: items.slice(0, slots - 1), more: items.slice(slots - 1), quickAdd }
+  // One place goes to "More".
+  const places = slots - 1
+  const claimed = items
+    .map((item, index) => ({ item, index }))
+    .filter(({ item }) => item.tab !== null)
+    .sort((a, b) => (a.item.tab ?? 0) - (b.item.tab ?? 0) || a.index - b.index)
+    .slice(0, places)
+    .map(({ item }) => item)
+  const unclaimed = items.filter((item) => item.tab === null)
+  const chosen = new Set([...claimed, ...unclaimed.slice(0, places - claimed.length)])
+  return {
+    tabs: items.filter((item) => chosen.has(item)),
+    more: items.filter((item) => !chosen.has(item)),
+    quickAdd,
+  }
 }
 
 /**

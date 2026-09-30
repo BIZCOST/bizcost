@@ -30,14 +30,16 @@ import {
   SheetTitle,
 } from '@/components/ui/sheet'
 import { Skeleton } from '@/components/ui/skeleton'
+import { Switch } from '@/components/ui/switch'
 import { formName } from '@/features/catalog/material-draft'
 import { useCostCategories } from './data'
 
 // The categories expenses and running costs share (M2 Step 5; D-116, D-167), opened from Expenses and
 // from Running Costs by a member who may add them: one list, the owner's starter list first. A
-// category is added, renamed or archived (never deleted: what already has it keeps it) and brought
-// back. A name the business already has is refused with the category that has it. A name typed and
-// not saved is asked about before the sheet closes (D-161).
+// category is added, edited (its name, and whether its bills come the month after: a new expense in
+// it is then for the month before its bill's date, D-194) or archived (never deleted: what already
+// has it keeps it) and brought back. A name the business already has is refused with the category
+// that has it. A name typed and not saved is asked about before the sheet closes (D-161).
 
 /** The problem with a typed name (translated), or null. */
 function useNameProblem() {
@@ -51,7 +53,13 @@ function useNameProblem() {
   }
 }
 
-/** One category: its name and, for a manager, rename and archive (or bring back). */
+/** What is being changed while a category is edited here. */
+interface CategoryEdit {
+  readonly name: string
+  readonly billedNextMonth: boolean
+}
+
+/** One category: its name and, for a manager, edit and archive (or bring back). */
 function CategoryRow({
   category,
   editing,
@@ -59,9 +67,9 @@ function CategoryRow({
   onEditDone,
 }: {
   category: CostCategoryDto
-  /** The name being typed while it is renamed here. */
-  editing: string | null
-  onEdit: (name: string | null) => void
+  /** What is being changed while it is edited here. */
+  editing: CategoryEdit | null
+  onEdit: (edit: CategoryEdit | null) => void
   onEditDone: () => void
 }) {
   const { t } = useTranslation()
@@ -81,12 +89,19 @@ function CategoryRow({
     event.preventDefault()
     event.stopPropagation()
     if (editing === null) return
-    const typed = formName(editing)
+    const typed = formName(editing.name)
     const wrong = problem(typed)
     if (wrong) return setError(wrong)
-    if (typed === category.name) return onEditDone()
+    if (typed === category.name && editing.billedNextMonth === category.billedNextMonth) {
+      return onEditDone()
+    }
     try {
-      await update.mutateAsync({ id: category.id, version: category.version, name: typed })
+      await update.mutateAsync({
+        id: category.id,
+        version: category.version,
+        name: typed,
+        billedNextMonth: editing.billedNextMonth,
+      })
       toast.success(t('expenses.categories.saved'))
       setError(null)
       onEditDone()
@@ -131,10 +146,27 @@ function CategoryRow({
             autoFocus
             autoComplete="off"
             className="[unicode-bidi:plaintext]"
-            value={editing}
-            onChange={(event) => onEdit(event.target.value)}
+            value={editing.name}
+            onChange={(event) => onEdit({ ...editing, name: event.target.value })}
             error={error ?? undefined}
           />
+          <div className="flex items-start justify-between gap-4 rounded-xl border bg-background/60 p-3">
+            <div className="min-w-0">
+              <p id={`${category.id}-billed`} className="text-sm font-medium">
+                {t('expenses.categories.billedNextMonth')}
+              </p>
+              <p id={`${category.id}-billed-hint`} className="mt-0.5 text-sm text-muted-foreground">
+                {t('expenses.categories.billedNextMonthHint')}
+              </p>
+            </div>
+            <Switch
+              checked={editing.billedNextMonth}
+              onCheckedChange={(billedNextMonth) => onEdit({ ...editing, billedNextMonth })}
+              aria-labelledby={`${category.id}-billed`}
+              aria-describedby={`${category.id}-billed-hint`}
+              className="mt-0.5"
+            />
+          </div>
           <div className="flex gap-2">
             <Button type="submit" disabled={busy}>
               {busy ? t('status.saving') : t('expenses.categories.save')}
@@ -163,6 +195,11 @@ function CategoryRow({
           {category.name}
         </bdi>
         {archived ? <Badge>{t('expenses.categories.archivedBadge')}</Badge> : null}
+        {category.billedNextMonth && !archived ? (
+          <Badge tone="primary" data-billed-next-month>
+            {t('expenses.categories.billedNextMonthBadge')}
+          </Badge>
+        ) : null}
       </span>
       <Button
         type="button"
@@ -170,7 +207,7 @@ function CategoryRow({
         size="icon"
         disabled={busy}
         aria-label={t('expenses.categories.edit', { name: isolate(category.name) })}
-        onClick={() => onEdit(category.name)}
+        onClick={() => onEdit({ name: category.name, billedNextMonth: category.billedNextMonth })}
         className="text-muted-foreground"
       >
         <PencilIcon aria-hidden />
@@ -202,7 +239,7 @@ export function CategoriesSheet({ onClose }: { onClose: () => void }) {
   const [name, setName] = useState('')
   const [addError, setAddError] = useState<string | null>(null)
   const [newCategoryId, setNewCategoryId] = useState(() => newId())
-  const [editing, setEditing] = useState<{ id: string; name: string } | null>(null)
+  const [editing, setEditing] = useState<({ id: string } & CategoryEdit) | null>(null)
   const active = categories.filter((category) => category.archivedAt === null)
   const archived = categories.filter((category) => category.archivedAt !== null)
 
@@ -245,7 +282,8 @@ export function CategoriesSheet({ onClose }: { onClose: () => void }) {
     formName(name) !== '' ||
     (editing !== null &&
       editingCategory !== undefined &&
-      formName(editing.name) !== editingCategory.name)
+      (formName(editing.name) !== editingCategory.name ||
+        editing.billedNextMonth !== editingCategory.billedNextMonth))
   const guard = useUnsavedChanges({
     dirty,
     // Leaving with a name typed: Save adds it (a rename in progress is saved with its own button).
@@ -263,8 +301,8 @@ export function CategoriesSheet({ onClose }: { onClose: () => void }) {
     <CategoryRow
       key={category.id}
       category={category}
-      editing={editing?.id === category.id ? editing.name : null}
-      onEdit={(value) => setEditing(value === null ? null : { id: category.id, name: value })}
+      editing={editing?.id === category.id ? editing : null}
+      onEdit={(value) => setEditing(value === null ? null : { id: category.id, ...value })}
       onEditDone={() => setEditing(null)}
     />
   )

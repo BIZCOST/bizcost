@@ -4,8 +4,9 @@ import { apiErrorCode, apiErrorKey, useTRPC } from '@bizcost/app-core'
 import type { ExpenseDto, ExpenseResultDto, SupplierDto } from '@bizcost/contracts'
 import {
   isOwedPaymentMethod,
+  monthOf,
   newId,
-  PAYMENT_METHODS,
+  periodMonthClosed,
   PURCHASE_DOCUMENT_TYPES,
   type CurrencyCode,
   type PaymentMethod,
@@ -31,7 +32,7 @@ import { NativeSelect } from '@/components/ui/native-select'
 import { Switch } from '@/components/ui/switch'
 import { Textarea } from '@/components/ui/textarea'
 import type { FieldError } from '@/features/catalog/numbers'
-import { useBusinessDate, useMoney } from '@/features/purchasing/amounts'
+import { useBusinessDate, useBusinessMonth, useMoney } from '@/features/purchasing/amounts'
 import { closedFor, firstOpenDay } from '@/features/purchasing/books'
 import { ConfirmDialog } from '@/features/purchasing/confirm-dialog'
 import {
@@ -41,6 +42,7 @@ import {
   useSupplierOptions,
 } from '@/features/purchasing/data'
 import { Panel } from '@/features/purchasing/panel'
+import { paymentMethodsFor } from '@/features/purchasing/purchase-draft'
 import { MoneyInput, VatModeChoice, VatSelect } from '@/features/purchasing/purchase-lines'
 import {
   PendingReceipts,
@@ -64,6 +66,8 @@ import {
   EXPENSE_MISSING,
   expenseDraft,
   withDocumentType,
+  periodMonthOptions,
+  withPeriodDefault,
   type ExpenseDraft,
   type ExpenseFields,
 } from './expense-draft'
@@ -78,7 +82,9 @@ import { ExpenseStatusBadge } from './status-badge'
 // "Finalize" (expenses.documents.post) saves and posts it after a confirmation; with approval off, a
 // member who may not finalize saves a draft that waits for someone who may, and is told so (D-180).
 // A member who may not see supplier prices still works on their own expense with its amounts
-// (expense.getMine, D-181). Leaving with changes not saved asks first (D-161).
+// (expense.getMine, D-181). Leaving with changes not saved asks first (D-161). "For which month?"
+// (D-194) follows the bill's date and category (the month before for a category billed the month
+// after) until the person picks one. Receipts only with the Files module on (D-188).
 
 const NEW_SUPPLIER = '__new-supplier__'
 
@@ -100,6 +106,7 @@ export function ExpenseEditor({
   const { t } = useTranslation()
   const money = useMoney()
   const businessDate = useBusinessDate()
+  const monthName = useBusinessMonth()
   const trpc = useTRPC()
   const router = useRouter()
   const queryClient = useQueryClient()
@@ -108,6 +115,11 @@ export function ExpenseEditor({
   const { data: context } = useBusinessContext()
   const settings = useExpenseSettings(context)
   const vatRegistered = context?.capabilities.vat_registered === true
+  // "Paid by an employee" only with a team (D-200), or when it is already the one saved.
+  const paymentMethods = paymentMethodsFor(
+    context?.capabilities.has_team === true,
+    expense?.paymentMethod,
+  )
   const canPost = context ? can(context, 'expenses.documents.post') : false
   const mayApprove = context ? mayReviewExpenses(context) : false
   const approvalRequired = settings.data?.approvalRequired ?? expense?.approvalRequired
@@ -140,12 +152,16 @@ export function ExpenseEditor({
   const [version, setVersion] = useState<number | null>(expense?.version ?? null)
   // Still the rejected expense it was opened as (its first save makes it a draft again, D-164).
   const rejected = expense?.status === 'rejected' && version === expense.version
-  const [initial] = useState<ExpenseDraft>(() => expenseDraft(expense, { today, vatRegistered }))
+  const [initial] = useState<ExpenseDraft>(() =>
+    expenseDraft(expense, { today, vatRegistered, closedThrough }),
+  )
   const [draft, setDraft] = useState<ExpenseDraft>(initial)
   // What was last saved (or opened): changes since are asked about before leaving.
   const [baseline, setBaseline] = useState<ExpenseDraft>(initial)
   // A saved expense keeps its choice; a new one follows the document type until the person chooses.
   const [vatModeChosen, setVatModeChosen] = useState(expense !== undefined)
+  // The same for its month: a saved expense keeps the one it has (D-194).
+  const [periodChosen, setPeriodChosen] = useState(expense !== undefined)
   const [pending, setPending] = useState<File[]>([])
   const [submitted, setSubmitted] = useState(false)
   const [serverError, setServerError] = useState<I18nKey | null>(null)
@@ -216,6 +232,34 @@ export function ExpenseEditor({
     ''
 
   const set = (patch: Partial<ExpenseDraft>) => setDraft((d) => ({ ...d, ...patch }))
+  const billedNextMonth = (categoryId: string) =>
+    categoryOptions.categories.find((c) => c.id === categoryId)?.billedNextMonth === true
+  /** A new category or day: the month follows them until the person picks one. */
+  const setBill = (patch: Pick<Partial<ExpenseDraft>, 'categoryId' | 'businessDate'>) =>
+    setDraft((d) => {
+      const next = { ...d, ...patch }
+      return withPeriodDefault(next, {
+        chosen: periodChosen,
+        billedNextMonth: billedNextMonth(next.categoryId),
+        closedThrough,
+      })
+    })
+  // The months "For which month?" offers: 1 after the bill's month to 12 before it, newest first,
+  // from the first month the books leave open (D-200), and the one the expense has when it is not
+  // among them (it then says so).
+  const billMonth = /^\d{4}-\d{2}-\d{2}$/.test(draft.businessDate)
+    ? monthOf(draft.businessDate)
+    : monthOf(today)
+  const months = periodMonthOptions(billMonth, draft.periodMonth, closedThrough)
+  // A month the books are closed through is never sent or finalized (D-200): said under the month
+  // to a member who would send or finalize it.
+  const monthClosed =
+    (finalizeOffered || submitOffered) && periodMonthClosed(draft.periodMonth, closedThrough)
+  const monthNote = monthClosed
+    ? t('expenses.editor.periodClosed', { month: monthName(draft.periodMonth) })
+    : null
+  const monthDefaulted = !periodChosen && billedNextMonth(draft.categoryId)
+  const filesOn = context !== undefined && hasModule(context, 'files')
 
   // Paid by a member: the one entering it, until someone else is picked.
   const meId = me?.memberId
@@ -331,13 +375,21 @@ export function ExpenseEditor({
     if (isNew) await openSaved()
   }
 
+  /** The closed books stop it: said at the top, and the field to change gets the focus. */
+  function blockedByBooks(): boolean {
+    if (!closed && !monthClosed) return false
+    setFinalizeBlocked(true)
+    setTimeout(() =>
+      form.current
+        ?.querySelector<HTMLElement>(closed ? 'input[type="date"]' : '[data-period-month]')
+        ?.focus(),
+    )
+    return true
+  }
+
   function askFinalize() {
     if (busy || !ready()) return
-    if (closed) {
-      setFinalizeBlocked(true)
-      setTimeout(() => form.current?.querySelector<HTMLElement>('input[type="date"]')?.focus())
-      return
-    }
+    if (blockedByBooks()) return
     setFinalizeBlocked(false)
     setConfirmError(null)
     setConfirm('finalize')
@@ -345,6 +397,8 @@ export function ExpenseEditor({
 
   function askSubmit() {
     if (busy || !ready()) return
+    if (blockedByBooks()) return
+    setFinalizeBlocked(false)
     setConfirmError(null)
     setConfirm('submit')
   }
@@ -532,7 +586,9 @@ export function ExpenseEditor({
         className="space-y-5"
       >
         {serverError ? <FormAlert tone="error">{t(serverError)}</FormAlert> : null}
-        {finalizeBlocked && closedNote ? <FormAlert tone="error">{closedNote}</FormAlert> : null}
+        {finalizeBlocked && (closedNote ?? monthNote) ? (
+          <FormAlert tone="error">{closedNote ?? monthNote}</FormAlert>
+        ) : null}
         {hasShownErrors && !serverError ? (
           <FormAlert tone="error">{t('catalog.form.fixErrors')}</FormAlert>
         ) : null}
@@ -603,7 +659,7 @@ export function ExpenseEditor({
           <div className="mt-4 grid gap-4 sm:grid-flow-row-dense sm:grid-cols-2">
             <CategoryField
               value={draft.categoryId}
-              onChange={(categoryId) => set({ categoryId })}
+              onChange={(categoryId) => setBill({ categoryId })}
               categories={categoryOptions.categories}
               canAdd={canManageCategories(context)}
               error={shown(check.errors.category)}
@@ -615,7 +671,7 @@ export function ExpenseEditor({
               min={finalizeOffered ? firstOpenDay(today, closedThrough) : undefined}
               max={today}
               value={draft.businessDate}
-              onChange={(event) => set({ businessDate: event.target.value })}
+              onChange={(event) => setBill({ businessDate: event.target.value })}
               error={
                 shown(check.errors.businessDate) ??
                 (closed === 'earlier' && closedNote ? closedNote : undefined)
@@ -629,6 +685,34 @@ export function ExpenseEditor({
                     )
                   : undefined
               }
+            />
+            <TextField
+              label={t('expenses.editor.periodMonth')}
+              error={shown(check.errors.periodMonth) ?? monthNote ?? undefined}
+              hint={(id) => (
+                <p id={id} className="text-sm text-muted-foreground">
+                  {monthDefaulted
+                    ? t('expenses.editor.periodMonthNextHint', { category: isolate(categoryName) })
+                    : t('expenses.editor.periodMonthHint')}
+                </p>
+              )}
+              render={(a11y) => (
+                <NativeSelect
+                  {...a11y}
+                  data-period-month
+                  value={draft.periodMonth}
+                  onChange={(event) => {
+                    setPeriodChosen(true)
+                    set({ periodMonth: event.target.value })
+                  }}
+                >
+                  {months.map((month) => (
+                    <option key={month} value={month}>
+                      {monthName(month)}
+                    </option>
+                  ))}
+                </NativeSelect>
+              )}
             />
             <TextField
               label={t('purchasing.editor.documentType')}
@@ -672,7 +756,7 @@ export function ExpenseEditor({
                   <option value="" disabled>
                     {t('purchasing.editor.paymentPick')}
                   </option>
-                  {PAYMENT_METHODS.map((method) => (
+                  {paymentMethods.map((method) => (
                     <option key={method} value={method}>
                       {t(`purchasing.paymentMethods.${method}`)}
                     </option>
@@ -778,13 +862,15 @@ export function ExpenseEditor({
           ) : null}
         </Panel>
 
-        <Panel title={t('expenses.editor.receipt')} hint={t('expenses.editor.receiptHint')}>
-          {version === null ? (
-            <PendingReceipts files={pending} onChange={setPending} />
-          ) : (
-            <Receipts entity="expense" recordId={expenseId} canManage />
-          )}
-        </Panel>
+        {filesOn ? (
+          <Panel title={t('expenses.editor.receipt')} hint={t('expenses.editor.receiptHint')}>
+            {version === null ? (
+              <PendingReceipts files={pending} onChange={setPending} />
+            ) : (
+              <Receipts entity="expense" recordId={expenseId} canManage />
+            )}
+          </Panel>
+        ) : null}
 
         <Panel title={t('expenses.editor.moreDetails')}>
           <div className="grid gap-4 sm:grid-cols-2">

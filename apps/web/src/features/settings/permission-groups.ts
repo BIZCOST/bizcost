@@ -1,11 +1,20 @@
 import type { I18nKey } from '@bizcost/i18n'
-import { PERMISSION_CATALOG, PERMISSION_NEEDS, type PermissionKey } from '@bizcost/modules'
+import {
+  offeredSensitiveDataSwitches,
+  PERMISSION_CATALOG,
+  PERMISSION_NEEDS,
+  SENSITIVE_DATA_SWITCHES,
+  type PermissionKey,
+  type SensitiveDataSwitch,
+} from '@bizcost/modules'
 
 // The permissions of a role, in plain words and grouped by area, for the Roles section (docs/PRODUCT.md
 // §8: "View Product Cost", not `data.cost.view`). Every key of the catalog gets a label and a hint
 // (`settings.permissionLabels.<key>` and `settings.permissionHints.<key>`, dots written as underscores;
 // a test checks both languages).
-// Modules add their keys when they are released; each gets a group named after its module.
+// Modules add their keys when they are released; each gets a group named after its module. The
+// sensitive data (`data.*`) is offered as switches of its own section, one per kind of data: costs,
+// supplier prices and margins are one switch, since each can be worked out from the others (D-190).
 
 export type PermissionGroupId = 'dashboard' | 'business' | 'team' | 'data' | (string & {})
 
@@ -62,9 +71,9 @@ export function groupTitleKey(id: PermissionGroupId): I18nKey {
 }
 
 /**
- * Groups the Roles section does not show in M1: the sensitive-fields section ships with the first module
- * that has sensitive fields (docs/PRODUCT.md §8, ROADMAP.md M1 out of scope, D-084). A role keeps its
- * hidden keys as they are when it is saved (the editor starts from the role's own keys).
+ * Groups the Roles section does not show as one switch per key: the sensitive data has its own section
+ * (`offeredSensitiveSwitches`, M2 Step 7, D-084, D-190). A role keeps the keys no switch offers as they
+ * are when it is saved (the editor starts from the role's own keys).
  */
 const HIDDEN_GROUPS: ReadonlySet<PermissionGroupId> = new Set(['data'])
 
@@ -73,6 +82,14 @@ const KEY_CAPABILITY: Readonly<Partial<Record<PermissionKey, string>>> = {
   'settings.locations.manage': 'multi_location',
   // Approval of expenses applies only with a team (D-164).
   'expenses.approval.manage': 'has_team',
+}
+
+/**
+ * Settings keys that only mean something with one of these modules on: hidden (and kept as they are)
+ * without any. Closing the books: purchases and expenses obey the date (D-176, D-201).
+ */
+const KEY_MODULES: Readonly<Partial<Record<PermissionKey, readonly string[]>>> = {
+  'settings.books.close': ['purchases', 'expenses'],
 }
 
 /** Groups that belong to Dashboard and Settings, which every business has. */
@@ -97,7 +114,11 @@ export function visiblePermissionGroups(
       id: group.id,
       keys: group.keys.filter((key) => {
         const capability = KEY_CAPABILITY[key]
-        return capability === undefined || capabilities[capability] === true
+        const modulesNeeded = KEY_MODULES[key]
+        return (
+          (capability === undefined || capabilities[capability] === true) &&
+          (modulesNeeded === undefined || modulesNeeded.some((id) => active.has(id)))
+        )
       }),
     }))
     .filter((group) => group.keys.length > 0)
@@ -130,4 +151,70 @@ export function switchPermission(
     }
   }
   return next
+}
+
+// ---------------------------------------------------------------------------------------------------
+// The sensitive-data section (M2 Step 7, D-190): "See costs, supplier prices and margins" as one
+// switch, and later payroll and employees' personal data with the modules that show them.
+// ---------------------------------------------------------------------------------------------------
+
+/**
+ * The sensitive-data switches for a business with these modules on (the ids of business.context's
+ * modules): a switch shows while a module on shows its data (costs: any Costing Core module).
+ */
+export function offeredSensitiveSwitches(
+  modules: readonly string[],
+): readonly SensitiveDataSwitch[] {
+  return offeredSensitiveDataSwitches(modules)
+}
+
+/** Whether a sensitive-data switch is on: every key it grants is in the set. */
+export function isSwitchOn(keys: ReadonlySet<string>, sensitive: SensitiveDataSwitch): boolean {
+  return sensitive.keys.every((key) => keys.has(key))
+}
+
+/** Switches a sensitive-data switch: all its keys together, with what they need or what needs them. */
+export function switchSensitive(
+  keys: ReadonlySet<string>,
+  sensitive: SensitiveDataSwitch,
+  on: boolean,
+): Set<string> {
+  let next = new Set(keys)
+  for (const key of sensitive.keys) next = switchPermission(next, key, on)
+  return next
+}
+
+export function sensitiveLabelKey(sensitive: SensitiveDataSwitch): I18nKey {
+  return `settings.sensitive.${sensitive.id}.label` as I18nKey
+}
+
+export function sensitiveHintKey(sensitive: SensitiveDataSwitch): I18nKey {
+  return `settings.sensitive.${sensitive.id}.hint` as I18nKey
+}
+
+/**
+ * The labels of a set of permissions, in catalog order, the way the editors switch them: the keys of a
+ * sensitive-data switch as the switch's one label (only when all of them are there; "See costs,
+ * supplier prices and margins"), every other key as its own.
+ */
+export function permissionLabelKeys(keys: Iterable<string>): I18nKey[] {
+  const set = new Set(keys)
+  const out: I18nKey[] = []
+  const seen = new Set<string>()
+  for (const key of PERMISSION_CATALOG) {
+    if (!set.has(key)) continue
+    const sensitive = SENSITIVE_DATA_SWITCHES.find((s) =>
+      (s.keys as readonly string[]).includes(key),
+    )
+    if (!sensitive) {
+      out.push(permissionLabelKey(key))
+      continue
+    }
+    if (seen.has(sensitive.id)) continue
+    seen.add(sensitive.id)
+    if (isSwitchOn(set, sensitive) && sensitive.keys.length > 1)
+      out.push(sensitiveLabelKey(sensitive))
+    else for (const k of sensitive.keys) if (set.has(k)) out.push(permissionLabelKey(k))
+  }
+  return out
 }

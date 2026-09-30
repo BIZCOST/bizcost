@@ -9,9 +9,10 @@ import type {
   PurchaseDto,
 } from '@bizcost/contracts'
 import { newId } from '@bizcost/domain'
+import { businessModules, withTenantTx } from '@bizcost/db'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { ExpenseScope, ExpensesApi, type Envelope } from './expenses'
-import { handlerFor } from './helpers'
+import { tenant } from './helpers'
 import { codeOf, line, ok, purchaseInput, type Person } from './purchasing'
 import { WORKSHOP } from './settings'
 
@@ -390,18 +391,32 @@ describe('Owed to me for a purchase, and the "Amounts owed" entry (D-181)', () =
     expect(await navOf(manager)).toContain('payables')
   })
 
-  it('needs Purchases or Expenses on: each kind only with its module; released code has neither', async () => {
-    const expensesOnly = handlerFor(api.db, undefined, {
-      previewModules: ['materials', 'products', 'suppliers', 'expenses'],
-    })
-    const kinds = ok(
-      await api.call<MinePayableListDto>(employee, team.id, 'payable.mine', {}, expensesOnly),
-    ).items.map((i) => i.kind)
-    expect(new Set(kinds)).toEqual(new Set(['expense']))
-    for (const path of ['payable.mine', 'expense.mine']) {
-      expect(codeOf(await api.call(employee, team.id, path, {}, api.released)), path).toBe(
-        'module_disabled',
+  it('needs Purchases or Expenses on: each kind only with its module; with neither, none', async () => {
+    // The business's switches, written directly (Customize BizCost would also ask about what
+    // depends on them), and put back.
+    const turn = (moduleKey: string, enabled: boolean) =>
+      withTenantTx(api.db, tenant(team.owner.user.id, team.id), (tx) =>
+        tx
+          .insert(businessModules)
+          .values({ id: newId(), businessId: team.id, moduleKey, enabled })
+          .onConflictDoUpdate({
+            target: [businessModules.businessId, businessModules.moduleKey],
+            set: { enabled },
+          }),
       )
+    try {
+      await turn('purchases', false)
+      const kinds = ok(
+        await api.call<MinePayableListDto>(employee, team.id, 'payable.mine', {}),
+      ).items.map((i) => i.kind)
+      expect(new Set(kinds)).toEqual(new Set(['expense']))
+      await turn('expenses', false)
+      for (const path of ['payable.mine', 'expense.mine']) {
+        expect(codeOf(await api.call(employee, team.id, path, {})), path).toBe('module_disabled')
+      }
+    } finally {
+      await turn('purchases', true)
+      await turn('expenses', true)
     }
   })
 

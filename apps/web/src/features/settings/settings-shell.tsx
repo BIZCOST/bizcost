@@ -116,6 +116,8 @@ export function SettingsShell({
   if (!context.data) return null
 
   if (!section) return <PageContainer>{children}</PageContainer>
+  // A page inside a section (a member's permissions) has its own way back, to the section.
+  const inside = pathname.replace(/\/+$/, '') !== sectionPath(businessId, section)
   return (
     <PageContainer>
       <div className="xl:grid xl:grid-cols-[14rem_minmax(0,1fr)] xl:gap-10">
@@ -127,13 +129,15 @@ export function SettingsShell({
           />
         </div>
         <div className="min-w-0">
-          <Link
-            href={sectionPath(businessId)}
-            className="-ms-2 -mt-2 mb-2 inline-flex min-h-11 items-center gap-1.5 rounded-lg px-2 text-sm font-medium text-primary hover:underline xl:hidden"
-          >
-            <ArrowLeftIcon aria-hidden className="size-4 rtl:rotate-180" />
-            {t('settings.title')}
-          </Link>
+          {inside ? null : (
+            <Link
+              href={sectionPath(businessId)}
+              className="-ms-2 -mt-2 mb-2 inline-flex min-h-11 items-center gap-1.5 rounded-lg px-2 text-sm font-medium text-primary hover:underline xl:hidden"
+            >
+              <ArrowLeftIcon aria-hidden className="size-4 rtl:rotate-180" />
+              {t('settings.title')}
+            </Link>
+          )}
           {children}
         </div>
       </div>
@@ -256,7 +260,7 @@ export function SettingsHome({ businessId }: { businessId: string }) {
  * A section this member may not open (403: no permission, or the business doesn't use it). Nothing of
  * the section is loaded; the API refuses it too.
  */
-function NoAccess({ businessId }: { businessId: string }) {
+export function NoAccess({ businessId }: { businessId: string }) {
   const { t } = useTranslation()
   return (
     <StatePanel

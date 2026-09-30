@@ -1,5 +1,5 @@
-import { CHECKLIST_ITEM_IDS } from '@bizcost/contracts'
-import { can, OWNER_TEMPLATE_KEY, resolveEffective } from '@bizcost/domain'
+import { CHECKLIST_ITEM_IDS, COST_STEP_IDS } from '@bizcost/contracts'
+import { can, OWNER_TEMPLATE_KEY, resolveEffective, visibleCategories } from '@bizcost/domain'
 import { hasMessage, LOCALES } from '@bizcost/i18n'
 import { describe, expect, it } from 'vitest'
 import { CAPABILITY_KEYS } from './capabilities'
@@ -8,9 +8,14 @@ import {
   checklistItem,
   checklistItemIds,
   checklistItems,
+  COST_STEP_RULES,
+  costStepIds,
+  costSteps,
   hasArabicName,
   type ChecklistFacts,
+  type CostFacts,
 } from './checklist'
+import type { ModuleId } from './manifests'
 import { PERMISSION_CATALOG, type PermissionKey } from './permissions'
 import { ROLE_TEMPLATE_KEYS, roleTemplateByKey } from './role-templates'
 
@@ -188,5 +193,203 @@ describe('checklist wording', () => {
     for (const locale of LOCALES) {
       for (const key of keys) expect(hasMessage(locale, key), `${locale} ${key}`).toBe(true)
     }
+  })
+})
+
+// "Let's find the real cost of what you sell" (PRODUCT.md §10, M2 Step 7).
+
+describe('cost steps', () => {
+  const everyModule = () => true
+  const visibleFor = (templateKey: string) => {
+    const effective = resolveEffective({
+      roleTemplateKey: templateKey,
+      rolePermissionKeys: roleTemplateByKey(templateKey)?.permissionKeys ?? [],
+      overrides: [],
+      catalog: PERMISSION_CATALOG,
+    })
+    return visibleCategories(effective)
+  }
+  const idsFor = (
+    templateKey: string,
+    capabilities: Readonly<Record<string, boolean>> = ALL_OFF,
+    active: (id: ModuleId) => boolean = everyModule,
+  ) =>
+    costStepIds({
+      active,
+      can: canFor(templateKey),
+      visible: visibleFor(templateKey),
+      capabilities,
+    })
+
+  const EMPTY: CostFacts = {
+    items: 0,
+    madeProducts: 0,
+    madeWithoutRecipe: 0,
+    usedMaterials: 0,
+    unpricedMaterials: 0,
+    runningCostsEntered: false,
+    estimateNeeded: false,
+    canSetEstimate: true,
+    hourlyRateSet: false,
+    itemsWithMinutes: 0,
+    incompleteCosts: 0,
+    sellsOnlyServices: false,
+    materialsOn: true,
+  }
+
+  it('lists every step, in order, for the owner of a business without a team; the time step goes with a team', () => {
+    expect(idsFor(OWNER_TEMPLATE_KEY)).toEqual([...COST_STEP_IDS])
+    expect(COST_STEP_RULES.map((rule) => rule.id)).toEqual([...COST_STEP_IDS])
+    expect(idsFor(OWNER_TEMPLATE_KEY, ALL_ON)).toEqual([
+      'products',
+      'recipes',
+      'purchases',
+      'running_costs',
+      'product_costs',
+    ])
+  })
+
+  it('shows each template only what it can do and see', () => {
+    expect(idsFor('admin', ALL_ON)).toEqual(idsFor(OWNER_TEMPLATE_KEY, ALL_ON))
+    expect(idsFor('manager', ALL_ON)).toEqual(idsFor(OWNER_TEMPLATE_KEY, ALL_ON))
+    // The accountant sees product costs but changes nothing.
+    expect(idsFor('accountant', ALL_ON)).toEqual(['product_costs'])
+    for (const key of ['sales', 'supervisor', 'employee'])
+      expect(idsFor(key, ALL_ON), key).toEqual([])
+  })
+
+  it('needs the modules of each step on (released and enabled)', () => {
+    const without =
+      (...off: ModuleId[]) =>
+      (id: ModuleId) =>
+        !off.includes(id)
+    expect(idsFor(OWNER_TEMPLATE_KEY, ALL_OFF, without('cost_engine'))).toEqual([
+      'products',
+      'recipes',
+      'purchases',
+      'running_costs',
+    ])
+    // A services business without Materials and Purchases.
+    expect(idsFor(OWNER_TEMPLATE_KEY, ALL_OFF, without('materials', 'purchases'))).toEqual([
+      'products',
+      'running_costs',
+      'owner_time',
+      'product_costs',
+    ])
+    expect(idsFor(OWNER_TEMPLATE_KEY, ALL_OFF, without('products'))).toEqual(['running_costs'])
+  })
+
+  it('never shows the steps about costs to a member who cannot see them, whatever else they hold', () => {
+    const noCosts = costStepIds({
+      active: everyModule,
+      can: () => true,
+      visible: new Set(),
+      capabilities: ALL_OFF,
+    })
+    expect(noCosts).toEqual(['products', 'recipes', 'purchases', 'running_costs'])
+  })
+
+  it('says what is done from the data, and what is left', () => {
+    const ids = [...COST_STEP_IDS]
+    // Nothing yet: every step open.
+    expect(costSteps(ids, EMPTY)).toEqual([
+      { id: 'products', done: false, missing: [], remaining: null },
+      { id: 'recipes', done: false, missing: [], remaining: null },
+      { id: 'purchases', done: false, missing: [], remaining: null },
+      { id: 'running_costs', done: false, missing: ['runningCosts'], remaining: null },
+      { id: 'owner_time', done: false, missing: ['hourlyRate', 'minutes'], remaining: null },
+      { id: 'product_costs', done: false, missing: [], remaining: null },
+    ])
+    // A café: 3 drinks made here, one without its recipe; 5 materials, 2 never bought; running
+    // costs entered but the 3 months of purchases do not count yet.
+    const cafe: CostFacts = {
+      ...EMPTY,
+      items: 3,
+      madeProducts: 3,
+      madeWithoutRecipe: 1,
+      usedMaterials: 5,
+      unpricedMaterials: 2,
+      runningCostsEntered: true,
+      estimateNeeded: true,
+      hourlyRateSet: true,
+      itemsWithMinutes: 1,
+      incompleteCosts: 3,
+    }
+    expect(costSteps(ids, cafe)).toEqual([
+      { id: 'products', done: true, missing: [], remaining: null },
+      { id: 'recipes', done: false, missing: [], remaining: 1 },
+      { id: 'purchases', done: false, missing: [], remaining: 2 },
+      { id: 'running_costs', done: false, missing: ['estimate'], remaining: null },
+      { id: 'owner_time', done: true, missing: [], remaining: null },
+      { id: 'product_costs', done: false, missing: [], remaining: 3 },
+    ])
+    // The estimate is asked only of a member who may set it.
+    expect(costSteps(['running_costs'], { ...cafe, canSetEstimate: false })).toEqual([
+      { id: 'running_costs', done: true, missing: [], remaining: null },
+    ])
+    // Everything in: every step done.
+    const done: CostFacts = {
+      ...cafe,
+      madeWithoutRecipe: 0,
+      unpricedMaterials: 0,
+      estimateNeeded: false,
+      incompleteCosts: 0,
+    }
+    expect(costSteps(ids, done).every((step) => step.done)).toBe(true)
+  })
+
+  it('asks no recipe of items bought ready to sell or services, and no prices of services without materials', () => {
+    const ids = [...COST_STEP_IDS]
+    const shop: CostFacts = { ...EMPTY, items: 4, usedMaterials: 4, unpricedMaterials: 1 }
+    expect(costSteps(ids, shop).map((s) => s.id)).toEqual([
+      'products',
+      'purchases',
+      'running_costs',
+      'owner_time',
+      'product_costs',
+    ])
+    const services: CostFacts = { ...EMPTY, items: 2 }
+    expect(costSteps(ids, services).map((s) => s.id)).toEqual([
+      'products',
+      'running_costs',
+      'owner_time',
+      'product_costs',
+    ])
+    // Services that use materials: their prices are asked.
+    expect(costSteps(ids, { ...services, usedMaterials: 1 }).map((s) => s.id)).toContain(
+      'purchases',
+    )
+  })
+
+  it('asks no running costs of a business that sells only services using no materials (D-200)', () => {
+    const ids = [...COST_STEP_IDS]
+    // The freelance designer: services only, none with materials, Materials off.
+    const designer: CostFacts = { ...EMPTY, sellsOnlyServices: true, materialsOn: false }
+    expect(costSteps(ids, designer).map((s) => s.id)).toEqual([
+      'products',
+      'recipes',
+      'purchases',
+      'owner_time',
+      'product_costs',
+    ])
+    expect(costSteps(ids, { ...designer, items: 4 }).map((s) => s.id)).toEqual([
+      'products',
+      'owner_time',
+      'product_costs',
+    ])
+    // With Materials on, a services business may use them: asked until its services show none, and
+    // again once one does.
+    const cleaning: CostFacts = { ...designer, materialsOn: true }
+    expect(costSteps(ids, cleaning).map((s) => s.id)).toContain('running_costs')
+    expect(costSteps(ids, { ...cleaning, items: 3 }).map((s) => s.id)).not.toContain(
+      'running_costs',
+    )
+    expect(costSteps(ids, { ...cleaning, items: 3, usedMaterials: 2 }).map((s) => s.id)).toContain(
+      'running_costs',
+    )
+    // A business that sells products too is asked, as before.
+    expect(costSteps(ids, { ...EMPTY, items: 2, materialsOn: false }).map((s) => s.id)).toContain(
+      'running_costs',
+    )
   })
 })

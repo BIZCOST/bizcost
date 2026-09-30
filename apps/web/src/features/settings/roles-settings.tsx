@@ -3,7 +3,7 @@
 import { apiErrorCode, apiErrorKey, useTRPC } from '@bizcost/app-core'
 import type { BusinessContextDto, RoleDto } from '@bizcost/contracts'
 import { formatList } from '@bizcost/i18n'
-import type { PermissionKey } from '@bizcost/modules'
+import type { PermissionKey, SensitiveDataSwitch } from '@bizcost/modules'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   ChevronDownIcon,
@@ -31,18 +31,16 @@ import {
 } from '@/components/ui/alert-dialog'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
-import { Switch } from '@/components/ui/switch'
 import { useLocale, useTerminology } from '@/lib/i18n/client'
 import { useBusinessContext } from '@/lib/trpc/client'
 import { cn } from '@/lib/utils'
 import {
-  groupTitleKey,
-  permissionHintKey,
-  permissionLabelKey,
-  switchPermission,
+  offeredSensitiveSwitches,
+  permissionLabelKeys,
   visiblePermissionGroups,
   type PermissionGroup,
 } from './permission-groups'
+import { PermissionSwitches } from './permission-switches'
 import { LoadError, SectionSkeleton } from '@/components/states/query-state'
 import { canGrantKey, canGrantRole } from './role-labels'
 import { useRoleName, useRoleSummary } from './role-picker'
@@ -51,11 +49,12 @@ import { SectionPage } from './settings-shell'
 
 // Settings → Roles (ROADMAP.md Step 6; docs/PRODUCT.md §8): the business's roles, copied from the
 // templates at setup. The Owner can do everything and is not edited; the others' permissions are
-// switched in plain words, grouped by area (private data and, for one location, branches are not
-// offered: D-084; their keys stay as they are). Only a role that grants nothing beyond the editor's own
-// access can be edited, and taking access away from your own role asks first. Saving applies right
-// away to everyone with the role (the API bumps their permissions version). No custom roles or
-// per-person exceptions in M1.
+// switched in plain words, grouped by area, then the sensitive data (M2 Step 7, D-190: "See costs,
+// supplier prices and margins" as one switch while a module shows them; branches only with more than
+// one location: D-084; keys not offered stay as they are). Only a role that grants nothing beyond the
+// editor's own access can be edited, and taking access away from your own role asks first. Saving
+// applies right away to everyone with the role (the API bumps their permissions version). A member's
+// own changes to their role are on their page (member-access.tsx, D-191). No custom roles yet.
 
 /** The member's own role (one role per template in M1, so the template names it). */
 function isOwnRole(role: RoleDto, access: BusinessContextDto): boolean {
@@ -66,11 +65,13 @@ function PermissionEditor({
   role,
   access,
   groups,
+  sensitive,
   onDone,
 }: {
   role: RoleDto
   access: BusinessContextDto
   groups: readonly PermissionGroup[]
+  sensitive: readonly SensitiveDataSwitch[]
   onDone: () => void
 }) {
   const { t } = useTranslation()
@@ -81,7 +82,6 @@ function PermissionEditor({
   const trpc = useTRPC()
   const queryClient = useQueryClient()
   const roleName = useRoleName()
-  const ids = useId()
   const update = useMutation(trpc.role.updatePermissions.mutationOptions())
   const [keys, setKeys] = useState<Set<string>>(() => new Set(role.permissionKeys))
   const [conflict, setConflict] = useState(false)
@@ -89,7 +89,9 @@ function PermissionEditor({
   const own = isOwnRole(role, access)
   const changed =
     keys.size !== role.permissionKeys.length || role.permissionKeys.some((key) => !keys.has(key))
-  const locked = groups.some((group) => group.keys.some((key) => !canGrantKey(access, key)))
+  const locked =
+    groups.some((group) => group.keys.some((key) => !canGrantKey(access, key))) ||
+    sensitive.some((item) => item.keys.some((key) => !canGrantKey(access, key)))
 
   /** Saves the role's permissions; true once saved. */
   async function saveKeys(): Promise<boolean> {
@@ -163,48 +165,15 @@ function PermissionEditor({
           {t('settings.roles.lockedNote')}
         </p>
       ) : null}
-      {groups.map((group) => (
-        <fieldset key={group.id} className="space-y-1" disabled={update.isPending}>
-          <legend className="mb-1 text-sm font-semibold">
-            {term(groupTitleKey(group.id), profile)}
-          </legend>
-          <ul className="divide-y rounded-xl border">
-            {group.keys.map((key: PermissionKey) => {
-              const id = `${ids}-${key.replaceAll('.', '-')}`
-              const allowed = canGrantKey(access, key)
-              return (
-                <li key={key} className="flex items-start gap-4 px-3.5 py-3">
-                  <div className="min-w-0 flex-1">
-                    <p id={`${id}-label`} className="flex items-center gap-1.5 text-sm font-medium">
-                      {term(permissionLabelKey(key), profile)}
-                      {allowed ? null : (
-                        <LockKeyholeIcon
-                          aria-label={t('settings.roles.locked')}
-                          role="img"
-                          className="size-3.5 shrink-0 text-muted-foreground"
-                        />
-                      )}
-                    </p>
-                    <p id={`${id}-hint`} className="mt-0.5 text-sm text-muted-foreground">
-                      {term(permissionHintKey(key), profile)}
-                    </p>
-                  </div>
-                  <Switch
-                    checked={keys.has(key)}
-                    disabled={!allowed || update.isPending}
-                    onCheckedChange={(on) =>
-                      setKeys((current) => switchPermission(current, key, on))
-                    }
-                    aria-labelledby={`${id}-label`}
-                    aria-describedby={`${id}-hint`}
-                    className="mt-0.5"
-                  />
-                </li>
-              )
-            })}
-          </ul>
-        </fieldset>
-      ))}
+      <PermissionSwitches
+        groups={groups}
+        sensitive={sensitive}
+        keys={keys}
+        onChange={setKeys}
+        canGrant={(key) => canGrantKey(access, key)}
+        disabled={update.isPending}
+        profile={profile}
+      />
       {conflict ? <FormAlert tone="error">{t('settings.roles.conflict')}</FormAlert> : null}
       <div className="flex flex-wrap justify-end gap-2">
         <Button type="button" variant="ghost" disabled={update.isPending} onClick={onDone}>
@@ -228,7 +197,7 @@ function PermissionEditor({
               {t('settings.roles.ownRoleBody', {
                 list: formatList(
                   locale,
-                  (losing ?? []).map((key) => term(permissionLabelKey(key), profile)),
+                  permissionLabelKeys(losing ?? []).map((key) => term(key, profile)),
                 ),
               })}
             </AlertDialogDescription>
@@ -255,12 +224,14 @@ function RoleCard({
   role,
   access,
   groups,
+  sensitive,
   open,
   onToggle,
 }: {
   role: RoleDto
   access: BusinessContextDto
   groups: readonly PermissionGroup[]
+  sensitive: readonly SensitiveDataSwitch[]
   open: boolean
   onToggle: () => void
 }) {
@@ -323,7 +294,13 @@ function RoleCard({
       </div>
       <div id={`${ids}-editor`}>
         {open && editable ? (
-          <PermissionEditor role={role} access={access} groups={groups} onDone={onToggle} />
+          <PermissionEditor
+            role={role}
+            access={access}
+            groups={groups}
+            sensitive={sensitive}
+            onDone={onToggle}
+          />
         ) : null}
       </div>
     </li>
@@ -340,10 +317,9 @@ export function RolesSettings({ businessId }: { businessId: string }) {
   })
   const [open, setOpen] = useState<string | null>(null)
   if (!context) return null
-  const groups = visiblePermissionGroups(
-    context.capabilities,
-    context.modules.map((m) => m.id),
-  )
+  const moduleIds = context.modules.map((m) => m.id)
+  const groups = visiblePermissionGroups(context.capabilities, moduleIds)
+  const sensitive = offeredSensitiveSwitches(moduleIds)
   return (
     <SectionPage businessId={businessId} section="roles">
       <p className="flex items-start gap-2.5 rounded-xl bg-muted/60 px-4 py-3 text-sm leading-relaxed">
@@ -362,6 +338,7 @@ export function RolesSettings({ businessId }: { businessId: string }) {
               role={role}
               access={context}
               groups={groups}
+              sensitive={sensitive}
               open={open === role.id}
               onToggle={() => setOpen((current) => (current === role.id ? null : role.id))}
             />

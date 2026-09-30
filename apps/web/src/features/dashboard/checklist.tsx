@@ -118,18 +118,30 @@ function Header({ done, total }: { done: number; total: number }) {
  * lines on phones, one or two beside the action from 640px), so the page does not move when it
  * arrives.
  */
-export function ChecklistSkeleton({ steps, className }: { steps: number; className?: string }) {
+export function ChecklistSkeleton({
+  steps,
+  kind = 'setup',
+  className,
+}: {
+  steps: number
+  /** "Finish setting up", or "Let's find the real cost of what you sell" (M2 Step 7). */
+  kind?: 'setup' | 'costs'
+  className?: string
+}) {
   const { t } = useTranslation()
+  const id = kind === 'setup' ? 'checklist-title' : 'costs-title'
   return (
-    <section aria-labelledby="checklist-title" aria-busy className={cn(CARD, className)}>
+    <section aria-labelledby={id} aria-busy className={cn(CARD, className)}>
       <div className="border-b px-5 pt-5 pb-4 sm:px-6">
         <div className="flex items-start justify-between gap-4">
           <div className="min-w-0">
-            <h2 id="checklist-title" className="text-lg font-semibold tracking-tight">
-              {t('dashboard.checklist.title')}
+            <h2 id={id} className="text-lg font-semibold tracking-tight">
+              {kind === 'setup' ? t('dashboard.checklist.title') : t('dashboard.costs.title')}
             </h2>
             <p className="mt-1 text-sm text-muted-foreground">
-              {t('dashboard.checklist.description')}
+              {kind === 'setup'
+                ? t('dashboard.checklist.description')
+                : t('dashboard.costs.description')}
             </p>
           </div>
           <Skeleton className="mt-1.5 h-4 w-20 shrink-0" />

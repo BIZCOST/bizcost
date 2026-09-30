@@ -9,17 +9,37 @@ import { cn } from '@/lib/utils'
 // Parts of the review ("Here's your BizCost"), shared with Settings → Customize BizCost, which lists the
 // same sections with the same switches.
 
-export function Chips({ labels }: { labels: readonly string[] }) {
+/**
+ * The names of sections, as chips. `soon`: those not released yet, muted and tagged ("soon"), as
+ * their rows are (Customize BizCost, D-200).
+ */
+export function Chips({
+  labels,
+  soon,
+}: {
+  labels: readonly string[]
+  soon?: { readonly labels: ReadonlySet<string>; readonly tag: string }
+}) {
   return (
     <ul className="flex flex-wrap gap-1.5">
-      {labels.map((label) => (
-        <li
-          key={label}
-          className="rounded-full bg-muted px-2.5 py-0.5 text-[0.8125rem] leading-6 text-foreground"
-        >
-          {label}
-        </li>
-      ))}
+      {labels.map((label) => {
+        const later = soon?.labels.has(label) === true
+        return (
+          <li
+            key={label}
+            data-soon={later || undefined}
+            className={cn(
+              'rounded-full px-2.5 py-0.5 text-[0.8125rem] leading-6',
+              later
+                ? 'text-muted-foreground ring-1 ring-foreground/10 ring-inset'
+                : 'bg-muted text-foreground',
+            )}
+          >
+            {label}
+            {later ? <span className="ms-1.5 text-xs">· {soon?.tag}</span> : null}
+          </li>
+        )
+      })}
     </ul>
   )
 }

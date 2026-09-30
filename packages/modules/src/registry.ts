@@ -30,35 +30,52 @@ export function isModuleReleased(manifest: ModuleManifest): boolean {
   return manifest.availability === 'released'
 }
 
+/** Planned modules whose build has started (they have nav entries), in registry order. */
+function previewableIds(manifests: readonly ModuleManifest[]): readonly ModuleId[] {
+  return manifests.filter((m) => m.availability === 'planned' && m.nav.length > 0).map((m) => m.id)
+}
+
 /**
  * Planned modules whose build has started (they have nav entries): the only ones the dev-only preview
- * may show (D-125).
+ * may show (D-125). None since the Costing Core was released (M2 Step 7); the switch stays for the
+ * modules built next.
  */
-export const PREVIEWABLE_MODULE_IDS: readonly ModuleId[] = MODULES.filter(
-  (m) => m.availability === 'planned' && m.nav.length > 0,
-).map((m) => m.id)
+export const PREVIEWABLE_MODULE_IDS: readonly ModuleId[] = previewableIds(MODULES)
 
 export interface ParsedPreviewModules {
   /** Previewable modules named, in registry order, once each. */
   readonly ids: readonly ModuleId[]
-  /** Names that are not a previewable module (unknown, released, or not being built). */
+  /**
+   * Released modules named, in registry order: there is nothing to preview any more (an environment
+   * written before their release, e.g. the Costing Core's in M2 Step 7), so they are ignored.
+   */
+  readonly released: readonly ModuleId[]
+  /** Names that are neither a previewable nor a released module (unknown, or not being built). */
   readonly invalid: readonly string[]
 }
 
 /**
  * Reads the dev-only preview list (BIZCOST_PREVIEW_MODULES, e.g. "materials,products"): comma or
  * space separated module ids. The host app reads the variable, and only outside production (D-125).
+ * A module released since the list was written is ignored, so a local server keeps starting.
  */
-export function parsePreviewModules(value: string | undefined): ParsedPreviewModules {
+export function parsePreviewModules(
+  value: string | undefined,
+  manifests: readonly ModuleManifest[] = MODULES,
+): ParsedPreviewModules {
   const names = (value ?? '')
     .split(/[\s,]+/)
     .map((name) => name.trim())
     .filter(Boolean)
-  const invalid = names.filter(
-    (name) => !(PREVIEWABLE_MODULE_IDS as readonly string[]).includes(name),
-  )
   const named = new Set(names)
-  return { ids: PREVIEWABLE_MODULE_IDS.filter((id) => named.has(id)), invalid }
+  const previewable = previewableIds(manifests)
+  const released = manifests.filter((m) => isModuleReleased(m) && named.has(m.id)).map((m) => m.id)
+  const known = new Set<string>([...previewable, ...released])
+  return {
+    ids: previewable.filter((id) => named.has(id)),
+    released,
+    invalid: names.filter((name) => !known.has(name)),
+  }
 }
 
 /**
@@ -71,9 +88,8 @@ export function withPreviewModules(
   preview: readonly string[],
   manifests: readonly ModuleManifest[] = MODULES,
 ): readonly ModuleManifest[] {
-  const ids = new Set(
-    preview.filter((id) => (PREVIEWABLE_MODULE_IDS as readonly string[]).includes(id)),
-  )
+  const previewable: readonly string[] = previewableIds(manifests)
+  const ids = new Set(preview.filter((id) => previewable.includes(id)))
   if (ids.size === 0) return manifests
   return manifests.map((m) =>
     ids.has(m.id) && m.availability === 'planned' ? { ...m, availability: 'released' } : m,
@@ -140,8 +156,8 @@ export function isModuleVisible(
 }
 
 /** The wire shape of a nav entry (without its permission key or who else it is for). */
-function toNavDto({ id, labelKey, path, icon, group }: NavEntry): NavEntryDto {
-  return { id, labelKey, path, icon, group }
+function toNavDto({ id, labelKey, path, icon, group, tab }: NavEntry): NavEntryDto {
+  return { id, labelKey, path, icon, group, tab: tab ?? null }
 }
 
 /** The wire shape of a "+" action (without its permission key). */

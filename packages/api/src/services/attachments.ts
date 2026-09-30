@@ -85,9 +85,9 @@ export function sniffAttachmentType(bytes: Uint8Array): AttachmentContentType | 
  * sees) and other attaches to it wait, or this waits for them and then finds a discarded record. With
  * `change` (a file added or taken off), an expense sent for approval or approved is refused
  * (EXPENSE_IN_APPROVAL): what the approver looks at, its receipts included, is what is approved
- * (D-164, D-176). With `ownOnly` too (a member who may not see supplier prices), an expense's files
- * change only on an expense the caller entered, while it is a draft or rejected (FORBIDDEN otherwise,
- * D-184): never another member's, never a final one's.
+ * (D-164, D-176). With `ownOnly` too (a member who may not see supplier prices), an expense's or a
+ * purchase's files change only on one the caller entered, while it is a draft (or a rejected expense;
+ * FORBIDDEN otherwise, D-184, D-200): never another member's, never a final one's.
  */
 async function assertRecord(
   tx: Tx,
@@ -116,14 +116,14 @@ async function assertRecord(
   if (
     change &&
     ownOnly &&
-    entity === 'expense' &&
+    (entity === 'expense' || entity === 'purchase') &&
     (!row.mine || (row.status !== 'draft' && row.status !== 'rejected'))
   ) {
     throw new AppError('forbidden')
   }
 }
 
-/** Whether the caller changes only their own expenses' files (no supplier prices, D-184). */
+/** Whether the caller changes only the files of their own expenses and purchases (D-184). */
 const ownOnly = (ctx: BusinessCtx) => !ctx.access.visibleCategories.has('supplier_price')
 
 async function countOn(tx: Tx, businessId: string, entity: AttachmentEntity, id: string) {

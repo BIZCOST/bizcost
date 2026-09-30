@@ -3,7 +3,12 @@ import { cookies } from 'next/headers'
 import { redirect } from 'next/navigation'
 import type { ReactNode } from 'react'
 import { moduleAccess, shellNav, wayBack } from '@/components/shell/nav'
-import { ALL_SET_HIDDEN_COOKIE, isAllSetHidden } from '@/features/dashboard/all-set-cookie'
+import {
+  ALL_SET_HIDDEN_COOKIE,
+  COSTS_READY_HIDDEN_COOKIE,
+  isAllSetHidden,
+} from '@/features/dashboard/all-set-cookie'
+import { costStepIdsFor } from '@/features/dashboard/cost-steps'
 import { DashboardServerDataProvider } from '@/features/dashboard/dashboard'
 import { can } from '@/features/settings/sections'
 import { Messages } from '@/lib/i18n/messages'
@@ -31,19 +36,31 @@ export default async function DashboardLayout({
   ])
   let checklist = null
   let allSetHidden = false
+  let costsReadyHidden = false
   // A refused business or an ended session: the business layout shows what they get.
   if (typeof context === 'object' && me) {
     if (moduleAccess(context.modules, 'dashboard', 'dashboard') !== 'open') {
       const other = wayBack(shellNav(context.modules, businessId, ''), 'dashboard')
       if (other) redirect(other.href)
-    } else if (checklistItemIds(context.capabilities, (key) => can(context, key)).length > 0) {
+    } else if (
+      checklistItemIds(context.capabilities, (key) => can(context, key)).length > 0 ||
+      costStepIdsFor(context).length > 0
+    ) {
       checklist = await getDashboardChecklist(businessId)
     }
     allSetHidden = isAllSetHidden(cookieStore.get(ALL_SET_HIDDEN_COOKIE)?.value, me.profile.id)
+    costsReadyHidden = isAllSetHidden(
+      cookieStore.get(COSTS_READY_HIDDEN_COOKIE)?.value,
+      me.profile.id,
+    )
   }
   return (
     <Messages specs={DASHBOARD_MESSAGES}>
-      <DashboardServerDataProvider checklist={checklist} allSetHidden={allSetHidden}>
+      <DashboardServerDataProvider
+        checklist={checklist}
+        allSetHidden={allSetHidden}
+        costsReadyHidden={costsReadyHidden}
+      >
         {children}
       </DashboardServerDataProvider>
     </Messages>

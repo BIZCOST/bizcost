@@ -20,10 +20,10 @@ import {
   withValue,
   type TestUser,
 } from '../helpers'
-import { previewBaseURL } from '../stack'
+import { baseURL } from '../stack'
 
-// The owner's requests of 2026-09-29 on the purchasing screens, on the development server with the
-// dev-only preview (D-125, D-127):
+// The owner's requests of 2026-09-29 on the purchasing screens, on the production build since the
+// Costing Core was released (M2 Step 7, D-188):
 //   - VAT clarity: a tax invoice typed before VAT and a purchase without an invoice typed with VAT
 //     (105 with 5% VAT = 100 + 5), each posted with the right average; the prices' captions and the
 //     totals say it (English, desktop);
@@ -75,17 +75,11 @@ async function open(
   const user = await createUser(`payables-${locale}`, { locale: 'en' })
   users.push(user)
   const context = await browser.newContext({
-    baseURL: previewBaseURL,
+    baseURL,
     locale: locale === 'ar' ? 'ar-AE' : 'en-US',
     viewport,
   })
   contexts.push(context)
-  // The development server's own badge and overlay are not part of the app.
-  await context.addInitScript(() => {
-    const sheet = new CSSStyleSheet()
-    sheet.replaceSync('[data-nextjs-dev-overlay] { display: none !important; }')
-    document.adoptedStyleSheets = [...document.adoptedStyleSheets, sheet]
-  })
   await useLanguage(context, 'en')
   const page = await context.newPage()
   await signIn(page, user)

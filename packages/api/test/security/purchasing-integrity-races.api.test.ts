@@ -15,16 +15,7 @@ import {
   type Admin,
   type CallResult,
 } from '../helpers'
-import {
-  codeOf,
-  line,
-  ok,
-  purchaseInput,
-  PURCHASING_PREVIEW,
-  PurchasingApi,
-  Scope,
-  type Handler,
-} from '../purchasing'
+import { codeOf, line, ok, purchaseInput, PurchasingApi, Scope, type Handler } from '../purchasing'
 import { WORKSHOP } from '../settings'
 
 // Security review of M2 Step 3 (attacker A: tenancy, permissions, integrity). Two checks that are made
@@ -54,12 +45,7 @@ let today: string
 beforeAll(async () => {
   api = new PurchasingApi()
   dbs = [connectApi(), connectApi()]
-  handlers = dbs.map((db) =>
-    handlerFor(db, undefined, {
-      previewModules: PURCHASING_PREVIEW,
-      supabaseSecretKey: SECRET_KEY,
-    }),
-  )
+  handlers = dbs.map((db) => handlerFor(db, undefined, { supabaseSecretKey: SECRET_KEY }))
   holder = connectAdmin()
   shop = await Scope.open(api, WORKSHOP)
   today = await shop.today()

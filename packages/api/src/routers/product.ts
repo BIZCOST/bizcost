@@ -21,8 +21,7 @@ import { businessProcedure, requireModule, requirePermission, router } from '../
 
 /**
  * Products & Services (services/products.ts): module `products` (released and on for the business,
- * else MODULE_DISABLED; planned until M2 Step 7, so only the dev-only preview reaches it before then,
- * D-125), then products.items.view to read and products.items.manage to write. An item bought ready
+ * else MODULE_DISABLED; released in M2 Step 7), then products.items.view to read and products.items.manage to write. An item bought ready
  * to sell also writes its material (services/products.ts checks the Materials module and
  * materials.items.manage for it). `product.costs` needs the Materials module too (costs come from
  * materials) and products.recipes.view: how many lines a recipe has, which of its materials were

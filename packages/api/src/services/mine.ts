@@ -91,6 +91,7 @@ interface MineExpenseRecord extends Record<string, unknown> {
   id: string
   status: ExpenseStatus
   business_date: string
+  period_month: string
   category_name: string
   description: string | null
   reference: string | null
@@ -123,7 +124,8 @@ export function listMineExpenses(
     ctx.access.visibleCategories.has('supplier_price')
   return ctx.tx(async (tx) => {
     const rows = (await tx.execute(sql`
-      select d.id, d.status, d.business_date::text as business_date, c.name as category_name,
+      select d.id, d.status, d.business_date::text as business_date,
+             to_char(d.period_month, 'YYYY-MM') as period_month, c.name as category_name,
              d.description, d.reference, d.document_type, d.payment_method,
              ${ENTERED_BY_ME} as entered_by_me, ${PAID_BY_ME} as paid_by_me,
              trim(d.currency) as currency, trim_scale(d.total)::text as total,
@@ -152,6 +154,7 @@ export function listMineExpenses(
           id: r.id,
           status: r.status,
           businessDate: r.business_date,
+          periodMonth: r.period_month,
           categoryName: r.category_name,
           description: r.description,
           reference: r.reference,

@@ -69,7 +69,8 @@ export class DemoApi {
     // The helpers read the variables useLocalStack() has just set, so they load only now.
     const helpers = await import('../test/helpers')
     const { appRouter } = await import('../src')
-    // The preview of the modules being built is honoured only in development and test (D-125).
+    // The preview of the modules being built is honoured only in development and test (D-125); none
+    // is being built since the Costing Core's release (M2 Step 7), so this previews nothing today.
     process.env.NODE_ENV ??= 'development'
     const db = helpers.connectApi()
     const mail = new DemoMail(stack.smtpHost)

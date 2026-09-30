@@ -40,11 +40,16 @@ afterAll(async () => {
 })
 
 describe('the module gates', () => {
-  it('released code: suppliers, purchases and books are MODULE_DISABLED, even for the owner', async () => {
-    for (const path of ['supplier.list', 'purchase.list', 'purchaseReturn.list', 'books.get']) {
-      const result = await api.call(shop.owner, shop.id, path, undefined, api.released)
-      expect(codeOf(result), path).toBe('module_disabled')
+  it('released code serves suppliers, purchases and books; a business that turns them off gets MODULE_DISABLED', async () => {
+    const other = await Scope.open(api, WORKSHOP)
+    const paths = ['supplier.list', 'purchase.list', 'purchaseReturn.list', 'books.get']
+    for (const path of paths) {
+      expect((await other.run(path)).error, path).toBeUndefined()
     }
+    for (const id of ['suppliers', 'materials', 'purchases', 'expenses']) {
+      ok(await other.run('business.customize', { item: { kind: 'module', id }, enabled: false }))
+    }
+    for (const path of paths) expect(codeOf(await other.run(path)), path).toBe('module_disabled')
   })
 })
 
@@ -248,16 +253,41 @@ describe('what the goods cost (D-114 rule 4)', () => {
     expect(nonTax).toMatchObject({ vatInCost: true, costTotal: '105' })
   })
 
-  it('VAT is part of the cost for a business that is not VAT-registered, whatever the document', async () => {
+  it('a business that is not VAT-registered types what it paid, with no VAT (M2 Step 7)', async () => {
     const baker = await Scope.open(api, BAKER)
     const today = await baker.today()
     const flour = await baker.material({ id: newId(), name: 'Flour', unit: 'kg', packs: [] })
+    // Its screens have no VAT fields: a VAT rate is refused.
+    expect(
+      codeOf(
+        await baker.run(
+          'purchase.create',
+          purchaseInput(today, [line(flour.id, '10', '5', { unit: 'kg', vatRate: '5' })], {
+            documentType: 'tax_invoice',
+          }),
+        ),
+      ),
+    ).toBe('capability_disabled')
     const purchase = await baker.buy(
+      purchaseInput(today, [line(flour.id, '10', '5.25', { unit: 'kg', vatRate: '0' })], {
+        documentType: 'tax_invoice',
+      }),
+    )
+    expect(purchase).toMatchObject({ vatTotal: '0', costTotal: '52.5' })
+  })
+
+  it('VAT on a draft saved while VAT-registered is part of the cost once the business is not', async () => {
+    const other = await Scope.open(api, WORKSHOP)
+    const today = await other.today()
+    const flour = await other.material({ id: newId(), name: 'Flour', unit: 'kg', packs: [] })
+    const draft = await other.draft(
       purchaseInput(today, [line(flour.id, '10', '5', { unit: 'kg', vatRate: '5' })], {
         documentType: 'tax_invoice',
       }),
     )
-    expect(purchase).toMatchObject({ vatInCost: true, costTotal: '52.5' })
+    await other.deregisterVat()
+    const posted = await other.post(draft)
+    expect(posted).toMatchObject({ vatInCost: true, costTotal: '52.5' })
   })
 
   it('discounts come off before VAT; the document discount and the delivery are split by line net', async () => {
@@ -559,7 +589,7 @@ describe('permissions by role template (PRODUCT.md §8)', () => {
       (await shop.run<PurchaseListDto>('purchase.list')).data?.data.items.length,
     )
     expect(ok(await shop.as<BooksDto>(manager, 'books.get')).closedThrough).toBeNull()
-    // Closing needs purchases.books.close, which only the Owner and Admin templates hold.
+    // Closing needs settings.books.close, which only the Owner and Admin templates hold.
     const refused = await shop.as(manager, 'books.close', { closedThrough: await shop.today() })
     expect(codeOf(refused)).toBe('forbidden')
   })
@@ -584,9 +614,15 @@ describe('permissions by role template (PRODUCT.md §8)', () => {
 
   it('Sales, Supervisor and Employee cannot open purchases or suppliers', async () => {
     for (const template of ['sales', 'supervisor', 'employee'] as const) {
-      for (const path of ['purchase.list', 'supplier.list', 'books.get']) {
+      for (const path of ['purchase.list', 'supplier.list']) {
         expect(codeOf(await shop.as(team[template], path)), `${template} ${path}`).toBe('forbidden')
       }
     }
+    // The books-closed date is read with purchases or expenses "see" (D-176): an employee enters
+    // expenses (D-180); Sales and Supervisor do neither.
+    for (const template of ['sales', 'supervisor'] as const) {
+      expect(codeOf(await shop.as(team[template], 'books.get')), template).toBe('forbidden')
+    }
+    expect((await shop.as(team.employee, 'books.get')).error).toBeUndefined()
   })
 })

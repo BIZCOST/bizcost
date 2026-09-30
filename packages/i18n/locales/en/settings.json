@@ -35,7 +35,7 @@
     "logo": {
       "title": "Logo",
       "description": "Your logo, for your business in BizCost.",
-      "rules": "PNG, JPG or WebP, up to 2 MB. A square logo on a light background works best.",
+      "rules": "PNG, JPG or WebP, up to 10 MB. Next, you place it in its square.",
       "upload": "Upload logo",
       "replace": "Change logo",
       "uploading": "Uploading…",
@@ -47,7 +47,20 @@
       "alt": "Business logo",
       "none": "No logo",
       "wrongType": "Use a PNG, JPG or WebP image.",
-      "tooBig": "This image is larger than 2 MB. Choose a smaller one."
+      "tooBig": "This image is larger than 10 MB. Choose a smaller one.",
+      "adjust": "Adjust",
+      "cropTitle": "Adjust your logo",
+      "cropDescription": "Drag it into place and zoom until it fills the square. This is how it shows next to your business name.",
+      "cropArea": "Your logo in its square",
+      "cropHow": "Drag to move. Pinch, scroll or use the slider to zoom. Arrow keys move it too.",
+      "zoom": "Zoom",
+      "zoomIn": "Zoom in",
+      "zoomOut": "Zoom out",
+      "whole": "Whole logo",
+      "fill": "Fill the square",
+      "previewTitle": "How it looks",
+      "save": "Save logo",
+      "cantOpen": "This picture couldn't be opened. Try another file."
     },
     "vat": {
       "title": "VAT",
@@ -124,7 +137,9 @@
     "transferBody": "{{name}} becomes the owner of {{businessName}} and can do everything, including changing the owner. You become an Admin. Only the new owner can give ownership back.",
     "transferConfirm": "Make owner",
     "transferCodeSent": "To keep the business safe, enter the code we sent to {{email}}.",
-    "transferred": "{{name}} is now the owner."
+    "transferred": "{{name}} is now the owner.",
+    "access": "Permissions",
+    "ownAccess": "Own permissions"
   },
   "invite": {
     "title": "Invite someone",
@@ -162,11 +177,11 @@
   "roleInfo": {
     "owner": "Can do everything, now and later, including changing the owner.",
     "admin": "Can do everything except change the owner.",
-    "manager": "Sees the business, the team, costs, profit and supplier prices. Manages branches.",
-    "accountant": "Sees the business, costs, profit, supplier prices and payroll.",
-    "sales": "Sees the dashboard only.",
-    "supervisor": "Sees the dashboard and the team.",
-    "employee": "Sees the dashboard only. Never sees costs or profit.",
+    "manager": "Manages products, purchases, expenses, running costs and branches. Sees the team, costs, profit and supplier prices.",
+    "accountant": "Sees purchases, expenses, costs, profit, supplier prices and payroll. Changes nothing.",
+    "sales": "Sees the dashboard and products. Doesn't see costs or profit unless you allow it.",
+    "supervisor": "Sees the dashboard, the team, products, what goes into them and materials. Doesn't see costs or profit unless you allow it.",
+    "employee": "Sees products, what goes into them and materials, and enters expenses. Doesn't see costs or profit unless you allow it.",
     "custom": "Customized for this business. It can {{list}}.",
     "customNone": "Customized for this business. It can't do anything yet.",
     "more_one": "{{count}} more thing",
@@ -176,7 +191,7 @@
   "roles": {
     "title": "Roles",
     "description": "What each role can see and do.",
-    "note": "Each person has one role. Changes apply right away to everyone with the role. Costs and profit stay hidden unless a role allows them.",
+    "note": "Each person has one role. Changes apply right away to everyone with the role. Costs and profit stay hidden unless a role, or a person's own permissions, allow them.",
     "people_one": "{{count}} person",
     "people_other": "{{count}} people",
     "edit": "Edit permissions",
@@ -207,6 +222,7 @@
     "settings_members_manage": "Manage the team",
     "settings_roles_manage": "Manage roles",
     "settings_modules_manage": "Customize BizCost",
+    "settings_books_close": "Close the books",
     "products_items_view": "See products & services",
     "products_items_manage": "Add and edit products & services",
     "products_recipes_view": "See what goes into each product or service",
@@ -227,7 +243,6 @@
     "purchases_documents_manage": "Enter purchases",
     "purchases_documents_post": "Finalize purchases",
     "purchases_documents_reverse": "Reverse and correct purchases",
-    "purchases_books_close": "Close the books",
     "purchases_payments_view": "See amounts owed",
     "purchases_payments_record": "Record payments of amounts owed",
     "expenses_documents_view": "See expenses",
@@ -257,6 +272,7 @@
     "settings_members_manage": "Invite people, change their roles and remove them.",
     "settings_roles_manage": "Change what each role can see and do.",
     "settings_modules_manage": "Turn sections and features on or off.",
+    "settings_books_close": "Stop finalizing or reversing purchases and expenses dated on or before a day you choose.",
     "products_items_view": "What you sell, with its unit and price.",
     "products_items_manage": "Add, change and archive products and services.",
     "products_recipes_view": "The materials and packaging each product or service uses, and how much.",
@@ -282,16 +298,15 @@
     "purchases_documents_post_factory": "Make purchases, returns and credit notes final, which updates raw material costs.",
     "purchases_documents_post_retail": "Make purchases, returns and credit notes final, which updates the cost of your goods.",
     "purchases_documents_reverse": "Cancel a final purchase, return or credit note as if it was never entered.",
-    "purchases_books_close": "Stop finalizing or reversing anything dated on or before a day you choose.",
     "purchases_payments_view": "What you still owe suppliers for purchases on credit, and team members who paid from their own money, with the payments made.",
-    "purchases_payments_record": "Record a payment of what is owed, or reverse one recorded by mistake.",
+    "purchases_payments_record": "Record a payment of what is owed, or reverse one recorded by mistake. Needs \"See costs, supplier prices and margins\".",
     "expenses_documents_view": "Expenses, with their receipts.",
     "expenses_documents_manage": "Enter drafts, attach receipts, send them for approval, discard drafts and add categories.",
-    "expenses_documents_approve": "Approve or reject expenses sent for approval, or finalize one without sending it. Needs \"See supplier prices\".",
+    "expenses_documents_approve": "Approve or reject expenses sent for approval, or finalize one without sending it. Needs \"See costs, supplier prices and margins\".",
     "expenses_documents_post": "Make expenses final, so they count in your costs.",
     "expenses_documents_reverse": "Cancel a final expense as if it was never entered.",
     "expenses_payments_view": "What you still owe suppliers for expenses on credit, and team members who paid from their own money, with the payments made.",
-    "expenses_payments_record": "Record a payment of what is owed on an expense, or reverse one recorded by mistake.",
+    "expenses_payments_record": "Record a payment of what is owed on an expense, or reverse one recorded by mistake. Needs \"See costs, supplier prices and margins\".",
     "expenses_approval_manage": "Turn on or off the approval of expenses before they are final.",
     "running_costs_items_view": "What you pay regularly to run the business, like rent and salaries.",
     "running_costs_items_manage": "Add, change or remove running costs, and the categories they share with expenses.",
@@ -392,5 +407,47 @@
     },
     "hidden": "Your role doesn't show costs, so you can't change these.",
     "saved": "Saved."
+  },
+  "sensitive": {
+    "note": "Hidden unless switched on: without it, a lock shows in place of the amount.",
+    "costs": {
+      "label": "See costs, supplier prices and margins",
+      "hint": "What products, materials and work really cost, what you pay each supplier, and your profit. They go together: each can be worked out from the others.",
+      "hint_food": "What products, ingredients, supplies and work really cost, what you pay each supplier, and your profit. They go together: each can be worked out from the others.",
+      "hint_factory": "What products, raw materials and work really cost, what you pay each supplier, and your profit. They go together: each can be worked out from the others.",
+      "hint_retail": "What products, goods and work really cost, what you pay each supplier, and your profit. They go together: each can be worked out from the others."
+    },
+    "payroll": {
+      "label": "See payroll",
+      "hint": "Salaries, overtime and advances."
+    },
+    "employee_pii": {
+      "label": "See employees' personal details",
+      "hint": "Phone numbers, IDs and other private details of employees."
+    }
+  },
+  "memberAccess": {
+    "title": "What {{name}} can do",
+    "back": "Team",
+    "intro": "{{name}} has the {{role}} role. Here you can let them do more than their role, or less. Changes apply to this person only, right away.",
+    "roleNote": "Their role gives them the rest. If their role changes later, these changes stay with them.",
+    "legend": "“Added” and “Removed” show where this person differs from their role.",
+    "added": "Added",
+    "removed": "Removed",
+    "changes_one": "{{count}} change from their role",
+    "changes_other": "{{count}} changes from their role",
+    "changedList": "What differs from their role",
+    "reset": "Back to their role",
+    "save": "Save permissions",
+    "saved": "{{name}}'s permissions were saved.",
+    "conflict": "Someone else changed this person's permissions at the same time. The latest are shown; check them and save again.",
+    "owner": "The owner can do everything, including permissions added later.",
+    "yours": "You can't change your own permissions. The owner, or someone with this access, can.",
+    "locked": "This person can do things you can't, so you can't change their permissions.",
+    "notFound": "This person is no longer in the team.",
+    "lockedNote": "Some switches are locked: you can only give access you have yourself.",
+    "ownRole": "Role: {{role}}",
+    "notFoundBody": "They left the business or were removed. What they recorded stays.",
+    "same": "Same as their role"
   }
 }

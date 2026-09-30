@@ -2,7 +2,7 @@ import type { PurchaseDto, PurchaseReturnDto, PurchaseReturnListDto } from '@biz
 import { newId } from '@bizcost/domain'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { codeOf, line, ok, purchaseInput, PurchasingApi, Scope } from './purchasing'
-import { BAKER, WORKSHOP } from './settings'
+import { WORKSHOP } from './settings'
 
 // Supplier returns and credit notes through the API (ROADMAP.md M2 Step 3; D-120): draft → post →
 // reverse, linked to a posted purchase; a return takes goods out at the price paid for them and the
@@ -391,13 +391,17 @@ describe('credit notes (D-120 rule 3)', () => {
   })
 
   it('carry the purchase’s VAT treatment: VAT that was part of the cost comes off with the credit', async () => {
-    const baker = await Scope.open(api, BAKER)
+    // A purchase drafted while the business was VAT-registered, posted after it no longer is (a
+    // business that is not registered types what it paid, without VAT, since M2 Step 7).
+    const baker = await Scope.open(api, WORKSHOP)
     const flour = await baker.material({ id: newId(), name: 'Flour', unit: 'kg', packs: [] })
-    const purchase = await baker.buy(
+    const draft = await baker.draft(
       purchaseInput(today, [line(flour.id, '10', '10', { unit: 'kg', vatRate: '5' })], {
         documentType: 'tax_invoice',
       }),
     )
+    await baker.deregisterVat()
+    const purchase = await baker.post(draft)
     expect(purchase).toMatchObject({ vatInCost: true, costTotal: '105' })
     const credit = await baker.postReturn(
       await baker.returnDraft(creditInput(purchase, [amountLine(purchase.lines[0]!.id, '20')])),

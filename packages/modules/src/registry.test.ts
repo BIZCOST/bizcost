@@ -37,48 +37,85 @@ describe('module manifests', () => {
     }
   })
 
-  it('release only Dashboard and Settings in M1', () => {
+  it('release Dashboard and Settings (M1) and the Costing Core together (M2 Step 7)', () => {
     const released = MODULES.filter((m) => m.availability === 'released').map((m) => m.id)
-    expect(released).toEqual(['dashboard', 'settings'])
-  })
-
-  it('give planned modules no permission keys, nav or quick actions until their build starts (no stubs)', () => {
-    const started = MODULES.filter(
-      (m) => m.availability === 'planned' && (m.permissionKeys.length > 0 || m.nav.length > 0),
-    )
-    // M2 Steps 2, 3, 5 and 6 build Products & Services, Materials, Suppliers, Purchases, Expenses,
-    // Running Costs and the Cost Engine; they stay planned until Step 7 (D-124).
-    expect(started.map((m) => m.id)).toEqual([
+    expect(released).toEqual([
+      'dashboard',
+      'settings',
       'products',
       'materials',
       'suppliers',
       'purchases',
       'expenses',
       'running_costs',
+      'files',
       'cost_engine',
     ])
-    for (const m of started) {
-      expect(m.permissionKeys.length, m.id).toBeGreaterThan(0)
-      expect(m.nav.length, m.id).toBeGreaterThan(0)
-    }
-    for (const m of MODULES.filter((x) => x.availability === 'planned' && !started.includes(x))) {
+  })
+
+  it('give planned modules no permission keys, nav or quick actions until their build starts (no stubs)', () => {
+    // None is being built between M2 Step 7 and Phase 3; a module gets its keys and nav when its
+    // build starts and stays planned (hidden) until it is released (D-124, D-125).
+    for (const m of MODULES.filter((x) => x.availability === 'planned')) {
       expect(m.permissionKeys, m.id).toEqual([])
       expect(m.nav, m.id).toEqual([])
       expect(m.quickActions, m.id).toEqual([])
+      expect(m.sensitiveFields, m.id).toEqual([])
     }
   })
 
-  it('give every released module at least one nav entry', () => {
-    for (const m of MODULES.filter((x) => x.availability === 'released')) {
+  it('give every released module at least one nav entry, but Files (its receipts show in the records they belong to)', () => {
+    for (const m of MODULES.filter((x) => x.availability === 'released' && x.id !== 'files')) {
       expect(m.nav.length, m.id).toBeGreaterThan(0)
     }
+    expect(byId.get('files')).toMatchObject({ nav: [], quickActions: [], permissionKeys: [] })
   })
 
-  it('have a positive phase, and released modules belong to phase 1', () => {
+  it('have a positive phase, and released modules belong to phases 1 and 2', () => {
     for (const m of MODULES) {
       expect(Number.isInteger(m.phase) && m.phase >= 1, m.id).toBe(true)
-      if (m.availability === 'released') expect(m.phase, m.id).toBe(1)
+      if (m.availability === 'released') expect(m.phase, m.id).toBeLessThanOrEqual(2)
     }
+  })
+
+  it('give each main nav entry at most one claim to the phone tab bar, 1 first, never Settings', () => {
+    const claims = MODULES.flatMap((m) =>
+      m.nav.flatMap((entry) =>
+        'tab' in entry && entry.tab !== undefined ? [[entry.id, entry.tab]] : [],
+      ),
+    )
+    // M2 Step 7: Home, then Product costs, Products, Expenses, Purchases, Materials; an owner's phone
+    // gets Home, Products, +, Product costs and More, and an employee's Home, Products, +,
+    // Expenses and More (the tabs keep the nav's order).
+    expect(claims).toEqual([
+      ['dashboard', 1],
+      ['products', 3],
+      ['materials', 6],
+      ['purchases', 5],
+      ['expenses', 4],
+      ['product_costs', 2],
+    ])
+    const ranks = claims.map(([, rank]) => rank)
+    expect(new Set(ranks).size).toBe(ranks.length)
+    for (const m of MODULES) {
+      for (const entry of m.nav) {
+        if ('tab' in entry && entry.tab !== undefined) {
+          expect(entry.group, entry.id).toBe('main')
+          expect(Number.isInteger(entry.tab) && entry.tab >= 1, entry.id).toBe(true)
+        }
+      }
+    }
+  })
+
+  it('offer "+" for a new product or service, purchase and expense, each with the key to enter it', () => {
+    const actions = MODULES.flatMap((m) =>
+      m.quickActions.map((a) => [m.id, a.id, a.path, a.permission ?? null]),
+    )
+    expect(actions).toEqual([
+      ['products', 'new_product', 'products/new', 'products.items.manage'],
+      ['purchases', 'new_purchase', 'purchases/new', 'purchases.documents.manage'],
+      ['expenses', 'new_expense', 'expenses/new', 'expenses.documents.manage'],
+    ])
   })
 
   it('reference existing modules as deps, without self-deps or cycles', () => {
@@ -217,7 +254,7 @@ describe('permission catalog', () => {
         'purchases.documents.manage',
         'purchases.documents.post',
         'purchases.documents.reverse',
-        'purchases.books.close',
+        'settings.books.close',
         'purchases.payments.view',
         'purchases.payments.record',
         'expenses.documents.view',

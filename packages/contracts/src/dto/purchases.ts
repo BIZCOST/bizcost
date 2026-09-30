@@ -730,7 +730,7 @@ export const booksDto = z.object({
 })
 export type BooksDto = z.infer<typeof booksDto>
 
-/** `books.close` (purchases.books.close): a day up to today, or null to open the books again. */
+/** `books.close` (settings.books.close): a day up to today, or null to open the books again. */
 export const closeBooksInput = z.object({ closedThrough: zBusinessDate.nullable() })
 export type CloseBooksInput = z.input<typeof closeBooksInput>
 

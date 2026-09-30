@@ -29,24 +29,21 @@ import {
 import { appCode, BAKER, join, setupBusiness, WORKSHOP } from './settings'
 
 // Materials and Products & Services through the real fetch handler (ROADMAP.md M2 Step 2; D-121–
-// D-125): the module gate (planned until Step 7, reachable only through the dev-only preview), the
+// D-125): the module gate (released with the Costing Core in Step 7, no preview needed), the
 // permission keys of each role template, the owner's carton example with its units checked by the
 // domain engine, idempotent creates, versions, names, archiving, lists with search and cursors, and
 // where a product is sold. The database is checked as postgres.
 
 let db: Db
 let admin: Admin
-/** The API with Materials and Products & Services previewed (NODE_ENV is test). */
+/** The API as released code has it (the Costing Core is released since M2 Step 7). */
 let handler: ReturnType<typeof handlerFor>
-/** The API as released code has it: the two modules are planned. */
-let released: ReturnType<typeof handlerFor>
 const users: TestUser[] = []
 
 beforeAll(() => {
   db = connectApi()
   admin = connectAdmin()
-  handler = handlerFor(db, undefined, { previewModules: ['materials', 'products'] })
-  released = handlerFor(db)
+  handler = handlerFor(db)
 })
 
 afterAll(async () => {
@@ -115,29 +112,20 @@ beforeAll(async () => {
 }, 60_000)
 
 describe('the module gate', () => {
-  it('released code: every procedure is MODULE_DISABLED, even for the owner', async () => {
+  it('released code serves both modules, without the dev-only preview', async () => {
     for (const path of ['material.list', 'product.list']) {
-      const result = await query(released, path, { token: owner.token, businessId })
-      expect(appCode(result), path).toBe('module_disabled')
+      const result = await query(handler, path, { token: owner.token, businessId })
+      expect(result.error, path).toBeUndefined()
     }
-    const created = await mutate(released, 'material.create', {
-      token: owner.token,
-      businessId,
-      input: milk(),
-    })
-    expect(appCode(created)).toBe('module_disabled')
-    const context = await query<BusinessContextDto>(released, 'business.context', {
-      token: owner.token,
-      businessId,
-    })
-    expect(context.data?.modules.map((m) => m.id)).toEqual(['dashboard', 'settings'])
   })
 
-  it('the preview: both modules are in the nav and in Customize BizCost, as released', async () => {
+  it('both modules are in the nav and in Customize BizCost, as released', async () => {
     const context = ok(await call<BusinessContextDto>(owner, businessId, 'business.context'))
-    expect(context.modules.map((m) => [m.id, m.nav.map((e) => e.path)])).toEqual([
-      ['dashboard', ['']],
-      ['settings', ['settings']],
+    expect(
+      context.modules
+        .filter((m) => m.id === 'products' || m.id === 'materials')
+        .map((m) => [m.id, m.nav.map((e) => e.path)]),
+    ).toEqual([
       ['products', ['products']],
       ['materials', ['materials']],
     ])

@@ -38,5 +38,94 @@
     "title": "You're all set",
     "body": "Your business is set up and ready.",
     "hide": "Hide"
+  },
+  "costs": {
+    "title": "Let's find the real cost of what you sell",
+    "description": "Follow these steps, and BizCost works out what each product really costs.",
+    "description_services": "Follow these steps, and BizCost works out what each service really costs.",
+    "progressLabel": "Progress to your product costs",
+    "next": "Next step",
+    "steps": {
+      "products": {
+        "title": "Add what you sell",
+        "title_projects": "Add your services and work items",
+        "todo": "Your products and services, with their prices.",
+        "todo_services": "Your services, with their prices.",
+        "done": "What you sell is added.",
+        "action": "Add a product",
+        "action_projects": "Add a service",
+        "action_services": "Add a service"
+      },
+      "recipes": {
+        "title": "Add what you use to make it",
+        "title_food": "Add your recipes",
+        "todo": "For each product you make, the materials it uses and how much.",
+        "todo_food": "For each product you make, its recipe: the ingredients and supplies, and how much.",
+        "remaining_one": "{{count}} product you make doesn't have what goes into it yet.",
+        "remaining_other": "{{count}} products you make don't have what goes into them yet.",
+        "remainingFood_one": "{{count}} product you make has no recipe yet.",
+        "remainingFood_other": "{{count}} products you make have no recipe yet.",
+        "done": "Every product you make has what goes into it.",
+        "done_food": "Every product you make has its recipe.",
+        "action": "Add what goes into it",
+        "action_food": "Add recipes"
+      },
+      "purchases": {
+        "title": "Add purchase prices",
+        "todo": "Enter what you buy, so each material has its price.",
+        "todo_food": "Enter what you buy, so each ingredient and supply has its price.",
+        "remaining_one": "{{count}} material you use has no price yet: enter a purchase of it.",
+        "remaining_other": "{{count}} materials you use have no price yet: enter a purchase of them.",
+        "remainingFood_one": "{{count}} ingredient or supply you use has no price yet: enter a purchase of it.",
+        "remainingFood_other": "{{count}} ingredients and supplies you use have no price yet: enter a purchase of them.",
+        "done": "Everything you use has a price.",
+        "action": "Enter a purchase"
+      },
+      "running_costs": {
+        "title": "Add your running costs",
+        "runningCosts": "Rent, electricity, salaries and other regular costs, so each product carries its share.",
+        "runningCosts_services": "Rent, electricity, salaries and other regular costs, so each service carries its share.",
+        "estimate": "Add an estimate of what you buy in a month, until 3 months of purchases are in.",
+        "both": "Add your regular costs, then an estimate of what you buy in a month.",
+        "done": "Your running costs are added.",
+        "action": "Add running costs",
+        "actionEstimate": "Add the estimate"
+      },
+      "owner_time": {
+        "title": "Add your time",
+        "both": "What an hour of your time is worth, and the minutes each product takes you.",
+        "both_services": "What an hour of your time is worth, and the minutes each service takes you.",
+        "hourlyRate": "What an hour of your time is worth.",
+        "minutes": "The minutes each product takes you.",
+        "minutes_services": "The minutes each service takes you.",
+        "done": "Your time is part of your costs.",
+        "action": "Set your hourly rate",
+        "actionMinutes": "Add minutes"
+      },
+      "product_costs": {
+        "title": "See your product costs",
+        "title_services": "See your service costs",
+        "todo": "Once what you sell and what it costs are in, see what each product really costs.",
+        "todo_services": "Once what you sell and what it costs are in, see what each service really costs.",
+        "remaining_one": "{{count}} product still has part of its cost missing.",
+        "remaining_other": "{{count}} products still have part of their cost missing.",
+        "remainingServices_one": "{{count}} service still has part of its cost missing.",
+        "remainingServices_other": "{{count}} services still have part of their cost missing.",
+        "done": "Every product's real cost is ready.",
+        "done_services": "Every service's cost is ready.",
+        "action": "See product costs",
+        "action_services": "See service costs"
+      }
+    },
+    "ready": {
+      "title": "Your product costs are ready",
+      "title_services": "Your service costs are ready",
+      "body": "Each product's cost comes from your purchases, running costs and time. It stays up to date as you enter new purchases.",
+      "bodyWithoutTime": "Each product's cost comes from your purchases and running costs. It stays up to date as you enter new purchases.",
+      "bodyServices": "Each service's cost comes from your time and what it uses. Running costs don't reach services yet: Product costs says why.",
+      "bodyServicesWithoutTime": "Each service's cost comes from what it uses. Running costs don't reach services yet: Product costs says why.",
+      "action": "See product costs",
+      "action_services": "See service costs"
+    }
   }
 }

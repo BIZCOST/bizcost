@@ -33,19 +33,21 @@ import {
   updateProfile,
 } from '../services/business-profile'
 import { customize, getCustomization } from '../services/customize'
+import { sellsOnlyServices } from '../services/dashboard'
 import { payeeModules } from '../services/mine'
 import { createFromSetup } from '../services/setup'
-import { authedProcedure, businessProcedure, requirePermission, router } from '../trpc'
+import { authedProcedure, businessProcedure, passes, requirePermission, router } from '../trpc'
 
 /**
  * `modules` is the server's registry (ctx.modules: with the dev-only preview, D-125); `payeeIn` the
  * modules in which the business owes (or paid back) the member for something they paid themselves
- * (their "Owed to me" entry, D-181).
+ * (their "Owed to me" entry, D-181); `servicesOnly` whether the business sells only services (D-200).
  */
 export function toBusinessContext(
   access: BusinessAccess,
   modules: readonly ModuleManifest[] = MODULES,
   payeeIn: ReadonlySet<string> = new Set(),
+  servicesOnly = false,
 ): BusinessContextDto {
   const { effective, locationScope } = access
   return {
@@ -59,6 +61,7 @@ export function toBusinessContext(
       ...buildModuleNav(access.enabledModules, (key) => can(effective, key), modules, payeeIn),
     ],
     terminologyProfile: access.terminologyProfile,
+    sellsOnlyServices: servicesOnly,
     currency: access.currency,
     capabilities: { ...access.capabilities },
     permissionsVersion: access.permissionsVersion,
@@ -93,13 +96,15 @@ export const businessRouter = router({
    * `business.context`: everything the client needs to adapt to the active business — role, effective
    * permissions, location scope, visible sensitivity categories, released and enabled modules with the
    * nav entries this member may use, capabilities (vat_registered derived from the business), the
-   * wording, the currency and the permissions version.
+   * wording (and whether it sells only services, read only with Products & Services on), the currency
+   * and the permissions version.
    */
-  context: businessProcedure
-    .output(businessContextDto)
-    .query(async ({ ctx }) =>
-      toBusinessContext(ctx.access, ctx.modules, await payeeModules(ctx, payeeCandidates(ctx))),
-    ),
+  context: businessProcedure.output(businessContextDto).query(async ({ ctx }) => {
+    const payeeIn = await payeeModules(ctx, payeeCandidates(ctx))
+    const servicesOnly =
+      passes(ctx, ['products']) && (await ctx.tx((tx) => sellsOnlyServices(tx, ctx.businessId)))
+    return toBusinessContext(ctx.access, ctx.modules, payeeIn, servicesOnly)
+  }),
   /**
    * `business.createFromSetup` (authed, outside any business): Smart Setup's confirm step. The server
    * recomputes recommend() from the answers and applies the review adjustments within their rules,

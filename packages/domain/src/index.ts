@@ -111,6 +111,7 @@ export {
 // A product's whole cost for one unit sold (M2 Step 6): materials, the running-cost share (D-116),
 // the owner's time (D-119), and the margin on the price before VAT (D-121).
 export {
+  awaitsServiceShare,
   hoursAndMinutes,
   INCOMPLETE_REASONS,
   monthlyPurchases,
@@ -185,6 +186,20 @@ export {
   type RunningCostFrequency,
   type StarterCostCategory,
 } from './expenses/keys'
+export {
+  addMonths,
+  BILLED_NEXT_MONTH_CATEGORIES,
+  BUSINESS_MONTH_PATTERN,
+  defaultPeriodMonth,
+  firstDayOf,
+  firstOpenMonth,
+  monthOf,
+  PERIOD_MONTHS_AFTER,
+  PERIOD_MONTHS_BEFORE,
+  periodMonthAllowed,
+  periodMonthClosed,
+  type BusinessMonth,
+} from './expenses/period'
 export {
   computeExpense,
   expenseError,

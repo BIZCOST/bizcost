@@ -6,6 +6,7 @@ import {
   materialNames,
   newDeliveryLine,
   newMaterialLine,
+  paymentMethodsFor,
   purchaseDraft,
   type MaterialLineDraft,
   type PurchaseDraft,
@@ -336,5 +337,15 @@ describe('a saved draft', () => {
       },
       { kind: 'delivery', id: 'l2', description: 'Van', amount: '15', vatRate: '5' },
     ])
+  })
+})
+
+describe('how it was paid, by whether the business has a team (D-200)', () => {
+  it('offers "Paid by an employee" only with a team, or when it is the one saved', () => {
+    expect(paymentMethodsFor(true, undefined)).toContain('paid_by_member')
+    expect(paymentMethodsFor(false, undefined)).not.toContain('paid_by_member')
+    expect(paymentMethodsFor(false, 'cash')).not.toContain('paid_by_member')
+    expect(paymentMethodsFor(false, 'paid_by_member')).toContain('paid_by_member')
+    expect(paymentMethodsFor(false, null)).toContain('supplier_credit')
   })
 })

@@ -13,12 +13,12 @@ import {
   withValue,
   type TestUser,
 } from '../helpers'
-import { previewBaseURL } from '../stack'
+import { baseURL } from '../stack'
 
 // Changes not saved are never lost without asking (the owner's request of 2026-09-29), on the
-// development server with the dev-only preview (D-125): leaving a form with changes asks "You have
-// unsaved changes" with Save (saves, then leaves; a failed save stays and says why), Don't save and
-// Keep editing. A material sheet (×, Escape, a tap beside it), a purchase (a link of the sidebar or
+// production build since the Costing Core was released (D-188): leaving a form with changes asks
+// "You have unsaved changes" with Save (saves, then leaves; a failed save stays and says why), Don't
+// save and Keep editing. A material sheet (×, Escape, a tap beside it), a purchase (a link of the sidebar or
 // the tab bar, the browser's Back button, a reload: the browser's own question) and a settings
 // section (Business profile); nothing asks when nothing changed or once it is saved. English on a
 // desktop, Arabic on a phone, and the question itself in both languages at both sizes.
@@ -59,17 +59,11 @@ async function open(
   const user = await createUser(`unsaved-${locale}`, { locale: 'en' })
   users.push(user)
   const context = await browser.newContext({
-    baseURL: previewBaseURL,
+    baseURL,
     locale: locale === 'ar' ? 'ar-AE' : 'en-US',
     viewport,
   })
   contexts.push(context)
-  // The development server's own badge and overlay are not part of the app.
-  await context.addInitScript(() => {
-    const sheet = new CSSStyleSheet()
-    sheet.replaceSync('[data-nextjs-dev-overlay] { display: none !important; }')
-    document.adoptedStyleSheets = [...document.adoptedStyleSheets, sheet]
-  })
   await useLanguage(context, 'en')
   const page = await context.newPage()
   await signIn(page, user)

@@ -1,9 +1,38 @@
-import type { ChangeMemberRoleInput, MemberDto, MemberIdInput, OkDto } from '@bizcost/contracts'
-import { businesses, businessMembers, rolePermissions, roles, type Tx } from '@bizcost/db'
-import { newId, OWNER_TEMPLATE_KEY, type Locale } from '@bizcost/domain'
+import type {
+  ChangeMemberRoleInput,
+  MemberDto,
+  MemberIdInput,
+  MemberPermissionsDto,
+  MemberPermissionsInput,
+  OkDto,
+  PermissionOverrideDto,
+  UpdateMemberPermissionsInput,
+} from '@bizcost/contracts'
+import {
+  businesses,
+  businessMembers,
+  memberPermissionOverrides,
+  rolePermissions,
+  roles,
+  type Tx,
+} from '@bizcost/db'
+import {
+  newId,
+  OWNER_TEMPLATE_KEY,
+  resolveEffective,
+  type EffectivePermissions,
+  type Locale,
+  type PermissionEffect,
+} from '@bizcost/domain'
 import { createI18n } from '@bizcost/i18n'
-import { roleTemplateByKey } from '@bizcost/modules'
-import { and, asc, eq, isNull, ne, sql } from 'drizzle-orm'
+import {
+  isCatalogPermissionKey,
+  keysMissingNeeds,
+  PERMISSION_CATALOG,
+  roleTemplateByKey,
+  withNeededKeys,
+} from '@bizcost/modules'
+import { and, asc, eq, inArray, isNull, ne, sql } from 'drizzle-orm'
 import type { BusinessCtx } from '../business-context'
 import { AppError } from '../errors'
 import { revokeInvitationsBeyondSenders, revokeInvitationsSentBy } from './invitations'
@@ -16,6 +45,12 @@ import { canGrant, isOwner } from './team-rules'
 // the member's permissions_version, and a removed member is refused on their next request (their
 // membership is read on every request). Pending invitations follow their sender: a member who leaves or
 // is removed loses theirs, and after a role change those the sender could no longer send are revoked.
+//
+// A member's own access (M2 Step 7, deferred from M1 by D-084): their changes to what their role
+// grants (`member_permission_overrides`: a key added or taken away), read and saved whole. What a
+// member may do is always their role's keys with their changes (resolveEffective), without a key that
+// misses a key it needs (withNeededKeys); "beyond your own" compares that, not the role alone. The
+// changes stay with the member when their role changes.
 
 const memberColumns = {
   id: businessMembers.id,
@@ -27,6 +62,11 @@ const memberColumns = {
   roleId: businessMembers.roleId,
   roleName: roles.name,
   roleTemplateKey: roles.templateKey,
+  permissionsVersion: businessMembers.permissionsVersion,
+  hasOverrides: sql<boolean>`exists (
+    select 1 from app.member_permission_overrides o
+     where o.business_id = ${businessMembers.businessId} and o.member_id = ${businessMembers.id}
+       and o.deleted_at is null)`,
   createdAt: businessMembers.createdAt,
 }
 
@@ -40,6 +80,8 @@ type MemberRow = {
   roleId: string
   roleName: string | null
   roleTemplateKey: string | null
+  permissionsVersion: number
+  hasOverrides: boolean
   createdAt: Date
 }
 
@@ -55,6 +97,8 @@ function toMemberDto(row: MemberRow, callerMemberId: string): MemberDto {
     roleTemplateKey: row.roleTemplateKey,
     isOwner: row.roleTemplateKey === OWNER_TEMPLATE_KEY,
     isYou: row.id === callerMemberId,
+    // The owner's changes, if any were ever stored, count for nothing (resolveEffective).
+    hasOverrides: row.roleTemplateKey !== OWNER_TEMPLATE_KEY && row.hasOverrides,
     joinedAt: row.createdAt.toISOString(),
   }
 }
@@ -107,6 +151,63 @@ async function roleKeys(tx: Tx, businessId: string, roleId: string): Promise<str
   return rows.map((row) => row.key)
 }
 
+/** The member's own changes to their role's access, by key. */
+async function overridesOf(
+  tx: Tx,
+  businessId: string,
+  memberId: string,
+): Promise<PermissionOverrideDto[]> {
+  const rows = await tx
+    .select({
+      key: memberPermissionOverrides.permissionKey,
+      effect: memberPermissionOverrides.effect,
+    })
+    .from(memberPermissionOverrides)
+    .where(
+      and(
+        eq(memberPermissionOverrides.businessId, businessId),
+        eq(memberPermissionOverrides.memberId, memberId),
+        isNull(memberPermissionOverrides.deletedAt),
+      ),
+    )
+    .orderBy(asc(memberPermissionOverrides.permissionKey))
+  return rows
+}
+
+/**
+ * What a member with this role and these changes may do: the role's keys with the changes, without a
+ * key that misses a key it needs (as loadBusinessAccess resolves it on their requests).
+ */
+function accessOf(
+  roleTemplateKey: string | null,
+  keys: readonly string[],
+  overrides: readonly { key: string; effect: PermissionEffect }[],
+): EffectivePermissions {
+  return withNeededKeys(
+    resolveEffective({
+      roleTemplateKey,
+      rolePermissionKeys: keys,
+      overrides,
+      catalog: PERMISSION_CATALOG,
+    }),
+  )
+}
+
+/** A member's access now: their role's keys (none for the Owner) and their changes to them. */
+async function memberAccess(
+  tx: Tx,
+  businessId: string,
+  member: Pick<MemberRow, 'id' | 'roleId' | 'roleTemplateKey'>,
+  roleId: string = member.roleId,
+  roleTemplateKey: string | null = member.roleTemplateKey,
+): Promise<EffectivePermissions> {
+  return accessOf(
+    roleTemplateKey,
+    await roleKeys(tx, businessId, roleId),
+    await overridesOf(tx, businessId, member.id),
+  )
+}
+
 /** `member.list` (settings.members.view): members that are not removed, owners first, then by name. */
 export async function listMembers(ctx: BusinessCtx): Promise<MemberDto[]> {
   const rows = await ctx.tx((tx) =>
@@ -129,8 +230,8 @@ export async function listMembers(ctx: BusinessCtx): Promise<MemberDto[]> {
 
 /**
  * `member.changeRole` (settings.members.manage): any role except the Owner role, for anyone except the
- * owner (OWNER_TRANSFER_REQUIRED) and the caller. A non-owner may only move members whose role and new
- * role grant nothing beyond their own permissions (FORBIDDEN).
+ * owner (OWNER_TRANSFER_REQUIRED) and the caller. A non-owner may only move members whose access, now
+ * and with the new role (their own changes stay with them), is nothing beyond their own (FORBIDDEN).
  */
 export async function changeMemberRole(
   ctx: BusinessCtx,
@@ -154,10 +255,10 @@ export async function changeMemberRole(
       )
     if (!role) throw new AppError('not_found')
     if (role.templateKey === OWNER_TEMPLATE_KEY) throw new AppError('owner_transfer_required')
-    if (
-      !canGrant(ctx.access, await roleKeys(tx, ctx.businessId, member.roleId)) ||
-      !canGrant(ctx.access, await roleKeys(tx, ctx.businessId, role.id))
-    ) {
+    // What they may do now and with the new role (their own changes stay with them).
+    const now = await memberAccess(tx, ctx.businessId, member)
+    const then = await memberAccess(tx, ctx.businessId, member, role.id, role.templateKey)
+    if (!canGrant(ctx.access, now.keys) || !canGrant(ctx.access, then.keys)) {
       throw new AppError('forbidden', { message: 'cannot grant access beyond your own' })
     }
     if (member.roleId !== role.id) {
@@ -180,7 +281,8 @@ export async function changeMemberRole(
 /**
  * `member.remove` (settings.members.manage): the membership becomes `removed` (never deleted) and the
  * member is refused on their next request. The owner cannot be removed (OWNER_TRANSFER_REQUIRED); a
- * non-owner may remove only members whose role grants nothing beyond their own permissions. Removing
+ * non-owner may remove only members whose access (their role and their own changes) is nothing beyond
+ * their own. Removing
  * yourself (not the owner) leaves the business.
  */
 export async function removeMember(ctx: BusinessCtx, input: MemberIdInput): Promise<OkDto> {
@@ -189,7 +291,7 @@ export async function removeMember(ctx: BusinessCtx, input: MemberIdInput): Prom
     if (member.roleTemplateKey === OWNER_TEMPLATE_KEY) throw new AppError('owner_transfer_required')
     if (
       member.id !== ctx.access.memberId &&
-      !canGrant(ctx.access, await roleKeys(tx, ctx.businessId, member.roleId))
+      !canGrant(ctx.access, (await memberAccess(tx, ctx.businessId, member)).keys)
     ) {
       throw new AppError('forbidden', { message: 'cannot remove a member with more access' })
     }
@@ -303,4 +405,191 @@ export async function transferOwnership(ctx: BusinessCtx, input: MemberIdInput):
     await revokeInvitationsBeyondSenders(tx, ctx.businessId)
   })
   return { ok: true }
+}
+
+// ---------------------------------------------------------------------------------------------------
+// A member's own access (M2 Step 7; D-084 deferred it to the first module with sensitive fields)
+// ---------------------------------------------------------------------------------------------------
+
+const byKey = (a: { key: string }, b: { key: string }) =>
+  a.key < b.key ? -1 : a.key > b.key ? 1 : 0
+
+function sortedKeys(keys: Iterable<string>): string[] {
+  return [...keys].sort()
+}
+
+/** The member's access as `member.permissions` returns it. */
+async function memberPermissionsOf(
+  tx: Tx,
+  ctx: BusinessCtx,
+  member: MemberRow,
+): Promise<MemberPermissionsDto> {
+  const owner = member.roleTemplateKey === OWNER_TEMPLATE_KEY
+  const keys = owner ? [] : await roleKeys(tx, ctx.businessId, member.roleId)
+  const overrides = owner ? [] : await overridesOf(tx, ctx.businessId, member.id)
+  const effective = accessOf(member.roleTemplateKey, keys, overrides)
+  const isYou = member.id === ctx.access.memberId
+  return {
+    memberId: member.id,
+    displayName: member.displayName,
+    roleId: member.roleId,
+    roleName: member.roleName ?? '',
+    roleTemplateKey: member.roleTemplateKey,
+    isOwner: owner,
+    isYou,
+    roleKeys: sortedKeys(keys.filter(isCatalogPermissionKey)),
+    overrides: overrides.filter((o) => isCatalogPermissionKey(o.key)),
+    effectiveKeys: sortedKeys(effective.keys),
+    editable: !owner && !isYou && canGrant(ctx.access, effective.keys),
+    version: member.permissionsVersion,
+  }
+}
+
+/**
+ * `member.permissions` (settings.members.view and settings.roles.manage): what a member (not removed;
+ * NOT_FOUND otherwise) may do, from their role and their own changes to it, and whether the caller may
+ * change it.
+ */
+export function getMemberPermissions(
+  ctx: BusinessCtx,
+  input: MemberPermissionsInput,
+): Promise<MemberPermissionsDto> {
+  return ctx.tx(async (tx) => {
+    const live = and(
+      eq(businessMembers.businessId, ctx.businessId),
+      eq(businessMembers.id, input.memberId),
+      isNull(businessMembers.deletedAt),
+      ne(businessMembers.status, 'removed'),
+    )
+    const [member] = await membersQuery(tx).where(live)
+    if (!member) throw new AppError('not_found')
+    return memberPermissionsOf(tx, ctx, member)
+  })
+}
+
+/**
+ * The changes worth keeping: a key the role grants anyway is not "added", and one it does not grant is
+ * not "taken away" (the list says only how the member differs from their role).
+ */
+function differences(
+  wanted: readonly { key: string; effect: PermissionEffect }[],
+  roleGrants: ReadonlySet<string>,
+): PermissionOverrideDto[] {
+  return wanted
+    .filter((o) => (o.effect === 'allow') !== roleGrants.has(o.key))
+    .map((o) => ({ key: o.key, effect: o.effect }))
+    .sort(byKey)
+}
+
+/**
+ * `member.updatePermissions` (settings.members.view and settings.roles.manage): replaces the member's
+ * own changes to their role's access (an empty list clears them), `version` as read (the member's
+ * permissions version: CONFLICT when their access moved on since). Keys from the permission catalog,
+ * once each (VALIDATION); a change the role already says (allowing a key it grants, taking away one it
+ * does not) is dropped. What the member may then do must hold every key each of its keys needs
+ * (PERMISSION_NEEDS: costs, supplier prices and margins only together; VALIDATION). Not the owner
+ * (VALIDATION: they have every permission) and not the caller's own access (FORBIDDEN). "No access
+ * beyond your own": a caller who is not the owner changes only a member who may do nothing beyond the
+ * caller, only keys the caller holds, and leaves them nothing beyond the caller (FORBIDDEN). Saving
+ * bumps the member's permissions version (their apps reload their access) and revokes the pending
+ * invitations they could no longer send.
+ */
+export function updateMemberPermissions(
+  ctx: BusinessCtx,
+  input: UpdateMemberPermissionsInput,
+): Promise<MemberPermissionsDto> {
+  const unknown = input.overrides.filter((o) => !isCatalogPermissionKey(o.key)).map((o) => o.key)
+  if (unknown.length > 0) {
+    throw new AppError('validation', { message: `unknown permission keys: ${unknown.join(', ')}` })
+  }
+  const seen = new Set<string>()
+  for (const { key } of input.overrides) {
+    if (seen.has(key)) throw new AppError('validation', { message: `${key} given twice` })
+    seen.add(key)
+  }
+  return ctx.tx(async (tx) => {
+    const member = await lockMember(tx, ctx.businessId, input.memberId)
+    if (member.roleTemplateKey === OWNER_TEMPLATE_KEY) {
+      throw new AppError('validation', { message: 'the owner has every permission' })
+    }
+    if (member.id === ctx.access.memberId) {
+      throw new AppError('forbidden', { message: 'members cannot change their own access' })
+    }
+    if (member.permissionsVersion !== input.version) throw new AppError('conflict')
+
+    const keys = await roleKeys(tx, ctx.businessId, member.roleId)
+    const current = await overridesOf(tx, ctx.businessId, member.id)
+    const before = accessOf(member.roleTemplateKey, keys, current)
+    // A member with more access than the caller's is left alone.
+    if (!canGrant(ctx.access, before.keys)) {
+      throw new AppError('forbidden', { message: 'cannot change a member with more access' })
+    }
+    const wanted = differences(input.overrides, new Set(keys))
+    const effectOf = (list: readonly PermissionOverrideDto[]) =>
+      new Map(list.map((o) => [o.key, o.effect] as const))
+    const was = effectOf(current)
+    const will = effectOf(wanted)
+    const changed = [...new Set([...was.keys(), ...will.keys()])].filter(
+      (key) => was.get(key) !== will.get(key),
+    )
+    const after = resolveEffective({
+      roleTemplateKey: member.roleTemplateKey,
+      rolePermissionKeys: keys,
+      overrides: wanted,
+      catalog: PERMISSION_CATALOG,
+    })
+    if (!canGrant(ctx.access, changed) || !canGrant(ctx.access, after.keys)) {
+      throw new AppError('forbidden', { message: 'cannot change permissions you do not have' })
+    }
+    const incomplete = keysMissingNeeds(after.keys)
+    if (incomplete.length > 0) {
+      throw new AppError('validation', {
+        message: `keys without the permission they need: ${incomplete.join(', ')}`,
+      })
+    }
+
+    if (changed.length > 0) {
+      const removed = changed.filter((key) => !will.has(key))
+      if (removed.length > 0) {
+        await tx
+          .update(memberPermissionOverrides)
+          .set({ deletedAt: sql`now()` })
+          .where(
+            and(
+              eq(memberPermissionOverrides.businessId, ctx.businessId),
+              eq(memberPermissionOverrides.memberId, member.id),
+              inArray(memberPermissionOverrides.permissionKey, removed),
+              isNull(memberPermissionOverrides.deletedAt),
+            ),
+          )
+      }
+      for (const override of wanted.filter((o) => changed.includes(o.key))) {
+        await tx
+          .insert(memberPermissionOverrides)
+          .values({
+            id: newId(),
+            businessId: ctx.businessId,
+            memberId: member.id,
+            permissionKey: override.key,
+            effect: override.effect,
+          })
+          .onConflictDoUpdate({
+            target: [
+              memberPermissionOverrides.businessId,
+              memberPermissionOverrides.memberId,
+              memberPermissionOverrides.permissionKey,
+            ],
+            set: { effect: override.effect, deletedAt: null },
+          })
+      }
+      await tx
+        .update(businessMembers)
+        .set({ permissionsVersion: sql`${businessMembers.permissionsVersion} + 1` })
+        .where(
+          and(eq(businessMembers.businessId, ctx.businessId), eq(businessMembers.id, member.id)),
+        )
+      await revokeInvitationsBeyondSenders(tx, ctx.businessId)
+    }
+    return memberPermissionsOf(tx, ctx, await lockMember(tx, ctx.businessId, member.id))
+  })
 }

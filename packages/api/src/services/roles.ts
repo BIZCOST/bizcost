@@ -1,7 +1,19 @@
 import type { RoleDto, UpdateRolePermissionsInput } from '@bizcost/contracts'
-import { businessMembers, rolePermissions, roles, type Tx } from '@bizcost/db'
-import { newId, OWNER_TEMPLATE_KEY } from '@bizcost/domain'
-import { isCatalogPermissionKey, keysMissingNeeds, ROLE_TEMPLATE_KEYS } from '@bizcost/modules'
+import {
+  businessMembers,
+  memberPermissionOverrides,
+  rolePermissions,
+  roles,
+  type Tx,
+} from '@bizcost/db'
+import { newId, OWNER_TEMPLATE_KEY, resolveEffective, type PermissionEffect } from '@bizcost/domain'
+import {
+  isCatalogPermissionKey,
+  keysMissingNeeds,
+  PERMISSION_CATALOG,
+  ROLE_TEMPLATE_KEYS,
+  withNeededKeys,
+} from '@bizcost/modules'
 import { and, eq, inArray, isNull, sql } from 'drizzle-orm'
 import type { BusinessCtx } from '../business-context'
 import { AppError } from '../errors'
@@ -10,9 +22,9 @@ import { canGrant } from './team-rules'
 
 // Settings → Roles (ROADMAP.md Step 6): the business's roles (template copies from Smart Setup) and
 // editing which permissions a role grants. The Owner role is read-only (every permission, implicitly).
-// No custom roles and no per-member overrides in M1. Saving bumps permissions_version for every member
-// with the role, so their apps refetch their access, and revokes the pending invitations that their
-// senders could no longer send.
+// No custom roles; a member's own changes to their role are in services/members.ts (M2 Step 7).
+// Saving bumps permissions_version for every member with the role, so their apps refetch their
+// access, and revokes the pending invitations that their senders could no longer send.
 
 type RoleRow = {
   id: string
@@ -70,11 +82,70 @@ export async function listRoles(ctx: BusinessCtx): Promise<RoleDto[]> {
 }
 
 /**
+ * Whether every member of the role who has their own changes (D-191) may do nothing beyond the caller,
+ * with the role's keys `before` the change and `after` it: what they may do is the role's keys with
+ * their changes, without a key that misses one it needs (as loadBusinessAccess resolves it). A member
+ * without changes may do what the role grants, which the caller's own checks cover.
+ */
+async function ownChangesWithinCaller(
+  tx: Tx,
+  ctx: BusinessCtx,
+  role: { id: string; templateKey: string | null },
+  before: readonly string[],
+  after: readonly string[],
+): Promise<boolean> {
+  const rows = await tx
+    .select({
+      memberId: memberPermissionOverrides.memberId,
+      key: memberPermissionOverrides.permissionKey,
+      effect: memberPermissionOverrides.effect,
+    })
+    .from(memberPermissionOverrides)
+    .innerJoin(
+      businessMembers,
+      and(
+        eq(businessMembers.businessId, memberPermissionOverrides.businessId),
+        eq(businessMembers.id, memberPermissionOverrides.memberId),
+      ),
+    )
+    .where(
+      and(
+        eq(memberPermissionOverrides.businessId, ctx.businessId),
+        eq(businessMembers.roleId, role.id),
+        isNull(businessMembers.deletedAt),
+        inArray(businessMembers.status, ['active', 'suspended']),
+        isNull(memberPermissionOverrides.deletedAt),
+      ),
+    )
+  const byMember = new Map<string, { key: string; effect: PermissionEffect }[]>()
+  for (const row of rows) {
+    byMember.set(row.memberId, [...(byMember.get(row.memberId) ?? []), row])
+  }
+  for (const overrides of byMember.values()) {
+    for (const keys of [before, after]) {
+      const access = withNeededKeys(
+        resolveEffective({
+          roleTemplateKey: role.templateKey,
+          rolePermissionKeys: keys,
+          overrides,
+          catalog: PERMISSION_CATALOG,
+        }),
+      )
+      if (!canGrant(ctx.access, access.all ? PERMISSION_CATALOG : access.keys)) return false
+    }
+  }
+  return true
+}
+
+/**
  * `role.updatePermissions` (settings.roles.manage): replaces the keys a role grants. Keys must be in
  * the permission catalog, and a key that needs another (PERMISSION_NEEDS: changing needs seeing) comes
  * with it (VALIDATION); the Owner role cannot be edited (VALIDATION); `version` must be the role's
  * version (CONFLICT). A non-owner may edit only a role that grants nothing beyond their own access,
- * and add or remove only permissions they hold (FORBIDDEN), like assigning or removing members.
+ * and add or remove only permissions they hold (FORBIDDEN), like assigning or removing members; nor a
+ * role one of whose members may, through their own changes, do more than the caller, before the
+ * change or after it (FORBIDDEN, D-200: a role edit never takes away, or brings back, what the owner
+ * gave one person beyond the caller).
  */
 export async function updateRolePermissions(
   ctx: BusinessCtx,
@@ -127,6 +198,12 @@ export async function updateRolePermissions(
       throw new AppError('validation', {
         message: `keys without the permission they need: ${incomplete.join(', ')}`,
       })
+    }
+    if (
+      !ctx.access.effective.all &&
+      !(await ownChangesWithinCaller(tx, ctx, role, [...current], wanted))
+    ) {
+      throw new AppError('forbidden', { message: 'a member of this role has access beyond yours' })
     }
 
     if (removed.length > 0) {

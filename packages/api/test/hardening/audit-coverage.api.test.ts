@@ -246,7 +246,7 @@ function expenseInput(extra: object = {}) {
     documentType: 'tax_invoice',
     paymentMethod: 'cash',
     amount: '20',
-    vatRate: '5',
+    vatRate: '0',
     ...extra,
   }
 }
@@ -455,6 +455,20 @@ const AUDIT: Record<string, AuditProbe> = {
         actor: person.user,
         businessId: tenant.id,
       }
+    },
+  },
+  // A member's own access (M2 Step 7): the override rows and the member's new permissions version.
+  'member.updatePermissions': {
+    run: async () => {
+      const { memberId } = await newMember()
+      const read = await ok(
+        call<{ version: number }>(tenant.owner, 'member.permissions', 'query', { memberId }),
+      )
+      return asOwner('member.updatePermissions', {
+        memberId,
+        version: read.version,
+        overrides: [{ key: 'suppliers.items.view', effect: 'allow' }],
+      })
     },
   },
   'member.transferOwnership': {

@@ -175,7 +175,13 @@ function as(who: Who, business = businessId) {
 
 async function setModule(moduleKey: string, enabled: boolean) {
   await withTenantTx(db, tenant(users.owner.id, businessId), (tx) =>
-    tx.insert(businessModules).values({ id: newId(), businessId, moduleKey, enabled }),
+    tx
+      .insert(businessModules)
+      .values({ id: newId(), businessId, moduleKey, enabled })
+      .onConflictDoUpdate({
+        target: [businessModules.businessId, businessModules.moduleKey],
+        set: { enabled },
+      }),
   )
 }
 
@@ -217,40 +223,63 @@ describe('business.context', () => {
     const result = await query<ContextResult>(handler, 'business.context', as('owner'))
     expect(result.status).toBe(200)
     expect(result.headers.get('x-permissions-version')).toBe('1')
-    expect(result.data).toEqual({
+    const { modules, ...rest } = result.data!
+    // The Costing Core is released (M2 Step 7): its core modules are on without a row.
+    expect(modules.slice(0, 2)).toEqual([
+      {
+        id: 'dashboard',
+        nav: [
+          {
+            id: 'dashboard',
+            labelKey: 'nav.dashboard',
+            path: '',
+            icon: 'layout-dashboard',
+            group: 'main',
+            tab: 1,
+          },
+        ],
+        quickActions: [],
+      },
+      {
+        id: 'settings',
+        nav: [
+          {
+            id: 'settings',
+            labelKey: 'nav.settings',
+            path: 'settings',
+            icon: 'settings',
+            group: 'system',
+            tab: null,
+          },
+        ],
+        quickActions: [],
+      },
+    ])
+    expect(
+      modules.map((m) => [
+        m.id,
+        m.nav.map((n) => n.id),
+        (m.quickActions as { id: string }[]).map((a) => a.id),
+      ]),
+    ).toEqual([
+      ['dashboard', ['dashboard'], []],
+      ['settings', ['settings'], []],
+      ['products', ['products'], ['new_product']],
+      ['materials', ['materials'], []],
+      ['suppliers', ['suppliers'], []],
+      ['purchases', ['purchases', 'payables'], ['new_purchase']],
+      ['expenses', ['expenses'], ['new_expense']],
+      ['running_costs', ['running_costs'], []],
+      ['files', [], []],
+      ['cost_engine', ['product_costs'], []],
+    ])
+    expect(rest).toEqual({
       roleTemplateKey: 'owner',
       permissions: { all: true, keys: [...PERMISSION_CATALOG].sort() },
       locationScope: { all: true },
       visibleCategories: [...SENSITIVITY_CATEGORIES],
-      modules: [
-        {
-          id: 'dashboard',
-          nav: [
-            {
-              id: 'dashboard',
-              labelKey: 'nav.dashboard',
-              path: '',
-              icon: 'layout-dashboard',
-              group: 'main',
-            },
-          ],
-          quickActions: [],
-        },
-        {
-          id: 'settings',
-          nav: [
-            {
-              id: 'settings',
-              labelKey: 'nav.settings',
-              path: 'settings',
-              icon: 'settings',
-              group: 'system',
-            },
-          ],
-          quickActions: [],
-        },
-      ],
       terminologyProfile: 'general',
+      sellsOnlyServices: false,
       currency: 'AED',
       capabilities: {
         has_team: false,
@@ -288,15 +317,33 @@ describe('business.context', () => {
     expect(result.data?.modules.map((m) => [m.id, m.nav.map((n) => n.id)])).toEqual([
       ['dashboard', ['dashboard']],
       ['settings', ['settings']],
+      ['products', ['products']],
+      ['materials', ['materials']],
+      ['suppliers', []],
+      ['purchases', []],
+      ['expenses', ['expenses']],
+      ['running_costs', []],
+      ['files', []],
+      ['cost_engine', []],
+    ])
+    expect(result.data?.modules.flatMap((m) => m.quickActions)).toEqual([
+      {
+        id: 'new_expense',
+        labelKey: 'nav.new_expense',
+        path: 'expenses/new',
+        icon: 'receipt',
+      },
     ])
   })
 
   it('applies deny overrides and the grouping rule (no cost: no margin, no supplier prices)', async () => {
     const result = await query<ContextResult>(handler, 'business.context', as('manager'))
     expect(result.data?.roleTemplateKey).toBe('manager')
+    // Costs, supplier prices and margins only together (D-187): the two keys left grant nothing, so
+    // the member's permissions no longer hold them (PERMISSION_NEEDS, withNeededKeys).
     expect(result.data?.permissions.keys).not.toContain('data.cost.view')
-    expect(result.data?.permissions.keys).toContain('data.profit_margin.view')
-    expect(result.data?.permissions.keys).toContain('data.supplier_price.view')
+    expect(result.data?.permissions.keys).not.toContain('data.profit_margin.view')
+    expect(result.data?.permissions.keys).not.toContain('data.supplier_price.view')
     expect(result.data?.visibleCategories).toEqual([])
   })
 
@@ -320,7 +367,18 @@ describe('business.context', () => {
     // Materials (core) is on without a row; Orders (optional) is switched on by its row.
     await setModule('orders', true)
     const result = await query<ContextResult>(handler, 'business.context', as('owner'))
-    expect(result.data?.modules.map((m) => m.id)).toEqual(['dashboard', 'settings'])
+    expect(result.data?.modules.map((m) => m.id)).toEqual([
+      'dashboard',
+      'settings',
+      'products',
+      'materials',
+      'suppliers',
+      'purchases',
+      'expenses',
+      'running_costs',
+      'files',
+      'cost_engine',
+    ])
   })
 
   it('answers a batch with one membership check and one x-permissions-version', async () => {
@@ -340,16 +398,23 @@ describe('module and permission gates', () => {
     expect((await query(handler, 'test.manageMembers', as('owner'))).data).toEqual({ ok: true })
   })
 
-  it('requirePermission: an allow override grants the key', async () => {
-    await withTenantTx(db, tenant(users.owner.id, businessId), (tx) =>
-      tx.insert(memberPermissionOverrides).values({
-        id: newId(),
-        businessId,
-        memberId: staffMemberId,
-        permissionKey: 'settings.members.manage',
-        effect: 'allow',
-      }),
+  it('requirePermission: an allow override grants the key, with the keys it needs', async () => {
+    const allow = (permissionKey: string) =>
+      withTenantTx(db, tenant(users.owner.id, businessId), (tx) =>
+        tx.insert(memberPermissionOverrides).values({
+          id: newId(),
+          businessId,
+          memberId: staffMemberId,
+          permissionKey,
+          effect: 'allow',
+        }),
+      )
+    // Managing the team needs seeing it (PERMISSION_NEEDS): alone, the key grants nothing.
+    await allow('settings.members.manage')
+    expect((await query(handler, 'test.manageMembers', as('staff'))).error?.data.appCode).toBe(
+      'forbidden',
     )
+    await allow('settings.members.view')
     expect((await query(handler, 'test.manageMembers', as('staff'))).data).toEqual({ ok: true })
   })
 
@@ -358,8 +423,11 @@ describe('module and permission gates', () => {
     expect((await query(handler, 'test.settings', as('staff'))).data).toEqual({ ok: true })
   })
 
-  it('requireModule: MODULE_DISABLED for planned modules, on by default (core) or by a row', async () => {
+  it('requireModule: MODULE_DISABLED for planned modules, even on by a row, and for released ones switched off', async () => {
     await setModule('inventory', true)
+    // Materials (released with the Costing Core, M2 Step 7) is core: on without a row.
+    expect((await query(handler, 'test.materials', as('owner'))).data).toEqual({ ok: true })
+    await setModule('materials', false)
     for (const path of ['test.materials', 'test.inventory']) {
       const result = await query(handler, path, as('owner'))
       expect(result.status, path).toBe(403)
@@ -368,6 +436,8 @@ describe('module and permission gates', () => {
         i18nKey: 'errors.module_disabled',
       })
     }
+    await setModule('materials', true)
+    expect((await query(handler, 'test.materials', as('owner'))).data).toEqual({ ok: true })
   })
 })
 

@@ -1,5 +1,6 @@
 import type {
   BooksDto,
+  BusinessProfileDto,
   MaterialCostsDto,
   MaterialDto,
   PurchaseDto,
@@ -18,6 +19,7 @@ import {
   deleteUser,
   handlerFor,
   mintToken,
+  SECRET_KEY,
   mutate,
   query,
   type Admin,
@@ -26,13 +28,10 @@ import {
 } from './helpers'
 import { join, setupBusiness, WORKSHOP } from './settings'
 
-// Helpers of the purchasing tests (ROADMAP.md M2 Step 3): an API with the M2 modules previewed (they
-// stay planned until Step 7, D-125), people and businesses made the real way, materials, suppliers,
-// purchases and returns through the API, and the database read as postgres to compare the ledger
-// with its projections.
-
-/** The modules being built that the purchasing tests preview. */
-export const PURCHASING_PREVIEW = ['materials', 'products', 'suppliers', 'purchases'] as const
+// Helpers of the purchasing tests (ROADMAP.md M2 Step 3): the API as released code has it (the
+// Costing Core is released since M2 Step 7: no dev-only preview), people and businesses made the real
+// way, materials, suppliers, purchases and returns through the API, and the database read as postgres
+// to compare the ledger with its projections.
 
 export type Handler = ReturnType<typeof handlerFor>
 
@@ -49,11 +48,8 @@ const procedures = appRouter._def.procedures as unknown as Record<
 export class PurchasingApi {
   readonly db: Db = connectApi()
   readonly admin: Admin = connectAdmin()
-  readonly handler: Handler = handlerFor(this.db, undefined, {
-    previewModules: PURCHASING_PREVIEW,
-  })
-  /** The API as released code has it (the M2 modules are planned). */
-  readonly released: Handler = handlerFor(this.db)
+  /** The API as deployed (the secret key for Storage: receipts). */
+  readonly handler: Handler = handlerFor(this.db, undefined, { supabaseSecretKey: SECRET_KEY })
   private readonly users: TestUser[] = []
 
   async person(): Promise<Person> {
@@ -168,6 +164,20 @@ export class Scope {
 
   async today(): Promise<string> {
     return ok(await this.run<BooksDto>('books.get')).today
+  }
+
+  /** The business is no longer VAT-registered (Settings → Business profile, as the owner). */
+  async deregisterVat(): Promise<void> {
+    const profile = ok(await this.run<BusinessProfileDto>('business.profile'))
+    ok(
+      await this.run('business.updateProfile', {
+        version: profile.version,
+        legalName: profile.legalName,
+        legalNameAr: profile.legalNameAr,
+        vatRegistered: false,
+        trn: null,
+      }),
+    )
   }
 
   async material(input = milkInput().input): Promise<MaterialDto> {

@@ -42,12 +42,15 @@
       "more": "Category and dates",
       "clear": "Clear filters",
       "noMatches": "No expenses match these filters.",
-      "noMatchesHint": "Change the filters or clear them."
+      "noMatchesHint": "Change the filters or clear them.",
+      "month": "For which month",
+      "anyMonth": "Any month"
     },
     "tabs": {
       "all": "All expenses",
       "mine": "My expenses"
-    }
+    },
+    "forMonth": "For {{month}}"
   },
   "editor": {
     "newTitle": "New expense",
@@ -96,9 +99,14 @@
     "vatNotReclaimableHint": "Turn this on if you can't get this VAT back. It then counts in what this expense cost the business.",
     "errors": {
       "category": "Choose a category.",
-      "categoryGone": "This category isn't in your list any more. Choose another."
+      "categoryGone": "This category isn't in your list any more. Choose another.",
+      "periodMonth": "Pick a month from 12 months before the bill's date to 1 month after it."
     },
-    "introWaits": "A draft changes nothing. Save it: someone who may finalize expenses will finalize it, and then it counts in the business's expenses."
+    "introWaits": "A draft changes nothing. Save it: someone who may finalize expenses will finalize it, and then it counts in the business's expenses.",
+    "periodMonth": "For which month?",
+    "periodMonthHint": "The month this bill is for. This month's electricity bill often comes next month.",
+    "periodMonthNextHint": "{{category}} bills usually come the month after, so the month before the bill's date is chosen. Change it if needed.",
+    "periodClosed": "The books are closed for {{month}}: pick a later month."
   },
   "view": {
     "pageTitle": "Expense",
@@ -133,7 +141,8 @@
     "reverseFirst": "To reverse this expense, reverse its payments first.",
     "draftWaits": "This draft waits for someone who may finalize expenses. It changes nothing until then.",
     "paidByYou": "You paid this from your own money.",
-    "owedToYouLink": "See what's owed to you"
+    "owedToYouLink": "See what's owed to you",
+    "periodMonth": "For the month of"
   },
   "confirm": {
     "finalizeTitle": "Finalize this expense?",
@@ -188,11 +197,11 @@
     "addPlaceholder": "e.g. Cleaning",
     "addAction": "Add",
     "added": "{{name}} added.",
-    "edit": "Rename {{name}}",
+    "edit": "Edit {{name}}",
     "newName": "New name for {{name}}",
     "save": "Save",
     "cancel": "Cancel",
-    "saved": "Category renamed.",
+    "saved": "Category saved.",
     "archive": "Archive {{name}}",
     "unarchive": "Bring back {{name}}",
     "archived": "{{name}} archived.",
@@ -200,7 +209,10 @@
     "archivedBadge": "Archived",
     "archivedHint": "An archived category stays on what already has it, but isn't offered for new ones.",
     "taken": "There's already a category called {{name}}.",
-    "none": "No categories yet."
+    "none": "No categories yet.",
+    "billedNextMonth": "Its bills come the month after",
+    "billedNextMonthHint": "A new expense in it is for the month before its bill's date, like electricity. You can still change it on each expense.",
+    "billedNextMonthBadge": "Billed the month after"
   },
   "running": {
     "question": "What do you pay to run your business?",

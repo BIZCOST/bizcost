@@ -274,8 +274,21 @@ describe('business.createFromSetup', () => {
       jobs_and_tasks: true,
       vat_registered: true,
     })
-    // Planned modules are saved but stay hidden: only Dashboard and Settings are released.
-    expect(context.data?.modules.map((m) => m.id)).toEqual(['dashboard', 'settings'])
+    // Released modules show (the Costing Core since M2 Step 7); planned ones are saved but stay
+    // hidden.
+    const ids = context.data?.modules.map((m) => m.id)
+    expect(ids?.slice(0, 2)).toEqual(['dashboard', 'settings'])
+    expect(ids).toEqual(
+      expect.arrayContaining([
+        'products',
+        'materials',
+        'purchases',
+        'expenses',
+        'running_costs',
+        'cost_engine',
+      ]),
+    )
+    for (const planned of ['orders', 'vat_center', 'equipment']) expect(ids).not.toContain(planned)
     expect(await moduleRows(id)).toMatchObject({ orders: true, vat_center: true, equipment: true })
 
     const [place] = await admin<{ name: string }[]>`

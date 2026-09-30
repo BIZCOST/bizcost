@@ -21,7 +21,7 @@ import {
   TagIcon,
 } from 'lucide-react'
 import Link from 'next/link'
-import { useParams } from 'next/navigation'
+import { useParams, useRouter } from 'next/navigation'
 import { Fragment, useState, type ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
@@ -138,7 +138,7 @@ function RecipeButton({ profile, onOpen }: { profile: TerminologyProfile; onOpen
   )
 }
 
-function ProductsList() {
+function ProductsList({ startNew }: { startNew: boolean }) {
   const { t } = useTranslation()
   const term = useTerminology()
   const trpc = useTRPC()
@@ -173,13 +173,19 @@ function ProductsList() {
   const costs = useProductCosts(list.data?.pages ?? [], withRecipes)
   const archive = useMutation(trpc.product.archive.mutationOptions())
   const unarchive = useMutation(trpc.product.unarchive.mutationOptions())
-  const [editing, setEditing] = useState<Editing | null>(null)
+  const router = useRouter()
+  // The "+" action's address (products/new, D-189) opens the list with a new item's form.
+  const [editing, setEditing] = useState<Editing | null>(() =>
+    startNew ? { key: 'new-from-address' } : null,
+  )
   const [recipeOf, setRecipeOf] = useState<ProductDto | null>(null)
   const [archiving, setArchiving] = useState<ProductDto | null>(null)
   const [archiveError, setArchiveError] = useState<I18nKey | null>(null)
   if (!context) return null
   const profile = context.terminologyProfile
   const canManage = can(context, 'products.items.manage')
+  // Only for a member who may add them (the API refuses the others too).
+  const shownEditing = editing && (editing.product || canManage) ? editing : null
   // A new product can be bought ready to sell while the member may add materials too (D-117).
   const resale =
     hasModule(context, 'materials') && can(context, 'materials.items.manage') ? 'offered' : 'none'
@@ -294,13 +300,17 @@ function ProductsList() {
           />
         )}
       />
-      {editing ? (
+      {shownEditing ? (
         <ProductSheet
-          key={editing.key}
-          product={editing.product}
+          key={shownEditing.key}
+          product={shownEditing.product}
           profile={profile}
           resale={resale}
-          onClose={() => setEditing(null)}
+          onClose={() => {
+            setEditing(null)
+            // Opened from products/new: the list's own address once the form is closed.
+            if (startNew) router.replace(`/b/${businessId}/products`)
+          }}
         />
       ) : null}
       {recipeOf ? (
@@ -323,11 +333,14 @@ function ProductsList() {
   )
 }
 
-/** The Products & Services page: the list inside the module's gate. */
-export function ProductsPage() {
+/**
+ * The Products & Services page: the list inside the module's gate. `startNew`: opened at products/new
+ * (the "+" action "New product or service", D-189), with a new item's form open.
+ */
+export function ProductsPage({ startNew = false }: { startNew?: boolean }) {
   return (
     <ModuleGate moduleId="products" entryId="products">
-      <ProductsList />
+      <ProductsList startNew={startNew} />
     </ModuleGate>
   )
 }

@@ -217,6 +217,26 @@ const PROBES: Record<string, Probe> = {
     reason: 'the new owner is looked up in the x-business-id business',
     variants: (victim) => [{ input: { memberId: victim.adminMemberId }, own: ['not_found'] }],
   },
+  // A member's own access (M2 Step 7, D-084): the member is looked up in the x-business-id business.
+  'member.permissions': {
+    base: 'business',
+    reason: 'looked up in the x-business-id business',
+    variants: (victim) => [{ input: { memberId: victim.employeeMemberId }, own: ['not_found'] }],
+  },
+  'member.updatePermissions': {
+    base: 'business',
+    reason: 'looked up in the x-business-id business; keys are the catalog’s, not rows',
+    variants: (victim) => [
+      {
+        input: {
+          memberId: victim.employeeMemberId,
+          version: 0,
+          overrides: [{ key: 'purchases.documents.view', effect: 'allow' }],
+        },
+        own: ['not_found'],
+      },
+    ],
+  },
   'invitation.list': { base: 'business', reason: NO_ROWS },
   'invitation.create': {
     base: 'business',

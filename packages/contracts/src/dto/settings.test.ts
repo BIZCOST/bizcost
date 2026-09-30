@@ -13,6 +13,7 @@ import {
   invitationPreviewDto,
   invitationTokenInput,
   memberDto,
+  updateMemberPermissionsInput,
   updateRolePermissionsInput,
 } from './team'
 
@@ -99,6 +100,28 @@ describe('team inputs', () => {
     ).toBe(false)
   })
 
+  it('takes the own changes of a member as keys with allow or deny, at most 200', () => {
+    const base = { memberId: newId(), version: 0 }
+    expect(
+      updateMemberPermissionsInput.parse({
+        ...base,
+        overrides: [{ key: 'data.cost.view', effect: 'deny' }],
+      }).overrides,
+    ).toEqual([{ key: 'data.cost.view', effect: 'deny' }])
+    expect(updateMemberPermissionsInput.parse({ ...base, overrides: [] }).overrides).toEqual([])
+    for (const overrides of [
+      [{ key: 'data.cost.view', effect: 'grant' }],
+      [{ key: '', effect: 'allow' }],
+      Array.from({ length: 201 }, (_, i) => ({ key: `k${i}`, effect: 'allow' })),
+    ]) {
+      expect(updateMemberPermissionsInput.safeParse({ ...base, overrides }).success).toBe(false)
+    }
+    expect(
+      updateMemberPermissionsInput.safeParse({ memberId: newId(), version: -1, overrides: [] })
+        .success,
+    ).toBe(false)
+  })
+
   it('checks names, tokens and permission lists by shape only', () => {
     expect(createLocationInput.parse({ id: newId(), name: ' Marina ' }).name).toBe('Marina')
     expect(createLocationInput.safeParse({ id: newId(), name: 'A\nB' }).success).toBe(false)
@@ -124,6 +147,7 @@ describe('team inputs', () => {
       roleTemplateKey: 'employee',
       isOwner: false,
       isYou: false,
+      hasOverrides: true,
       joinedAt: '2026-09-25T10:00:00.000Z',
     }
     expect(memberDto.parse(member)).toEqual(member)

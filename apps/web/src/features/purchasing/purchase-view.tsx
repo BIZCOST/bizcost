@@ -669,9 +669,12 @@ export function PurchaseView({
           </p>
         ) : null}
 
-        <Panel title={t('purchasing.receipts.title')} hint={t('purchasing.receipts.hint')}>
-          <Receipts recordId={purchase.id} canManage={canManage} />
-        </Panel>
+        {/* Receipts only with the Files module on (D-188). */}
+        {hasModule(context, 'files') ? (
+          <Panel title={t('purchasing.receipts.title')} hint={t('purchasing.receipts.hint')}>
+            <Receipts recordId={purchase.id} canManage={canManage} />
+          </Panel>
+        ) : null}
       </div>
 
       <ConfirmDialog

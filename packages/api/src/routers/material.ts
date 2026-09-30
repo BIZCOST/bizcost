@@ -22,8 +22,7 @@ import { managePurchases } from './purchase'
 
 /**
  * Materials (services/materials.ts): module `materials` (released and on for the business, else
- * MODULE_DISABLED; planned until M2 Step 7, so only the dev-only preview reaches it before then,
- * D-125), then materials.items.view to read and materials.items.manage to write.
+ * MODULE_DISABLED; released in M2 Step 7), then materials.items.view to read and materials.items.manage to write.
  */
 const materialsModule = businessProcedure.use(requireModule('materials'))
 const viewMaterials = materialsModule.use(requirePermission('materials.items.view'))

@@ -7,23 +7,14 @@ import type {
   RecipeResultDto,
 } from '@bizcost/contracts'
 import { newId } from '@bizcost/domain'
-import { EXPENSES_PREVIEW, ExpenseScope } from './expenses'
-import { handlerFor, SECRET_KEY } from './helpers'
+import { ExpenseScope } from './expenses'
 import { ok, PurchasingApi, type Person } from './purchasing'
 
-// Helpers of the product-cost tests (ROADMAP.md M2 Step 6): the expenses tests' API with the Cost
-// Engine previewed too (it stays planned until Step 7, D-125), and products, recipes, running costs
-// and the product-cost settings made through the API.
+// Helpers of the product-cost tests (ROADMAP.md M2 Step 6): the expenses tests' API (released since
+// M2 Step 7), and products, recipes, running costs and the product-cost settings made through the
+// API.
 
-/** The modules being built that the product-cost tests preview. */
-export const PRODUCT_COSTS_PREVIEW = [...EXPENSES_PREVIEW, 'cost_engine'] as const
-
-export class ProductCostsApi extends PurchasingApi {
-  override readonly handler = handlerFor(this.db, undefined, {
-    previewModules: PRODUCT_COSTS_PREVIEW,
-    supabaseSecretKey: SECRET_KEY,
-  })
-}
+export class ProductCostsApi extends PurchasingApi {}
 
 export const tag = () => newId().slice(-8)
 

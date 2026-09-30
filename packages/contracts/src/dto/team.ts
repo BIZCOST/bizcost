@@ -1,4 +1,4 @@
-import { MEMBER_KINDS, MEMBER_STATUSES } from '@bizcost/domain'
+import { MEMBER_KINDS, MEMBER_STATUSES, PERMISSION_EFFECTS } from '@bizcost/domain'
 import { z } from 'zod'
 import { LOCATION_NAME_MAX_LENGTH } from '../business'
 import { zUuid } from '../primitives'
@@ -72,6 +72,8 @@ export const memberDto = z.object({
   isOwner: z.boolean(),
   /** The caller's own membership. */
   isYou: z.boolean(),
+  /** The member has their own changes to their role's access (member.permissions). */
+  hasOverrides: z.boolean(),
   joinedAt: isoTimestamp,
 })
 export type MemberDto = z.infer<typeof memberDto>
@@ -194,3 +196,64 @@ export const updateRolePermissionsInput = z.object({
   permissionKeys: z.array(z.string().min(1).max(80)).max(200),
 })
 export type UpdateRolePermissionsInput = z.input<typeof updateRolePermissionsInput>
+
+// ---------------------------------------------------------------------------------------------------
+// A member's own access (capability has_team; settings.members.view + settings.roles.manage). The
+// per-member overrides deferred from M1 (D-084) to the first module with sensitive fields (M2 Step 7).
+// ---------------------------------------------------------------------------------------------------
+
+/** One change to what the member's role grants: a key added (`allow`) or taken away (`deny`). */
+export const permissionOverrideDto = z.object({
+  key: z.string(),
+  effect: z.enum(PERMISSION_EFFECTS),
+})
+export type PermissionOverrideDto = z.infer<typeof permissionOverrideDto>
+
+/** `member.permissions`. */
+export const memberPermissionsInput = z.object({ memberId: zUuid })
+export type MemberPermissionsInput = z.input<typeof memberPermissionsInput>
+
+/**
+ * `member.permissions`: what a member may do, from their role and their own changes to it. The Owner
+ * has every permission and no changes. Keys are sorted.
+ */
+export const memberPermissionsDto = z.object({
+  memberId: zUuid,
+  displayName: z.string(),
+  roleId: zUuid,
+  roleName: z.string(),
+  roleTemplateKey: z.string().nullable(),
+  isOwner: z.boolean(),
+  isYou: z.boolean(),
+  /** The keys the member's role grants (empty for the Owner, whose permissions are implicit). */
+  roleKeys: z.array(z.string()),
+  /** The member's own changes to their role's access, by key. */
+  overrides: z.array(permissionOverrideDto),
+  /**
+   * What the member may do now: the role's keys with the changes, without a key that misses a key it
+   * needs (such a key grants nothing). The whole catalog for the Owner.
+   */
+  effectiveKeys: z.array(z.string()),
+  /**
+   * Whether the caller may change it: not the Owner, not the caller's own, and nothing the member may
+   * do beyond the caller's own access (the caller changes only keys they hold).
+   */
+  editable: z.boolean(),
+  /** The member's permissions version: send it back with the changes (CONFLICT when it moved on). */
+  version: z.int().nonnegative(),
+})
+export type MemberPermissionsDto = z.infer<typeof memberPermissionsDto>
+
+/**
+ * `member.updatePermissions`: the member's own changes, all of them (an empty list clears them), with
+ * `version` as read. Keys from the permission catalog, once each; a key the result grants must come
+ * with every key it needs (PERMISSION_NEEDS: costs, supplier prices and margins together; VALIDATION).
+ */
+export const updateMemberPermissionsInput = z.object({
+  memberId: zUuid,
+  version: z.int().nonnegative(),
+  overrides: z
+    .array(z.object({ key: z.string().min(1).max(80), effect: z.enum(PERMISSION_EFFECTS) }))
+    .max(200),
+})
+export type UpdateMemberPermissionsInput = z.input<typeof updateMemberPermissionsInput>

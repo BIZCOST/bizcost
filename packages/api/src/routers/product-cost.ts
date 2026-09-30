@@ -15,8 +15,7 @@ import {
 import { businessProcedure, requireModule, requirePermission, router } from '../trpc'
 
 /**
- * Product costs (services/product-costs.ts; M2 Step 6): module `cost_engine` (planned until M2 Step 7;
- * the dev-only preview reaches it before then, D-125).
+ * Product costs (services/product-costs.ts; M2 Step 6): module `cost_engine` (released in M2 Step 7).
  *   - `list` and `get` also need the Products & Services module on, and cost_engine.product_costs.view
  *     with what it needs (PERMISSION_NEEDS), checked here too since a member's own overrides can
  *     take a needed key away (D-155): products.items.view, products.recipes.view (a breakdown shows

@@ -76,7 +76,7 @@ function ShellFrame({
     <TooltipProvider delayDuration={150}>
       <SkipLink />
       <div className="flex min-h-dvh">
-        <Sidebar items={items} slots={slots} />
+        <Sidebar items={items} quickActions={quickActions} slots={slots} />
         <div className="flex min-w-0 flex-1 flex-col">
           <BusinessTopbar />
           <main
@@ -139,7 +139,7 @@ export function BusinessShell({
   return (
     <ShellFrame
       items={shellNav(context.data.modules, businessId, pathname, wording)}
-      quickActions={shellQuickActions(context.data.modules, businessId)}
+      quickActions={shellQuickActions(context.data.modules, businessId, wording)}
       mainRef={main}
     >
       {children}

@@ -255,7 +255,13 @@ export function ProductSheet({
   const create = useMutation(trpc.product.create.mutationOptions())
   const update = useMutation(trpc.product.update.mutationOptions())
   const [newProductId] = useState(() => newId())
-  const [initialDraft] = useState<ProductDraft>(() => productDraft(product))
+  // A business that sells only services adds a service unless it says otherwise (D-200).
+  const [initialDraft] = useState<ProductDraft>(() =>
+    productDraft(
+      product,
+      resaleMode !== 'only' && context?.sellsOnlyServices === true ? 'service' : 'product',
+    ),
+  )
   const [draft, setDraft] = useState<ProductDraft>(initialDraft)
   const [newMaterialId] = useState(() => newId())
   // A new product bought ready to sell, and the packs it is bought in (its material's).

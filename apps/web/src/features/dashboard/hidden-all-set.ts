@@ -7,9 +7,9 @@ const listeners = new Set<() => void>()
 /** Hidden during this visit, also when the browser could not remember it. */
 const hiddenNow = new Set<string>()
 
-function cookieValue(): string | undefined {
+function cookieValue(name: string): string | undefined {
   try {
-    const prefix = `${ALL_SET_HIDDEN_COOKIE}=`
+    const prefix = `${name}=`
     return document.cookie
       .split('; ')
       .find((part) => part.startsWith(prefix))
@@ -27,28 +27,31 @@ function subscribe(onChange: () => void): () => void {
 }
 
 /**
- * Whether this user hid "You're all set" for this business, and a way to hide it. `serverHidden` is
- * what the server read from the cookie: the first render (and hydration) uses it.
+ * Whether this user hid "You're all set" (or, with `cookie`, another card kept the same way: "Your
+ * product costs are ready") for this business, and a way to hide it. `serverHidden` is what the
+ * server read from the cookie: the first render (and hydration) uses it.
  */
 export function useAllSetHidden(
   userId: string,
   businessId: string,
   serverHidden: boolean,
+  cookie: string = ALL_SET_HIDDEN_COOKIE,
 ): [boolean, () => void] {
-  const key = `${userId}:${businessId}`
+  const key = `${cookie}:${userId}:${businessId}`
   const hidden = useSyncExternalStore(
     subscribe,
-    () => hiddenNow.has(key) || isAllSetHidden(cookieValue(), userId),
+    () => hiddenNow.has(key) || isAllSetHidden(cookieValue(cookie), userId),
     () => serverHidden,
   )
   const hide = () => {
     hiddenNow.add(key)
     try {
       document.cookie = hideAllSetCookie(
-        cookieValue(),
+        cookieValue(cookie),
         userId,
         businessId,
         window.location.protocol === 'https:',
+        cookie,
       )
     } catch {
       // Not remembered by the browser: hidden until the page is loaded again.

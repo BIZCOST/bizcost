@@ -1020,3 +1020,23 @@ describe('each role template receives exactly the categories it may see', () => 
     expect(context.data?.visibleCategories).toEqual(VISIBLE_TO[template])
   })
 })
+
+describe('the Dashboard cost steps count costs only for the templates that see them (D-193)', () => {
+  it.each(ROLE_TEMPLATE_KEYS)('%s', async (template) => {
+    const person = members.get(template)
+    if (!person) throw new Error(`no ${template}`)
+    const result = await callProcedure<{ costSteps: { id: string; remaining: number | null }[] }>(
+      api.handler,
+      { path: 'dashboard.checklist', type: 'query' },
+      person.token,
+      { businessId },
+    )
+    expect(result.error, result.raw).toBeUndefined()
+    const ids = result.data?.costSteps.map((step) => step.id) ?? []
+    const seesCosts = VISIBLE_TO[template].includes('cost')
+    for (const id of ['product_costs', 'owner_time']) {
+      if (!seesCosts) expect(ids, `${template} ${id}`).not.toContain(id)
+    }
+    if (ids.includes('product_costs')) expect(seesCosts, template).toBe(true)
+  })
+})

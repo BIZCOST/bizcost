@@ -108,12 +108,15 @@ test('two businesses in two tabs: each tab shows, asks for and changes only its 
   await expect(businessName(tabB)).toHaveValue(BAKERY)
   await settingsLink(tabA).click()
   await settingsLink(tabB).click()
-  // The workshop has a team and branches; the home bakery has neither.
+  // The workshop has a team and branches; the home bakery has neither (its Costing Core sections,
+  // released in M2 Step 7, are there for both).
   await expect(sectionLinks(tabA).filter({ hasText: /^Team/ })).toHaveCount(1)
   await expect(sectionLinks(tabA).filter({ hasText: /^Branches/ })).toHaveCount(1)
   await expect(sectionLinks(tabB)).toHaveText([
     /^Business profile/,
     /^Customize BizCost/,
+    /^Closing the books/,
+    /^How costs are worked out/,
     /^Language/,
   ])
 
@@ -207,6 +210,7 @@ test('a role changed while the page is open: the refusal refreshes the member’
       /^Business profile/,
       /^Branches/,
       /^Team/,
+      /^How costs are worked out/,
       /^Language/,
     ])
     await markDocument(memberPage)
@@ -280,7 +284,13 @@ test('a role given more access while the page is open: the next answer’s permi
 
     await memberPage.goto(`/b/${workshop}/settings/business`)
     const sideNav = memberPage.getByRole('navigation', { name: 'Settings' }).getByRole('listitem')
-    await expect(sideNav).toHaveText(['Business profile', 'Branches', 'Team', 'Language'])
+    await expect(sideNav).toHaveText([
+      'Business profile',
+      'Branches',
+      'Team',
+      'How costs are worked out',
+      'Language',
+    ])
     await markDocument(memberPage)
 
     // Meanwhile the owner lets Managers customize BizCost.
@@ -305,6 +315,7 @@ test('a role given more access while the page is open: the next answer’s permi
       'Branches',
       'Team',
       'Customize BizCost',
+      'How costs are worked out',
       'Language',
     ])
     await sideNav.filter({ hasText: 'Customize BizCost' }).getByRole('link').click()

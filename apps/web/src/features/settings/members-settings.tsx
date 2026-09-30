@@ -10,8 +10,10 @@ import {
   LogOutIcon,
   ShieldCheckIcon,
   UserPlusIcon,
+  SlidersHorizontalIcon,
   UserRoundXIcon,
 } from 'lucide-react'
+import Link from 'next/link'
 import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
@@ -38,16 +40,18 @@ import {
 import { LoadError, SectionSkeleton } from '@/components/states/query-state'
 import { canGrantRole } from './role-labels'
 import { useRoleName } from './role-picker'
-import { can, isSectionVisible } from './sections'
+import { can, isSectionVisible, sectionPath } from './sections'
 import { SectionPage } from './settings-shell'
 
 // Settings → Team (ROADMAP.md Step 6): the members and the invitations not accepted yet. Only for a
 // business with a team (capability has_team). Seeing the team needs settings.members.view; inviting,
-// changing roles and removing need settings.members.manage; only the owner transfers ownership; anyone
-// but the owner may leave. The API applies every rule again, including "no one hands out more access
-// than they have".
+// changing roles and removing need settings.members.manage; a member's own permissions (their page,
+// M2 Step 7) need settings.roles.manage, and a member with some says "Own permissions"; only the
+// owner transfers ownership; anyone but the owner may leave. The API applies every rule again,
+// including "no one hands out more access than they have".
 
 type Action =
+  | { kind: 'access'; member: MemberDto }
   | { kind: 'role'; member: MemberDto }
   | { kind: 'remove'; member: MemberDto }
   | { kind: 'leave'; member: MemberDto }
@@ -56,10 +60,13 @@ type Action =
 function MemberRow({
   member,
   actions,
+  accessHref,
   onAction,
 }: {
   member: MemberDto
   actions: readonly Action['kind'][]
+  /** Their own permissions' page (M2 Step 7, D-191). */
+  accessHref: string
   onAction: (action: Action) => void
 }) {
   const { t } = useTranslation()
@@ -77,6 +84,12 @@ function MemberRow({
           {member.isYou ? <Badge>{t('settings.members.you')}</Badge> : null}
           {member.status === 'suspended' ? (
             <Badge tone="warning">{t('settings.members.suspended')}</Badge>
+          ) : null}
+          {member.hasOverrides ? (
+            <Badge tone="primary" data-own-access>
+              <SlidersHorizontalIcon aria-hidden />
+              {t('settings.members.ownAccess')}
+            </Badge>
           ) : null}
         </div>
         {member.email ? (
@@ -105,6 +118,14 @@ function MemberRow({
             </Button>
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end" className="w-60">
+            {actions.includes('access') ? (
+              <DropdownMenuItem asChild className="py-2">
+                <Link href={accessHref}>
+                  <SlidersHorizontalIcon aria-hidden />
+                  {t('settings.members.access')}
+                </Link>
+              </DropdownMenuItem>
+            ) : null}
             {actions.includes('role') ? (
               <DropdownMenuItem
                 className="py-2"
@@ -181,14 +202,16 @@ export function MembersSettings({ businessId }: { businessId: string }) {
   const businessName = useBusinessName(businessId)
   if (!context) return null
   const canManage = can(context, 'settings.members.manage')
+  // A member's own permissions: whoever edits roles (the API checks the same, D-191).
+  const canSetAccess = can(context, 'settings.roles.manage')
   const isOwner = context.roleTemplateKey === OWNER_TEMPLATE_KEY
 
   function actionsFor(member: MemberDto): Action['kind'][] {
     if (member.isOwner || !context) return []
     // Anyone but the owner may leave.
     if (member.isYou) return ['leave']
-    if (!canManage) return []
-    const out: Action['kind'][] = []
+    const out: Action['kind'][] = canSetAccess ? ['access'] : []
+    if (!canManage) return out
     const roleAllowed = roles.data?.find((r) => r.id === member.roleId)
     // Nobody changes their own role; a role with more access than the caller's is left alone.
     const manageable = !roleAllowed || canGrantRole(context, roleAllowed)
@@ -240,6 +263,7 @@ export function MembersSettings({ businessId }: { businessId: string }) {
                 key={member.id}
                 member={member}
                 actions={actionsFor(member)}
+                accessHref={`${sectionPath(businessId, 'members')}/${member.id}`}
                 onAction={setAction}
               />
             ))}

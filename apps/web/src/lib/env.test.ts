@@ -126,12 +126,18 @@ describe('parseServerEnv', () => {
       EMAIL_TRANSPORT: 'smtp',
     }
 
-    it('previews the named modules in development and test', () => {
+    it('ignores modules released since the list was written (the Costing Core, M2 Step 7)', () => {
+      // A local server started with the list of the M2 build keeps starting, and previews nothing:
+      // nothing is being built between M2 Step 7 and Phase 3.
       for (const NODE_ENV of ['development', 'test']) {
         expect(
-          parseServerEnv({ ...base, NODE_ENV, BIZCOST_PREVIEW_MODULES: 'materials,products' })
-            .previewModules,
-        ).toEqual(['products', 'materials'])
+          parseServerEnv({
+            ...base,
+            NODE_ENV,
+            BIZCOST_PREVIEW_MODULES:
+              'materials,products,suppliers,purchases,expenses,running_costs,cost_engine',
+          }).previewModules,
+        ).toEqual([])
       }
     })
 
@@ -149,14 +155,17 @@ describe('parseServerEnv', () => {
       ).toEqual([])
     })
 
-    it('refuses a module that cannot be previewed (unknown, released or not being built)', () => {
+    it('refuses a module that cannot be previewed (unknown or not being built)', () => {
       const dev = { ...base, NODE_ENV: 'development' }
       expect(() => parseServerEnv({ ...dev, BIZCOST_PREVIEW_MODULES: 'materials,orders' })).toThrow(
         /BIZCOST_PREVIEW_MODULES: orders/,
       )
-      expect(() => parseServerEnv({ ...dev, BIZCOST_PREVIEW_MODULES: 'settings' })).toThrow(
+      expect(() => parseServerEnv({ ...dev, BIZCOST_PREVIEW_MODULES: 'nope' })).toThrow(
         /BIZCOST_PREVIEW_MODULES/,
       )
+      expect(
+        parseServerEnv({ ...dev, BIZCOST_PREVIEW_MODULES: 'settings' }).previewModules,
+      ).toEqual([])
       expect(parseServerEnv({ ...dev, BIZCOST_PREVIEW_MODULES: '' }).previewModules).toEqual([])
     })
   })

@@ -11,6 +11,9 @@ $dockerExe = 'C:\Program Files\Docker\Docker\Docker Desktop.exe'
 $dockerCli = 'C:\Program Files\Docker\Docker\resources\bin\docker.exe'
 
 function Test-Engine {
+  # Windows PowerShell 5.1 turns a native command's stderr into an error record; with 'Stop' above,
+  # "engine not running" would end the script instead of answering false.
+  $ErrorActionPreference = 'Continue'
   & $dockerCli info *> $null
   return $LASTEXITCODE -eq 0
 }

@@ -91,6 +91,12 @@ export const PRODUCT_COSTS_MESSAGES: readonly MessageSpec[] = ['costing', 'catal
 /** Settings of a business (layout): the section list, the settings home and every section's frame. */
 export const SETTINGS_MESSAGES: readonly MessageSpec[] = ['settings']
 
+/**
+ * A member's own permissions (Settings → Team → a member, M2 Step 7): the permission groups are named
+ * after their modules.
+ */
+export const MEMBER_ACCESS_MESSAGES: readonly MessageSpec[] = ['modules']
+
 /** What each settings section adds (its page). */
 export const SETTINGS_SECTION_MESSAGES: Readonly<Record<SettingsSection, readonly MessageSpec[]>> =
   {
