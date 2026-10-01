@@ -1,4 +1,8 @@
-import type { BusinessProfileDto, LogoUploadUrlDto } from '@bizcost/contracts'
+import type {
+  AttachmentUploadUrlDto,
+  BusinessProfileDto,
+  LogoUploadUrlDto,
+} from '@bizcost/contracts'
 import { newId } from '@bizcost/domain'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { mutate, query, SUPABASE_URL, signIn, type Session } from '../helpers'
@@ -18,12 +22,15 @@ import {
 //   - /rest/v1 on every table, view and function of schema app (by name, and asking for schema app
 //     and the other internal schemas): not found or refused, never a row; the OpenAPI root names none
 //     of them; nothing in the exposed schemas public/graphql_public serves data;
-//   - Storage, bucket business-files: list, read, sign, upload (also at a path the API registered as
-//     an open upload, which the Storage guard would let through), overwrite, delete, move, copy and
-//     bucket changes, in the caller's own business and in another: all refused, and both businesses'
-//     objects and rows are unchanged;
-//   - signed URLs the API issued for business A cannot be re-pointed at business B (or at another
-//     path of A), nor used with a tampered token.
+//   - Storage, bucket business-files, on every kind of object it holds (logos, and the receipts of
+//     purchases and expenses since M2): list, read, sign, upload (also at a path the API registered
+//     as an open upload, which the Storage guard would let through), overwrite, delete, move, copy
+//     and bucket changes, in the caller's own business and in another: all refused, and both
+//     businesses' objects and rows are unchanged;
+//   - signed URLs the API issued for business A (a logo's and a receipt's, to download and to
+//     upload) cannot be re-pointed at business B (or at another object of A), nor used with a
+//     tampered token.
+// The tables, views and functions are read from the catalog, so every M2 table is attacked too.
 // This file makes the run's one extra password sign-in (the local limit is 30 per 5 minutes per IP).
 
 const PUBLISHABLE_KEY = process.env.SUPABASE_PUBLISHABLE_KEY ?? ''
@@ -269,6 +276,43 @@ describe('the Auth admin API with a real user token', () => {
 // ---------------------------------------------------------------------------------------------------
 // Storage
 // ---------------------------------------------------------------------------------------------------
+//
+// Each business has objects of every kind the bucket holds: its logo and its receipts (a purchase's
+// and an expense's, M2 Steps 3 and 5), and two uploads the API issued and nobody used (a logo's and a
+// receipt's: the Storage guard would let Storage write there).
+
+interface Objects {
+  logo: string
+  purchaseReceipt: string
+  expenseReceipt: string
+}
+
+const objectsOf = new Map<Tenant, Objects>()
+const openUploadsOf = new Map<Tenant, string[]>()
+
+const pathsOf = (t: Tenant) => Object.values(objectsOf.get(t) ?? {}) as string[]
+const fileOf = (path: string) => path.split('/').at(-1) ?? path
+
+beforeAll(async () => {
+  for (const t of [A, B]) {
+    const rows = await api.admin<{ id: string; path: string }[]>`
+      select id, path from app.attachments
+       where business_id = ${t.id} and id in (${t.attachment.id}, ${t.expenseAttachment.id})`
+    const pathOf = (id: string) => rows.find((r) => r.id === id)?.path ?? ''
+    objectsOf.set(t, {
+      logo: t.logoPath,
+      purchaseReceipt: pathOf(t.attachment.id),
+      expenseReceipt: pathOf(t.expenseAttachment.id),
+    })
+    const receipt = await mutate<AttachmentUploadUrlDto>(api.handler, 'attachment.uploadUrl', {
+      token: t.owner.token,
+      businessId: t.id,
+      input: { entity: 'purchase', entityId: t.purchase.id, contentType: 'image/png' },
+    })
+    expect(receipt.error, receipt.raw).toBeUndefined()
+    openUploadsOf.set(t, [t.openUpload.path, receipt.data!.path])
+  }
+})
 
 async function objectEtag(path: string): Promise<string | undefined> {
   const [row] = await api.admin<{ etag: string }[]>`
@@ -289,6 +333,10 @@ function png(who: Identity, extra: Record<string, string> = {}) {
   return { headers: headers(who, { 'content-type': 'image/png', ...extra }), body: PNG }
 }
 
+/** New paths of every kind in a business (never issued). */
+const freshPaths = (t: Tenant) =>
+  ['logo', 'purchase', 'expense'].map((kind) => `${t.id}/${kind}/${newId()}.png`)
+
 describe('Storage straight from the client, with a real user token', () => {
   const targets = () =>
     [
@@ -301,43 +349,61 @@ describe('Storage straight from the client, with a real user token', () => {
     digests = { A: await tenantDigest(api.admin, A), B: await tenantDigest(api.admin, B) }
   })
 
+  it('every kind of object is there to attack: a logo and two receipts in each business', async () => {
+    for (const t of [A, B]) {
+      const objects = objectsOf.get(t)!
+      expect(objects.purchaseReceipt).toMatch(new RegExp(`^${t.id}/purchase/`))
+      expect(objects.expenseReceipt).toMatch(new RegExp(`^${t.id}/expense/`))
+      for (const path of pathsOf(t)) expect(await objectEtag(path), path).toBeDefined()
+      for (const path of openUploadsOf.get(t)!) expect(await objectEtag(path), path).toBeUndefined()
+    }
+  })
+
   it.each(IDENTITIES)('lists nothing and reads nothing (%s)', async (who) => {
     for (const [what, target] of targets()) {
-      for (const prefix of ['', `${target.id}/`, `${target.id}/logo/`, `${target.id}/logo`]) {
+      const prefixes = ['', `${target.id}/`]
+      for (const kind of ['logo', 'purchase', 'expense']) {
+        prefixes.push(`${target.id}/${kind}/`, `${target.id}/${kind}`)
+      }
+      for (const prefix of prefixes) {
         const listed = await send(`${STORAGE}/object/list/${BUCKET}`, {
           method: 'POST',
           headers: headers(who, { 'content-type': 'application/json' }),
           body: JSON.stringify({ prefix, limit: 100 }),
         })
         expect(rows(listed), `${what} list "${prefix}": ${listed.text}`).toBe(0)
-        expect(listed.text).not.toContain(target.logoPath.split('/').at(-1))
+        for (const path of pathsOf(target)) expect(listed.text).not.toContain(fileOf(path))
       }
-      for (const route of ['object', 'object/authenticated', 'object/public', 'object/info']) {
-        const read = await send(`${STORAGE}/${route}/${BUCKET}/${target.logoPath}`, {
-          headers: headers(who),
-        })
-        expect(refused(read), `${what} GET ${route}: ${read.status}`).toBe(true)
-        expect(read.text).not.toContain('PNG')
+      for (const path of pathsOf(target)) {
+        for (const route of ['object', 'object/authenticated', 'object/public', 'object/info']) {
+          const read = await send(`${STORAGE}/${route}/${BUCKET}/${path}`, {
+            headers: headers(who),
+          })
+          expect(refused(read), `${what} GET ${route} ${path}: ${read.status}`).toBe(true)
+          expect(read.text).not.toContain('PNG')
+        }
       }
     }
   })
 
   it.each(IDENTITIES)('cannot sign a download or an upload URL itself (%s)', async (who) => {
     for (const [what, target] of targets()) {
-      const one = await send(`${STORAGE}/object/sign/${BUCKET}/${target.logoPath}`, {
-        method: 'POST',
-        headers: headers(who, { 'content-type': 'application/json' }),
-        body: JSON.stringify({ expiresIn: 600 }),
-      })
-      expect(refused(one), `${what} sign: ${one.text}`).toBe(true)
-      expect(one.text).not.toMatch(/signedURL"\s*:\s*"/)
+      for (const path of pathsOf(target)) {
+        const one = await send(`${STORAGE}/object/sign/${BUCKET}/${path}`, {
+          method: 'POST',
+          headers: headers(who, { 'content-type': 'application/json' }),
+          body: JSON.stringify({ expiresIn: 600 }),
+        })
+        expect(refused(one), `${what} sign ${path}: ${one.text}`).toBe(true)
+        expect(one.text).not.toMatch(/signedURL"\s*:\s*"/)
+      }
       const many = await send(`${STORAGE}/object/sign/${BUCKET}`, {
         method: 'POST',
         headers: headers(who, { 'content-type': 'application/json' }),
-        body: JSON.stringify({ expiresIn: 600, paths: [target.logoPath] }),
+        body: JSON.stringify({ expiresIn: 600, paths: pathsOf(target) }),
       })
       expect(many.text, `${what} sign many`).not.toMatch(/signedURL"\s*:\s*"/)
-      for (const path of [target.openUpload.path, `${target.id}/logo/${newId()}.png`]) {
+      for (const path of [...openUploadsOf.get(target)!, ...freshPaths(target)]) {
         const upload = await send(`${STORAGE}/object/upload/sign/${BUCKET}/${path}`, {
           method: 'POST',
           headers: headers(who, { 'content-type': 'application/json' }),
@@ -351,11 +417,11 @@ describe('Storage straight from the client, with a real user token', () => {
 
   it.each(IDENTITIES)('cannot upload, overwrite or delete objects (%s)', async (who) => {
     for (const [what, target] of targets()) {
-      const logoBefore = await objectEtag(target.logoPath)
-      expect(logoBefore, `${what} has a logo object`).toBeDefined()
-      // A new path, and the path the API registered as an open upload (the Storage guard lets
-      // Storage write there: only the missing policies stop a client).
-      for (const path of [`${target.id}/logo/${newId()}.png`, target.openUpload.path]) {
+      const before = new Map<string, string | undefined>()
+      for (const path of pathsOf(target)) before.set(path, await objectEtag(path))
+      // New paths of every kind, and the paths the API registered as open uploads (the Storage
+      // guard lets Storage write there: only the missing policies stop a client).
+      for (const path of [...freshPaths(target), ...openUploadsOf.get(target)!]) {
         for (const method of ['POST', 'PUT']) {
           const put = await send(`${STORAGE}/object/${BUCKET}/${path}`, {
             method,
@@ -365,22 +431,25 @@ describe('Storage straight from the client, with a real user token', () => {
           expect(await objectEtag(path), `${what} ${method} ${path}`).toBeUndefined()
         }
       }
-      const overwrite = await send(`${STORAGE}/object/${BUCKET}/${target.logoPath}`, {
-        method: 'PUT',
-        ...png(who, { 'x-upsert': 'true' }),
-      })
-      expect(refused(overwrite), `${what} overwrite: ${overwrite.text}`).toBe(true)
-
-      await send(`${STORAGE}/object/${BUCKET}/${target.logoPath}`, {
-        method: 'DELETE',
-        headers: headers(who),
-      })
+      for (const path of pathsOf(target)) {
+        const overwrite = await send(`${STORAGE}/object/${BUCKET}/${path}`, {
+          method: 'PUT',
+          ...png(who, { 'x-upsert': 'true' }),
+        })
+        expect(refused(overwrite), `${what} overwrite ${path}: ${overwrite.text}`).toBe(true)
+        await send(`${STORAGE}/object/${BUCKET}/${path}`, {
+          method: 'DELETE',
+          headers: headers(who),
+        })
+      }
       await send(`${STORAGE}/object/${BUCKET}`, {
         method: 'DELETE',
         headers: headers(who, { 'content-type': 'application/json' }),
-        body: JSON.stringify({ prefixes: [target.logoPath] }),
+        body: JSON.stringify({ prefixes: pathsOf(target) }),
       })
-      expect(await objectEtag(target.logoPath), `${what} logo after delete`).toBe(logoBefore)
+      for (const path of pathsOf(target)) {
+        expect(await objectEtag(path), `${what} ${path} after delete`).toBe(before.get(path))
+      }
     }
   })
 
@@ -390,16 +459,18 @@ describe('Storage straight from the client, with a real user token', () => {
       [B, A],
       [A, A],
     ] as const) {
-      for (const route of ['move', 'copy']) {
-        const destinationKey = `${destination.id}/logo/${newId()}.png`
-        const answer = await send(`${STORAGE}/object/${route}`, {
-          method: 'POST',
-          headers: headers(who, { 'content-type': 'application/json' }),
-          body: JSON.stringify({ bucketId: BUCKET, sourceKey: source.logoPath, destinationKey }),
-        })
-        expect(refused(answer), `${route}: ${answer.text}`).toBe(true)
-        expect(await objectEtag(destinationKey)).toBeUndefined()
-        expect(await objectEtag(source.logoPath)).toBeDefined()
+      for (const sourceKey of pathsOf(source)) {
+        for (const route of ['move', 'copy']) {
+          const [destinationKey = ''] = freshPaths(destination).slice(1)
+          const answer = await send(`${STORAGE}/object/${route}`, {
+            method: 'POST',
+            headers: headers(who, { 'content-type': 'application/json' }),
+            body: JSON.stringify({ bucketId: BUCKET, sourceKey, destinationKey }),
+          })
+          expect(refused(answer), `${route} ${sourceKey}: ${answer.text}`).toBe(true)
+          expect(await objectEtag(destinationKey)).toBeUndefined()
+          expect(await objectEtag(sourceKey)).toBeDefined()
+        }
       }
     }
   })
@@ -464,21 +535,16 @@ describe('signed URLs the API issued', () => {
     return `${header}.${forged}.${signature}`
   }
 
-  it('a download URL for business A cannot be re-pointed at business B or another object', async () => {
-    const profile = await query<BusinessProfileDto>(api.handler, 'business.profile', {
-      token: A.owner.token,
-      businessId: A.id,
-    })
-    const signed = new URL(profile.data?.logoUrl ?? '')
+  /** A download URL works for its own object only: not re-pointed, nor with its claim changed. */
+  async function expectConfined(url: string, ownPath: string, others: string[]) {
+    const signed = new URL(url)
     const token = signed.searchParams.get('token') ?? ''
     const original = await send(signed.toString())
     expect(original.status).toBe(200)
-
-    const ownPrefix = `/object/sign/${BUCKET}/${A.logoPath}`
-    expect(signed.pathname).toContain(ownPrefix)
-    for (const path of [B.logoPath, B.openUpload.path, A.openUpload.path]) {
+    expect(signed.pathname).toContain(`/object/sign/${BUCKET}/${ownPath}`)
+    for (const path of others) {
       const moved = new URL(signed.toString())
-      moved.pathname = signed.pathname.replace(A.logoPath, path)
+      moved.pathname = signed.pathname.replace(ownPath, path)
       const answer = await send(moved.toString())
       expect(refused(answer), `${path}: ${answer.text}`).toBe(true)
       expect(answer.text).not.toContain('PNG')
@@ -489,30 +555,21 @@ describe('signed URLs the API issued', () => {
     }
     // A download token does not open the upload route.
     const asUpload = await send(
-      `${STORAGE}/object/upload/sign/${BUCKET}/${A.logoPath}?token=${token}`,
+      `${STORAGE}/object/upload/sign/${BUCKET}/${ownPath}?token=${token}`,
       { method: 'PUT', headers: { 'content-type': 'image/png' }, body: PNG },
     )
     expect(refused(asUpload), asUpload.text).toBe(true)
-  })
+  }
 
-  it('an upload URL for business A cannot write into business B, nor over A’s logo', async () => {
-    const issued = await mutate<LogoUploadUrlDto>(api.handler, 'business.logoUploadUrl', {
-      token: A.owner.token,
-      businessId: A.id,
-      input: { contentType: 'image/png' },
-    })
-    const upload = issued.data!
+  /** An upload URL writes its own path only, once: nowhere else, over nothing. */
+  async function expectUploadConfined(
+    upload: { uploadUrl: string; path: string; token: string },
+    others: string[],
+  ) {
     const bBefore = await tenantDigest(api.admin, B)
-    const aLogo = await objectEtag(A.logoPath)
-    const targets = [
-      `${B.id}/logo/${newId()}.png`,
-      // Issued in B: the Storage guard alone would let Storage write there.
-      B.openUpload.path,
-      B.logoPath,
-      A.logoPath,
-      A.openUpload.path,
-    ]
-    for (const path of targets) {
+    const aBefore = new Map<string, string | undefined>()
+    for (const path of others) aBefore.set(path, await objectEtag(path))
+    for (const path of others) {
       const moved = new URL(upload.uploadUrl)
       moved.pathname = moved.pathname.replace(upload.path, path)
       expect(moved.pathname).toContain(path)
@@ -525,10 +582,79 @@ describe('signed URLs the API issued', () => {
       expect(forged.ok, `${path} (forged claim)`).toBe(false)
     }
     expect(await tenantDigest(api.admin, B)).toEqual(bBefore)
-    expect(await objectEtag(A.logoPath)).toBe(aLogo)
-    expect(await objectEtag(A.openUpload.path)).toBeUndefined()
+    for (const path of others) expect(await objectEtag(path), path).toBe(aBefore.get(path))
     // The URL still works for its own path, once.
     expect((await uploadTo(upload.uploadUrl, PNG, 'image/png')).ok).toBe(true)
     expect(await objectsUnder(A.id)).toContain(upload.path)
+  }
+
+  it('a logo’s download URL for business A cannot be re-pointed at business B or another object', async () => {
+    const profile = await query<BusinessProfileDto>(api.handler, 'business.profile', {
+      token: A.owner.token,
+      businessId: A.id,
+    })
+    await expectConfined(profile.data?.logoUrl ?? '', A.logoPath, [
+      B.logoPath,
+      ...openUploadsOf.get(B)!,
+      ...openUploadsOf.get(A)!,
+      objectsOf.get(A)!.purchaseReceipt,
+      objectsOf.get(B)!.expenseReceipt,
+    ])
+  })
+
+  it('a receipt’s download URL for business A cannot be re-pointed at B’s receipts, A’s other one or a logo', async () => {
+    for (const [entity, entityId, own] of [
+      ['purchase', A.purchase.id, objectsOf.get(A)!.purchaseReceipt],
+      ['expense', A.expense.id, objectsOf.get(A)!.expenseReceipt],
+    ] as const) {
+      const listed = await query<{ data: { items: { url: string | null }[] } }>(
+        api.handler,
+        'attachment.list',
+        { token: A.owner.token, businessId: A.id, input: { entity, entityId } },
+      )
+      expect(listed.error, listed.raw).toBeUndefined()
+      const url = listed.data?.data.items[0]?.url ?? ''
+      const others = [...pathsOf(A), ...pathsOf(B), ...openUploadsOf.get(B)!].filter(
+        (path) => path !== own,
+      )
+      await expectConfined(url, own, others)
+    }
+  })
+
+  it('a logo’s upload URL for business A cannot write into business B, nor over A’s objects', async () => {
+    const issued = await mutate<LogoUploadUrlDto>(api.handler, 'business.logoUploadUrl', {
+      token: A.owner.token,
+      businessId: A.id,
+      input: { contentType: 'image/png' },
+    })
+    await expectUploadConfined(issued.data!, [
+      ...freshPaths(B),
+      // Issued in B: the Storage guard alone would let Storage write there.
+      ...openUploadsOf.get(B)!,
+      ...pathsOf(B),
+      ...pathsOf(A),
+      ...openUploadsOf.get(A)!,
+    ])
+  })
+
+  it('a receipt’s upload URL for business A cannot write into business B, nor over A’s objects', async () => {
+    for (const [entity, entityId] of [
+      ['purchase', A.purchase.id],
+      ['expense', A.draftExpense.id],
+    ] as const) {
+      const issued = await mutate<AttachmentUploadUrlDto>(api.handler, 'attachment.uploadUrl', {
+        token: A.owner.token,
+        businessId: A.id,
+        input: { entity, entityId, contentType: 'image/png' },
+      })
+      expect(issued.error, issued.raw).toBeUndefined()
+      await expectUploadConfined(issued.data!, [
+        ...freshPaths(B),
+        ...openUploadsOf.get(B)!,
+        ...pathsOf(B),
+        ...pathsOf(A),
+        ...openUploadsOf.get(A)!,
+      ])
+    }
   })
 })

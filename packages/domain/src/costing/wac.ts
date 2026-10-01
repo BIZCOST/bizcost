@@ -30,7 +30,12 @@ import {
 //   zero or less on hand (goods already used), the average stays and the rest is the adjustment. A
 //   return of all that is left of a receipt with nothing else posted for the material since (other
 //   than that receipt's own returns and credits) restores the state from before the receipt exactly,
-//   at any stock level ("a full return right after its purchase", D-120);
+//   at any stock level ("a full return right after its purchase", D-120). So does a return that
+//   leaves every receipt of a run fully returned, the run being the movements since the last one that
+//   was neither a receipt nor a return or credit of a receipt of the run (an issue, or a return or
+//   credit of an older receipt): the state is the one from before the run. A purchase with two lines
+//   of the material, or two purchases with nothing else in between, all sent back: as if never bought
+//   (D-208);
 // - credit note (D-120 rule 3): lowers the value of the credited goods still on hand. The receipt's
 //   goods on hand are tracked as the usage takes every unit on hand in proportion (each issue keeps
 //   1 − used ÷ on hand before of every receipt's goods, at least 0), and its own returns take its
@@ -49,7 +54,12 @@ import {
 // their columns at run time (a RangeError, never a silent rounding by Postgres).
 //
 // Receipts and issues update the state directly (the cost row); returns, credits and reversals
-// replay the material's ledger (they are rare). Negative stock follows the costing-policy proposal
+// replay the material's ledger. A replay never starts over: a reversal takes the book back to just
+// before its target (each movement keeps what undoes it) and applies the movements after it again.
+// So a ledger costs about what its movements do, plus, for each reversal, the movements still
+// standing after its target: next to nothing for a correction posted soon after its purchase, and
+// about L movements for one posted L movements later (D-208; wac.scale-adversary.test.ts). Negative
+// stock follows the costing-policy proposal
 // (DECISIONS.md P-001, D-109, D-114): a different owner answer changes only this file and its tests.
 
 const ZERO = toDec('0')
@@ -243,9 +253,11 @@ export function replayWac(
   movements: readonly WacMovement[],
   initial: WacState = EMPTY_WAC_STATE,
 ): WacReplay {
-  let book = new Book(initial)
-  // The movements that still stand, as applied (a return with the value it was given).
+  const book = new Book(initial)
+  // The movements that still stand, as applied (a return with the value it was given), and what
+  // undoes each of them (the same index).
   const standing: Applied[] = []
+  const undos: Undo[] = []
   const kinds = new Map<string, 'receipt' | 'return' | 'credit'>()
   const reversed = new Set<string>()
   const steps: WacStep[] = []
@@ -255,14 +267,16 @@ export function replayWac(
       const id = movement.id
       if (kinds.has(id)) throw new RangeError(`Duplicate movement "${id}"`)
       kinds.set(id, movement.type)
-      const { step, applied } = book.apply(movement)
+      const { step, applied, undo } = book.apply(movement)
       standing.push(applied)
+      undos.push(undo)
       steps.push(step)
       continue
     }
     if (movement.type === 'issue') {
-      const { step, applied } = book.apply(movement)
+      const { step, applied, undo } = book.apply(movement)
       standing.push(applied)
+      undos.push(undo)
       steps.push(step)
       continue
     }
@@ -281,9 +295,13 @@ export function replayWac(
     if (kind === 'receipt' && book.hasOpenAdjustments(targetId)) {
       throw new RangeError(`Receipt "${targetId}" still has returns or credits: reverse them first`)
     }
-    const index = standing.findIndex(
-      (a) => a.movement.type !== 'issue' && a.movement.id === targetId,
-    )
+    // Searched from the end: a reversal is mostly of something posted shortly before.
+    let index = standing.length - 1
+    while (index >= 0) {
+      const m = standing[index]!.movement
+      if (m.type !== 'issue' && m.id === targetId) break
+      index -= 1
+    }
     const target = standing[index]!
     // A later return of the same receipt was valued by what its goods carried after this one; it
     // would keep that value once this one is gone. So it is reversed first (D-142).
@@ -297,10 +315,15 @@ export function replayWac(
       }
     }
     reversed.add(targetId)
-    standing.splice(index, 1)
     const before = book.state
-    book = new Book(initial)
-    for (const applied of standing) book.apply(applied.movement)
+    // Back to just before the target (each movement undone, the last first), then the movements after
+    // it again, without it: the ledger replayed without the target.
+    for (let i = standing.length - 1; i >= index; i -= 1) undos[i]!()
+    standing.splice(index, 1)
+    undos.length = index
+    for (let i = index; i < standing.length; i += 1) {
+      undos.push(book.apply(standing[i]!.movement).undo)
+    }
     const after = book.state
     // The target's own effect, taken back: a receipt's value goes out, a return's or credit's in.
     const valueIn = kind === 'receipt' ? ZERO : toDec(target.value)
@@ -327,6 +350,9 @@ interface Applied {
   readonly value: string
 }
 
+/** Takes the book back to just before the movement it was made for (the book being right after it). */
+type Undo = () => void
+
 /** What the book knows of a receipt that still stands. */
 interface Track {
   readonly qty: Decimal
@@ -338,19 +364,46 @@ interface Track {
   onHand: Decimal
   /** The state before the receipt. */
   readonly before: WacState
-  /** Nothing but its own returns and credits was posted for the material since it. */
-  untouched: boolean
+  /**
+   * The book's movement count as of the last movement that left it untouched: nothing but its own
+   * returns and credits was posted for the material since it while this equals the count.
+   */
+  mark: number
+  /** The run it came in (see Book.run). */
+  readonly run: number
   /** Its returns and credits that still stand. */
   readonly open: Set<string>
 }
 
-/** One material's cost state and its receipts, movement by movement (no reversals). */
+/** The scalars of the book, as saved by every movement's undo. */
+interface Scalars {
+  readonly state: WacState
+  readonly count: number
+  readonly run: number
+  readonly runStart: WacState
+  readonly runOpen: number
+}
+
+/**
+ * One material's cost state and its receipts, movement by movement (no reversals: replayWac undoes
+ * movements to reverse one). Every apply returns what undoes it exactly.
+ */
 class Book {
   state: WacState
   private readonly tracks = new Map<string, Track>()
+  /** Movements applied. */
+  private count = 0
+  /**
+   * The run: the movements since the last one that was neither a receipt nor a return or credit of a
+   * receipt of the run. `runStart` is the state before it, `runOpen` its receipts not fully returned.
+   */
+  private run = 0
+  private runStart: WacState
+  private runOpen = 0
 
   constructor(initial: WacState) {
     this.state = initial
+    this.runStart = initial
   }
 
   hasOpenAdjustments(receiptId: string): boolean {
@@ -372,7 +425,7 @@ class Book {
     return out
   }
 
-  apply(movement: Applied['movement']): { step: WacStep; applied: Applied } {
+  apply(movement: Applied['movement']): { step: WacStep; applied: Applied; undo: Undo } {
     switch (movement.type) {
       case 'receipt':
         return this.receive(movement)
@@ -385,8 +438,33 @@ class Book {
     }
   }
 
-  private touchOthers(except?: string) {
-    for (const [id, t] of this.tracks) if (id !== except) t.untouched = false
+  private scalars(): Scalars {
+    return {
+      state: this.state,
+      count: this.count,
+      run: this.run,
+      runStart: this.runStart,
+      runOpen: this.runOpen,
+    }
+  }
+
+  private restore(saved: Scalars) {
+    this.state = saved.state
+    this.count = saved.count
+    this.run = saved.run
+    this.runStart = saved.runStart
+    this.runOpen = saved.runOpen
+  }
+
+  private untouched(t: Track): boolean {
+    return t.mark === this.count
+  }
+
+  /** A movement that is not part of the run: a new run starts after it. */
+  private newRun(after: WacState) {
+    this.run += 1
+    this.runStart = after
+    this.runOpen = 0
   }
 
   private track(receiptId: string): Track {
@@ -396,14 +474,23 @@ class Book {
   }
 
   private receive(movement: Extract<Applied['movement'], { type: 'receipt' }>) {
+    const saved = this.scalars()
     const before = this.state
     const r = wacReceive(before, movement)
     const qty0 = toDec(before.qty)
     const q = toDec(movement.qty)
-    this.touchOthers()
     // Stock was empty or negative: nothing of earlier receipts is on hand, and part of this one may
     // have covered usage already.
-    if (!qty0.gt(0)) for (const t of this.tracks.values()) t.onHand = ZERO
+    const emptied: [Track, Decimal][] = []
+    if (!qty0.gt(0)) {
+      for (const t of this.tracks.values()) {
+        if (t.onHand.isZero()) continue
+        emptied.push([t, t.onHand])
+        t.onHand = ZERO
+      }
+    }
+    // Every other receipt is touched by this one (its mark stays behind the count).
+    this.count += 1
     this.tracks.set(movement.id, {
       qty: q,
       value: toDec(r.value),
@@ -412,31 +499,48 @@ class Book {
       credited: ZERO,
       onHand: qty0.gt(0) ? q : max(ZERO, min(q, toDec(r.state.qty))),
       before,
-      untouched: true,
+      mark: this.count,
+      run: this.run,
       open: new Set(),
     })
+    this.runOpen += 1
     this.state = r.state
     return {
       step: { state: r.state, valueIn: r.value, valueOut: amount(ZERO), adjustment: r.adjustment },
       applied: { movement, value: r.value },
+      undo: () => {
+        this.tracks.delete(movement.id)
+        for (const [t, onHand] of emptied) t.onHand = onHand
+        this.restore(saved)
+      },
     }
   }
 
   private issue(movement: Extract<Applied['movement'], { type: 'issue' }>) {
+    const saved = this.scalars()
     const before = this.state
     const r = wacIssue(before, movement.qty)
     const qty0 = toDec(before.qty)
     const used = toDec(movement.qty)
     // Every unit on hand is taken in proportion: each receipt keeps 1 − used ÷ on hand of its goods.
     const kept = qty0.gt(0) ? max(ZERO, ONE.minus(used.dividedBy(qty0))) : ZERO
+    const taken: [Track, Decimal][] = []
     for (const t of this.tracks.values()) {
-      t.untouched = false
+      if (t.onHand.isZero()) continue
+      taken.push([t, t.onHand])
       t.onHand = t.onHand.times(kept)
     }
+    // Every receipt is touched, and the run ends.
+    this.count += 1
+    this.newRun(r.state)
     this.state = r.state
     return {
       step: { state: r.state, valueIn: amount(ZERO), valueOut: r.cost, adjustment: amount(ZERO) },
       applied: { movement, value: r.cost },
+      undo: () => {
+        for (const [t, onHand] of taken) t.onHand = onHand
+        this.restore(saved)
+      },
     }
   }
 
@@ -456,13 +560,21 @@ class Book {
           ? carried
           : round(exactProduct([carried, y]).dividedBy(left))
 
+    const saved = this.scalars()
+    const was = { returnedQty: t.returnedQty, returnedValue: t.returnedValue, onHand: t.onHand }
+    const wasMark = t.mark
     const before = this.state
     const qty0 = toDec(before.qty)
     const value0 = toDec(before.value)
+    const untouched = this.untouched(t)
+    const inRun = t.run === this.run
     let after: WacState
-    if (all && t.untouched) {
+    if (all && untouched) {
       // A full return with nothing else posted since its receipt: as if it had never come in.
       after = t.before
+    } else if (all && inRun && this.runOpen === 1) {
+      // The last receipt of the run still on hand goes back whole: as if the run never came in.
+      after = this.runStart
     } else {
       const qty1 = qty0.minus(y)
       if (qty1.gt(0)) {
@@ -482,7 +594,11 @@ class Book {
     t.returnedValue = t.returnedValue.plus(v)
     t.onHand = max(ZERO, t.onHand.minus(y))
     t.open.add(movement.id)
-    this.touchOthers(movement.receiptId)
+    // Its own return touches every other receipt, not this one.
+    this.count += 1
+    if (untouched) t.mark = this.count
+    if (!inRun) this.newRun(after)
+    else if (all) this.runOpen -= 1
     this.state = after
     return {
       step: {
@@ -492,6 +608,14 @@ class Book {
         adjustment: amount(value0.minus(v).minus(toDec(after.value))),
       },
       applied: { movement: { ...movement, value: amount(v) }, value: plain(v) },
+      undo: () => {
+        t.returnedQty = was.returnedQty
+        t.returnedValue = was.returnedValue
+        t.onHand = was.onHand
+        t.mark = wasMark
+        t.open.delete(movement.id)
+        this.restore(saved)
+      },
     }
   }
 
@@ -506,6 +630,9 @@ class Book {
     // The share of the credited goods still on hand (between 0 and 1).
     const share = left.gt(0) ? min(ONE, max(ZERO, t.onHand.dividedBy(left))) : ZERO
 
+    const saved = this.scalars()
+    const wasCredited = t.credited
+    const wasMark = t.mark
     const before = this.state
     const qty0 = toDec(before.qty)
     const value0 = toDec(before.value)
@@ -514,9 +641,13 @@ class Book {
     const after: WacState = reduce.isZero()
       ? before
       : stateOf(qty0, value1, round(value1.dividedBy(qty0)))
+    const untouched = this.untouched(t)
     t.credited = t.credited.plus(credit)
     t.open.add(movement.id)
-    this.touchOthers(movement.receiptId)
+    // Its own credit touches every other receipt, not this one.
+    this.count += 1
+    if (untouched) t.mark = this.count
+    if (t.run !== this.run) this.newRun(after)
     this.state = after
     return {
       step: {
@@ -526,6 +657,12 @@ class Book {
         adjustment: amount(value0.minus(credit).minus(value1)),
       },
       applied: { movement, value: plain(credit) },
+      undo: () => {
+        t.credited = wasCredited
+        t.mark = wasMark
+        t.open.delete(movement.id)
+        this.restore(saved)
+      },
     }
   }
 }

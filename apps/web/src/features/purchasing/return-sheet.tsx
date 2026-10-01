@@ -241,7 +241,11 @@ function ReturnForm({
       queryClient.invalidateQueries({ queryKey: trpc.purchase.list.pathKey() }),
       queryClient.invalidateQueries({ queryKey: trpc.material.costs.pathKey() }),
       queryClient.invalidateQueries({ queryKey: trpc.product.costs.pathKey() }),
+      queryClient.invalidateQueries({ queryKey: trpc.productCost.pathKey() }),
       queryClient.invalidateQueries({ queryKey: trpc.recipe.get.pathKey() }),
+      // What is still owed on the purchase: its returns and credit notes take theirs off.
+      queryClient.invalidateQueries({ queryKey: trpc.purchasePayment.list.pathKey() }),
+      queryClient.invalidateQueries({ queryKey: trpc.payable.list.pathKey() }),
     ])
   }
 

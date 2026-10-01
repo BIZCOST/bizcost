@@ -626,3 +626,87 @@ describe('permissions by role template (PRODUCT.md §8)', () => {
     expect((await shop.as(team.employee, 'books.get')).error).toBeUndefined()
   })
 })
+
+describe('the 90-day window and the last-purchase fallback (D-115)', () => {
+  /** `day` moved by `days` (YYYY-MM-DD). */
+  const addDays = (day: string, days: number) => {
+    const date = new Date(`${day}T00:00:00Z`)
+    date.setUTCDate(date.getUTCDate() + days)
+    return date.toISOString().slice(0, 10)
+  }
+
+  it('the oldest of the 90 days (today − 89) counts; the day before it (today − 90) does not', async () => {
+    const today = await shop.today()
+    const milk = await shop.material()
+    const inside = await shop.buy(purchaseInput(addDays(today, -89), [line(milk.id, '10', '6')]))
+    await shop.buy(purchaseInput(addDays(today, -90), [line(milk.id, '10', '9')]))
+    const [cost] = await shop.costs([milk.id])
+    expect(cost?.average).toEqual({
+      basis: 'purchases_90_days',
+      from: addDays(today, -89),
+      to: today,
+      perUnit: '6',
+      perBaseUnit: '0.006',
+    })
+    expect(cost?.lastPurchase).toMatchObject({
+      purchaseId: inside.id,
+      businessDate: addDays(today, -89),
+      pricePerUnit: '6',
+    })
+  })
+
+  it('with no purchase in the 90 days: the last purchase document, all its lines, in every cost view', async () => {
+    const today = await shop.today()
+    const butter = await shop.material()
+    // An older document at another price, then the last one: 10 L at AED 6 and 5 L at AED 8.
+    await shop.buy(purchaseInput(addDays(today, -120), [line(butter.id, '10', '20')]))
+    const last = await shop.buy(
+      purchaseInput(addDays(today, -100), [line(butter.id, '10', '6'), line(butter.id, '5', '8')]),
+    )
+    const average = {
+      basis: 'last_purchase',
+      perUnit: '6.666666666667', // 100 ÷ 15 L
+      perBaseUnit: '0.006666666667',
+    }
+    const [cost] = await shop.costs([butter.id])
+    expect(cost?.average).toEqual({ ...average, from: addDays(today, -89), to: today })
+    expect(cost?.lastPurchase).toMatchObject({
+      purchaseId: last.id,
+      businessDate: addDays(today, -100),
+    })
+
+    // A product's recipe and its cost use the same average, and say which it is.
+    const product = ok(
+      await shop.run<{ id: string }>('product.create', {
+        id: newId(),
+        name: `Butter cake ${newId().slice(-8)}`,
+        type: 'product',
+        unit: 'piece',
+      }),
+    )
+    const saved = ok(
+      await shop.run<{
+        data: { lines: { cost: { basis: string; perUnit: string; lineCost: string } | null }[] }
+      }>('recipe.save', {
+        productId: product.id,
+        version: 0,
+        lines: [{ id: newId(), materialId: butter.id, qty: '1', unit: 'l' }],
+      }),
+    ).data
+    expect(saved.lines[0]?.cost).toMatchObject({ ...average, lineCost: '6.666666666667' })
+    const breakdown = ok(
+      await shop.run<{
+        data: { materials: { lines: { cost: { basis: string; perUnit: string } | null }[] } }
+      }>('productCost.get', { productId: product.id }),
+    ).data
+    expect(breakdown.materials.lines[0]?.cost).toMatchObject({
+      basis: 'last_purchase',
+      perUnit: average.perUnit,
+    })
+
+    // A purchase today brings it back to the 90 days: only that one counts.
+    await shop.buy(purchaseInput(today, [line(butter.id, '1', '7')]))
+    const [now] = await shop.costs([butter.id])
+    expect(now?.average).toMatchObject({ basis: 'purchases_90_days', perUnit: '7' })
+  })
+})

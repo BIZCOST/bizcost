@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto'
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { crc32, deflateSync } from 'node:zlib'
+import { RAW_KEY } from '@bizcost/i18n/namespaces'
 import { expect, type BrowserContext, type Page } from '@playwright/test'
 import postgres from 'postgres'
 import { baseURL, repoRoot, stack } from './stack'
@@ -382,6 +383,97 @@ export function drawn(element: Element, part: string): { text: string; lines: nu
       .join(''),
     lines: new Set(glyphs.map(({ top }) => top)).size,
   }
+}
+
+// ---------------------------------------------------------------------------------------------------
+// Screens: settled, and sound in their language at their width (the smoke specs)
+// ---------------------------------------------------------------------------------------------------
+
+/**
+ * An i18n key shown as text, e.g. `purchasing.editor.qty` (packages/i18n: every namespace; a missing
+ * message always shows its namespace).
+ */
+export { RAW_KEY }
+
+/** Waits until nothing loads (no skeleton shown) and nothing moves (dialogs and sheets are open). */
+export async function settle(page: Page): Promise<void> {
+  await expect(page.locator('[data-slot="skeleton"]:visible')).toHaveCount(0)
+  await page.waitForFunction(() =>
+    document
+      .getAnimations()
+      .every(
+        (animation) =>
+          animation.playState !== 'running' ||
+          animation.effect?.getComputedTiming().iterations === Infinity,
+      ),
+  )
+}
+
+export interface ScreenAudit {
+  lang: string | null
+  dir: string | null
+  /** How far the page scrolls sideways (px); 0 when it fits. */
+  sideways: number
+  /**
+   * What is drawn past the screen's sides without a scrolling box of its own to hold it (a dialog's
+   * content cut off, a button out of reach): the outermost such elements, described.
+   */
+  outside: string[]
+  /** The page's title and visible text. */
+  text: string
+  /** Accessible names and hints that are not text (aria-label, placeholder, title, alt). */
+  attributes: string
+}
+
+/** What a screen shows and how it fits its width (runs in the page). */
+export async function auditScreen(page: Page): Promise<ScreenAudit> {
+  return page.evaluate(() => {
+    const width = document.documentElement.clientWidth
+    const fits = (box: DOMRect) => box.left >= -1 && box.right <= width + 1
+    const describe = (element: Element) => {
+      const marks = [...element.attributes]
+        .filter((a) => a.name.startsWith('data-') || a.name === 'role' || a.name === 'aria-label')
+        .slice(0, 3)
+        .map((a) => `${a.name}="${a.value.slice(0, 30)}"`)
+      const text = (element.textContent ?? '').trim().replace(/\s+/g, ' ').slice(0, 50)
+      return `<${element.tagName.toLowerCase()}${marks.length ? ` ${marks.join(' ')}` : ''}> ${text}`
+    }
+    const outside = new Set<Element>()
+    for (const element of document.body.querySelectorAll('*')) {
+      const box = element.getBoundingClientRect()
+      if (box.width < 2 || box.height < 2 || fits(box)) continue
+      if (!element.checkVisibility({ checkOpacity: true, checkVisibilityCSS: true })) continue
+      // Held by a box of its own that scrolls or clips, itself on the screen (not the page itself).
+      let held = false
+      for (let box = element.parentElement; box && box !== document.body; box = box.parentElement) {
+        if (getComputedStyle(box).overflowX !== 'visible' && fits(box.getBoundingClientRect())) {
+          held = true
+          break
+        }
+      }
+      if (!held) outside.add(element)
+    }
+    const outermost = [...outside].filter((element) => {
+      for (let up = element.parentElement; up; up = up.parentElement) {
+        if (outside.has(up)) return false
+      }
+      return true
+    })
+    const attributes = [...document.querySelectorAll('[aria-label],[placeholder],[title],[alt]')]
+      .flatMap((element) =>
+        ['aria-label', 'placeholder', 'title', 'alt'].map((name) => element.getAttribute(name)),
+      )
+      .filter(Boolean)
+      .join('\n')
+    return {
+      lang: document.documentElement.getAttribute('lang'),
+      dir: document.documentElement.getAttribute('dir'),
+      sideways: document.documentElement.scrollWidth - document.documentElement.clientWidth,
+      outside: outermost.slice(0, 5).map(describe),
+      text: `${document.title}\n${document.body.innerText}`,
+      attributes,
+    }
+  })
 }
 
 // ---------------------------------------------------------------------------------------------------

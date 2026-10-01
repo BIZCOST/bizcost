@@ -89,17 +89,19 @@ describe('prices including VAT', () => {
   it('a business that is not VAT-registered types what it paid: no VAT, the same amounts', async () => {
     const baker = await Scope.open(api, BAKER)
     const flour = await baker.material({ id: newId(), name: 'Flour', unit: 'kg', packs: [] })
-    const purchase = await baker.buy(
-      purchaseInput(await baker.today(), [line(flour.id, '10', '5.25', { unit: 'kg' })], {
-        pricesIncludeVat: true,
-      }),
-    )
+    const input = purchaseInput(await baker.today(), [line(flour.id, '10', '5.25', { unit: 'kg' })])
+    const purchase = await baker.buy(input)
     expect(purchase).toMatchObject({
+      pricesIncludeVat: false,
       netTotal: '52.5',
       vatTotal: '0',
       total: '52.5',
       costTotal: '52.5',
     })
+    // Its screens never offer "Prices including VAT" (M2 Step 8: the API refuses what they hide).
+    expect(
+      codeOf(await baker.run('purchase.create', { ...input, id: newId(), pricesIncludeVat: true })),
+    ).toBe('capability_disabled')
   })
 
   it('left out, prices are before VAT; a return and "correct" keep the choice', async () => {

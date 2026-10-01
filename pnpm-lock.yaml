@@ -356,6 +356,9 @@ importers:
       eslint:
         specifier: 'catalog:'
         version: 10.11.0(jiti@2.7.0)
+      fast-check:
+        specifier: 'catalog:'
+        version: 4.10.2
       postgres:
         specifier: 'catalog:'
         version: 3.4.9
@@ -636,6 +639,9 @@ importers:
       '@bizcost/config':
         specifier: workspace:*
         version: link:../../packages/config
+      '@bizcost/i18n':
+        specifier: workspace:*
+        version: link:../../packages/i18n
       '@playwright/test':
         specifier: 'catalog:'
         version: 1.63.0

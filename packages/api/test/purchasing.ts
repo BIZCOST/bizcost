@@ -8,7 +8,7 @@ import type {
   SupplierDto,
 } from '@bizcost/contracts'
 import type { Db } from '@bizcost/db'
-import { newId, replayWac, type WacMovement } from '@bizcost/domain'
+import { newId, type WacMovement } from '@bizcost/domain'
 import type { RoleTemplateKey, SetupAnswers } from '@bizcost/modules'
 import { expect } from 'vitest'
 import { appRouter } from '../src'
@@ -26,6 +26,7 @@ import {
   type CallResult,
   type TestUser,
 } from './helpers'
+import { ledgerDrift } from './ledger'
 import { join, setupBusiness, WORKSHOP } from './settings'
 
 // Helpers of the purchasing tests (ROADMAP.md M2 Step 3): the API as released code has it (the
@@ -285,27 +286,11 @@ export class Scope {
     })
   }
 
-  /** The rebuild from the ledger equals the projections (D-110 rule 2). */
+  /**
+   * The rebuild from the ledger equals the projections (D-110 rule 2): every cost row with its last
+   * movement, every movement's adjustment and every balance (ledgerDrift, test/ledger.ts).
+   */
   async expectRebuildEqualsProjections() {
-    const materials = await this.api.admin<{ material_id: string }[]>`
-      select distinct material_id from app.stock_movements where business_id = ${this.id}`
-    for (const { material_id } of materials) {
-      const { state } = replayWac(await this.ledger(material_id))
-      expect(await this.costRow(material_id), material_id).toEqual({
-        qty: state.qty,
-        value: state.value,
-        avg_cost: state.avgCost,
-      })
-    }
-    const balances = await this.api.admin<
-      { location_id: string; material_id: string; diff: string }[]
-    >`
-      select b.location_id, b.material_id,
-             (b.qty - coalesce((select sum(m.qty) from app.stock_movements m
-                                 where m.business_id = b.business_id
-                                   and m.location_id = b.location_id
-                                   and m.material_id = b.material_id), 0))::text as diff
-        from app.stock_balances b where b.business_id = ${this.id}`
-    for (const balance of balances) expect(Number(balance.diff), JSON.stringify(balance)).toBe(0)
+    expect(await ledgerDrift(this.api.admin, this.id)).toEqual([])
   }
 }

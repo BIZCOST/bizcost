@@ -41,6 +41,7 @@ import { and, eq, inArray, isNull, sql } from 'drizzle-orm'
 import type { z } from 'zod'
 import type { BusinessCtx } from '../business-context'
 import { AppError } from '../errors'
+import { assertQueryable } from '../trpc'
 import { detachAll, removeStoredFiles } from './attachments'
 import { containsPattern, decodeCursor, encodeCursor, requestHashOf } from './catalog'
 import { baseQtyOf, loadMaterials, type MaterialInfo } from './purchase-materials'
@@ -436,15 +437,28 @@ export async function draftContext(tx: Tx, businessId: string) {
   }
 }
 
+/** The VAT fields of a purchase or expense draft. */
+export interface VatFields {
+  readonly rates: readonly string[]
+  readonly pricesIncludeVat: boolean
+  readonly vatNotReclaimable: boolean
+}
+
 /**
  * VAT is shown only to a VAT-registered business (PRODUCT.md §5; M2 Step 7): any other types what it
- * paid, with no VAT (its screens send a rate of 0). A draft of such a business with another VAT rate
- * is CAPABILITY_DISABLED. A draft saved while the business was registered keeps its VAT until it is
- * saved again, and posting it counts that VAT as cost (D-114 rule 4). Expenses too.
+ * paid, with no VAT (its screens send a rate of 0, amounts "before VAT" and never "VAT can't be
+ * reclaimed"). A draft of such a business with another VAT rate, with amounts typed with their VAT
+ * or marked "VAT can't be reclaimed" is CAPABILITY_DISABLED (M2 Step 8: the API refuses what the
+ * screens hide). A draft saved while the business was registered keeps its VAT until it is saved
+ * again, and posting it counts that VAT as cost (D-114 rule 4). Expenses too.
  */
-export function assertVatShown(ctx: BusinessCtx, rates: readonly string[]): void {
+export function assertVatShown(ctx: BusinessCtx, vat: VatFields): void {
   if (ctx.access.capabilities.vat_registered) return
-  if (rates.some((rate) => compareDecimal(rate, '0') !== 0)) {
+  if (
+    vat.pricesIncludeVat ||
+    vat.vatNotReclaimable ||
+    vat.rates.some((rate) => compareDecimal(rate, '0') !== 0)
+  ) {
     throw new AppError('capability_disabled', { message: 'VAT needs a VAT-registered business' })
   }
 }
@@ -596,10 +610,11 @@ async function prepareDraft(
   input: Fields,
   storedPaymentMethod: string | null,
 ) {
-  assertVatShown(
-    ctx,
-    input.lines.map((line) => line.vatRate),
-  )
+  assertVatShown(ctx, {
+    rates: input.lines.map((line) => line.vatRate),
+    pricesIncludeVat: input.pricesIncludeVat,
+    vatNotReclaimable: input.vatNotReclaimable,
+  })
   assertPaidByShown(ctx, input.paymentMethod, storedPaymentMethod)
   const { currency, defaultLocationId } = await draftContext(tx, ctx.businessId)
   await assertSupplier(tx, ctx.businessId, input.supplierId)
@@ -733,8 +748,11 @@ interface HeadRecord extends Record<string, unknown> {
   vat_not_reclaimable: boolean
   discount_percent: string | null
   discount_amount: string | null
-  /** The caller entered it (created_by). */
-  entered_by_me: boolean
+  /**
+   * The caller's own: they wrote it last (`updated_by`, kept by app.touch_row; `created_by` until it
+   * is first changed). A draft someone else saved since holds prices that are not theirs (D-214).
+   */
+  mine: boolean
 }
 
 /** The purchase row, locked FOR UPDATE (lock 1 of a posting); NOT_FOUND when not live. */
@@ -744,7 +762,7 @@ async function lockPurchase(tx: Tx, businessId: string, id: string): Promise<Hea
            p.document_type, p.payment_method, p.paid_by_member_id, p.prices_include_vat,
            p.vat_not_reclaimable, trim_scale(p.discount_percent)::text as discount_percent,
            trim_scale(p.discount_amount)::text as discount_amount,
-           coalesce(p.created_by = app.current_user_id(), false) as entered_by_me
+           coalesce(coalesce(p.updated_by, p.created_by) = app.current_user_id(), false) as mine
       from app.purchases p
      where p.business_id = ${businessId} and p.id = ${id} and p.deleted_at is null
        for update
@@ -754,13 +772,15 @@ async function lockPurchase(tx: Tx, businessId: string, id: string): Promise<Hea
 }
 
 /**
- * A member who may not see supplier prices changes only the purchase drafts they entered themselves
- * (D-184, D-200, as expenses): never another member's, whose prices they cannot see (a whole save would
- * replace prices they never read; a discard would take out what they cannot check). FORBIDDEN
- * otherwise, under the row lock, before anything is changed.
+ * A member who may not see supplier prices changes only their own purchase drafts: those they
+ * entered, while nobody else has saved them since (D-184, D-200, D-214; expenses differ: a member
+ * reads the amounts of what they entered in "My expenses"). Never another member's, nor one whose
+ * prices someone else set since: they cannot see those prices (a whole save would replace prices they
+ * never read; a discard would take out what they cannot check). FORBIDDEN otherwise, under the row
+ * lock, before anything is changed.
  */
 function assertMayChange(ctx: BusinessCtx, head: HeadRecord) {
-  if (!ctx.access.visibleCategories.has('supplier_price') && !head.entered_by_me) {
+  if (!ctx.access.visibleCategories.has('supplier_price') && !head.mine) {
     throw new AppError('forbidden')
   }
 }
@@ -774,7 +794,7 @@ function assertDraft(head: HeadRecord, version: number) {
 /**
  * `purchase.update`: the whole draft, `version` as read. Lines are matched by id: new ids are added,
  * changed ones updated, missing ones taken out (soft-deleted). An id used anywhere else is CONFLICT.
- * FORBIDDEN for another member's draft when the caller may not see supplier prices.
+ * FORBIDDEN, when the caller may not see supplier prices, for a draft that is not their own.
  */
 export async function updatePurchase(
   ctx: BusinessCtx,
@@ -843,8 +863,8 @@ export async function updatePurchase(
 
 /**
  * `purchase.discard`: a draft is taken out (soft-deleted, with its lines); never a posted one. Its
- * receipts go with it: taken off in the same transaction, their files removed after it. FORBIDDEN for
- * another member's draft when the caller may not see supplier prices.
+ * receipts go with it: taken off in the same transaction, their files removed after it. FORBIDDEN,
+ * when the caller may not see supplier prices, for a draft that is not their own.
  */
 export async function discardPurchase(ctx: BusinessCtx, input: VersionInput): Promise<OkDto> {
   const files = await ctx.tx(async (tx) => {
@@ -1166,12 +1186,16 @@ export async function reversePurchase(
  * `purchase.correct` ("correct" = reverse + a new draft copy, D-114 rule 3): reverses the purchase
  * (when still posted) and opens a copy of it as a new draft with the client's `newId`, in one
  * transaction. Idempotent on `newId`: the same call again returns the copy; an id used otherwise is
- * CONFLICT. A draft cannot be corrected (DOCUMENT_NOT_POSTED): it is edited.
+ * CONFLICT. A draft cannot be corrected (DOCUMENT_NOT_POSTED): it is edited. FORBIDDEN for a member
+ * who may not see supplier prices, before anything is read: the copy carries the purchase's prices
+ * and is the corrector's own draft, which they would go on to save whole without having read them
+ * (as expense.correct, D-184; changing what one cannot see, D-200).
  */
 export async function correctPurchase(
   ctx: BusinessCtx,
   input: CorrectInput,
 ): Promise<PurchaseResultDto> {
+  assertQueryable(ctx, [{ name: 'total', category: 'supplier_price' }])
   return ctx.tx(async (tx) => {
     // The purchase first (lock 1 of its reversal): two corrections of one purchase wait for each
     // other here, before either inserts a copy that names it (a copy's foreign key takes a key-share

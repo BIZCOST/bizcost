@@ -52,6 +52,8 @@ interface Probe {
   answer?: 'ok' | readonly AppErrorCode[]
   /** Input fields that look like references (by name or format) but name no row: path → why. */
   notReferences?: Record<string, string>
+  /** Reference fields no variant fills with the victim's row: path → why that is safe. */
+  unattacked?: Record<string, string>
 }
 
 const NO_ROWS = 'names no rows: it acts on the x-business-id business, which businessScoped checks'
@@ -97,6 +99,10 @@ const PROBES: Record<string, Probe> = {
       },
     ],
     answer: ['conflict'],
+    notReferences: {
+      'adjustments.modules.*.id':
+        'a module key of the registry (e.g. "orders"), the same in every business, not a row',
+    },
   },
   'invitation.accept': {
     base: 'authed',
@@ -111,6 +117,11 @@ const PROBES: Record<string, Probe> = {
       'any other token is invitation_invalid',
     variants: () => [{ input: { token: randomToken() } }],
     answer: ['invitation_invalid'],
+    unattacked: {
+      token:
+        'the victim’s token is the secret its own link carries: whoever holds the link sees the ' +
+        'business name by design (D-082); it never reaches another business’s pages',
+    },
   },
 
   'business.context': { base: 'business', reason: NO_ROWS },
@@ -311,6 +322,16 @@ const PROBES: Record<string, Probe> = {
         },
         own: ['validation'],
       },
+      // A cross factor is a unit of the material too: an id used anywhere is CONFLICT.
+      {
+        input: {
+          id: newId(),
+          name: `Pwned ${newId()}`,
+          unit: 'l',
+          crossFactors: [{ id: victim.material.packs[0]?.id, unit: 'kg', qty: '1', ofUnit: 'l' }],
+        },
+        own: ['conflict'],
+      },
     ],
   },
   'material.quickCreate': {
@@ -331,6 +352,24 @@ const PROBES: Record<string, Probe> = {
           packs: [{ id: newId(), name: 'crate', qty: '1', ofPackId: victim.material.packs[0]?.id }],
         },
         own: ['validation'],
+      },
+      {
+        input: {
+          id: newId(),
+          name: `Pwned ${newId()}`,
+          unit: 'l',
+          packs: [{ id: victim.material.packs[0]?.id, name: 'crate', qty: '1', ofUnit: 'l' }],
+        },
+        own: ['conflict'],
+      },
+      {
+        input: {
+          id: newId(),
+          name: `Pwned ${newId()}`,
+          unit: 'l',
+          crossFactors: [{ id: victim.material.packs[0]?.id, unit: 'kg', qty: '1', ofUnit: 'l' }],
+        },
+        own: ['conflict'],
       },
     ],
   },
@@ -357,6 +396,32 @@ const PROBES: Record<string, Probe> = {
           name: attacker.material.name,
           unit: 'l',
           packs: [{ id: victim.material.packs[0]?.id, name: 'crate', qty: '1', ofUnit: 'l' }],
+        },
+        own: ['conflict'],
+      },
+      // Own material and its packs, a new pack of the victim's pack: only a pack of the same material.
+      {
+        input: {
+          id: attacker.material.id,
+          version: attacker.material.version,
+          name: attacker.material.name,
+          unit: 'l',
+          packs: [
+            ...attacker.material.packs,
+            { id: newId(), name: 'crate', qty: '1', ofPackId: victim.material.packs[0]?.id },
+          ],
+        },
+        own: ['validation'],
+      },
+      // A cross factor with the victim's unit id: taken.
+      {
+        input: {
+          id: attacker.material.id,
+          version: attacker.material.version,
+          name: attacker.material.name,
+          unit: 'l',
+          packs: attacker.material.packs,
+          crossFactors: [{ id: victim.material.packs[0]?.id, unit: 'kg', qty: '1', ofUnit: 'l' }],
         },
         own: ['conflict'],
       },
@@ -408,6 +473,34 @@ const PROBES: Record<string, Probe> = {
           resale: {
             materialId: newId(),
             packs: [{ id: victim.material.packs[0]?.id, name: 'crate', qty: '1', ofUnit: 'l' }],
+          },
+        },
+        own: ['conflict'],
+      },
+      {
+        input: {
+          id: newId(),
+          name: `Pwned ${newId()}`,
+          type: 'product',
+          unit: 'l',
+          resale: {
+            materialId: newId(),
+            packs: [
+              { id: newId(), name: 'crate', qty: '1', ofPackId: victim.material.packs[0]?.id },
+            ],
+          },
+        },
+        own: ['validation'],
+      },
+      {
+        input: {
+          id: newId(),
+          name: `Pwned ${newId()}`,
+          type: 'product',
+          unit: 'l',
+          resale: {
+            materialId: newId(),
+            crossFactors: [{ id: victim.material.packs[0]?.id, unit: 'kg', qty: '1', ofUnit: 'l' }],
           },
         },
         own: ['conflict'],
@@ -593,17 +686,47 @@ const PROBES: Record<string, Probe> = {
         },
         own: ['not_found'],
       },
-      {
-        input: {
+      ...(() => {
+        // The attacker's own draft, naming the victim's rows one at a time.
+        const draft = (extra: object) => ({
           id: attacker.draftPurchase.id,
           version: attacker.draftPurchase.version,
           businessDate: attacker.draftPurchase.businessDate,
           documentType: 'no_invoice',
           paymentMethod: 'cash',
-          supplierId: victim.supplier.id,
-        },
-        own: ['not_found'],
-      },
+          ...extra,
+        })
+        const own = {
+          kind: 'material',
+          id: newId(),
+          materialId: attacker.material.id,
+          qty: '1',
+          unit: 'l',
+          unitPrice: '1',
+        }
+        return [
+          { input: draft({ supplierId: victim.supplier.id }), own: ['not_found'] as const },
+          { input: draft({ locationId: victim.defaultLocationId }), own: ['not_found'] as const },
+          {
+            input: draft({ paymentMethod: 'paid_by_member', paidByMemberId: victim.adminMemberId }),
+            own: ['not_found'] as const,
+          },
+          {
+            input: draft({ lines: [{ ...own, materialId: victim.material.id }] }),
+            own: ['not_found'] as const,
+          },
+          {
+            input: draft({
+              lines: [{ ...own, unit: undefined, packId: victim.material.packs[0]?.id }],
+            }),
+            own: ['validation'] as const,
+          },
+          {
+            input: draft({ lines: [{ ...own, id: victim.purchase.lines[0]?.id }] }),
+            own: ['conflict'] as const,
+          },
+        ]
+      })(),
     ],
   },
   'purchase.discard': {
@@ -690,6 +813,23 @@ const PROBES: Record<string, Probe> = {
         },
         own: ['conflict'],
       },
+      // A line id the victim's return has: taken.
+      {
+        input: {
+          id: newId(),
+          purchaseId: attacker.purchase.id,
+          kind: 'credit_note',
+          businessDate: attacker.purchase.businessDate,
+          lines: [
+            {
+              id: victim.purchaseReturn.lines[0]?.id,
+              purchaseLineId: attacker.purchase.lines[0]?.id,
+              amount: '1',
+            },
+          ],
+        },
+        own: ['conflict'],
+      },
     ],
   },
   'purchaseReturn.update': {
@@ -713,6 +853,21 @@ const PROBES: Record<string, Probe> = {
           lines: [{ id: newId(), purchaseLineId: victim.purchase.lines[0]?.id, amount: '1' }],
         },
         own: ['not_found'],
+      },
+      {
+        input: {
+          id: attacker.draftReturn.id,
+          version: attacker.draftReturn.version,
+          businessDate: attacker.draftReturn.businessDate,
+          lines: [
+            {
+              id: victim.purchaseReturn.lines[0]?.id,
+              purchaseLineId: attacker.purchase.lines[0]?.id,
+              amount: '1',
+            },
+          ],
+        },
+        own: ['conflict'],
       },
     ],
   },
@@ -1067,14 +1222,20 @@ const PROBES: Record<string, Probe> = {
           },
           own: ['not_found'],
         },
-        {
+        // The attacker's own draft, naming the victim's rows one at a time.
+        ...[
+          { categoryId: victim.category.id },
+          { supplierId: victim.supplier.id },
+          { locationId: victim.defaultLocationId },
+          { paymentMethod: 'paid_by_member', paidByMemberId: victim.adminMemberId },
+        ].map((extra) => ({
           input: {
             id: attacker.draftExpense.id,
             version: attacker.draftExpense.version,
-            ...fields(attacker, { categoryId: victim.category.id }),
+            ...fields(attacker, extra),
           },
-          own: ['not_found'],
-        },
+          own: ['not_found'] as const,
+        })),
       ]
     },
   },
@@ -1283,6 +1444,52 @@ const STUB = new Proxy({} as Tenant, {
   get: (_target, key) => (key === 'roles' ? new Proxy({}, { get: () => STUB_FIELD }) : STUB_FIELD),
 })
 
+/**
+ * A stand-in tenant whose every value says whose it is and where it was read ("victim:material.id"),
+ * so a variant's input shows which of its fields carry the victim's rows (never sent).
+ */
+const TENANT_STRINGS = new Set([
+  'id',
+  'path',
+  'email',
+  'name',
+  'businessDate',
+  'startsOn',
+  'description',
+  'reference',
+  'note',
+  'ownerMemberId',
+  'adminMemberId',
+  'employeeMemberId',
+  'defaultLocationId',
+  'invitationToken',
+  'logoPath',
+  'resaleMaterialId',
+])
+
+function tagged(owner: 'victim' | 'attacker', at: string[] = []): Tenant {
+  return new Proxy({} as Tenant, {
+    get: (_target, key) => {
+      if (typeof key !== 'string') return undefined
+      const path = [...at, key]
+      if (key === 'version') return 1
+      if (TENANT_STRINGS.has(key)) return `${owner}:${path.join('.')}`
+      if (key === 'packs' || key === 'lines') return [tagged(owner, [...path, '0'])]
+      return tagged(owner, path)
+    },
+  })
+}
+
+/** The paths of an input's leaves that carry the victim's values ("lines.*.materialId"). */
+function victimPaths(value: unknown, at: string[] = []): string[] {
+  if (typeof value === 'string') return value.startsWith('victim:') ? [at.join('.')] : []
+  if (Array.isArray(value)) return value.flatMap((item) => victimPaths(item, [...at, '*']))
+  if (value && typeof value === 'object') {
+    return Object.entries(value).flatMap(([key, item]) => victimPaths(item, [...at, key]))
+  }
+  return []
+}
+
 const PROCEDURES = proceduresOf(appRouter)
 const BUSINESS = PROCEDURES.filter((p) => p.base === 'business')
 const OWN_BUSINESS = BUSINESS.filter((p) =>
@@ -1468,6 +1675,36 @@ describe('the matrix covers every procedure', () => {
         'member.changeRole',
         'role.updatePermissions',
       ]),
+    )
+  })
+
+  it('fills EVERY reference field with the victim’s row in some variant, or says why not', () => {
+    const victim = tagged('victim')
+    const attacker = tagged('attacker')
+    const missing: string[] = []
+    for (const procedure of PROCEDURES) {
+      const schema = inputSchemaOf(procedure.path)
+      const probe = probeOf(procedure)
+      const references = (schema ? referenceFields(schema) : []).filter(
+        (path) => !probe.notReferences?.[path],
+      )
+      const variants = (probe.variants?.(victim, attacker) ?? []).filter(
+        // Inside a business, a reference is attacked in the attacker's own business.
+        (v) => procedure.base !== 'business' || v.own,
+      )
+      const attacked = new Set(variants.flatMap((v) => victimPaths(v.input)))
+      for (const path of Object.keys(probe.unattacked ?? {})) {
+        expect(references, `${procedure.path}: unattacked.${path}`).toContain(path)
+        expect(attacked.has(path), `${procedure.path}: ${path} is attacked`).toBe(false)
+      }
+      for (const path of references) {
+        if (!attacked.has(path) && !probe.unattacked?.[path]) {
+          missing.push(`${procedure.path} ${path}`)
+        }
+      }
+    }
+    expect(missing, 'add a variant with the victim’s row there, or an unattacked reason').toEqual(
+      [],
     )
   })
 })

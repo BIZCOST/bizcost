@@ -2,6 +2,16 @@ import { sensitive, withMeta, zDecimal } from '@bizcost/contracts'
 import { describe, expect, it } from 'vitest'
 import { z } from 'zod'
 import { procedureContractViolations } from '../test/contract'
+import {
+  DECIMAL_CANDIDATES,
+  inputLeaves,
+  inputSchemaOf,
+  isDecimalLeaf,
+  isNumberLeaf,
+  parseLeaf,
+  spell,
+  type Schema,
+} from '../test/hardening/schema'
 import { appRouter } from './routers'
 import { authedProcedure, businessProcedure, publicProcedure, router } from './trpc'
 
@@ -134,6 +144,100 @@ describe('appRouter contract', () => {
 
   it('every procedure has a Zod output, runs redact, and keeps sensitive fields in business envelopes', () => {
     expect(procedureContractViolations(appRouter)).toEqual([])
+  })
+})
+
+// Every quantity and price field accepts Arabic-Indic digits, and no number is a float (ROADMAP.md
+// M2 definition of done). Every input field of every procedure is walked (test/hardening/schema.ts):
+// a field that reads numbers and refuses words is a decimal field; each must read the same number
+// in ASCII, Arabic-Indic (with ٫) and Eastern Arabic-Indic digits, and refuse a JSON number. The only
+// number fields are whole counters. A field added with its own number schema fails here.
+describe('numbers a client sends', () => {
+  const leaves = Object.keys(appRouter._def.procedures).flatMap((path) => {
+    const schema = inputSchemaOf(appRouter, path)
+    return (schema ? inputLeaves(schema) : []).map((leaf) => ({
+      ...leaf,
+      at: `${path} ${leaf.path}`,
+    }))
+  })
+  const decimals = leaves.filter((leaf) => isDecimalLeaf(leaf.schema))
+  const numbers = leaves.filter((leaf) => isNumberLeaf(leaf.schema))
+
+  it('the walk finds the quantity and price fields', () => {
+    expect(decimals.map((leaf) => leaf.at)).toEqual(
+      expect.arrayContaining([
+        'material.create packs.*.qty',
+        'material.update crossFactors.*.qty',
+        'product.create defaultPrice',
+        'product.update ownerMinutes',
+        'product.create resale.packs.*.qty',
+        'recipe.save lines.*.qty',
+        'recipe.save yieldQty',
+        'purchase.create lines.*.qty',
+        'purchase.create lines.*.unitPrice',
+        'purchase.create lines.*.discount.percent',
+        'purchase.update discount.amount',
+        'purchase.update lines.*.vatRate',
+        'purchaseReturn.create lines.*.amount',
+        'purchaseReturn.update splitAmount',
+        'purchasePayment.record amount',
+        'expense.create amount',
+        'expense.update vatRate',
+        'expensePayment.record amount',
+        'runningCost.update amount',
+        'productCost.updateSettings ownerHourlyRate',
+      ]),
+    )
+  })
+
+  it.each(['arabic', 'eastern'] as const)(
+    'every decimal field reads %s digits as the same number',
+    (digits) => {
+      const misread: string[] = []
+      for (const leaf of decimals) {
+        for (const candidate of DECIMAL_CANDIDATES) {
+          const ascii = parseLeaf(leaf.schema, candidate)
+          if (!ascii.ok) continue
+          const spelled = parseLeaf(leaf.schema, spell(candidate, digits))
+          if (!spelled.ok || spelled.value !== ascii.value) {
+            misread.push(`${leaf.at}: ${spell(candidate, digits)}`)
+          }
+        }
+      }
+      expect(decimals.length).toBeGreaterThan(30)
+      expect(misread).toEqual([])
+    },
+  )
+
+  it('no decimal field takes a JSON number', () => {
+    const taken = decimals.flatMap((leaf) =>
+      [1, 12, 0.5, 1.5].filter((n) => parseLeaf(leaf.schema, n).ok).map((n) => `${leaf.at}: ${n}`),
+    )
+    expect(taken).toEqual([])
+  })
+
+  it('the only number fields are whole counters, never a quantity or price', () => {
+    expect([...new Set(numbers.map((leaf) => leaf.name))].sort()).toEqual([
+      'limit',
+      'questionSetVersion',
+      'version',
+    ])
+    expect(numbers.filter((leaf) => parseLeaf(leaf.schema, 1.5).ok).map((l) => l.at)).toEqual([])
+  })
+})
+
+// "Capabilities hide … stock quantities where they don't apply" (M2 definition of done): in M2 the
+// ledger records stock, but nothing shows it (stock screens and counts are Phase 4, with keeps_stock).
+// Every output field of every procedure is walked: none is a stock quantity.
+describe('no procedure outputs a stock quantity', () => {
+  it('no output field is named for stock on hand or a balance', () => {
+    const outputs = Object.entries(
+      appRouter._def.procedures as unknown as Record<string, { _def: { output?: unknown } }>,
+    ).flatMap(([path, procedure]) =>
+      inputLeaves(procedure._def.output as Schema).map((leaf) => `${path} ${leaf.path}`),
+    )
+    expect(outputs.length).toBeGreaterThan(500)
+    expect(outputs.filter((at) => /stock|on_?hand|balance/i.test(at))).toEqual([])
   })
 })
 

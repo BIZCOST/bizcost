@@ -35,6 +35,7 @@
     "@types/node": "catalog:",
     "@types/semver": "catalog:",
     "eslint": "catalog:",
+    "fast-check": "catalog:",
     "postgres": "catalog:",
     "tsx": "catalog:",
     "typescript": "catalog:",

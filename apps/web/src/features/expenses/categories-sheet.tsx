@@ -83,7 +83,11 @@ function CategoryRow({
   const busy = update.isPending || archive.isPending || unarchive.isPending
   const archived = category.archivedAt !== null
   const refresh = () =>
-    queryClient.invalidateQueries({ queryKey: trpc.costCategory.list.pathKey() })
+    Promise.all([
+      queryClient.invalidateQueries({ queryKey: trpc.costCategory.list.pathKey() }),
+      // The month's costs on Product costs are by category (its name, billed the month after).
+      queryClient.invalidateQueries({ queryKey: trpc.productCost.pathKey() }),
+    ])
 
   async function rename(event: FormEvent) {
     event.preventDefault()

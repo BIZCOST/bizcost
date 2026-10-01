@@ -193,6 +193,7 @@ function ProductsList({ startNew }: { startNew: boolean }) {
     Promise.all([
       queryClient.invalidateQueries({ queryKey: trpc.product.list.pathKey() }),
       queryClient.invalidateQueries({ queryKey: trpc.product.costs.pathKey() }),
+      queryClient.invalidateQueries({ queryKey: trpc.productCost.pathKey() }),
     ])
   const add = () => setEditing({ key: `new-${Date.now()}` })
 

@@ -9,7 +9,7 @@
 -- the touch and audit triggers run. RLS, the policy, the triggers and the grants of every tenant table
 -- are also checked generically by 00_catalog_coverage, 01_grants and 03_rls_initplan.
 begin;
-select plan(77);
+select plan(78);
 
 do $$
 begin
@@ -99,8 +99,11 @@ select col_type_is('app', 'purchase_lines', 'qty', 'numeric(24,6)',
                    'purchase_lines.qty is numeric(24,6): a quantity as typed');
 select col_type_is('app', 'stock_movements', 'value', 'numeric(28,12)',
                    'stock_movements.value is numeric(28,12): never rounded to the currency');
-select col_type_is('app', 'material_costs', 'avg_cost', 'numeric(28,12)',
-                   'material_costs.avg_cost is numeric(28,12): the unrounded weighted average');
+-- A material's stock value and average add up every posting: wider than one movement (D-209).
+select col_type_is('app', 'material_costs', 'avg_cost', 'numeric(38,12)',
+                   'material_costs.avg_cost is numeric(38,12): the unrounded weighted average');
+select col_type_is('app', 'material_costs', 'value', 'numeric(38,12)',
+                   'material_costs.value is numeric(38,12): never overflows on any posting');
 select col_type_is('app', 'purchase_return_lines', 'cost', 'numeric(28,12)',
                    'purchase_return_lines.cost is numeric(28,12): what a return took off the goods');
 select col_type_is('app', 'businesses', 'books_closed_through', 'date',

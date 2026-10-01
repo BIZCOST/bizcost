@@ -111,6 +111,7 @@ const APP_CODE_OF_SQLSTATE: Readonly<Record<string, AppErrorCode>> = {
   BZ404: 'invitation_invalid', // app.accept_invitation / app.preview_invitation: one answer for all
   BZ409: 'already_member', // app.accept_invitation: the caller is already an active member
   BZ423: 'material_in_use', // app.materials_keep_dimension: a material in the ledger keeps its dimension
+  BZ412: 'books_closed', // app.guard_books_closed: nothing is posted or reversed into closed books
 }
 
 const SQLSTATE = /^[0-9A-Z]{5}$/

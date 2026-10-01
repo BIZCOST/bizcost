@@ -614,7 +614,10 @@ export function RecipeSheet({
       })
       queryClient.setQueryData(trpc.recipe.get.queryKey({ productId: product.id }), result)
       setYieldEdited(null)
-      await queryClient.invalidateQueries({ queryKey: trpc.product.costs.pathKey() })
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: trpc.product.costs.pathKey() }),
+        queryClient.invalidateQueries({ queryKey: trpc.productCost.pathKey() }),
+      ])
       toast.success(t('catalog.recipes.saved'))
       return true
     } catch (error) {

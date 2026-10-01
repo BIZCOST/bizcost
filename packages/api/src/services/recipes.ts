@@ -444,8 +444,11 @@ export function saveRecipe(ctx: BusinessCtx, input: SaveInput): Promise<RecipeRe
     const recipe = await findRecipe(tx, businessId, product.id)
     const saved = await recipeDtoOf(tx, businessId, product, recipe)
     // A yield so small that one unit's cost would not fit a cost amount is refused, and the whole save
-    // with it (D-178): what one unit costs is what the product's cost is made of.
-    if (yieldChanged && saved.cost.tooLarge) {
+    // with it (D-178): what one unit costs is what the product's cost is made of. Only for a member
+    // who sees costs: the refusal depends on the materials' averages, so for anyone else it would
+    // tell them apart (the quantities and the yield are the caller's to choose). Their save stands,
+    // and members who see costs see it as too large (D-209).
+    if (yieldChanged && saved.cost.tooLarge && ctx.access.visibleCategories.has('cost')) {
       throw new AppError('validation', {
         message: 'yieldQty: too small for what this recipe costs',
       })

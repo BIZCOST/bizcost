@@ -3,7 +3,7 @@
 Purpose: a numbered record of every confirmed decision, why we made it, and what we rejected. The details live in the doc each entry links to.
 Last updated: 2026-10-01
 
-- **Status:** every entry is DECIDED. Implemented so far: the Step 0a repo scaffold, the Step 1 data foundation (D-047–D-053 and the data/tenancy entries they build on), the Step 2 API core (D-054–D-061), the Step 3 web auth (D-062–D-071), the owner's password rule (D-072), the "too soon" fix (D-073), Step 5 businesses & Smart Setup (D-074–D-079), Step 6 web settings (D-080–D-088), Step 7 the web shell (D-089–D-096) and the owner's answers after it (D-097, D-098), Step 9 hardening & docs (D-099–D-106), and M2 Step 1, the pure domain engines built as pre-approval groundwork (D-107–D-110). The owner's M2 answers of 2026-09-28 (D-111–D-120) are decided and built step by step in M2; M2 Step 2 has its data and API (D-121–D-125), its web screens (D-126–D-128) and the fixes of its review (D-129–D-132); M2 Step 3 has its data and API (D-133–D-140), its web screens (D-141) and the fixes of its reviews (D-142–D-145). M2 Step 4 has its data, API and web screens with the fixes of its reviews (D-146–D-156). The owner's purchasing requests of 2026-09-29 are built (D-157–D-163). M2 Step 5 has its data and API (D-164–D-169), its web screens (D-170–D-174) and the fixes of its review (D-175–D-177). The owner's answers of 2026-09-29 (A1–A5) and the local test-data cleanup (A6) are built (D-178–D-183), with the fixes of their review (D-184). The demo data of the Costing Core is built (D-185). M2 Step 6 has its data, API and web screens with the fixes of its review (D-186, D-187). M2 Step 7 has its release, API and data (D-188–D-194), its screens and the owner's requests of 2026-09-30 (D-195–D-199), and the fixes of its review (D-200, D-201). The owner's decision of 2026-09-30, running costs by price (D-202), is built: its domain, data, API and screens, with the fixes of its review (D-203). The owner's answers of 2026-10-01 after Step 7 keep what is built (D-204). "Open:" marks a sub-choice that is still unsettled, tracked in ROADMAP.md §Open, with deadline. Proposals (P-0xx, §Proposals at the end) are NOT decided: once the owner confirms one, it becomes the next D-entry with the owner's changes, and the proposal stays for history (P-001 became D-114 and D-115). None is awaiting the owner.
+- **Status:** every entry is DECIDED. Implemented so far: the Step 0a repo scaffold, the Step 1 data foundation (D-047–D-053 and the data/tenancy entries they build on), the Step 2 API core (D-054–D-061), the Step 3 web auth (D-062–D-071), the owner's password rule (D-072), the "too soon" fix (D-073), Step 5 businesses & Smart Setup (D-074–D-079), Step 6 web settings (D-080–D-088), Step 7 the web shell (D-089–D-096) and the owner's answers after it (D-097, D-098), Step 9 hardening & docs (D-099–D-106), and M2 Step 1, the pure domain engines built as pre-approval groundwork (D-107–D-110). The owner's M2 answers of 2026-09-28 (D-111–D-120) are decided and built step by step in M2; M2 Step 2 has its data and API (D-121–D-125), its web screens (D-126–D-128) and the fixes of its review (D-129–D-132); M2 Step 3 has its data and API (D-133–D-140), its web screens (D-141) and the fixes of its reviews (D-142–D-145). M2 Step 4 has its data, API and web screens with the fixes of its reviews (D-146–D-156). The owner's purchasing requests of 2026-09-29 are built (D-157–D-163). M2 Step 5 has its data and API (D-164–D-169), its web screens (D-170–D-174) and the fixes of its review (D-175–D-177). The owner's answers of 2026-09-29 (A1–A5) and the local test-data cleanup (A6) are built (D-178–D-183), with the fixes of their review (D-184). The demo data of the Costing Core is built (D-185). M2 Step 6 has its data, API and web screens with the fixes of its review (D-186, D-187). M2 Step 7 has its release, API and data (D-188–D-194), its screens and the owner's requests of 2026-09-30 (D-195–D-199), and the fixes of its review (D-200, D-201). The owner's decision of 2026-09-30, running costs by price (D-202), is built: its domain, data, API and screens, with the fixes of its review (D-203). The owner's answers of 2026-10-01 after Step 7 keep what is built (D-204). M2 Step 8, hardening and docs, is built: its suites found three gaps (D-205–D-207), the adversary review that closed it six more (D-208–D-213), and the review of those fixes two more (D-214, D-215), each fixed. "Open:" marks a sub-choice that is still unsettled, tracked in ROADMAP.md §Open, with deadline. Proposals (P-0xx, §Proposals at the end) are NOT decided: once the owner confirms one, it becomes the next D-entry with the owner's changes, and the proposal stays for history (P-001 became D-114 and D-115). None is awaiting the owner.
 - **Editing:** append new entries with the next number and never renumber. To change a decision, add a new entry and mark the old one "Superseded by D-0xx".
 - **Sources:** the owner's spec, the owner's confirmations (2026-09-24), and the architecture panel as corrected by its critique.
 
@@ -823,7 +823,7 @@ Refined by D-186: the 3 months count only when each holds a posted purchase, and
 
 ### D-120 · 2026-09-28 · Supplier returns and credit notes are in M2 (against the recommendation)
 
-Built in M2 Step 3 as D-136.
+Built in M2 Step 3 as D-136. The owner did not object before Step 3 shipped, so the rules below stand. Rule 2 is refined by D-208: a run of receipts all sent back restores the state from before it.
 
 - **Decision:** Owner decision (question 0d), against the recommendation (defer them; correct a purchase by reversing it). M2 Step 3 adds two documents, each linked to a posted purchase: a **return** (goods sent back to the supplier) and a **credit note** (a price reduction without goods). Their rules are proposed with this entry, following D-114 (posting order, no rewriting of past costs), and are the default unless the owner objects before Step 3 ships:
   1. **Like purchases:** draft → post → reverse; never edited once posted; a reversal is "as if never posted" (a replay of the material's ledger, D-109). Each posts on its own `business_date`, which must be open (D-114 rule 6; the purchase's own date may be closed), and changes the average from the moment it is posted. A purchase with posted returns or credit notes can be reversed only after they are.
@@ -1382,7 +1382,7 @@ The owner answered the open points of Steps 4 and 5 (in Arabic, to the lead, 202
 
 ### D-178 · 2026-09-29 · A recipe can make several units: one unit sold costs its total ÷ what it makes
 
-Source: the owner (A1: yes). Refines D-146 and D-147.
+Source: the owner (A1: yes). Refines D-146 and D-147. Refined by D-209: the refusal of a yield too small for what the recipe costs is only for a member who sees costs.
 
 - **Decision:** `recipes.yield_qty numeric(24,6) NOT NULL DEFAULT 1 CHECK (yield_qty > 0)` (migration `recipe_yield`): how many of the product's unit its recipe makes, «الوصفة تكفي: ___» / "This recipe makes: ___" (food), «هذه الكميات تكفي» / "These quantities make" otherwise. The lines are what the whole recipe uses; with a yield of 1 (the default, every recipe made before) they are what one unit uses, as before. One unit sold costs the recipe's total ÷ its yield: `costPerUnit` in `@bizcost/domain` (`rollUpRecipe(lines, yieldQty)` → `perUnit`), one division rounded once to 12 decimals, never to the currency (the total itself for a yield of 1; null with no total). `recipe.save` takes `yieldQty` (more than zero, at most 6 decimals, Arabic-Indic digits read; omitted: the recipe keeps its own, 1 for a new one); a new yield alone is a new version of the recipe, audited like its lines (the recipe row), and the same yield ("12.000") writes nothing. `recipe.get` / `recipe.save` return `yieldQty` and `cost.perUnit`; `product.costs` returns `yieldQty` and `cost.perUnit`, which the Products list shows ("Recipe cost: AED 1.08 per piece"). Both amounts are `cost`.
   - **The recipe screen:** the field comes first (1 until changed; its hint: "A cake that makes 12 slices? Type 12. Leave it at 1 when the quantities are per piece."), the product's unit after it; the description and each line's caption say what the quantities are for ("How much for 12 pieces" / «الكمية لكل 12 قطعة»); the footer keeps the whole recipe's cost and adds "Cost per piece" / «التكلفة لكل قطعة» as it is typed (the saved one is the API's). A read-only recipe says "This recipe makes 12 pieces." / «الوصفة تكفي 12 قطعة.».
@@ -1533,7 +1533,7 @@ Source: D-084 (the per-member overrides deferred from M1 to the first module wit
 
 ### D-192 · 2026-09-30 · Fields a capability hides are refused by the API too
 
-Source: ROADMAP.md M2 Step 7 ("Capabilities hide inside screens") and PRODUCT.md §5. Extends D-080 and D-129.
+Source: ROADMAP.md M2 Step 7 ("Capabilities hide inside screens") and PRODUCT.md §5. Extends D-080 and D-129. Extended by D-206 (the two VAT flags).
 
 - **Decision:** what the screens hide, the API refuses (CAPABILITY_DISABLED), and what is stored is kept, never cleared:
   - **VAT only when VAT-registered:** a purchase or expense draft of a business that is not VAT-registered carries no VAT rate other than 0 (it types what it paid, as its screens send); a product keeps its VAT category and "price includes VAT" as stored (a new one: the standard rate, a price without VAT). A draft saved while the business was registered keeps its VAT, and posting counts that VAT as cost (D-114 rule 4).
@@ -1682,6 +1682,118 @@ Source: the owner, 2026-10-01 ("1أ-2ب-3ا-4ا"), answering the four questions 
   4. **The supplier of a purchase:** optional, as built (a market or cash purchase often has none; still required when paying later). The recommendation.
 - **Why:** the owner's answers.
 - **Rejected:** opening receipts without supplier prices (they show the amounts); VAT-inclusive prices on by default by business type (the owner's choice); a salaries key before payroll exists; a required supplier.
+
+## Costing Core, Step 8: hardening
+
+The suites of ROADMAP.md M2 Step 8 found three gaps, each fixed in production code with its failing test kept. The review that closed the step found six more (D-208–D-213, below), and the review of those fixes two more (D-214, D-215).
+
+### D-205 · 2026-10-01 · The books-closed date is enforced by the database too
+
+Source: M2 Step 8 (closed-date refusals). `supabase/tests/19_books_closed_guard.test.sql` failed 37 of its 80 checks before the fix. Refines D-114 rule 6, D-135 and D-200. Extended by D-211: a document written already posted or reversed is checked too.
+
+- **Decision:** migration `books_closed_guard` adds the trigger function `app.guard_books_closed()`, which raises SQLSTATE `BZ412` (the API answers BOOKS_CLOSED, `packages/api/src/errors.ts`):
+  - trigger `books_closed` BEFORE UPDATE on `purchases`, `purchase_returns` and `expenses` when the status becomes `posted` or `reversed`. A posting needs its `business_date` after the date. A reversal needs its `reversal_date` after it. An expense also needs an open month: `period_month` when posted, `reversal_period_month` (or its own month) when reversed (D-200);
+  - `books_closed` BEFORE INSERT on `purchase_payments` and `expense_payments` (their `business_date`), and `books_closed_reversal` BEFORE UPDATE when a payment is reversed (`reversal_date`);
+  - `books_closed` BEFORE INSERT on `stock_movements`: no movement is dated on or before the date.
+  - The function reads the business row FOR SHARE, as the API's postings lock it (lock 2 of D-135), so a change of the date and a posting never pass each other.
+  - Drafts dated in the closed period are still saved and edited. An expense's review (submit, approve, reject) is not a posting.
+  - It runs with the caller's rights, is owned by postgres, and only `bizcost_api` may execute it.
+- **Why:** D-114 rule 6 was enforced in one place only (the API's `assertPostable` and `reversalDateOf`). A script, a later procedure or a bug that skipped that check could post into closed books.
+- **Rejected:** SECURITY DEFINER (whoever writes a tenant row is an active member who can read its business row under RLS); guarding expense submission (not a posting; the API keeps D-176's check).
+- **Tests:** `19_books_closed_guard` (every document kind and payment, as `bizcost_api` and as the table owner; closed months; drafts; reopening), `packages/db/test/ledger.db.test.ts` (a close and a posting in flight wait for each other), `packages/api/test/ledger.closed-books.api.test.ts`.
+
+### D-206 · 2026-10-01 · Without VAT registration, a draft also refuses "Prices including VAT" and "VAT can't be reclaimed"
+
+Source: M2 Step 8, `packages/api/test/hardening/gates.api.test.ts` ("every capability field is refused where it doesn't apply"). Extends D-192.
+
+- **Decision:** a business that is not VAT-registered gets CAPABILITY_DISABLED for a purchase or expense draft (create or update) with `pricesIncludeVat: true` or `vatNotReclaimable: true`, as it already did for a VAT rate other than 0 (`assertVatShown` in `services/purchases.ts`, shared by expenses). The screens never send these flags. A draft stored while the business was registered keeps them until it is saved again (D-192). The demo seed sends `pricesIncludeVat: false` for such businesses, as the forms do.
+- **Why:** CLAUDE.md: what the screens hide, the server refuses. Both flags were being stored for a business that has no VAT.
+- **Rejected:** dropping the flags silently (D-192: a client would record something other than what it showed).
+
+### D-207 · 2026-10-01 · Correcting a purchase needs supplier prices
+
+Source: M2 Step 8, the member-override cases of `packages/api/test/hardening/redaction-oracle.api.test.ts`. Extends D-184 and D-200.
+
+- **Decision:** `purchase.correct` is FORBIDDEN to a member who may not see supplier prices, before anything is read, as `expense.correct` already is (D-184). Only a member's own changes or an edited role can reach this case: every template that may reverse purchases also sees supplier prices. A purchase page hides "Correct" for such a member (`features/purchasing/purchase-view.tsx`).
+- **Why:** the copy carries the purchase's prices and becomes the corrector's own draft. They would save it whole without having read those prices, which D-200 forbids.
+- **Rejected:** a copy without its prices (a correction exists to fix the amounts).
+
+## Costing Core, Step 8: fixes after the adversary review
+
+A last review of all of M2 (security, ledger and costing, completeness) wrote failing tests for what it found; each was fixed in production code and the test kept.
+
+### D-208 · 2026-10-01 · A run of purchases sent back whole is as if never bought; a replay never starts over
+
+Source: `packages/api/test/ledger.costing-adversary.api.test.ts` (a purchase with two lines of one material, all sent back, left the cost row an average of 0.008 for goods no longer there) and `packages/domain/src/costing/wac.scale-adversary.test.ts` (three years of two purchases a day, one in ten corrected: 2.7 s per replay, under the posting locks). Refines D-109, D-110 and D-120 rule 2.
+
+- **Decision (returns):** besides a full return of a receipt with nothing else posted since it (D-120 rule 2), a return that leaves every receipt of a **run** fully returned restores the state from before the run. A run is the movements since the last one that was neither a receipt nor a return or credit of a receipt of the run (an issue, from Phase 3, or a return or credit of an older receipt). So a purchase with two lines of a material, or two purchases with nothing else in between, all sent back, leave the material as never bought (no average), in any order.
+- **Decision (replay):** `replayWac` keeps what undoes each movement; a reversal undoes the movements back to its target and applies the ones after it again, instead of rebuilding the book from the start. Whether a receipt is untouched is a counter, not a loop over every receipt. `purchaseReturn.post` replays the ledger once for a return (twice only for a credit note, which needs what each receipt's goods still carry).
+- **What a replay costs:** about its movements, plus, for each reversal, the movements still standing after its target. On the 2.7 s ledger: about 25 ms with each correction posted right after its purchase, 120 ms with each a month (60 purchases) later, 0.6–0.9 s six months later, 3 s with all 219 at the end; six years with corrections a month late, 250 ms. So the cost follows how late corrections come, not the business's age. The review of this fix measured the late cases: the first wording ("one pass, however many reversals") held only for corrections posted soon after their purchase.
+- **Why:** the definition of done says a full return right after its purchase restores the previous average exactly; Phase 3 would cost a sale of such goods at the stale average. D-109 said reversals are rare, so replays are cheap, but every stored reversal rebuilt the book on every later replay, so the cost grew with the business's age until postings of a material held its locks for seconds.
+- **Rejected:** a group id per purchase (needs a ledger change, and two purchases back to back sent back whole would still keep a stale average); checkpoints of the whole book (memory grows with the ledger; only corrections months late on many purchases would need them, which is not how a business works).
+- **Tests:** `wac.returns.test.ts` (the run cases; "a ledger with reversals equals one pass over what still stands, step by step", fast-check against a forward-only replay), `wac.scale-adversary.test.ts` (corrections at once, a month later, and six years of them a month late), `ledger.costing-adversary.api.test.ts`, and every `ledgerDrift` check.
+
+### D-209 · 2026-10-01 · No answer depends on a value the caller cannot see
+
+Source: `packages/api/test/security/m2-step8-adversary.api.test.ts` (a member with the costs switch off told two materials apart by the answer of a recipe save and of a purchase post). Applies ARCHITECTURE.md §Redaction and D-142 to D-178 and D-110.
+
+- **Decision (recipe yield):** `recipe.save` refuses a changed yield too small for what the recipe costs (D-178) only for a member who sees costs. For anyone else the save stands; members who see costs see its cost as too large (`cost.tooLarge`), as they would after a price rise.
+- **Decision (stock value):** `material_costs.value` and `material_costs.avg_cost` are `numeric(38,12)` (migration `wide_material_costs`). One purchase line is at most `numeric(20,4)`, so a material's stock value reaches the new limit only after ten billion postings of the largest amount: a posting no longer fails exactly when the hidden stock value plus the poster's amount reaches 10^16.
+- **Why:** the quantities, the yield and the purchase amounts are the caller's to choose, so a refusal or a failure that depends on a hidden average or stock value reads it out, digit by digit, over a few dozen tries.
+- **Rejected:** a typed error for the overflow (the answer would still differ); a cap on purchase amounts alone (the stock value adds up over postings).
+
+### D-210 · 2026-10-01 · Without costs, a member changes only the running costs they entered
+
+Source: `m2-step8-adversary.api.test.ts` (a Manager with the costs switch off overwrote the owner's rent with 1 and removed it). Extends D-200 ("changing what one cannot see") to D-165. Refined by D-214: a running cost the member entered is theirs only while nobody else has changed it since.
+
+- **Decision:** `runningCost.update` and `runningCost.remove` are FORBIDDEN, under the row lock, to a member who may not see costs, unless they entered that running cost (`created_by`). The redaction oracle's `runningCost.update` entry uses such a member's own running cost.
+- **Why:** an update is the whole record, so it replaces an amount the member never read, and a removal takes out one they cannot check. The screens already offered neither (CLAUDE.md: the server enforces it).
+- **Rejected:** making `running_costs.items.manage` need `data.cost.view` (a member who enters their own running costs without seeing the others' would lose that).
+
+### D-211 · 2026-10-01 · The books-closed date also holds for a document written already posted
+
+Source: `supabase/tests/22_m2_adversary.test.sql`. Extends D-205.
+
+- **Decision:** migration `books_closed_insert` attaches `app.guard_books_closed()` BEFORE INSERT on `purchases`, `purchase_returns` and `expenses` when the new row is `posted` or `reversed` (trigger `insert_books_closed`, named to fire after an expense's `default_period_month`). A posted row is checked by its day (an expense: and its month); a reversed one by its posting and by its reversal.
+- **Why:** the API posts by UPDATE, but D-205 promises that no script, later procedure or bug puts anything into closed books.
+- **Rejected:** refusing every INSERT that is not a draft (fixtures and scripts write final documents on open days on purpose).
+
+### D-212 · 2026-10-01 · Screens refresh what a change makes stale
+
+Source: the e2e specs of M2 Step 8 (`m2-done.spec.ts`). Extended by D-215: VAT registration (Business profile) and the switches of Customize BizCost refresh Product costs too.
+
+- **Decision:** the business's query cache keeps an answer for 30 s, so every screen that changes a cost, a price, the month's costs or an amount owed refreshes what shows it: Product costs (`productCost.*`) after a purchase, a return or credit note, a reversal, a recipe, a material, a product's price, a running cost, an expense or a category; the purchase's payments and Amounts owed after a return or credit note.
+- **Why:** a member who goes from the change to Product costs through the app saw the old figures (AED 6.67 after the reversal that made it 6), and the old "Still owed" after a credit note.
+- **Tests:** `m2-done.spec.ts` ("Product costs show at once what any screen just changed…", the owner's average reversed, "every other quantity and price field…" for what is still owed).
+
+### D-213 · 2026-10-01 · A missing message shows its whole key
+
+Source: the completeness review of M2 Step 8 (the smoke checks could not see a missing message).
+
+- **Decision:** `createI18nInstance` sets `appendNamespaceToMissingKey`: a message missing in the browser shows `<namespace>.<path>` (`purchasing.purchases.empty.title`), never the path alone. `RAW_KEY` (`@bizcost/i18n/namespaces`, built from `NAMESPACES`) finds it; the e2e smoke checks use it.
+- **Why:** a key built at run time is checked only by the screens that show it, and a path without its namespace looked like ordinary text to those checks.
+
+## Costing Core, Step 8: fixes after the review of those fixes
+
+A review of D-205–D-213 found two more gaps, each fixed with its failing test kept, and a performance claim of D-208 that held only for corrections posted soon after their purchase (D-208 now says what a replay costs; `wac.scale-adversary.test.ts` measures late corrections too).
+
+### D-214 · 2026-10-01 · One's own running cost or purchase draft is one nobody else has changed since
+
+Source: `packages/api/test/security/m2-step8-access-review.api.test.ts` (a Manager with the costs switch off entered a running cost at 300, the owner corrected it to 12000, and the Manager, who cannot read 12000, saved it as 1 and then removed it). Refines D-200 (purchase drafts) and D-210.
+
+- **Decision:** a member who may not see costs changes or removes a running cost (`runningCost.update`, `.remove`), and a member who may not see supplier prices saves or discards a purchase draft (`purchase.update`, `.discard`), only while it is their own: they entered it, and nobody else has changed it since. The service reads it under the row lock as the last one who wrote the row (`updated_by`, kept by `app.touch_row`; `created_by` until it is first changed) being the caller. FORBIDDEN otherwise, before anything is changed. Their own saves keep it theirs. The receipts of a purchase draft still follow who entered it (`attachment.*`, D-200): a receipt replaces no amount.
+- **Expenses keep D-184's rule (`created_by`):** a member reads the amounts of the expenses they entered in "My expenses" (`expense.getMine`, D-181), the owner's changes included, so their save is never blind; and an approver's rejection is written by the approver, after which the employee must still fix and send it again (A3).
+- **Why:** D-210's own reason: a save is the whole record, so it would replace an amount the member never read, and a removal takes out one they cannot check. That is as true of an amount the owner set on the member's own record since. The screens offered neither (a member without costs gets no edit sheet for a running cost whose amount is hidden, nor the editor for a draft whose prices are), so only a direct API call reached it.
+- **Rejected:** a column recording who last set the amounts (one more column for what `updated_by` already says, since only these saves write these rows); the same rule for expenses (the reasons above).
+- **Tests:** `m2-step8-access-review.api.test.ts` (D-210's running cost and D-214's purchase draft, each saved by the owner since: the member's save and removal are FORBIDDEN and the owner's amount stays; one nobody else changed stays the member's own through several saves), `release-costing.adversary.api.test.ts` (another member's draft), the redaction oracle's `runningCost.update` entry.
+
+### D-215 · 2026-10-01 · VAT registration and the team refresh Product costs too
+
+Source: the review of D-212 (a price before VAT, a margin and the owner's time line stayed as they were for up to 30 s after the owner switched VAT in Business profile or the team in Customize BizCost). Extends D-212.
+
+- **Decision:** saving Business profile with VAT registration changed refreshes Product costs (`productCost.*`: the price before VAT and the margin follow it); every switch in Customize BizCost refreshes Product costs and the products' costs (`productCost.*`, `product.costs`: the owner's time counts only without a team, D-119).
+- **Why:** D-212: every screen that changes what a cost, a price or a margin shows refreshes what shows it. These two settings were left out.
+- **Tests:** `m2-done.spec.ts` ("Product costs show at once what any screen just changed…", steps 10 and 11).
 
 ## Proposals
 

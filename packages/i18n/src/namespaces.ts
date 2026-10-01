@@ -22,6 +22,15 @@ export const NAMESPACES = [
 ] as const
 export type Namespace = (typeof NAMESPACES)[number]
 
+/**
+ * A key shown as text instead of its message, e.g. `purchasing.editor.qty`. A missing message
+ * renders as its key with its namespace (createI18nInstance: appendNamespaceToMissingKey), so this
+ * finds it; the smoke tests look for it on every screen (tests/e2e).
+ */
+export const RAW_KEY = new RegExp(
+  `\\b(?:${NAMESPACES.join('|')})\\.[a-z][A-Za-z0-9_]*(?:\\.[A-Za-z0-9_]+)*`,
+)
+
 /** Namespace of keys written without a prefix. */
 export const DEFAULT_NAMESPACE = 'common' satisfies Namespace
 

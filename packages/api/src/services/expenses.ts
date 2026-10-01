@@ -470,7 +470,11 @@ async function prepareDraft(
   input: Fields,
   current: { categoryId: string; periodMonth: string; paymentMethod: string } | null,
 ) {
-  assertVatShown(ctx, [input.vatRate])
+  assertVatShown(ctx, {
+    rates: [input.vatRate],
+    pricesIncludeVat: input.pricesIncludeVat,
+    vatNotReclaimable: input.vatNotReclaimable,
+  })
   assertPaidByShown(ctx, input.paymentMethod, current?.paymentMethod ?? null)
   const { currency, defaultLocationId, closedThrough } = await draftContext(tx, ctx.businessId)
   const category = await assertCategory(

@@ -739,6 +739,20 @@ export function leaksOf(raw: string, tenant: Tenant, sent: unknown = undefined):
  * objects. Read as postgres (BYPASSRLS).
  */
 export async function tenantDigest(admin: Admin, tenant: Tenant): Promise<Record<string, string>> {
+  const digest = await businessDigest(admin, tenant.id)
+  const userIds = [tenant.owner, tenant.admin, tenant.employee].map(({ user }) => user.id)
+  const [profiles] = await admin<{ h: string }[]>`
+    select md5(coalesce(string_agg(to_jsonb(p)::text, '|' order by p.id), '')) as h
+      from app.profiles p where p.id = any(${userIds}::uuid[])`
+  digest.profiles = profiles?.h ?? ''
+  return digest
+}
+
+/** As tenantDigest, for any business: its rows (audit_log included), its row, its Storage objects. */
+export async function businessDigest(
+  admin: Admin,
+  businessId: string,
+): Promise<Record<string, string>> {
   const tables = await admin<{ table_name: string }[]>`
     select table_name from information_schema.columns
      where table_schema = 'app' and column_name = 'business_id'
@@ -748,24 +762,19 @@ export async function tenantDigest(admin: Admin, tenant: Tenant): Promise<Record
     const [row] = await admin.unsafe<{ h: string }[]>(
       `select md5(coalesce(string_agg(to_jsonb(t)::text, '|' order by t.id), '')) as h
          from app."${table_name.replaceAll('"', '""')}" t where t.business_id = $1`,
-      [tenant.id],
+      [businessId],
     )
     digest[table_name] = row?.h ?? ''
   }
   const [business] = await admin<{ h: string }[]>`
-    select md5(to_jsonb(b)::text) as h from app.businesses b where b.id = ${tenant.id}`
+    select md5(to_jsonb(b)::text) as h from app.businesses b where b.id = ${businessId}`
   digest.businesses = business?.h ?? ''
-  const userIds = [tenant.owner, tenant.admin, tenant.employee].map(({ user }) => user.id)
-  const [profiles] = await admin<{ h: string }[]>`
-    select md5(coalesce(string_agg(to_jsonb(p)::text, '|' order by p.id), '')) as h
-      from app.profiles p where p.id = any(${userIds}::uuid[])`
-  digest.profiles = profiles?.h ?? ''
   const [objects] = await admin<{ h: string }[]>`
     select md5(coalesce(string_agg(
              concat_ws(':', o.name, o.metadata::text, o.updated_at::text, o.owner_id), '|'
              order by o.name), '')) as h
       from storage.objects o
-     where o.bucket_id = 'business-files' and o.name like ${`${tenant.id}/%`}`
+     where o.bucket_id = 'business-files' and o.name like ${`${businessId}/%`}`
   digest.storage = objects?.h ?? ''
   return digest
 }

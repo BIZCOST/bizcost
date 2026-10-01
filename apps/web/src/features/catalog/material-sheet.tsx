@@ -122,6 +122,7 @@ export function MaterialSheet({
         queryClient.invalidateQueries({ queryKey: trpc.material.list.pathKey() }),
         queryClient.invalidateQueries({ queryKey: trpc.material.costs.pathKey() }),
         queryClient.invalidateQueries({ queryKey: trpc.recipe.get.pathKey() }),
+        queryClient.invalidateQueries({ queryKey: trpc.productCost.pathKey() }),
         ...(saved.resaleProductId
           ? [queryClient.invalidateQueries({ queryKey: trpc.product.list.pathKey() })]
           : []),

@@ -148,3 +148,30 @@ describe('Supabase Admin API in the API', () => {
     expect(await restrictedImports('packages/api/src/services/business-profile.ts', code)).toBe(1)
   })
 })
+
+describe('no float money (M2 definition of done: no floats, lint)', () => {
+  const code = `export const a = (x: string) => parseFloat(x)
+export const b = (x: string) => Number.parseFloat(x)
+export const c = (1.005).toFixed(2)
+`
+
+  async function floats(file) {
+    const [result] = await eslint.lintText(code, { filePath: join(repoRoot, file) })
+    return (result?.messages ?? []).filter((m) => m.ruleId === 'no-restricted-syntax').length
+  }
+
+  it.each([
+    'apps/web/src/features/probe.tsx',
+    'apps/web/app/(app)/probe/page.tsx',
+    'packages/api/src/services/probe.ts',
+    'packages/domain/src/probe.ts',
+    'packages/app-core/src/probe.ts',
+    'packages/api/test/probe.api.test.ts',
+  ])('refuses parseFloat, Number.parseFloat and toFixed in %s', async (file) => {
+    expect(await floats(file)).toBe(3)
+  })
+
+  it('leaves the lint config itself alone', async () => {
+    expect(await floats('packages/config/probe.ts')).toBe(0)
+  })
+})

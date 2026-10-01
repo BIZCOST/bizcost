@@ -51,6 +51,44 @@ describe('supplier returns (D-120 rule 2)', () => {
     expect(pick(step.state)).toEqual(pick(EMPTY_WAC_STATE))
   })
 
+  it('a purchase with two lines of the material, all sent back in either order: as if never bought (D-208)', () => {
+    // 10 L at AED 6 and 5 L at AED 8 on one purchase: two receipts, the second touching the first.
+    const lines = [receipt('a', '10', '60'), receipt('b', '5', '40')]
+    for (const returns of [
+      [back('x', 'a', '10'), back('y', 'b', '5')],
+      [back('y', 'b', '5'), back('x', 'a', '10')],
+    ]) {
+      const { state, steps } = replayWac([...lines, ...returns])
+      expect(pick(state)).toEqual(pick(EMPTY_WAC_STATE))
+      expect(steps.map((s) => s.adjustment)).toEqual(['0', '0', '0', '0'])
+    }
+  })
+
+  it('two purchases with nothing else between them, both sent back whole: as if neither came in', () => {
+    const { state } = replayWac([
+      receipt('a', '10', '60'),
+      receipt('b', '5', '40'),
+      back('x', 'a', '4'),
+      back('y', 'a', '6'),
+      back('z', 'b', '5'),
+    ])
+    expect(pick(state)).toEqual(pick(EMPTY_WAC_STATE))
+  })
+
+  it('usage ends the run: what was on hand before it stays, and the run sent back restores it', () => {
+    const used = [receipt('a', '10', '100'), issue('5')]
+    const { state: before } = replayWac(used)
+    const { state } = replayWac([
+      ...used,
+      receipt('b', '10', '300'),
+      receipt('c', '10', '200'),
+      back('x', 'b', '10'),
+      back('y', 'c', '10'),
+    ])
+    expect(pick(state)).toEqual(pick(before))
+    expect(pick(state)).toEqual({ qty: '5', value: '50', avgCost: '10' })
+  })
+
   it('a part: out at the price paid for it, and the average moves back', () => {
     const step = last([...OWNER, back('x', 'b', '20')])
     expect(flow(step)).toEqual({ valueIn: '0', valueOut: '140', adjustment: '0' })
@@ -193,6 +231,26 @@ describe('reversals of returns and credit notes: as if never posted', () => {
     const step = last([...OWNER, back('x', 'b', '20'), { type: 'return_reversal', returnId: 'x' }])
     expect(flow(step)).toEqual({ valueIn: '140', valueOut: '0', adjustment: '0' })
     expect(pick(step.state)).toEqual(pick(before))
+  })
+
+  it('after a return or credit is reversed, its receipt is untouched again: its full return restores', () => {
+    // At negative stock (from Phase 3), where a touched receipt's full return keeps the average
+    // instead: 15 used of 10, then 2 at AED 3 and 2 at AED 4 come in.
+    const ledger = [
+      receipt('a', '10', '100'),
+      issue('15'),
+      receipt('c', '2', '6'),
+      receipt('b', '2', '8'),
+    ]
+    const before = replayWac(ledger.slice(0, -1)).state
+    expect(pick(before)).toEqual({ qty: '-3', value: '-9', avgCost: '3' })
+    for (const [move, undo] of [
+      [back('x', 'b', '1'), { type: 'return_reversal', returnId: 'x' }],
+      [credit('k', 'b', '2'), { type: 'credit_reversal', creditId: 'k' }],
+    ] as const) {
+      const { state } = replayWac([...ledger, move, undo, back('all', 'b', '2')])
+      expect(pick(state)).toEqual(pick(before))
+    }
   })
 
   it('a credit reversed right after it restores the state', () => {
@@ -393,6 +451,41 @@ describe('properties', () => {
           if (toDec(state.qty).gt(0)) expect(toDec(state.value).lt(0)).toBe(false)
           if (toDec(state.qty).isZero()) expect(toDec(state.value).isZero()).toBe(true)
         }
+      }),
+    )
+  })
+
+  it('a ledger with reversals equals one pass over what still stands, step by step (D-208)', () => {
+    fc.assert(
+      fc.property(ledgerArb, (movements) => {
+        const replay = replayWac(movements)
+        // What stands after each movement, returns with the value they were given; a ledger without
+        // reversals is replayed forward only, so this checks every reversal's undo and replay.
+        const standing: WacMovement[] = []
+        movements.forEach((m, i) => {
+          if (m.type === 'receipt' || m.type === 'return' || m.type === 'credit') {
+            standing.push(m.type === 'return' ? { ...m, value: replay.steps[i]!.valueOut } : m)
+            return
+          }
+          if (m.type === 'issue') {
+            standing.push(m)
+            return
+          }
+          const target =
+            m.type === 'receipt_reversal'
+              ? m.receiptId
+              : m.type === 'return_reversal'
+                ? m.returnId
+                : m.creditId
+          const index = standing.findIndex(
+            (s) => s.type !== 'issue' && 'id' in s && s.id === target,
+          )
+          standing.splice(index, 1)
+          expect(pick(replay.steps[i]!.state)).toEqual(pick(replayWac(standing).state))
+        })
+        const once = replayWac(standing)
+        expect(pick(replay.state)).toEqual(pick(once.state))
+        expect([...replay.receipts]).toEqual([...once.receipts])
       }),
     )
   })

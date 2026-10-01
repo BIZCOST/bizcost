@@ -6,6 +6,7 @@ import {
   createUser,
   deleteUser,
   nextInvitation,
+  RAW_KEY,
   setLanguage,
   signIn,
   uniqueEmail,
@@ -44,23 +45,6 @@ const WIDTHS = [
   { width: 1440, height: 900 },
 ] as const
 
-const NAMESPACES = [
-  'common',
-  'auth',
-  'account',
-  'errors',
-  'setup',
-  'modules',
-  'settings',
-  'dashboard',
-  'emails',
-  'nav',
-  'language',
-]
-/** An i18n key shown as text, e.g. `settings.members.title`. */
-const RAW_KEY = new RegExp(
-  `\\b(?:${NAMESPACES.join('|')})\\.[a-z][A-Za-z0-9_]*(?:\\.[A-Za-z0-9_]+)*`,
-)
 const ARABIC = /[\u0600-\u06FF]/
 
 let owner: TestUser

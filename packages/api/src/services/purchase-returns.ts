@@ -746,7 +746,8 @@ export async function postReturn(
       const mine = drafts.filter((d) => left.get(d.purchase_line_id)?.material_id === materialId)
       if (mine.length === 0) continue
       const ledger = toWacMovements(await materialLedger(tx, ctx.businessId, materialId))
-      const standing = replayWac(ledger).receipts
+      // What each receipt’s goods still carry, for a credit note’s amount (a return needs none).
+      const standing = head.kind === 'return' ? null : replayWac(ledger).receipts
       const planned = mine.map((draft) => {
         const line = left.get(draft.purchase_line_id)!
         const amounts = lineAmounts(head.kind, line, draft.qty ?? draft.amount!, purchase.currency)
@@ -768,7 +769,7 @@ export async function postReturn(
         // What the credit takes off the goods' cost: with its VAT when VAT is part of the cost, never
         // more than what the line's goods still carry (VAT rounding on a last credit).
         const withVat = purchase.vatInCost ? sumDecimals([amounts.net, amounts.vat]) : amounts.net
-        const carried = standing.get(line.receipt_id)?.remainingValue ?? '0'
+        const carried = standing?.get(line.receipt_id)?.remainingValue ?? '0'
         const amount = compareDecimal(withVat, carried) > 0 ? carried : withVat
         if (compareDecimal(amount, '0') <= 0) throw new AppError('exceeds_purchase')
         const movement: WacMovement = {

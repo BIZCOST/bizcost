@@ -129,7 +129,11 @@ export function RunningCostSheet({
           ? t('expenses.running.sheet.saved')
           : t('expenses.running.sheet.added', { name: isolate(saved.data.name) }),
       )
-      await queryClient.invalidateQueries({ queryKey: trpc.runningCost.list.pathKey() })
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: trpc.runningCost.list.pathKey() }),
+        // The month's costs on Product costs count running costs.
+        queryClient.invalidateQueries({ queryKey: trpc.productCost.pathKey() }),
+      ])
       return true
     } catch (error) {
       setServerError(
@@ -153,7 +157,11 @@ export function RunningCostSheet({
     try {
       await remove.mutateAsync({ id: cost.id, version: cost.version })
       toast.success(t('expenses.running.sheet.removed', { name: isolate(cost.name) }))
-      await queryClient.invalidateQueries({ queryKey: trpc.runningCost.list.pathKey() })
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: trpc.runningCost.list.pathKey() }),
+        // The month's costs on Product costs count running costs.
+        queryClient.invalidateQueries({ queryKey: trpc.productCost.pathKey() }),
+      ])
       setRemoving(false)
       onClose()
     } catch (error) {

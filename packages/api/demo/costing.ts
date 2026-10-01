@@ -189,9 +189,13 @@ class CostingSeed {
     return this.capabilities.vat_registered === true
   }
 
-  /** VAT on a document: the standard rate on a tax invoice of a VAT-registered business. */
+  /**
+   * VAT on a document: the standard rate on a tax invoice of a VAT-registered business. Any other
+   * business types what it paid, before VAT, as the app's forms send it (the API refuses the rest).
+   */
   private vatOf(document: string): { vatRate: string; pricesIncludeVat: boolean } {
-    return this.vatRegistered && document === 'tax_invoice'
+    if (!this.vatRegistered) return { vatRate: '0', pricesIncludeVat: false }
+    return document === 'tax_invoice'
       ? { vatRate: VAT_RATE, pricesIncludeVat: false }
       : { vatRate: '0', pricesIncludeVat: true }
   }

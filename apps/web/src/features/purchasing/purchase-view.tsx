@@ -141,7 +141,9 @@ export function PurchaseView({
   const canPost = can(context, 'purchases.documents.post')
   const canReverse = can(context, 'purchases.documents.reverse')
   // A credit note is checked against the prices paid: only for members who may see them (D-142).
-  const canCredit = canManage && context.visibleCategories.includes('supplier_price')
+  // A correction's copy carries the prices too (D-184, D-200): the API refuses the others.
+  const seesPrices = context.visibleCategories.includes('supplier_price')
+  const canCredit = canManage && seesPrices
   const listHref = `/b/${businessId}/purchases`
   const materialLines = purchase.lines.filter((line) => line.kind === 'material')
   const deliveryLines = purchase.lines.filter((line) => line.kind === 'delivery')
@@ -185,6 +187,7 @@ export function PurchaseView({
       queryClient.invalidateQueries({ queryKey: trpc.purchase.list.pathKey() }),
       queryClient.invalidateQueries({ queryKey: trpc.material.costs.pathKey() }),
       queryClient.invalidateQueries({ queryKey: trpc.product.costs.pathKey() }),
+      queryClient.invalidateQueries({ queryKey: trpc.productCost.pathKey() }),
       queryClient.invalidateQueries({ queryKey: trpc.recipe.get.pathKey() }),
       queryClient.invalidateQueries({ queryKey: trpc.purchasePayment.list.pathKey() }),
       queryClient.invalidateQueries({ queryKey: trpc.payable.list.pathKey() }),
@@ -293,7 +296,7 @@ export function PurchaseView({
               ) : null}
             </>
           ) : null}
-          {reversible && canReverse && canManage ? (
+          {reversible && canReverse && canManage && seesPrices ? (
             <Button
               variant="outline"
               onClick={() => {

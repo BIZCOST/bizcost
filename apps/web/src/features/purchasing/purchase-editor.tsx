@@ -372,6 +372,7 @@ export function PurchaseEditor({
       void queryClient.invalidateQueries({ queryKey: trpc.purchase.list.pathKey() })
       void queryClient.invalidateQueries({ queryKey: trpc.material.costs.pathKey() })
       void queryClient.invalidateQueries({ queryKey: trpc.product.costs.pathKey() })
+      void queryClient.invalidateQueries({ queryKey: trpc.productCost.pathKey() })
       void queryClient.invalidateQueries({ queryKey: trpc.recipe.get.pathKey() })
       void queryClient.invalidateQueries({ queryKey: trpc.payable.list.pathKey() })
       toast.success(t('purchasing.confirm.finalized', { names: names() }))

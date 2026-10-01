@@ -32,6 +32,9 @@ export function createI18nInstance({ locale, messages }: CreateI18nInstanceOptio
     defaultNS: DEFAULT_NAMESPACE,
     nsSeparator: '.',
     keySeparator: '.',
+    // A missing message shows its whole key, `<namespace>.<path>`, never the path alone: the smoke
+    // tests find it (RAW_KEY), and it never passes for wording.
+    appendNamespaceToMissingKey: true,
     resources: Object.fromEntries(
       Object.entries(messages).map(([lng, bundle]) => [lng, { ...bundle }]),
     ),

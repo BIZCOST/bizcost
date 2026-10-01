@@ -253,6 +253,27 @@
       "when": 1790807079943,
       "tag": "20260930222439_costs_by_price",
       "breakpoints": true
+    },
+    {
+      "idx": 36,
+      "version": "7",
+      "when": 1790817710383,
+      "tag": "20261001012150_books_closed_guard",
+      "breakpoints": true
+    },
+    {
+      "idx": 37,
+      "version": "7",
+      "when": 1790829977272,
+      "tag": "20261001044617_wide_material_costs",
+      "breakpoints": true
+    },
+    {
+      "idx": 38,
+      "version": "7",
+      "when": 1790830220755,
+      "tag": "20261001045020_books_closed_insert",
+      "breakpoints": true
     }
   ]
 }

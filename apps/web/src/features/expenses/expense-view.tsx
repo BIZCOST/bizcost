@@ -182,6 +182,8 @@ export function ExpenseView({
       queryClient.invalidateQueries({ queryKey: trpc.expense.list.pathKey() }),
       queryClient.invalidateQueries({ queryKey: trpc.expensePayment.list.pathKey() }),
       queryClient.invalidateQueries({ queryKey: trpc.payable.list.pathKey() }),
+      // A final expense counts in its month's costs on Product costs.
+      queryClient.invalidateQueries({ queryKey: trpc.productCost.pathKey() }),
       refreshOwn(),
     ])
   }

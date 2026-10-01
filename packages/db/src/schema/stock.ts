@@ -107,15 +107,17 @@ export const stockMovements = tenantTable(
  * The cost row of a material: ONE per material for the whole business (D-006). Quantity on hand in
  * base units, its value and the weighted-average cost per base unit (null before the first receipt
  * that still stands). `last_seq` is the last movement applied. Created at the material's first
- * posting.
+ * posting. Value and average are numeric(38,12), wider than any one movement (numeric(28,12)): what
+ * all the postings of a material add up to never overflows, so no posting fails on a hidden stock
+ * value or average (an answer that would tell them, ARCHITECTURE §Redaction; D-209).
  */
 export const materialCosts = tenantTable(
   'material_costs',
   {
     materialId: uuid('material_id').notNull(),
     qty: numeric('qty', { precision: 24, scale: 6 }).notNull().default('0'),
-    value: numeric('value', { precision: 28, scale: 12 }).notNull().default('0'),
-    avgCost: numeric('avg_cost', { precision: 28, scale: 12 }),
+    value: numeric('value', { precision: 38, scale: 12 }).notNull().default('0'),
+    avgCost: numeric('avg_cost', { precision: 38, scale: 12 }),
     lastSeq: bigint('last_seq', { mode: 'number' }),
   },
   (t) => [

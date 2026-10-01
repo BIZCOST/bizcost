@@ -196,8 +196,11 @@ export function CustomizeSettings({ businessId }: { businessId: string }) {
       setLayout(capabilityChanged ? null : (layout ?? before))
       queryClient.setQueryData(key, result.customization)
       setEffect({ id: itemId(item), turnedOn, turnedOff })
-      // The settings menu and other screens follow the capabilities and modules.
+      // The settings menu and other screens follow the capabilities and modules; so do the costs
+      // (the owner's time counts only without a team; D-212, D-215).
       void queryClient.invalidateQueries({ queryKey: trpc.business.context.queryKey() })
+      void queryClient.invalidateQueries({ queryKey: trpc.productCost.pathKey() })
+      void queryClient.invalidateQueries({ queryKey: trpc.product.costs.pathKey() })
       toast.success(t('settings.modules.saved'))
     } catch (error) {
       const code = apiErrorCode(error)

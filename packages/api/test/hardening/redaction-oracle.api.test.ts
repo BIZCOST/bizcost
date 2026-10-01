@@ -44,6 +44,7 @@ import {
   type Api,
   type Person,
 } from './fixture'
+import { inputLeaves, inputSchemaOf, optionsOf } from './schema'
 
 // Redaction oracle over EVERY procedure whose output has sensitivity tags (ROADMAP.md Step 9; M1
 // definition of done: "the Employee (staff) role template receives no field tagged sensitive"). The
@@ -62,21 +63,90 @@ import {
 // the day a production procedure gets a sensitive field without an ORACLE entry, and the day an
 // ORACLE entry no longer has one.
 
+// Member overrides (M2 Step 7, D-084): a member's own changes to their role's access change what they
+// see exactly as a role would. Three members hold a template changed by overrides, as Settings → Team
+// saves them (member.updatePermissions, which keeps every key with what it needs), and are held to
+// the same oracle as the templates, with what they may see written out by hand below:
+//   - a Supervisor allowed "Product costs" (no costs: the list, its sorts and filters, redacted);
+//   - a Manager with "See costs, supplier prices and margins" off, as the page sends it (with the
+//     keys that need it: approving expenses, recording payments);
+//   - an Employee with it on.
+
+interface OverridePersona {
+  template: RoleTemplateKey
+  overrides: { key: PermissionKey; effect: 'allow' | 'deny' }[]
+  visible: SensitivityCategory[]
+}
+
+const COSTS_SWITCH: PermissionKey[] = [
+  'data.cost.view',
+  'data.supplier_price.view',
+  'data.profit_margin.view',
+]
+
+const OVERRIDE_PERSONAS = {
+  'supervisor+product_costs': {
+    template: 'supervisor',
+    overrides: [{ key: 'cost_engine.product_costs.view', effect: 'allow' }],
+    visible: [],
+  },
+  'manager-costs': {
+    template: 'manager',
+    overrides: [
+      ...COSTS_SWITCH,
+      'expenses.documents.approve',
+      'expenses.payments.record',
+      'purchases.payments.record',
+    ].map((key) => ({ key: key as PermissionKey, effect: 'deny' as const })),
+    visible: [],
+  },
+  'employee+costs': {
+    template: 'employee',
+    overrides: COSTS_SWITCH.map((key) => ({ key, effect: 'allow' as const })),
+    visible: ['cost', 'profit_margin', 'supplier_price'],
+  },
+} as const satisfies Record<string, OverridePersona>
+
+type OverrideKey = keyof typeof OVERRIDE_PERSONAS
+/** A role template as Smart Setup copied it, or a member's template changed by their overrides. */
+type Persona = RoleTemplateKey | OverrideKey
+const OVERRIDE_KEYS = Object.keys(OVERRIDE_PERSONAS) as OverrideKey[]
+const PERSONAS: Persona[] = [...ROLE_TEMPLATE_KEYS, ...OVERRIDE_KEYS]
+
+function isOverride(persona: Persona): persona is OverrideKey {
+  return Object.hasOwn(OVERRIDE_PERSONAS, persona)
+}
+
+/** The categories a persona may see (hand-written: VISIBLE_TO, OVERRIDE_PERSONAS). */
+function visibleTo(persona: Persona): SensitivityCategory[] {
+  return isOverride(persona)
+    ? [...OVERRIDE_PERSONAS[persona].visible]
+    : [...VISIBLE_TO[persona as RoleTemplateKey]]
+}
+
 interface OracleEntry {
   /** The permission the procedure needs; templates without it get FORBIDDEN (none: every member). */
   permission?: PermissionKey
   /**
    * Input of the call, or a function preparing a fresh one for each call (as the owner, or as the
-   * member of `template` where only one's own record may be changed, D-184).
+   * member of `persona` where only one's own record may be changed, D-184).
    */
   input?: unknown
-  prepare?: (template: RoleTemplateKey) => Promise<unknown>
+  prepare?: (persona: Persona) => Promise<unknown>
   /** The values the call returns in each category (each must be in the answer when visible). */
   valuesOf: Partial<Record<SensitivityCategory, readonly string[]>>
   /**
-   * The call is refused this way for every member who holds the permission, with nothing sensitive
-   * (the owner's hourly rate in a business with a team, D-119): its output is the output of another
-   * entry, checked there.
+   * The call needs this category visible as well as its permission: what it writes or checks shows
+   * it (a credit note's amounts, a correction's copy, what is owed). FORBIDDEN otherwise, before
+   * anything is read, with nothing sensitive.
+   */
+  needsVisible?: SensitivityCategory
+  /** A member who holds the permission but not this key is refused this way, with nothing. */
+  alsoNeeds?: { key: PermissionKey; refusal: AppErrorCode }
+  /**
+   * The call is refused this way for every member who holds the permission (and sees what
+   * needsVisible says), with nothing sensitive (the owner's hourly rate in a business with a team,
+   * D-119): its output is the output of another entry, checked there.
    */
   refusedWith?: AppErrorCode
 }
@@ -114,13 +184,16 @@ const RUNNING_MONTHLY = '31724.723333333333'
 const EXPENSE = { supplier_price: [EXPENSE_NET, EXPENSE_TOTAL] }
 // A member's own records (D-181): each non-owner member paid one expense from their own money, with
 // an amount only they may read through the procedures of their own records.
-const OWN_AMOUNT: Record<Exclude<RoleTemplateKey, 'owner'>, string> = {
+const OWN_AMOUNT: Record<Exclude<Persona, 'owner'>, string> = {
   admin: '71.13',
   manager: '72.23',
   accountant: '73.33',
   sales: '74.43',
   supervisor: '75.53',
   employee: '76.63',
+  'supervisor+product_costs': '77.73',
+  'manager-costs': '78.83',
+  'employee+costs': '79.93',
 }
 /** An expense of the owner's that members who may correct it correct (D-184): never theirs to read. */
 const CORRECTED_AMOUNT = '97.19'
@@ -140,8 +213,8 @@ const OWNERS_AMOUNTS = [
 
 let api: Api
 let businessId: string
-const members = new Map<RoleTemplateKey, Person>()
-const memberIds = new Map<Exclude<RoleTemplateKey, 'owner'>, string>()
+const members = new Map<Persona, Person>()
+const memberIds = new Map<Exclude<Persona, 'owner'>, string>()
 let material: MaterialDto
 let supplier: SupplierDto
 let purchase: PurchaseDto
@@ -155,7 +228,7 @@ let category: CostCategoryDto
 let spent: ExpenseDto
 let owedExpense: ExpenseDto
 let running: RunningCostDto
-const ownExpenses = new Map<RoleTemplateKey, string>()
+const ownExpenses = new Map<Persona, string>()
 let costed: ProductDto
 
 // Product costs (M2 Step 6; D-202): a product of 18 g of the beans (1.02834 of materials) sold at
@@ -232,6 +305,37 @@ async function newDraft(): Promise<PurchaseDto> {
   return (await asOwner<{ data: PurchaseDto }>('purchase.create', 'mutation', draftInput())).data
 }
 
+/** A member who enters purchases without seeing supplier prices changes only their own (D-200). */
+function changesOnlyOwn(persona: Persona): boolean {
+  return (
+    persona !== 'owner' &&
+    holds(persona, 'purchases.documents.manage') &&
+    !visibleTo(persona).includes('supplier_price')
+  )
+}
+
+/** A purchase draft `persona` may change: their own where they change only theirs, else the owner's. */
+async function newOwnDraft(persona: Persona): Promise<{ id: string; version: number }> {
+  if (!changesOnlyOwn(persona)) return newDraft()
+  const result = await callProcedure<{ data: PurchaseDto }>(
+    api.handler,
+    { path: 'purchase.create', type: 'mutation' },
+    members.get(persona)!.token,
+    { businessId, input: draftInput() },
+  )
+  expect(result.error, result.raw).toBeUndefined()
+  return { id: result.data!.data.id, version: result.data!.data.version }
+}
+
+/** A member who manages running costs without seeing costs changes only their own (D-210). */
+function changesOnlyOwnRunning(persona: Persona): boolean {
+  return (
+    persona !== 'owner' &&
+    holds(persona, 'running_costs.items.manage') &&
+    !visibleTo(persona).includes('cost')
+  )
+}
+
 async function newPosted(): Promise<PurchaseDto> {
   const draft = await newDraft()
   return (
@@ -288,12 +392,15 @@ function paymentInput(purchaseId: string) {
   return { id: newId(), purchaseId, businessDate: today, method: 'cash', amount: PAID }
 }
 
-async function uploaded(): Promise<string> {
-  const upload = await asOwner<AttachmentUploadUrlDto>('attachment.uploadUrl', 'mutation', {
-    entity: 'purchase',
-    entityId: purchase.id,
-    contentType: 'image/png',
-  })
+async function uploaded(entityId = purchase.id, person = members.get('owner')!): Promise<string> {
+  const result = await callProcedure<AttachmentUploadUrlDto>(
+    api.handler,
+    { path: 'attachment.uploadUrl', type: 'mutation' },
+    person.token,
+    { businessId, input: { entity: 'purchase', entityId, contentType: 'image/png' } },
+  )
+  expect(result.error, result.raw).toBeUndefined()
+  const upload = result.data!
   expect((await uploadTo(upload.uploadUrl, PNG, 'image/png')).ok).toBe(true)
   return upload.path
 }
@@ -334,19 +441,17 @@ async function newExpenseDraft(extra: object = {}): Promise<ExpenseDto> {
 }
 
 /**
- * A draft the member of `template` entered themselves when they may enter expenses (a member who may
+ * A draft the member of `persona` entered themselves when they may enter expenses (a member who may
  * not see supplier prices changes only their own, D-184), else the owner's.
  */
-async function newOwnExpenseDraft(
-  template: RoleTemplateKey,
-): Promise<{ id: string; version: number }> {
-  if (template === 'owner' || !holds(template, 'expenses.documents.manage')) {
+async function newOwnExpenseDraft(persona: Persona): Promise<{ id: string; version: number }> {
+  if (persona === 'owner' || !holds(persona, 'expenses.documents.manage')) {
     return newExpenseDraft()
   }
   const result = await callProcedure<{ data: ExpenseDto }>(
     api.handler,
     { path: 'expense.create', type: 'mutation' },
-    members.get(template)!.token,
+    members.get(persona)!.token,
     { businessId, input: expenseInput() },
   )
   expect(result.error, result.raw).toBeUndefined()
@@ -416,10 +521,11 @@ const PRODUCTION_ORACLE: Record<string, OracleEntry> = {
     prepare: () => Promise.resolve(draftInput()),
     valuesOf: PRICE,
   },
+  // Without supplier prices, only one's own draft (D-200).
   'purchase.update': {
     permission: 'purchases.documents.manage',
-    prepare: async () => {
-      const draft = await newDraft()
+    prepare: async (persona) => {
+      const draft = await newOwnDraft(persona)
       return { ...draftInput(), id: draft.id, version: draft.version }
     },
     valuesOf: PRICE,
@@ -437,10 +543,12 @@ const PRODUCTION_ORACLE: Record<string, OracleEntry> = {
     prepare: async () => ({ id: (await newPosted()).id }),
     valuesOf: PRICE,
   },
+  // The copy carries the prices, and is the corrector's own draft to save whole (D-184, D-200).
   'purchase.correct': {
     permission: 'purchases.documents.reverse',
     prepare: async () => ({ id: (await newPosted()).id, newId: newId() }),
     valuesOf: PRICE,
+    needsVisible: 'supplier_price',
   },
   'purchaseReturn.list': {
     permission: 'purchases.documents.view',
@@ -452,10 +560,12 @@ const PRODUCTION_ORACLE: Record<string, OracleEntry> = {
     prepare: () => Promise.resolve({ id: credit.id }),
     valuesOf: { supplier_price: [CREDIT] },
   },
+  // A credit note's amounts are checked against the purchase's (D-142).
   'purchaseReturn.create': {
     permission: 'purchases.documents.manage',
     prepare: () => Promise.resolve(creditInput()),
     valuesOf: { supplier_price: [CREDIT] },
+    needsVisible: 'supplier_price',
   },
   'purchaseReturn.update': {
     permission: 'purchases.documents.manage',
@@ -465,6 +575,7 @@ const PRODUCTION_ORACLE: Record<string, OracleEntry> = {
       return { id: draft.id, version: draft.version, businessDate, lines }
     },
     valuesOf: { supplier_price: [CREDIT] },
+    needsVisible: 'supplier_price',
   },
   'purchaseReturn.post': {
     permission: 'purchases.documents.post',
@@ -530,12 +641,15 @@ const PRODUCTION_ORACLE: Record<string, OracleEntry> = {
       return { ownerHourlyRate: HOURLY_RATE }
     },
     valuesOf: settingsValues,
+    needsVisible: 'cost',
     refusedWith: 'capability_disabled',
   },
+  // What is still owed is a filter on amounts.
   'payable.list': {
     permission: 'purchases.payments.view',
     input: { party: 'supplier' },
     valuesOf: { supplier_price: [OWED_TOTAL, OWED_LEFT] },
+    needsVisible: 'supplier_price',
   },
   'purchasePayment.list': {
     permission: 'purchases.payments.view',
@@ -546,6 +660,7 @@ const PRODUCTION_ORACLE: Record<string, OracleEntry> = {
     permission: 'purchases.payments.record',
     prepare: async () => paymentInput((await newOwed()).id),
     valuesOf: { supplier_price: [OWED_TOTAL, PAID, OWED_LEFT] },
+    needsVisible: 'supplier_price',
   },
   'purchasePayment.reverse': {
     permission: 'purchases.payments.record',
@@ -586,6 +701,7 @@ const PRODUCTION_ORACLE: Record<string, OracleEntry> = {
     },
     valuesOf: EXPENSE,
   },
+  // What was sent is what is approved (D-175).
   'expense.approve': {
     permission: 'expenses.documents.approve',
     prepare: async () => {
@@ -593,6 +709,7 @@ const PRODUCTION_ORACLE: Record<string, OracleEntry> = {
       return { id: sent.id, version: sent.version }
     },
     valuesOf: EXPENSE,
+    needsVisible: 'supplier_price',
   },
   'expense.reject': {
     permission: 'expenses.documents.approve',
@@ -601,7 +718,9 @@ const PRODUCTION_ORACLE: Record<string, OracleEntry> = {
       return { id: sent.id, version: sent.version, reason: 'Not ours' }
     },
     valuesOf: EXPENSE,
+    needsVisible: 'supplier_price',
   },
+  // Approval is on here: a draft is finalized only by a member who may also approve it (D-175).
   'expense.post': {
     permission: 'expenses.documents.post',
     prepare: async () => {
@@ -609,16 +728,19 @@ const PRODUCTION_ORACLE: Record<string, OracleEntry> = {
       return { id: draft.id, version: draft.version }
     },
     valuesOf: EXPENSE,
+    alsoNeeds: { key: 'expenses.documents.approve', refusal: 'approval_required' },
   },
   'expense.reverse': {
     permission: 'expenses.documents.reverse',
     prepare: async () => ({ id: (await newExpensePosted()).id }),
     valuesOf: EXPENSE,
   },
+  // The copy carries the amounts (D-184).
   'expense.correct': {
     permission: 'expenses.documents.reverse',
     prepare: async () => ({ id: (await newExpensePosted()).id, newId: newId() }),
     valuesOf: EXPENSE,
+    needsVisible: 'supplier_price',
   },
   'expensePayment.list': {
     permission: 'expenses.payments.view',
@@ -629,6 +751,7 @@ const PRODUCTION_ORACLE: Record<string, OracleEntry> = {
     permission: 'expenses.payments.record',
     prepare: async () => expensePaymentInput((await newOwedExpense()).id),
     valuesOf: { supplier_price: [EXPENSE_TOTAL, EXPENSE_PAID, EXPENSE_LEFT] },
+    needsVisible: 'supplier_price',
   },
   'expensePayment.reverse': {
     permission: 'expenses.payments.record',
@@ -653,24 +776,41 @@ const PRODUCTION_ORACLE: Record<string, OracleEntry> = {
     prepare: () => Promise.resolve(runningInput()),
     valuesOf: { cost: [RUNNING, RUNNING_MONTHLY] },
   },
+  // Without costs, only to one's own running cost (D-210).
   'runningCost.update': {
     permission: 'running_costs.items.manage',
-    prepare: async () => {
-      const created = (
-        await asOwner<{ data: RunningCostDto }>('runningCost.create', 'mutation', runningInput())
-      ).data
-      return { ...runningInput(), id: created.id, version: created.version }
+    prepare: async (persona) => {
+      const input = runningInput()
+      if (!changesOnlyOwnRunning(persona)) {
+        const created = (
+          await asOwner<{ data: RunningCostDto }>('runningCost.create', 'mutation', input)
+        ).data
+        return { ...runningInput(), id: created.id, version: created.version }
+      }
+      const result = await callProcedure<{ data: RunningCostDto }>(
+        api.handler,
+        { path: 'runningCost.create', type: 'mutation' },
+        members.get(persona)!.token,
+        { businessId, input },
+      )
+      expect(result.error, result.raw).toBeUndefined()
+      return { ...runningInput(), id: input.id, version: result.data!.data.version }
     },
     valuesOf: { cost: [RUNNING, RUNNING_MONTHLY] },
   },
+  // Without supplier prices, only to one's own draft (D-184, D-200).
   'attachment.add': {
     permission: 'purchases.documents.manage',
-    prepare: async () => ({
-      entity: 'purchase',
-      entityId: purchase.id,
-      path: await uploaded(),
-      fileName: 'receipt.png',
-    }),
+    prepare: async (persona) => {
+      const own = changesOnlyOwn(persona)
+      const entityId = own ? (await newOwnDraft(persona)).id : purchase.id
+      return {
+        entity: 'purchase',
+        entityId,
+        path: await uploaded(entityId, members.get(own ? persona : 'owner')),
+        fileName: 'receipt.png',
+      }
+    },
     valuesOf: { supplier_price: [SIGNED_URL] },
   },
 }
@@ -703,11 +843,18 @@ function sensitiveProcedures(r: AnyRouter): Map<string, readonly SensitivePath[]
   return found
 }
 
-/** Whether a member of the template holds the permission (the owner holds every one). */
-function holds(template: RoleTemplateKey, permission: PermissionKey | undefined): boolean {
-  const t = roleTemplateByKey(template)
-  if (!t) throw new Error(`no template ${template}`)
-  return permission === undefined || t.allPermissions || t.permissionKeys.includes(permission)
+/**
+ * Whether a member of the persona holds the permission (the owner holds every one): the template's
+ * keys with the persona's overrides, written out by hand (not resolved by the engine under test).
+ */
+function holds(persona: Persona, permission: PermissionKey | undefined): boolean {
+  if (permission === undefined) return true
+  const override = isOverride(persona) ? OVERRIDE_PERSONAS[persona] : undefined
+  const t = roleTemplateByKey(override?.template ?? persona)
+  if (!t) throw new Error(`no template ${persona}`)
+  const effect = override?.overrides.find((o) => o.key === permission)?.effect
+  if (effect) return effect === 'allow'
+  return t.allPermissions || t.permissionKeys.includes(permission)
 }
 
 describe('the oracle covers every procedure with sensitive output', () => {
@@ -746,6 +893,18 @@ beforeAll(async () => {
     // The business's own template role, as Smart Setup copied it (an accepted invitation's way).
     memberIds.set(template, await join(api.db, owner.user, businessId, person.user, template))
     members.set(template, person)
+  }
+  // The members whose access their own overrides change, saved as Settings → Team saves them.
+  for (const key of OVERRIDE_KEYS) {
+    const { template, overrides } = OVERRIDE_PERSONAS[key]
+    const person = await api.newPerson()
+    const memberId = await join(api.db, owner.user, businessId, person.user, template)
+    const { version } = await asOwner<{ version: number }>('member.permissions', 'query', {
+      memberId,
+    })
+    await asOwner('member.updatePermissions', 'mutation', { memberId, version, overrides })
+    memberIds.set(key, memberId)
+    members.set(key, person)
   }
   today = (await asOwner<BooksDto>('books.get', 'query')).today
   material = await asOwner<MaterialDto>('material.create', 'mutation', {
@@ -882,36 +1041,36 @@ afterAll(async () => {
 // Procedures that return the caller's OWN amounts without sensitivity tags (their outputs are not
 // redacted, so the oracle above does not see them): "My expenses" (expense.mine, expense.getMine)
 // and "Owed to me" (payable.mine). Each is held to "your own amounts only": called by a member holding
-// each template, the answer carries that member's own amount (when the template may use the
-// procedure; FORBIDDEN otherwise, with nothing) and never another member's, nor any amount of the
-// owner's purchases and expenses. A new procedure named like them (`.mine`, `.getMine`) fails the
-// first test until it is classified here.
+// each template (or a template changed by their overrides), the answer carries that member's own
+// amount (when they may use the procedure; FORBIDDEN otherwise, with nothing) and never another
+// member's, nor any amount of the owner's purchases and expenses. A new procedure named like them
+// (`.mine`, `.getMine`) fails the first test until it is classified here.
 
 interface OwnEntry {
-  /** The permission the procedure needs; templates without it get FORBIDDEN (none: every member). */
+  /** The permission the procedure needs; members without it get FORBIDDEN (none: every member). */
   permission?: PermissionKey
   /** The input for a member (their own record's id where it takes one). */
-  input: (template: RoleTemplateKey) => unknown
+  input: (persona: Persona) => unknown
 }
 
 const OWN_ORACLE: Record<string, OwnEntry> = {
   'expense.mine': { permission: 'expenses.documents.view', input: () => ({ limit: 100 }) },
   'expense.getMine': {
     permission: 'expenses.documents.view',
-    input: (template) => ({ id: ownExpenses.get(template) ?? spent.id }),
+    input: (persona) => ({ id: ownExpenses.get(persona) ?? spent.id }),
   },
   'payable.mine': { input: () => ({ limit: 100 }) },
 }
 
 /**
- * The amounts that are not `template`'s own: the owner's and every other member's. The owner entered
+ * The amounts that are not `persona`'s own: the owner's and every other member's. The owner entered
  * every record of the fixture, so they are all the owner's own (and the owner sees every amount).
  * These cases run before the oracle above, whose calls add records of the members' own.
  */
-function othersAmounts(template: RoleTemplateKey): string[] {
-  if (template === 'owner') return []
+function othersAmounts(persona: Persona): string[] {
+  if (persona === 'owner') return []
   const members = Object.entries(OWN_AMOUNT)
-    .filter(([key]) => key !== template)
+    .filter(([key]) => key !== persona)
     .map(([, amount]) => amount)
   return [...members, ...OWNERS_AMOUNTS]
 }
@@ -929,28 +1088,28 @@ describe('the procedures of a member’s own records return only their own amoun
   })
 
   const OWN_CASES = Object.keys(OWN_ORACLE).flatMap((path) =>
-    ROLE_TEMPLATE_KEYS.map((template) => [path, template] as const),
+    PERSONAS.map((persona) => [path, persona] as const),
   )
 
-  it.each(OWN_CASES)('%s as %s: their own amount, never anyone else’s', async (path, template) => {
+  it.each(OWN_CASES)('%s as %s: their own amount, never anyone else’s', async (path, persona) => {
     const entry = OWN_ORACLE[path]
-    const person = members.get(template)
+    const person = members.get(persona)
     const procedure = proceduresOf(oracleRouter).find((p) => p.path === path)
-    if (!entry || !person || !procedure) throw new Error(`no fixture for ${path} as ${template}`)
+    if (!entry || !person || !procedure) throw new Error(`no fixture for ${path} as ${persona}`)
     const result = await callProcedure(api.handler, procedure, person.token, {
       businessId,
-      input: entry.input(template),
+      input: entry.input(persona),
     })
-    for (const value of othersAmounts(template)) {
+    for (const value of othersAmounts(persona)) {
       expect(result.raw.includes(value), `someone else’s ${value}`).toBe(false)
     }
-    if (!holds(template, entry.permission)) {
+    if (!holds(persona, entry.permission)) {
       expect(result.error?.data.appCode, result.raw).toBe('forbidden')
       return
     }
     expect(result.error, result.raw).toBeUndefined()
-    if (template !== 'owner') {
-      expect(result.raw.includes(OWN_AMOUNT[template]), 'their own amount').toBe(true)
+    if (persona !== 'owner') {
+      expect(result.raw.includes(OWN_AMOUNT[persona]), 'their own amount').toBe(true)
     }
   })
 
@@ -996,11 +1155,11 @@ describe('the procedures of a member’s own records return only their own amoun
   })
 
   it('expense.getMine of anyone else’s expense is NOT_FOUND, with nothing of it', async () => {
-    for (const template of ROLE_TEMPLATE_KEYS.filter((key) => key !== 'owner')) {
-      const person = members.get(template)!
+    for (const persona of PERSONAS.filter((key) => key !== 'owner')) {
+      const person = members.get(persona)!
       const others = [
         spent.id,
-        ...[...ownExpenses].filter(([key]) => key !== template).map(([, id]) => id),
+        ...[...ownExpenses].filter(([key]) => key !== persona).map(([, id]) => id),
       ]
       for (const id of others) {
         const result = await callProcedure(
@@ -1009,11 +1168,11 @@ describe('the procedures of a member’s own records return only their own amoun
           person.token,
           { businessId, input: { id } },
         )
-        expect(['not_found', 'forbidden'], `${template}: ${result.raw}`).toContain(
+        expect(['not_found', 'forbidden'], `${persona}: ${result.raw}`).toContain(
           result.error?.data.appCode,
         )
-        for (const value of othersAmounts(template)) {
-          expect(result.raw.includes(value), `${template} ${value}`).toBe(false)
+        for (const value of othersAmounts(persona)) {
+          expect(result.raw.includes(value), `${persona} ${value}`).toBe(false)
         }
       }
     }
@@ -1022,18 +1181,39 @@ describe('the procedures of a member’s own records return only their own amoun
 
 const ORACLE = { ...PRODUCTION_ORACLE, ...TEST_ORACLE }
 const CASES = Object.keys(ORACLE).flatMap((path) =>
-  ROLE_TEMPLATE_KEYS.map((template) => [path, template] as const),
+  PERSONAS.map((persona) => [path, persona] as const),
 )
 
-describe('each role template receives exactly the categories it may see', () => {
-  it.each(CASES)('%s as %s', async (path, template) => {
+describe('each role template, and each changed by overrides, receives exactly the categories it may see', () => {
+  it('the members with overrides see what OVERRIDE_PERSONAS says (as saved)', async () => {
+    for (const key of OVERRIDE_KEYS) {
+      const context = await callProcedure<{ visibleCategories: string[] }>(
+        api.handler,
+        { path: 'business.context', type: 'query' },
+        members.get(key)!.token,
+        { businessId },
+      )
+      expect(context.data?.visibleCategories, key).toEqual(visibleTo(key))
+      const { overrides } = await asOwner<{ overrides: { key: string; effect: string }[] }>(
+        'member.permissions',
+        'query',
+        { memberId: memberIds.get(key) },
+      )
+      expect(
+        [...overrides].sort((a, b) => a.key.localeCompare(b.key)),
+        key,
+      ).toEqual([...OVERRIDE_PERSONAS[key].overrides].sort((a, b) => a.key.localeCompare(b.key)))
+    }
+  })
+
+  it.each(CASES)('%s as %s', async (path, persona) => {
     const entry = ORACLE[path]
-    const person = members.get(template)
+    const person = members.get(persona)
     const paths = sensitiveProcedures(oracleRouter).get(path) ?? []
     const procedure = proceduresOf(oracleRouter).find((p) => p.path === path)
-    if (!entry || !person || !procedure) throw new Error(`no fixture for ${path} as ${template}`)
-    const visible = new Set(VISIBLE_TO[template])
-    const input = entry.prepare ? await entry.prepare(template) : entry.input
+    if (!entry || !person || !procedure) throw new Error(`no fixture for ${path} as ${persona}`)
+    const visible = new Set(visibleTo(persona))
+    const input = entry.prepare ? await entry.prepare(persona) : entry.input
 
     const result = await callProcedure<{ meta: { redacted: string[] } }>(
       api.handler,
@@ -1042,14 +1222,16 @@ describe('each role template receives exactly the categories it may see', () => 
       { businessId, input },
     )
     const values = Object.values(entry.valuesOf).flat()
-    if (!holds(template, entry.permission)) {
-      // Not theirs to call: refused before anything is read, with nothing sensitive.
-      expect(result.error?.data.appCode, result.raw).toBe('forbidden')
-      for (const value of values) expect(result.raw.includes(value), value).toBe(false)
-      return
-    }
-    if (entry.refusedWith) {
-      expect(result.error?.data.appCode, result.raw).toBe(entry.refusedWith)
+    const refusedWith = !holds(persona, entry.permission)
+      ? 'forbidden'
+      : entry.needsVisible && !visible.has(entry.needsVisible)
+        ? 'forbidden'
+        : entry.alsoNeeds && !holds(persona, entry.alsoNeeds.key)
+          ? entry.alsoNeeds.refusal
+          : entry.refusedWith
+    if (refusedWith) {
+      // Refused before anything is read, with nothing sensitive.
+      expect(result.error?.data.appCode, result.raw).toBe(refusedWith)
       for (const value of values) expect(result.raw.includes(value), value).toBe(false)
       return
     }
@@ -1069,14 +1251,14 @@ describe('each role template receives exactly the categories it may see', () => 
       person.token,
       { businessId },
     )
-    expect(context.data?.visibleCategories).toEqual(VISIBLE_TO[template])
+    expect(context.data?.visibleCategories).toEqual(visibleTo(persona))
   })
 })
 
-describe('the Dashboard cost steps count costs only for the templates that see them (D-193)', () => {
-  it.each(ROLE_TEMPLATE_KEYS)('%s', async (template) => {
-    const person = members.get(template)
-    if (!person) throw new Error(`no ${template}`)
+describe('the Dashboard cost steps count costs only for the members who see them (D-193)', () => {
+  it.each(PERSONAS)('%s', async (persona) => {
+    const person = members.get(persona)
+    if (!person) throw new Error(`no ${persona}`)
     const result = await callProcedure<{ costSteps: { id: string; remaining: number | null }[] }>(
       api.handler,
       { path: 'dashboard.checklist', type: 'query' },
@@ -1085,10 +1267,160 @@ describe('the Dashboard cost steps count costs only for the templates that see t
     )
     expect(result.error, result.raw).toBeUndefined()
     const ids = result.data?.costSteps.map((step) => step.id) ?? []
-    const seesCosts = VISIBLE_TO[template].includes('cost')
+    const seesCosts = visibleTo(persona).includes('cost')
     for (const id of ['product_costs', 'owner_time']) {
-      if (!seesCosts) expect(ids, `${template} ${id}`).not.toContain(id)
+      if (!seesCosts) expect(ids, `${persona} ${id}`).not.toContain(id)
     }
-    if (ids.includes('product_costs')) expect(seesCosts, template).toBe(true)
+    if (ids.includes('product_costs')) expect(seesCosts, persona).toBe(true)
+  })
+})
+
+// ---------------------------------------------------------------------------------------------------
+// Querying on what a member may not see (ROADMAP.md M2 definition of done: "filtering, sorting,
+// searching or exporting on them returns FORBIDDEN"; ARCHITECTURE.md §Permissions, Redaction)
+// ---------------------------------------------------------------------------------------------------
+//
+// Every field of every business query's input is walked: a field that only names records, pages,
+// states, kinds or days is in PLAIN_QUERY_FIELDS with why querying on it shows nothing hidden; every
+// other field must sort or filter by value, and each of its options is classified in QUERY_OPTIONS
+// by the category it orders or filters on. Each option is then called by every member: FORBIDDEN
+// (with nothing sensitive) for a member who may not see its category, served for one who may. A
+// search finds names, references and descriptions, never an amount. There is nothing to export.
+// The lists that by nature filter on amounts (what is still owed) are `needsVisible` above.
+
+const PLAIN_QUERY_FIELDS: Record<string, string> = {
+  id: 'names a record; its own procedure decides what of it is shown',
+  ids: 'names records; their own procedure decides what of them is shown',
+  productId: 'names a record',
+  purchaseId: 'names a record',
+  expenseId: 'names a record',
+  memberId: 'names a record',
+  categoryId: 'names a record (a filter on the category)',
+  supplierId: 'names a record (a filter on the supplier)',
+  entityId: 'names a record',
+  cursor: 'positions a page; each list refuses a cursor it did not make for the same query',
+  limit: 'the size of a page',
+  search: 'names, references and descriptions only, never an amount (proven below)',
+  status: 'a record’s state',
+  state: 'a running cost’s state as of today',
+  kind: 'a return or a credit note',
+  type: 'a product or a service',
+  enteredBy: 'who entered an expense',
+  entity: 'which kind of record a receipt belongs to',
+  party: 'what is owed to suppliers or to members (the list itself needs supplier prices)',
+  from: 'a business day',
+  to: 'a business day',
+  periodMonth: 'the month an expense is for',
+  order: 'the direction of a sort the member may use',
+}
+
+/** Each option of a field that sorts or filters by value: the category it orders on, or none. */
+const QUERY_OPTIONS: Record<string, SensitivityCategory | 'none'> = {
+  'productCost.list sort=name': 'none',
+  'productCost.list sort=price': 'none',
+  'productCost.list sort=cost': 'cost',
+  'productCost.list sort=margin': 'profit_margin',
+  'productCost.list sort=margin_percent': 'profit_margin',
+  'productCost.list filter=incomplete': 'cost',
+  'productCost.list filter=loss': 'profit_margin',
+}
+
+const BUSINESS_QUERIES = proceduresOf(appRouter).filter(
+  (p) => p.base === 'business' && p.type === 'query',
+)
+
+function queryLeaves(path: string) {
+  const schema = inputSchemaOf(appRouter, path)
+  return schema ? inputLeaves(schema) : []
+}
+
+/** The items of a list's answer (`data.items` or, in an envelope, `data.data.items`). */
+function itemsOf(data: unknown): unknown[] {
+  const value = data as { items?: unknown[]; data?: { items?: unknown[] } } | undefined
+  const items = value?.items ?? value?.data?.items
+  if (!Array.isArray(items)) throw new Error(`not a list: ${JSON.stringify(data).slice(0, 200)}`)
+  return items
+}
+
+describe('filtering, sorting, searching or exporting on hidden values is FORBIDDEN', () => {
+  it('every field of every business query is classified, and nothing exports', () => {
+    const unclassified: string[] = []
+    const options: string[] = []
+    for (const { path } of BUSINESS_QUERIES) {
+      for (const leaf of queryLeaves(path)) {
+        if (PLAIN_QUERY_FIELDS[leaf.name]) continue
+        const values = optionsOf(leaf.schema)
+        if (!values) unclassified.push(`${path} ${leaf.path}`)
+        else options.push(...values.map((value) => `${path} ${leaf.path}=${value}`))
+      }
+    }
+    expect(unclassified, 'add the field to PLAIN_QUERY_FIELDS or QUERY_OPTIONS').toEqual([])
+    expect(options.sort()).toEqual(Object.keys(QUERY_OPTIONS).sort())
+    expect(proceduresOf(appRouter).filter((p) => /export|csv|download/i.test(p.path))).toEqual([])
+  })
+
+  const OPTION_CASES = Object.keys(QUERY_OPTIONS).flatMap((key) =>
+    PERSONAS.map((persona) => [key, persona] as const),
+  )
+
+  it.each(OPTION_CASES)('%s as %s', async (key, persona) => {
+    const [path = '', assignment = ''] = key.split(' ')
+    const [field = '', value = ''] = assignment.split('=')
+    const category = QUERY_OPTIONS[key]
+    const entry = ORACLE[path]
+    const procedure = proceduresOf(oracleRouter).find((p) => p.path === path)
+    if (!entry || !procedure || !category) throw new Error(`${path}: add it to the oracle first`)
+    const { search } = await readCosted()
+    const result = await callProcedure(api.handler, procedure, members.get(persona)!.token, {
+      businessId,
+      input: { search, [field]: value },
+    })
+    const values = Object.values(entry.valuesOf).flat()
+    const mayQuery = category === 'none' || visibleTo(persona).includes(category)
+    if (!holds(persona, entry.permission) || !mayQuery) {
+      expect(result.error?.data.appCode, result.raw).toBe('forbidden')
+      for (const hidden of values) expect(result.raw.includes(hidden), hidden).toBe(false)
+      return
+    }
+    expect(result.error, result.raw).toBeUndefined()
+    // Sorted, the product is listed (filtered, it is neither incomplete nor sold at a loss).
+    if (field === 'sort') expect(result.raw).toContain(costed.id)
+  })
+
+  it('a search finds names, references and descriptions, never an amount', async () => {
+    const searchable = BUSINESS_QUERIES.filter((p) =>
+      queryLeaves(p.path).some((leaf) => leaf.name === 'search'),
+    )
+    expect(searchable.map((p) => p.path)).toEqual(
+      expect.arrayContaining(['purchase.list', 'expense.list', 'productCost.list']),
+    )
+    const amounts = [
+      UNIT_PRICE,
+      LINE_TOTAL,
+      LAST_PRICE,
+      CREAM_PRICE,
+      OWED_TOTAL,
+      BEANS_PRICE,
+      EXPENSE_NET,
+      EXPENSE_TOTAL,
+      RUNNING,
+      PRODUCT_PRICE,
+      POOL_RENT,
+      POOL_BILL,
+    ]
+    for (const procedure of searchable) {
+      const owner = members.get('owner')!
+      const search = (text: string) =>
+        callProcedure(api.handler, procedure, owner.token, { businessId, input: { search: text } })
+      // Control: the search works (every name of the fixture starts with "Oracle").
+      const found = await search('Oracle')
+      expect(found.error, found.raw).toBeUndefined()
+      expect(itemsOf(found.data).length, procedure.path).toBeGreaterThan(0)
+      for (const amount of amounts) {
+        const result = await search(amount)
+        expect(result.error, result.raw).toBeUndefined()
+        expect(itemsOf(result.data), `${procedure.path} "${amount}"`).toEqual([])
+      }
+    }
   })
 })

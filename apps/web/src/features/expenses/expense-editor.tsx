@@ -419,6 +419,7 @@ export function ExpenseEditor({
       queryClient.setQueryData(trpc.expense.get.queryKey({ id: expenseId }), next)
       void queryClient.invalidateQueries({ queryKey: trpc.expense.list.pathKey() })
       void queryClient.invalidateQueries({ queryKey: trpc.payable.list.pathKey() })
+      void queryClient.invalidateQueries({ queryKey: trpc.productCost.pathKey() })
       void refreshOwn()
       toast.success(
         t(action === 'finalize' ? 'expenses.confirm.finalized' : 'expenses.confirm.submitted'),

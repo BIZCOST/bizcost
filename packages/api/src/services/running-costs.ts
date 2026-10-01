@@ -227,8 +227,37 @@ export function createRunningCost(
 }
 
 /**
+ * A member who may not see costs changes only their own running costs: those they entered, while
+ * nobody else has changed them since. A save is the whole record, so it would replace an amount they
+ * never read, and a removal takes out one they cannot check (D-165, D-200, D-210, D-214). FORBIDDEN
+ * otherwise, under the row's lock, before anything is changed.
+ */
+function assertMayChange(ctx: BusinessCtx, row: { mine: boolean }) {
+  if (!ctx.access.visibleCategories.has('cost') && !row.mine) {
+    throw new AppError('forbidden')
+  }
+}
+
+/**
+ * Locks a live running cost FOR UPDATE: its category, its version, and whether it is the caller's
+ * own: the caller wrote it last (`updated_by`, kept by app.touch_row; `created_by` until it is first
+ * changed), so an amount someone else set since is never theirs (D-214).
+ */
+async function lockRunningCost(tx: Tx, businessId: string, id: string) {
+  const [row] = (await tx.execute(sql`
+    select r.category_id, r.version,
+           coalesce(coalesce(r.updated_by, r.created_by) = app.current_user_id(), false) as mine
+      from app.running_costs r
+     where r.business_id = ${businessId} and r.id = ${id} and r.deleted_at is null
+       for update
+  `)) as unknown as { category_id: string; version: number; mine: boolean }[]
+  return row
+}
+
+/**
  * `runningCost.update`: the whole record, `version` as read (CONFLICT when it changed since). Its
- * category may stay archived; a new one must be active.
+ * category may stay archived; a new one must be active. FORBIDDEN for a member who may not see
+ * costs, unless it is their own (they entered it, and nobody else changed it since).
  */
 export function updateRunningCost(
   ctx: BusinessCtx,
@@ -236,12 +265,9 @@ export function updateRunningCost(
 ): Promise<RunningCostResultDto> {
   const { id, version, ...fields } = input
   return ctx.tx(async (tx) => {
-    const [current] = (await tx.execute(sql`
-      select r.category_id, r.version from app.running_costs r
-       where r.business_id = ${ctx.businessId} and r.id = ${id} and r.deleted_at is null
-         for update
-    `)) as unknown as { category_id: string; version: number }[]
+    const current = await lockRunningCost(tx, ctx.businessId, id)
     if (!current) throw new AppError('not_found')
+    assertMayChange(ctx, current)
     if (current.version !== version) throw new AppError('conflict')
     const values = await prepare(tx, ctx, fields, current.category_id)
     await tx
@@ -254,10 +280,14 @@ export function updateRunningCost(
 
 /**
  * `runningCost.remove`: one entered by mistake is taken out (soft-deleted, audited), `version` as
- * read. One that stopped is given its last day instead (update).
+ * read. One that stopped is given its last day instead (update). FORBIDDEN for a member who may not
+ * see costs, unless it is their own (they entered it, and nobody else changed it since).
  */
 export function removeRunningCost(ctx: BusinessCtx, input: RemoveInput): Promise<OkDto> {
   return ctx.tx(async (tx) => {
+    const current = await lockRunningCost(tx, ctx.businessId, input.id)
+    if (!current) throw new AppError('not_found')
+    assertMayChange(ctx, current)
     const [row] = await tx
       .update(runningCosts)
       .set({ deletedAt: sql`now()` })

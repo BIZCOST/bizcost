@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { addMessages, createI18nInstance, hasKey } from './instance'
-import { NAMESPACES } from './namespaces'
+import { NAMESPACES, RAW_KEY } from './namespaces'
 import { en, pickMessages, resources } from './resources'
 
 // The browser's instance (D-092): built from the messages the server passes for the page, one
@@ -41,8 +41,31 @@ describe('createI18nInstance', () => {
     expect(i18n.hasResourceBundle('ar', 'auth')).toBe(false)
     expect(i18n.hasResourceBundle('en', 'common')).toBe(false)
     // A key of a namespace not given yet stays a key (not a common key named "auth…").
-    expect(i18n.t('auth.login.title')).toBe('login.title')
+    expect(i18n.t('auth.login.title')).toBe('auth.login.title')
     expect(i18n.options.ns).toEqual([...NAMESPACES])
+  })
+
+  it('shows a missing message as its whole key, which RAW_KEY finds (the smoke tests)', () => {
+    for (const locale of ['ar', 'en'] as const) {
+      const i18n = createI18nInstance({
+        locale,
+        messages: { [locale]: pickMessages(locale, ['common', 'purchasing']) },
+      })
+      for (const [key, shown] of [
+        ['purchasing.purchases.no_such_message', 'purchasing.purchases.no_such_message'],
+        ['costing.list.empty.title', 'costing.list.empty.title'],
+        [
+          'catalog.materials.cost.basis.no_such_basis',
+          'catalog.materials.cost.basis.no_such_basis',
+        ],
+        ['actions.no_such_action', 'common.actions.no_such_action'],
+      ] as const) {
+        // Keys that are not messages, past the typed keys.
+        const text = (i18n.t as unknown as (key: string) => string)(key)
+        expect(text).toBe(shown)
+        expect(RAW_KEY.exec(`Shown: ${text}.`)?.[0]).toBe(shown)
+      }
+    }
   })
 
   it('takes more messages later, merging parts of a namespace', () => {
