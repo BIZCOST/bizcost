@@ -129,7 +129,7 @@ describe('dashboardChecklistDto', () => {
       ],
       costSteps: [
         { id: 'products', done: true, missing: [], remaining: null },
-        { id: 'running_costs', done: false, missing: ['estimate'], remaining: null },
+        { id: 'running_costs', done: false, missing: ['runningCosts'], remaining: null },
         { id: 'product_costs', done: false, missing: [], remaining: 2 },
       ],
     }
@@ -145,6 +145,8 @@ describe('dashboardChecklistDto', () => {
     expect(dashboardChecklistDto.safeParse(step({})).success).toBe(true)
     expect(dashboardChecklistDto.safeParse(step({ id: 'sales' })).success).toBe(false)
     expect(dashboardChecklistDto.safeParse(step({ missing: ['logo'] })).success).toBe(false)
+    // The estimate of monthly purchases is gone (D-202).
+    expect(dashboardChecklistDto.safeParse(step({ missing: ['estimate'] })).success).toBe(false)
     expect(dashboardChecklistDto.safeParse(step({ remaining: 1.5 })).success).toBe(false)
     expect(dashboardChecklistDto.safeParse(step({ remaining: -1 })).success).toBe(false)
     expect(dashboardChecklistDto.safeParse(base).success).toBe(false)

@@ -358,10 +358,10 @@ test('a home baker: rent and electricity as running costs (English desktop, Arab
   await expectSound(page, 'ar')
   await shot(page, 'ar-1440-running-costs')
 
-  // A solo business has no approval, and its Expenses page says how costs count (D-116).
+  // A solo business has no approval, and its Expenses page says how expenses count (D-202, D-203).
   await page.goto(`/b/${businessId}/expenses`)
   await expect(page.locator('[data-costs-note]')).toHaveText(
-    'تكاليف منتجاتك تُحسب من مصاريفك التشغيلية المنتظمة، أما المصروفات هنا فتُحسب في ربحك الحقيقي.',
+    'تدخل المصروفات النهائية في تكاليفك في الشهر الذي تخصّه: فواتير أي فئة تحلّ محلّ مصاريفها التشغيلية المنتظمة في ذلك الشهر (أو ربع السنة أو السنة)، فلا يُحسب شيء مرتين.',
   )
   await expect(page.getByRole('heading', { name: 'لا توجد مصروفات بعد' })).toBeVisible()
   await expectSound(page, 'ar')
@@ -393,7 +393,7 @@ test('a café: an expense an employee paid, owed to them, then paid back (Englis
   await page.goto(`/b/${businessId}/expenses`)
   await expect(page.getByRole('heading', { level: 1 })).toHaveText('Expenses')
   await expect(page.locator('[data-costs-note]')).toHaveText(
-    'Product costs use your running costs; the expenses here count in your real profit.',
+    "Final expenses count in your costs in the month they're for: a category's bills take the place of its regular running costs for that month (or that quarter or year), so nothing counts twice.",
   )
   await page.getByRole('link', { name: 'New expense' }).click()
   await expect(page.getByRole('heading', { level: 1 })).toHaveText('New expense')
@@ -453,6 +453,8 @@ test('a café: an expense an employee paid, owed to them, then paid back (Englis
     'aria-selected',
     'true',
   )
+  // He sees no costs: no line about how expenses reach them (D-203).
+  await expect(khalid.locator('[data-costs-note]')).toHaveCount(0)
   const mine = khalid.locator(`[data-mine-expense="${expenseId}"]`)
   await expect(mine).toContainText('Fixing the coffee grinder')
   await expect(mine).toContainText('42.00')

@@ -16,27 +16,36 @@ import {
 } from '../helpers'
 import { baseURL } from '../stack'
 
-// Product costs (ROADMAP.md M2 Step 6; D-115, D-116, D-119, D-178), on the production build since
+// Product costs (ROADMAP.md M2 Step 6; D-115, D-119, D-178, D-202, D-203), on the production build since
 // the Costing Core was released (M2 Step 7, D-188).
 //
+// Running costs reach every product and service by its price (D-202, the owner's decision of
+// 2026-09-30): the month's costs ÷ the month's sales. Sales arrive in Phase 3, so every share waits
+// for them ("Worked out automatically once you record your sales"), which is never "incomplete",
+// while the costs and margins say they are before running costs. Nothing is typed in for it: the
+// estimate of monthly purchases is gone.
+//
 // A café with a team (VAT-registered) sells the owner's Spanish Latte (its materials cost
-// 3.002034632035 from real purchases), an espresso and a latte-art class (a service with no
-// materials). Its running costs are AED 15,000 a month (rent 12,000 + electricity 3,000). In English
-// on a desktop, the owner sees the running costs "not in your product costs yet", sets about AED
-// 30,000 of materials a month in Settings (leaving out the VAT she gets back), and reads the rule,
-// then why (every AED 1 of materials adds AED 0.50; running costs of AED 15,000 over AED 30,000); the
-// latte costs 4.503051948053 (AED 4.50) and keeps 13.496948051947 (75.0%), sorted and shown by what
-// needs a look in the table; its breakdown says each part in words and lists each material with its
-// average and its last purchase cost; with its price including VAT, the margin is on AED 17.14. The
-// service says it carries no running costs yet (a known limit until Phase 5), never 0. A catering
-// tray in the thousands (AED 12,500) shows that no amount runs into another, at 375 and 1280 px in
-// both languages (D-186). The same pages in Arabic and on a phone, where "How your costs are worked
-// out" folds to one line. An employee (the template) has no Product costs; once the owner gives the
-// role "see product costs", the employee sees names and prices with locks, and no sort by cost (the
-// API refuses it). A home baker who works alone (Arabic, phone) sets her estimate (AED 2,000) and
-// her hourly rate (AED 45), and 10 minutes on the cake: one slice of a cake that makes 12 costs
-// 1.075 of materials + 0.295625 of running costs (550 ÷ 2,000) + 7.5 of her time = 8.870625, AED
-// 6.13 kept from AED 15 (40.9%); a pie with none of her time says so on its row.
+// 3.002034632035 from real purchases), an espresso, a latte-art class (a service with no materials),
+// a catering tray in the thousands and a seasonal special without a price. In English on a desktop,
+// the owner is first asked for her running costs; then, with rent, salaries and electricity from
+// last month and two final bills for last month, "How your costs are worked out" says the rule with
+// the owner's example (20,000 ÷ 80,000 = 25%: 400 carries 100, 18 carries 4.50) and shows last
+// month's costs by category: the electricity bills (AED 3,150) in place of its regular AED 3,000,
+// counted once (AED 23,600 in all, before VAT). The latte costs AED 3.00 before running costs and
+// keeps AED 15.00 (83.3%); only the special (no price: "Add its price") needs a look, while the
+// service (no materials added, a hint) is worked out once sales are recorded (D-203). Its breakdown
+// says the share awaits sales, and its margin is never green. Settings →
+// How costs are worked out has nothing to set for a café with a team: the rule and the way on. The
+// same pages in Arabic and on a phone, where "How your costs are worked out" folds to one line. An
+// employee (the template) has no Product costs; with the page, names and prices with locks; with
+// costs too, but without running costs, last month's costs stay hidden (the API withholds them). A
+// home baker who works alone (Arabic, phone) sets only her hourly rate (AED 45) and 10 minutes on the
+// cake: one slice of a cake that makes 12 costs 1.075 of materials + 7.5 of her time = 8.575 (AED
+// 8.58) before running costs, AED 6.43 kept from AED 15 (42.8%). A designer who sells only services
+// is asked for her running costs on the Dashboard; her logo's share waits for sales like a product's,
+// her yearly licence's bill counts a twelfth in each month of its year, and her Settings speak of
+// services.
 
 test.describe.configure({ mode: 'serial' })
 
@@ -55,12 +64,29 @@ const CAFE_ANSWERS = {
   vat: 'yes',
 }
 
+/** A freelance designer: services only, alone, not VAT-registered (as the demo's). */
+const DESIGNER_ANSWERS = {
+  what_you_do: ['services'],
+  workplace: 'home',
+  team: 'alone',
+  work_setup: ['none'],
+  sales_channels: ['messages', 'quotes', 'invoice_later'],
+  vat: 'no',
+}
+
 const RAW_KEY =
-  /\b(?:common|catalog|units|errors|nav|modules|purchasing|settings|costing)\.[a-z][A-Za-z0-9_]*(?:\.[A-Za-z0-9_]+)+/
+  /\b(?:common|catalog|units|errors|nav|modules|purchasing|settings|costing|dashboard)\.[a-z][A-Za-z0-9_]*(?:\.[A-Za-z0-9_]+)+/
+
+const RULE =
+  'Your running costs and expenses (rent, salaries, bills…) are shared over everything you sell by its price: each thing you sell carries the same percentage of its price.'
+const EXAMPLE =
+  "For example, if a month's costs are AED 20,000 and its sales AED 80,000, that's 20,000 ÷ 80,000 = 25%: something priced AED 400.00 carries AED 100.00, and something priced AED 18.00 carries AED 4.50."
+const AWAITING = 'Worked out automatically once you record your sales.'
+const AWAITING_AR = 'تُحسب تلقائيًا بعد تسجيل مبيعاتك.'
 
 const users: TestUser[] = []
 const contexts: BrowserContext[] = []
-let cafe: { page: Page; businessId: string; latteId: string } | undefined
+let cafe: { page: Page; businessId: string; latteId: string; specialId: string } | undefined
 
 test.afterAll(async () => {
   for (const context of contexts) await context.close()
@@ -88,13 +114,23 @@ async function open(
   return { page, user: who }
 }
 
-/** Screenshots into E2E_SHOTS_DIR (only when it is set), named costs-*. */
+/**
+ * Screenshots into E2E_SHOTS_DIR (only when it is set), named costs-*: the whole page, with the
+ * phone's tab bar at its end instead of over the middle of it, and without toasts.
+ */
 async function shot(page: Page, name: string) {
   const dir = process.env.E2E_SHOTS_DIR
   if (!dir) return
   mkdirSync(dir, { recursive: true })
+  // From the top: the sticky header stays at the top of the page.
+  await page.evaluate(() => window.scrollTo(0, 0))
   await page.waitForTimeout(400)
-  await page.screenshot({ path: join(dir, `costs-${name}.png`), fullPage: true })
+  await page.screenshot({
+    path: join(dir, `costs-${name}.png`),
+    fullPage: true,
+    style:
+      'nav.fixed.bottom-0 { position: static !important } [data-sonner-toaster] { display: none !important }',
+  })
 }
 
 /** The page is in `locale`, has no sideways scroll and shows no untranslated key. */
@@ -194,6 +230,21 @@ async function today(page: Page, businessId: string): Promise<string> {
   ).today
 }
 
+/** The month before `day`'s (YYYY-MM): the last full calendar month, as the page shows it. */
+function monthBefore(day: string): string {
+  const [year, month] = day.split('-').map(Number) as [number, number]
+  return month === 1 ? `${year - 1}-12` : `${year}-${String(month - 1).padStart(2, '0')}`
+}
+
+/** A month (YYYY-MM) as the English pages write it ("September 2026"). */
+function monthName(month: string): string {
+  return new Intl.DateTimeFormat('en-US', {
+    month: 'long',
+    year: 'numeric',
+    timeZone: 'UTC',
+  }).format(new Date(`${month}-01T00:00:00Z`))
+}
+
 /** A final purchase with no VAT on it (a no-invoice receipt), dated today. */
 async function buy(page: Page, businessId: string, lines: object[]) {
   const id = randomUUID()
@@ -255,25 +306,31 @@ async function recipe(
   )
 }
 
-/** Running costs paid from the first of this month, in the business's first category. */
-async function runningCosts(
-  page: Page,
-  businessId: string,
-  costs: { name: string; amount: string; frequency: string }[],
-) {
+/** The business's cost categories by name (named in its language: English here). */
+async function categoriesOf(page: Page, businessId: string): Promise<Map<string, string>> {
   const categories = await ok(
-    callApi<{ items: { id: string }[] }>(
+    callApi<{ items: { id: string; name: string }[] }>(
       page,
       'costCategory.list',
-      {},
+      { limit: 100 },
       { businessId, query: true },
     ),
     'costCategory.list',
   )
-  const categoryId = categories.items[0]?.id
-  if (!categoryId) throw new Error('no cost category')
-  const startsOn = `${(await today(page, businessId)).slice(0, 8)}01`
-  for (const cost of costs) {
+  return new Map(categories.items.map((category) => [category.name, category.id]))
+}
+
+/** Running costs paid from the first day of last month, each in its category. */
+async function runningCosts(
+  page: Page,
+  businessId: string,
+  costs: { name: string; amount: string; frequency: string; category: string }[],
+) {
+  const categories = await categoriesOf(page, businessId)
+  const startsOn = `${monthBefore(await today(page, businessId))}-01`
+  for (const { category, ...cost } of costs) {
+    const categoryId = categories.get(category)
+    if (!categoryId) throw new Error(`no category ${category}`)
     await ok(
       callApi(
         page,
@@ -286,19 +343,64 @@ async function runningCosts(
   }
 }
 
+/** A final expense for last month (a no-invoice receipt paid in cash, dated today). */
+async function lastMonthBill(
+  page: Page,
+  businessId: string,
+  bill: { category: string; amount: string; description: string },
+) {
+  const categoryId = (await categoriesOf(page, businessId)).get(bill.category)
+  if (!categoryId) throw new Error(`no category ${bill.category}`)
+  const day = await today(page, businessId)
+  const id = randomUUID()
+  const draft = await ok(
+    callApi<{ data: { version: number } }>(
+      page,
+      'expense.create',
+      {
+        id,
+        categoryId,
+        businessDate: day,
+        periodMonth: monthBefore(day),
+        documentType: 'no_invoice',
+        paymentMethod: 'cash',
+        amount: bill.amount,
+        vatRate: '0',
+        description: bill.description,
+      },
+      { businessId },
+    ),
+    'expense.create',
+  )
+  await ok(
+    callApi(page, 'expense.post', { id, version: draft.data.version }, { businessId }),
+    'expense.post',
+  )
+}
+
+interface MonthCosts {
+  state: string
+  runningCostsEntered: boolean
+  month: string
+  amountsShown: boolean
+  total: string | null
+  categories: { name: string; source: string; amount: string; regular: string | null }[] | null
+}
+
 interface Breakdown {
   data: {
     cost: {
       materials: string | null
-      runningCosts: { state: string; share: string | null }
+      runningCosts: { state: string }
       ownerTime: { state: string; minutes: string | null; amount: string | null }
       total: string | null
+      beforeRunningCosts: boolean
       complete: boolean
       reasons: string[]
     }
     margin: { amount: string | null; percent: string | null }
     price: { beforeVat: string | null }
-    rate: { state: string; rate: string | null }
+    monthCosts: MonthCosts
   }
 }
 
@@ -311,7 +413,26 @@ async function breakdownOf(page: Page, businessId: string, productId: string) {
   ).data
 }
 
-test('English, desktop: a café sees what the Spanish Latte really costs and keeps', async ({
+async function monthCostsOf(page: Page, businessId: string): Promise<MonthCosts> {
+  return (
+    await ok(
+      callApi<{ data: { monthCosts: MonthCosts } }>(
+        page,
+        'productCost.list',
+        {},
+        { businessId, query: true },
+      ),
+      'productCost.list',
+    )
+  ).data.monthCosts
+}
+
+/** A decimal string's value, however many zeros it ends with ("23600.000000000000" → "23600"). */
+function plain(value: string | null): string | null {
+  return value === null ? null : value.replace(/(\.\d*?)0+$/, '$1').replace(/\.$/, '')
+}
+
+test('English, desktop: a café sees what the Spanish Latte costs before running costs, and last month’s costs', async ({
   browser,
 }) => {
   test.setTimeout(600_000)
@@ -381,11 +502,10 @@ test('English, desktop: a café sees what the Spanish Latte really costs and kee
   // A catering tray in the thousands: 20 kg of beans (AED 1,300), sold at AED 12,500.
   const trayId = await product(page, businessId, { name: 'Catering tray', defaultPrice: '12500' })
   await recipe(page, businessId, trayId, [{ materialId: beans, qty: '20', unit: 'kg' }])
-  await runningCosts(page, businessId, [
-    { name: 'Rent', amount: '12000', frequency: 'monthly' },
-    { name: 'Electricity', amount: '3000', frequency: 'monthly' },
-  ])
-  cafe = { page, businessId, latteId }
+  // A seasonal special without a price yet: its share cannot be worked out by its price.
+  const specialId = await product(page, businessId, { name: 'Seasonal special' })
+  await recipe(page, businessId, specialId, [{ materialId: beans, qty: '18', unit: 'g' }])
+  cafe = { page, businessId, latteId, specialId }
 
   // Products & Services leads to Product costs.
   await page.goto(`/b/${businessId}/products`)
@@ -396,75 +516,142 @@ test('English, desktop: a café sees what the Spanish Latte really costs and kee
     'aria-current',
     'page',
   )
-  // Running costs are not in the costs yet: the page says so, and how to add them.
+  // The rule, the owner's example, and that it waits for sales; no running cost entered yet: the
+  // page asks for them (they are what is shared), and no product is incomplete for it.
   const how = page.getByRole('region', { name: 'How your costs are worked out' })
-  await expect(how.locator('[data-how="running"]')).toContainText(
-    "Your running costs (AED 15,000 a month) aren't in your product costs yet: BizCost needs to know about how much you buy in materials a month.",
-  )
   await expect(how.locator('[data-how="materials"]')).toContainText('Materials: the average')
+  await expect(how.locator('[data-how="running"] [data-rule]')).toHaveText(RULE)
+  await expect(how.locator('[data-how="running"] [data-example]')).toHaveText(EXAMPLE)
+  await expect(how.locator('[data-how="running"] [data-awaiting]')).toHaveText(
+    `${AWAITING} Until then, your costs and margins are before running costs.`,
+  )
+  const notEntered = how.locator('[data-how="not-entered"]')
+  await expect(notEntered).toContainText(
+    "Enter your running costs (rent, salaries…): they're what is shared over what you sell.",
+  )
+  await expect(notEntered.getByRole('link', { name: 'Add your running costs' })).toHaveAttribute(
+    'href',
+    `/b/${businessId}/running-costs`,
+  )
+  const month = monthBefore(await today(page, businessId))
+  await expect(how.locator('[data-how="month"] [data-month-none]')).toHaveText(
+    `Nothing counted for ${monthName(month)}: no running costs and no final expenses for that month.`,
+  )
   const latteRow = page.locator('[data-product-cost-row="Spanish Latte"]')
-  await expect(latteRow.locator('[data-figure="cost"]')).toContainText(/AED\s3\.00/)
-  await expect(latteRow.locator('[data-figure="cost"]')).toContainText('incomplete')
-  await expect(latteRow.locator('[data-reasons]')).toHaveText('Running costs not added yet')
+  await expect(latteRow.locator('[data-figure="cost"]')).toHaveText(/^AED\s3\.00$/)
+  await expect(latteRow.locator('[data-reasons]')).toHaveCount(0)
   await expectSound(page, 'en')
-  await shot(page, 'en-1440-costs-not-set')
+  await shot(page, 'en-1440-costs-not-entered')
 
-  // Settings: about AED 30,000 of materials a month.
-  await how.getByRole('link', { name: 'Set your monthly purchases' }).click()
-  await expect(page.getByRole('heading', { level: 1 })).toHaveText('How costs are worked out')
-  // A café with a team: no "Your time".
-  await expect(page.getByRole('heading', { name: 'Your time' })).toHaveCount(0)
-  const estimate = page.getByRole('textbox', {
-    name: 'About how much do you buy in materials a month?',
+  // Rent, salaries and electricity since the start of last month, and last month's bills: the
+  // electricity bill (3,150) takes the place of its regular 3,000; the repair counts as itself.
+  await runningCosts(page, businessId, [
+    { name: 'Shop rent', amount: '12000', frequency: 'monthly', category: 'Rent' },
+    { name: 'Staff salaries', amount: '8000', frequency: 'monthly', category: 'Salaries' },
+    { name: 'Electricity', amount: '3000', frequency: 'monthly', category: 'Electricity' },
+  ])
+  await lastMonthBill(page, businessId, {
+    category: 'Electricity',
+    amount: '3150',
+    description: 'DEWA bill',
   })
-  // VAT-registered: the VAT she gets back is left out.
-  await expect(estimate).toHaveAccessibleDescription(/Leave out the VAT you get back/)
-  await estimate.fill('0')
-  await page.getByRole('button', { name: 'Save' }).click()
-  await expect(page.getByText('Enter a number more than zero.')).toBeVisible()
-  await estimate.fill('30,000')
-  await page.getByRole('button', { name: 'Save' }).click()
-  await expect(page.getByText('Saved.')).toBeVisible()
-  const now = page.locator('[data-rate-now]')
-  // The rule first, then why (D-186).
-  await expect(now.locator('[data-rule]')).toHaveText(
-    'Every AED 1 you spend on materials adds AED 0.50 of running costs (50% of the materials).',
+  await lastMonthBill(page, businessId, {
+    category: 'Maintenance',
+    amount: '450',
+    description: 'Coffee machine repair',
+  })
+  await page.reload()
+  await expect(notEntered).toHaveCount(0)
+  const costs = how.locator('[data-month-costs]')
+  await expect(costs).toContainText(`Your business's costs in ${monthName(month)}`)
+  await expect(costs).toContainText(/AED\s23,600\.00/)
+  await expect(costs.locator('[data-month-category]')).toHaveCount(4)
+  expect(
+    await costs
+      .locator('[data-month-category]')
+      .evaluateAll((items) => items.map((item) => item.getAttribute('data-month-category'))),
+  ).toEqual(['Rent', 'Salaries', 'Electricity', 'Maintenance'])
+  await expect(costs.locator('[data-month-category="Rent"]')).toHaveText(
+    /^Rent\s*Its regular amount\s*AED\s12,000\.00$/,
   )
-  await expect(now.locator('[data-why]')).toHaveText(
-    'Why: your running costs are AED 15,000 a month and you buy about AED 30,000 of materials a month.',
+  await expect(costs.locator('[data-month-category="Electricity"]')).toHaveText(
+    /^Electricity\s*From its bills, in place of its regular AED\s3,000\.00\s*AED\s3,150\.00$/,
   )
-  await expect(now).toContainText('BizCost uses your estimate until you have 3 full months')
-  await expectSound(page, 'en')
-  await shot(page, 'en-1440-settings')
+  await expect(costs.locator('[data-month-category="Maintenance"]')).toHaveText(
+    /^Maintenance\s*From its bills\s*AED\s450\.00$/,
+  )
+  await expect(costs).toContainText('Each category counts once')
+  // What it will be shared over, and that it is before the VAT the café gets back (D-203).
+  await expect(costs.locator('[data-month-shared]')).toHaveText(
+    `This is what will be shared over what you sold in ${monthName(month)} once your sales are recorded.`,
+  )
+  await expect(costs.locator('[data-month-note]')).toContainText(
+    "Amounts are before VAT: VAT you get back isn't a cost.",
+  )
+  expect(await monthCostsOf(page, businessId)).toMatchObject({
+    state: 'awaiting_sales',
+    runningCostsEntered: true,
+    month,
+    amountsShown: true,
+  })
+  const pool = await monthCostsOf(page, businessId)
+  expect(plain(pool.total)).toBe('23600')
+  expect(
+    pool.categories?.map((c) => [c.name, c.source, plain(c.amount), plain(c.regular)]),
+  ).toEqual([
+    ['Rent', 'regular', '12000', '12000'],
+    ['Salaries', 'regular', '8000', '8000'],
+    ['Electricity', 'bills', '3150', '3000'],
+    ['Maintenance', 'bills', '450', null],
+  ])
 
-  // The list: a table, the latte's full cost and margin (the API keeps them exact).
-  await nav.getByRole('link', { name: 'Product costs' }).click()
-  await expect(how.locator('[data-how="running"] [data-rule]')).toHaveText(
-    'Every AED 1 you spend on materials adds AED 0.50 of running costs (50% of the materials).',
-  )
+  // The list: a table, the latte's cost before running costs and its margin, said as such.
   const table = page.getByRole('table', { name: 'Product costs' })
   await expect(table).toBeVisible()
-  await expect(latteRow.locator('[data-figure="price"]')).toHaveText(/^AED\s18\.00$/)
-  await expect(latteRow.locator('[data-figure="cost"]')).toHaveText(/^AED\s4\.50$/)
-  await expect(latteRow.locator('[data-figure="margin"]')).toHaveText(/^AED\s13\.50$/)
-  await expect(latteRow.locator('[data-figure="percent"]')).toHaveText('75.0%')
-  // The service: no share of running costs yet, never 0.
-  const classRow = page.locator('[data-product-cost-row="Latte art class"]')
-  await expect(classRow.locator('[data-reasons]')).toContainText(
-    'No share of running costs yet: it uses no materials',
+  await expect(page.locator('[data-before-running]')).toHaveText(
+    'Costs and margins here are before running costs: those are added automatically once you record your sales.',
   )
-  await expect(classRow.locator('[data-figure="cost"]')).toHaveText('Not worked out yet')
+  await expect(latteRow.locator('[data-figure="price"]')).toHaveText(/^AED\s18\.00$/)
+  await expect(latteRow.locator('[data-figure="cost"]')).toHaveText(/^AED\s3\.00$/)
+  await expect(latteRow.locator('[data-figure="margin"]')).toHaveText(/^AED\s15\.00$/)
+  await expect(latteRow.locator('[data-figure="percent"]')).toHaveText('83.3%')
+  // The service: no materials added (they are optional, a hint), and its only line is its share,
+  // which waits for sales: worked out then, never 0 and never "incomplete" (D-203).
+  const classRow = page.locator('[data-product-cost-row="Latte art class"]')
+  await expect(classRow.locator('[data-reasons]')).toHaveText('No materials added (if it uses any)')
+  await expect(classRow.locator('[data-figure="cost"]')).toHaveText(
+    'Worked out once you record your sales',
+  )
+  await expect(classRow.locator('[data-figure="cost"]')).not.toContainText('incomplete')
   await expect(classRow.locator('[data-figure="margin"]')).toHaveText('—')
+  // The margin columns say they are before running costs.
+  await expect(table.locator('thead [data-column-note]')).toHaveText([
+    'before running costs',
+    'before running costs',
+  ])
+  // The special: no price, so its share cannot be worked out by it (said plainly).
+  const specialRow = page.locator('[data-product-cost-row="Seasonal special"]')
+  await expect(specialRow.locator('[data-reasons]')).toHaveText('Add its price')
+  await expect(specialRow.locator('[data-figure="price"]')).toHaveText('No usual price')
+  await expect(specialRow.locator('[data-figure="cost"]')).toHaveText(/^AED\s1\.17\s*incomplete$/)
+  await expect(specialRow.locator('[data-figure="margin"]')).toHaveText('—')
   const latte = await breakdownOf(page, businessId, latteId)
   expect(latte.cost).toMatchObject({
     materials: '3.002034632035',
-    runningCosts: { state: 'applied', share: '1.501017316018' },
-    total: '4.503051948053',
+    runningCosts: { state: 'awaiting_sales' },
+    total: '3.002034632035',
+    beforeRunningCosts: true,
     complete: true,
     reasons: [],
   })
-  expect(latte.margin).toEqual({ amount: '13.496948051947', percent: '74.983044733039' })
-  expect(latte.rate).toMatchObject({ state: 'ready', rate: '0.5' })
+  expect(latte.margin).toEqual({ amount: '14.997965367965', percent: '83.322029822028' })
+  const special = await breakdownOf(page, businessId, specialId)
+  expect(special.cost).toMatchObject({
+    runningCosts: { state: 'no_price' },
+    beforeRunningCosts: true,
+    complete: false,
+    reasons: ['no_price'],
+  })
   await expectSound(page, 'en')
   await shot(page, 'en-1440-product-costs')
 
@@ -473,64 +660,90 @@ test('English, desktop: a café sees what the Spanish Latte really costs and kee
   await expectFiguresFit(page)
   await page.setViewportSize(DESKTOP)
 
-  // Sorted by name, then by margin %, the lowest first (the service has none: last).
+  // Sorted by name, then by margin %, the lowest first (those without one: last), then by cost.
   const names = table.locator('tbody tr [dir="auto"]')
-  await expect(names).toHaveText(['Catering tray', 'Espresso', 'Latte art class', 'Spanish Latte'])
+  await expect(names).toHaveText([
+    'Catering tray',
+    'Espresso',
+    'Latte art class',
+    'Seasonal special',
+    'Spanish Latte',
+  ])
   await table.getByRole('button', { name: 'Margin %' }).click()
   await expect(page).toHaveURL(/sort=margin_percent/)
-  await expect(names).toHaveText(['Spanish Latte', 'Espresso', 'Catering tray', 'Latte art class'])
+  await expect(names).toHaveText([
+    'Spanish Latte',
+    'Espresso',
+    'Catering tray',
+    'Latte art class',
+    'Seasonal special',
+  ])
   await expect(table.getByRole('columnheader', { name: 'Margin %' })).toHaveAttribute(
     'aria-sort',
     'ascending',
   )
   await page.getByLabel('Sort by').selectOption({ label: 'Highest cost first' })
-  await expect(names).toHaveText(['Catering tray', 'Spanish Latte', 'Espresso', 'Latte art class'])
-  // What needs a look, with how many: one incomplete, nothing sold at a loss.
+  await expect(names).toHaveText([
+    'Catering tray',
+    'Spanish Latte',
+    'Espresso',
+    'Seasonal special',
+    'Latte art class',
+  ])
+  // What needs a look, with how many: the special only; waiting for sales is not one, nor a
+  // service's optional materials (D-203).
   await expect(page.locator('[data-attention]')).toContainText('Needs a look:')
   await expect(page.locator('[data-attention] button')).toHaveText(['Incomplete (1)'])
   const show = page.getByLabel('Show')
   await expect(show.locator('option')).toHaveText([
     'In use',
     'Incomplete (1)',
-    'Sold at a loss (0)',
+    'Sold at a loss before running costs (0)',
     'Archived',
     'All',
   ])
   await page.locator('[data-attention-item="incomplete"]').click()
-  await expect(names).toHaveText(['Latte art class'])
+  await expect(names).toHaveText(['Seasonal special'])
   await expect(show).toHaveValue('incomplete')
   await show.selectOption('loss')
   await expect(page.getByText('Nothing here is sold at a loss.')).toBeVisible()
   await show.selectOption('active')
-  await expect(names).toHaveCount(4)
+  await expect(names).toHaveCount(5)
 
-  // The latte's breakdown, part by part, in words.
+  // The latte's breakdown, part by part, in words: before running costs, never green.
   await latteRow.getByRole('link').click()
   await expect(page.getByRole('heading', { level: 1 })).toContainText('Spanish Latte')
-  await expect(page.locator('[data-summary="cost"]')).toContainText(/Cost per piece\s*AED\s4\.50/)
-  await expect(page.locator('[data-summary="margin"]')).toContainText(
-    /Margin per piece\s*AED\s13\.50\s*75\.0% of the price/,
+  await expect(page.locator('[data-summary="cost"]')).toContainText(
+    /Cost per piece before running costs\s*AED\s3\.00/,
   )
+  const summaryMargin = page.locator('[data-summary="margin"]')
+  await expect(summaryMargin).toContainText(
+    /Margin per piece before running costs\s*AED\s15\.00\s*83\.3% of the price/,
+  )
+  await expect(summaryMargin.locator('[data-before-running]')).toHaveText(
+    'Its share of running costs is added automatically once you record your sales.',
+  )
+  await expect(summaryMargin.locator('.text-success')).toHaveCount(0)
+  await expect(page.locator('[data-summary="cost"]')).not.toContainText('incomplete')
   const lines = page.locator('[data-line]')
   await expect(page.locator('[data-line="materials"]')).toContainText(
     /Ingredients & supplies\s*AED\s3\.00/,
   )
   const running = page.locator('[data-line="running"]')
-  await expect(running).toContainText(/Running costs\s*AED\s1\.50/)
-  await expect(running.locator('[data-rate]')).toHaveText(
-    'Every AED 1 you spend on materials adds AED 0.50 of running costs (50% of the materials).',
-  )
-  await expect(running.locator('[data-why]')).toHaveText(
-    'Why: your running costs are AED 15,000 a month and you buy about AED 30,000 of materials a month.',
-  )
-  await expect(running.locator('[data-share]')).toHaveText(
-    'Its materials cost AED 3.00, so AED 1.50 of running costs is added to it.',
-  )
+  await expect(running).toContainText(/Running costs\s*Not counted yet/)
+  await expect(running.locator('[data-awaiting]')).toHaveText(AWAITING)
+  await expect(running.locator('[data-rate]')).toHaveText(RULE)
   // A team: no time line.
   await expect(page.locator('[data-line="time"]')).toHaveCount(0)
-  await expect(page.locator('[data-line="total"]')).toContainText(/Cost per piece\s*AED\s4\.50/)
-  await expect(page.locator('[data-line="margin"]')).toContainText(/AED\s13\.50\s*75\.0%/)
+  await expect(page.locator('[data-line="total"]')).toContainText(
+    /Cost per piece before running costs\s*AED\s3\.00/,
+  )
+  await expect(page.locator('[data-line="margin"]')).toContainText(
+    /Margin before running costs\s*AED\s15\.00\s*83\.3%/,
+  )
   await expect(lines).toHaveCount(5)
+  // Nothing is missing: waiting for sales is not something to add.
+  await expect(page.locator('[data-reason]')).toHaveCount(0)
   // Each material: how much, its average, the line's cost and its last purchase cost.
   const beansLine = page.locator('[data-material-line="Coffee beans"]:visible')
   await expect(beansLine).toContainText('18 g')
@@ -550,13 +763,11 @@ test('English, desktop: a café sees what the Spanish Latte really costs and kee
   await expect(page.locator('[data-at-price]')).toHaveText(
     /At your price of AED\s18\.00, which is AED\s17\.14 before VAT\./,
   )
-  await expect(page.locator('[data-summary="margin"]')).toContainText(
-    /AED\s12\.64\s*73\.7% of the price before VAT/,
-  )
+  await expect(summaryMargin).toContainText(/AED\s14\.14\s*82\.5% of the price before VAT/)
   await expect(page.locator('[data-line="price"]')).toContainText(/Price before VAT\s*AED\s17\.14/)
   const withVat = await breakdownOf(page, businessId, latteId)
   expect(withVat.price.beforeVat).toBe('17.142857142857')
-  expect(withVat.margin).toEqual({ amount: '12.639805194804', percent: '73.732196969691' })
+  expect(withVat.margin.amount).toBe('14.140822510822')
   await expectSound(page, 'en')
   await shot(page, 'en-1440-latte-breakdown-vat')
 
@@ -568,14 +779,21 @@ test('English, desktop: a café sees what the Spanish Latte really costs and kee
   await page.goto(`/b/${businessId}/product-costs`)
   await expect(page.getByRole('table')).toHaveCount(0)
   const card = page.locator('[data-product-cost-row="Spanish Latte"]')
-  await expect(card.locator('[data-figure="cost"]')).toContainText(/AED\s4\.50/)
+  await expect(card.locator('[data-figure="cost"]')).toContainText(/AED\s3\.00/)
   await expect(card.locator('[data-figure="price"]')).toContainText(/AED\s17\.14 before VAT/)
-  await expect(card.locator('[data-figure="margin"]')).toContainText(/AED\s12\.64\s*73\.7%/)
+  await expect(card.locator('[data-figure="margin"]')).toContainText(/AED\s14\.14\s*82\.5%/)
+  await expect(page.locator('[data-before-running]')).toBeVisible()
   // On a phone, how costs are worked out folds to one line, a tap away.
   const folded = page.locator('[data-how-folded]')
-  await expect(folded).toContainText('Running costs add 50% to the cost of materials.')
+  await expect(folded).toHaveText(
+    /Running costs: worked out automatically once you record your sales\.\s*How\?/,
+  )
   await expectSound(page, 'en')
   await shot(page, 'en-390-product-costs')
+  await page.getByRole('button', { name: 'How?' }).click()
+  await expect(how.locator('[data-month-costs]')).toContainText(/AED\s23,600\.00/)
+  await expectSound(page, 'en')
+  await shot(page, 'en-390-product-costs-how')
   // Amounts in the thousands at 375 px: nothing runs into anything, in the list and the breakdown.
   await page.setViewportSize({ width: 375, height: 812 })
   await expect(
@@ -584,44 +802,92 @@ test('English, desktop: a café sees what the Spanish Latte really costs and kee
   await expectFiguresFit(page)
   await expectSound(page, 'en')
   await page.locator('[data-product-cost-row="Catering tray"]').click()
-  await expect(page.locator('[data-summary="margin"]')).toContainText(/AED\s10,550\.00/)
+  await expect(page.locator('[data-summary="margin"]')).toContainText(/AED\s11,200\.00/)
   await expectFiguresFit(page)
   await expectSound(page, 'en')
   await shot(page, 'en-375-tray-breakdown')
   await page.setViewportSize({ width: 1280, height: 900 })
   await expectFiguresFit(page)
   await shot(page, 'en-1280-tray-breakdown')
+
+  // Settings → How costs are worked out: a café with a team has nothing to set there (no estimate,
+  // no hourly rate): the rule with the owner's example, and the way to what it is made of.
+  await page.setViewportSize(DESKTOP)
+  await page.goto(`/b/${businessId}/settings/costing`)
+  await expect(page.getByRole('heading', { level: 1 })).toHaveText('How costs are worked out')
+  await expect(page.getByRole('heading', { name: 'Your time' })).toHaveCount(0)
+  await expect(page.getByRole('textbox')).toHaveCount(0)
+  await expect(page.getByRole('button', { name: 'Save' })).toHaveCount(0)
+  const example = page.locator('[data-rule-example]')
+  await expect(example.locator('[data-rule]')).toHaveText(RULE)
+  await expect(example.locator('[data-example]')).toHaveText(EXAMPLE)
+  await expect(page.getByRole('link', { name: 'Go to Running Costs' })).toHaveAttribute(
+    'href',
+    `/b/${businessId}/running-costs`,
+  )
+  await expect(page.getByRole('link', { name: 'See product costs' })).toHaveAttribute(
+    'href',
+    `/b/${businessId}/product-costs`,
+  )
+  await expectSound(page, 'en')
+  await shot(page, 'en-1440-settings')
 })
 
 test('Arabic, phone and desktop: the café reads its product costs', async () => {
   test.setTimeout(600_000)
   if (!cafe) throw new Error('the first test makes the café')
-  const { page, businessId, latteId } = cafe
+  const { page, businessId, latteId, specialId } = cafe
   await setLanguage(page, 'ar')
   await page.setViewportSize(PHONE)
   await page.goto(`/b/${businessId}/product-costs`)
   await expect(page.getByRole('heading', { level: 1 })).toHaveText('تكاليف المنتجات')
   // Folded to one line on a phone; "How?" opens it.
-  await expect(page.locator('[data-how-folded]')).toContainText('المصاريف التشغيلية تضيف 50')
+  await expect(page.locator('[data-how-folded]')).toContainText(
+    'المصاريف التشغيلية: تُحسب تلقائيًا بعد تسجيل مبيعاتك.',
+  )
+  await expect(page.locator('[data-before-running]')).toHaveText(
+    'التكاليف وهوامش الربح هنا قبل المصاريف التشغيلية، وتُضاف إليها تلقائيًا بعد تسجيل مبيعاتك.',
+  )
   await expectSound(page, 'ar')
   await shot(page, 'ar-390-product-costs')
   await page.getByRole('button', { name: 'كيف؟' }).click()
   const how = page.getByRole('region', { name: 'كيف تُحسب تكاليفك' })
-  await expect(how.locator('[data-how="running"] [data-rule]')).toContainText(
-    loose('كل 1 د.إ. تصرفه على المواد يُضاف إليه 0.50 د.إ. من المصاريف التشغيلية'),
+  await expect(how.locator('[data-how="running"] [data-rule]')).toHaveText(
+    'تُوزَّع مصاريفك التشغيلية ومصروفاتك (الإيجار والرواتب والفواتير…) على كل ما تبيعه حسب سعره: يحمل كل ما تبيعه النسبة نفسها من سعره.',
   )
-  await expect(how.locator('[data-how="running"] [data-why]')).toContainText(
-    loose('لأن مصاريفك التشغيلية 15,000 د.إ. في الشهر، وتشتري مواد بحوالي 30,000 د.إ. في الشهر.'),
+  await expect(how.locator('[data-how="running"] [data-example]')).toContainText(
+    loose('مثال: إذا كانت مصاريف الشهر 20,000 د.إ. ومبيعاته 80,000 د.إ.'),
   )
+  await expect(how.locator('[data-how="running"] [data-example]')).toContainText(
+    loose('ما سعره 400.00 د.إ. يحمل 100.00 د.إ.، وما سعره 18.00 د.إ. يحمل 4.50 د.إ.'),
+  )
+  await expect(how.locator('[data-how="running"] [data-example]')).toContainText(
+    loose('فالنسبة 20,000 ÷ 80,000 ='),
+  )
+  await expect(how.locator('[data-how="running"] [data-awaiting]')).toContainText(AWAITING_AR)
+  const costs = how.locator('[data-month-costs]')
+  await expect(costs).toContainText('تكاليف عملك في')
+  await expect(costs).toContainText(loose('23,600.00 د.إ.'))
+  await expect(costs.locator('[data-month-category="Electricity"]')).toContainText(
+    loose('من فواتيرها، بدل مبلغها المنتظم 3,000.00 د.إ.'),
+  )
+  await expect(costs.locator('[data-month-category="Rent"]')).toContainText('مبلغها المنتظم')
+  await expect(costs.locator('[data-month-shared]')).toContainText('بعد تسجيل مبيعاتك')
+  await expect(costs.locator('[data-month-note]')).toContainText(
+    'المبالغ قبل الضريبة: الضريبة التي تستردّها ليست تكلفة.',
+  )
+  await expectSound(page, 'ar')
+  await shot(page, 'ar-390-product-costs-how')
   await page.getByRole('button', { name: 'إخفاء التفاصيل' }).click()
   await expect(page.locator('[data-how-folded]')).toBeVisible()
   const card = page.locator('[data-product-cost-row="Spanish Latte"]')
-  await expect(card.locator('[data-figure="cost"]')).toContainText('4.50')
-  await expect(card.locator('[data-figure="margin"]')).toContainText('12.64')
+  await expect(card.locator('[data-figure="cost"]')).toContainText('3.00')
+  await expect(card.locator('[data-figure="margin"]')).toContainText('14.14')
   const classCard = page.locator('[data-product-cost-row="Latte art class"]')
-  await expect(classCard.locator('[data-reasons]')).toContainText(
-    'لا نصيب له من المصاريف التشغيلية بعد: لا يستخدم مواد',
-  )
+  await expect(classCard.locator('[data-reasons]')).toHaveText('لم تُضف مواد (إن كان يستخدم مواد)')
+  await expect(
+    page.locator('[data-product-cost-row="Seasonal special"] [data-reasons]'),
+  ).toHaveText('أضف سعره')
   await expectFiguresFit(page)
   await expectSound(page, 'ar')
   await page.setViewportSize({ width: 375, height: 812 })
@@ -630,36 +896,58 @@ test('Arabic, phone and desktop: the café reads its product costs', async () =>
   await page.setViewportSize(PHONE)
 
   await card.click()
-  await expect(page.locator('[data-summary="cost"]')).toContainText('التكلفة لكل قطعة')
-  await expect(page.locator('[data-line="running"] [data-share]')).toContainText(
-    loose('مواده تكلف 3.00 د.إ. لذلك يُضاف إليه 1.50 د.إ. من المصاريف التشغيلية.'),
+  await expect(page.locator('[data-summary="cost"]')).toContainText(
+    'التكلفة لكل قطعة قبل المصاريف التشغيلية',
   )
+  await expect(page.locator('[data-summary="margin"]')).toContainText(
+    'هامش الربح لكل قطعة قبل المصاريف التشغيلية',
+  )
+  await expect(page.locator('[data-line="running"] [data-awaiting]')).toHaveText(AWAITING_AR)
   await expectSound(page, 'ar')
   await shot(page, 'ar-390-latte-breakdown')
 
-  // The service's breakdown: no running costs until working time comes (never 0).
+  // The service's breakdown: its share waits for sales like a product's (never 0), and that is its
+  // only line: worked out then, never "incomplete" (D-203).
   await page.goto(`/b/${businessId}/product-costs`)
   await classCard.click()
   const running = page.locator('[data-line="running"]')
   await expect(running).toContainText('لم تُحسب بعد')
-  await expect(running).toContainText('لا نصيب له من المصاريف التشغيلية بعد: لا يستخدم مواد')
-  // A service may use no materials: none, never "not counted"; adding some is optional.
-  await expect(page.locator('[data-line="materials"]')).toContainText('لا يستخدم مواد.')
-  await expect(page.locator('[data-reason="no_recipe"]')).toContainText(
-    'إن كان يستخدم مواد، أضفها لتُحسب تكلفتها.',
+  await expect(running.locator('[data-awaiting]')).toHaveText(AWAITING_AR)
+  await expect(page.locator('[data-summary="cost"]')).toContainText('تُحسب بعد تسجيل مبيعاتك')
+  await expect(page.locator('[data-summary="cost"]')).not.toContainText('غير مكتملة')
+  await expect(page.locator('[data-summary="margin"] [data-before-running]')).toHaveText(
+    'يُضاف إليها نصيبها من المصاريف التشغيلية تلقائيًا بعد تسجيل مبيعاتك.',
   )
-  // Why, in words, with what is missing.
-  await expect(page.locator('[data-reason="running_costs_need_materials"]')).toContainText(
-    'سيأتي لاحقًا توزيعها حسب وقت العمل',
+  // A service may use no materials: none, never "not counted"; adding some is a hint, not missing.
+  await expect(page.locator('[data-line="materials"]')).toContainText(
+    'لم تُضف له مواد. إن كان يستخدم مواد، أضفها لتُحسب تكلفتها.',
   )
+  await expect(page.locator('[data-reason]')).toHaveCount(0)
   await expectSound(page, 'ar')
   await shot(page, 'ar-390-service-breakdown')
+
+  // The special without a price: said plainly, with the way to add it.
+  await page.goto(`/b/${businessId}/product-costs/${specialId}`)
+  await expect(page.locator('[data-line="running"] [data-no-price]')).toHaveText(
+    'ليس له سعر، فلا يمكن حساب نصيبه: أضف سعره.',
+  )
+  const noPrice = page.locator('[data-reason="no_price"]')
+  await expect(noPrice).toContainText(
+    'ليس له سعر، فلا يمكن حساب نصيبه من المصاريف التشغيلية: أضف سعره.',
+  )
+  await expectSound(page, 'ar')
+  await shot(page, 'ar-390-no-price-breakdown')
+  await noPrice.getByRole('button', { name: 'أضف سعره' }).click()
+  const sheet = page.getByRole('dialog')
+  await expect(sheet.getByRole('textbox', { name: 'السعر المعتاد' })).toBeVisible()
+  await sheet.getByRole('button', { name: 'إغلاق' }).first().click()
+  await expect(sheet).toHaveCount(0)
 
   // The tray's breakdown in the thousands, at 375 and 1280 px.
   await page.setViewportSize({ width: 375, height: 812 })
   await page.goto(`/b/${businessId}/product-costs`)
   await page.locator('[data-product-cost-row="Catering tray"]').click()
-  await expect(page.locator('[data-summary="margin"]')).toContainText('10,550.00')
+  await expect(page.locator('[data-summary="margin"]')).toContainText('11,200.00')
   await expectFiguresFit(page)
   await expectSound(page, 'ar')
   await page.setViewportSize({ width: 1280, height: 900 })
@@ -677,7 +965,8 @@ test('Arabic, phone and desktop: the café reads its product costs', async () =>
   await expectSound(page, 'ar')
   await shot(page, 'ar-1440-latte-breakdown')
   await page.goto(`/b/${businessId}/settings/costing`)
-  await expect(page.locator('[data-rate-now]')).toContainText('مصاريفك التشغيلية')
+  await expect(page.locator('[data-rule-example] [data-rule]')).toContainText('حسب سعره')
+  await expect(page.getByRole('textbox')).toHaveCount(0)
   await expectSound(page, 'ar')
   await shot(page, 'ar-1440-settings')
   await page.setViewportSize(PHONE)
@@ -685,19 +974,20 @@ test('Arabic, phone and desktop: the café reads its product costs', async () =>
   await shot(page, 'ar-390-settings')
 })
 
-test('an employee: no Product costs by the template; with the page, locks and no sort by cost', async ({
+test('an employee: no Product costs by the template; with the page, locks; with costs, last month’s costs still hidden', async ({
   browser,
 }) => {
   test.setTimeout(600_000)
   if (!cafe) throw new Error('the first test makes the café')
   const { page: ownerPage, businessId, latteId } = cafe
-  const roles = await ok(
-    callApi<
-      { id: string; templateKey: string | null; version: number; permissionKeys: string[] }[]
-    >(ownerPage, 'role.list', {}, { businessId, query: true }),
-    'role.list',
-  )
-  const employeeRole = roles.find((role) => role.templateKey === 'employee')
+  const roles = async () =>
+    await ok(
+      callApi<
+        { id: string; templateKey: string | null; version: number; permissionKeys: string[] }[]
+      >(ownerPage, 'role.list', {}, { businessId, query: true }),
+      'role.list',
+    )
+  const employeeRole = (await roles()).find((role) => role.templateKey === 'employee')
   if (!employeeRole) throw new Error('no Employee role')
   expect(employeeRole.permissionKeys).not.toContain('cost_engine.product_costs.view')
   const employee = await createUser('costs-employee')
@@ -745,6 +1035,7 @@ test('an employee: no Product costs by the template; with the page, locks and no
   )
   // No way worked out is shown (it is made of costs), and no sort or filter on them.
   await expect(page.getByRole('region', { name: 'كيف تُحسب تكاليفك' })).toHaveCount(0)
+  await expect(page.locator('[data-before-running]')).toHaveCount(0)
   await expect(page.getByLabel('رتّب حسب').locator('option')).toHaveText([
     'الاسم، من أ إلى ي',
     'الاسم، من ي إلى أ',
@@ -777,9 +1068,10 @@ test('an employee: no Product costs by the template; with the page, locks and no
   // The breakdown: what goes into it, with locks in place of every cost.
   await page.goto(`/b/${businessId}/product-costs/${latteId}`)
   await expect(page.locator('[data-summary="cost"] [data-locked="cost"]')).toHaveCount(1)
+  await expect(page.locator('[data-line="running"] [data-locked="cost"]')).toHaveCount(1)
   await expect(page.locator('[data-material-line="Coffee beans"]:visible')).toContainText('18 غرام')
   await expect(page.locator('[data-material-line]:visible [data-locked="cost"]')).not.toHaveCount(0)
-  await expect(page.getByRole('main')).not.toContainText('4.50')
+  await expect(page.getByRole('main')).not.toContainText('3.00')
   await expectSound(page, 'ar')
   await shot(page, 'ar-390-employee-breakdown')
 
@@ -791,9 +1083,52 @@ test('an employee: no Product costs by the template; with the page, locks and no
   await expect(table.getByRole('button', { name: 'Price' })).toBeVisible()
   await expect(table.getByRole('button', { name: 'Cost per unit' })).toHaveCount(0)
   await expect(table.getByRole('button', { name: 'Margin %' })).toHaveCount(0)
-  await expect(table.locator('[data-locked="cost"]')).toHaveCount(4)
+  await expect(table.locator('[data-locked="cost"]')).toHaveCount(5)
   await expectSound(page, 'en')
   await shot(page, 'en-1440-employee-product-costs')
+
+  // Costs too ("See costs, supplier prices and margins"), but not running costs: the rule shows,
+  // last month's costs stay hidden, and the API withholds them (D-202).
+  const [current] = (await roles()).filter((role) => role.id === employeeRole.id)
+  await ok(
+    callApi(
+      ownerPage,
+      'role.updatePermissions',
+      {
+        id: employeeRole.id,
+        version: current!.version,
+        permissionKeys: [
+          ...current!.permissionKeys,
+          'data.cost.view',
+          'data.supplier_price.view',
+          'data.profit_margin.view',
+        ],
+      },
+      { businessId },
+    ),
+    'role.updatePermissions',
+  )
+  expect(current!.permissionKeys).not.toContain('running_costs.items.view')
+  await page.reload()
+  const how = page.getByRole('region', { name: 'How your costs are worked out' })
+  await expect(how.locator('[data-how="running"] [data-rule]')).toHaveText(RULE)
+  const month = monthBefore(await today(page, businessId))
+  await expect(how.locator('[data-month-hidden]')).toHaveText(
+    `Your business's costs in ${monthName(month)} show only to those who can see running costs and expenses.`,
+  )
+  await expect(how.locator('[data-month-category]')).toHaveCount(0)
+  await expect(page.getByRole('main')).not.toContainText('23,600')
+  await expect(
+    page.locator('[data-product-cost-row="Spanish Latte"] [data-figure="cost"]'),
+  ).toHaveText(/^AED\s3\.00$/)
+  expect(await monthCostsOf(page, businessId)).toMatchObject({
+    state: 'awaiting_sales',
+    amountsShown: false,
+    total: null,
+    categories: null,
+  })
+  await expectSound(page, 'en')
+  await shot(page, 'en-1440-employee-costs-month-hidden')
 })
 
 test('Arabic, phone: a home baker counts a slice of cake with her own time', async ({
@@ -830,27 +1165,22 @@ test('Arabic, phone: a home baker counts a slice of cake with her own time', asy
     ],
     '12',
   )
-  // Rent 300 and electricity 150 a month, a licence of 1,200 a year: 550 a month.
+  // Rent 300 and electricity 150 a month, a licence of 1,200 a year: 550 last month.
   await runningCosts(page, businessId, [
-    { name: 'إيجار', amount: '300', frequency: 'monthly' },
-    { name: 'كهرباء', amount: '150', frequency: 'monthly' },
-    { name: 'رخصة', amount: '1200', frequency: 'yearly' },
+    { name: 'إيجار', amount: '300', frequency: 'monthly', category: 'Rent' },
+    { name: 'كهرباء', amount: '150', frequency: 'monthly', category: 'Electricity' },
+    { name: 'رخصة', amount: '1200', frequency: 'yearly', category: 'Licences' },
   ])
 
-  // Settings: her estimate and her hourly rate, each saved on its own.
+  // Settings: only her hourly rate (no estimate of her purchases), with the rule above it.
   await page.goto(`/b/${businessId}/settings/costing`)
   await expect(page.getByRole('heading', { level: 1 })).toHaveText('طريقة حساب التكاليف')
-  await page.getByRole('textbox', { name: 'كم تشتري من المواد تقريبًا في الشهر؟' }).fill('٢٠٠٠')
-  await page.locator('[data-setting="estimate"]').getByRole('button', { name: 'حفظ' }).click()
-  await expect(page.getByText('تم الحفظ.')).toBeVisible()
-  await expect(page.locator('[data-rate-now] [data-why]')).toContainText(
-    loose('لأن مصاريفك التشغيلية 550 د.إ. في الشهر، وتشتري مواد بحوالي 2,000 د.إ. في الشهر.'),
-  )
-  await expect(page.locator('[data-rate-now] [data-rule]')).toContainText('(أي 27.5')
+  await expect(page.locator('[data-rule-example] [data-example]')).toContainText('مثال:')
+  await expect(page.getByRole('textbox')).toHaveCount(1)
   await expect(page.getByRole('heading', { name: 'وقتك' })).toBeVisible()
-  await page.getByRole('textbox', { name: 'كم تساوي ساعة من وقتك؟' }).fill('45')
+  await page.getByRole('textbox', { name: 'كم تساوي ساعة من وقتك؟' }).fill('٤٥')
   await page.locator('[data-setting="hourlyRate"]').getByRole('button', { name: 'حفظ' }).click()
-  await expect(page.getByText('تم الحفظ.').first()).toBeVisible()
+  await expect(page.getByText('تم الحفظ.')).toBeVisible()
   await expectSound(page, 'ar')
   await shot(page, 'ar-390-baker-settings')
 
@@ -879,13 +1209,14 @@ test('Arabic, phone: a home baker counts a slice of cake with her own time', asy
   const how = page.getByRole('region', { name: 'كيف تُحسب تكاليفك' })
   await expect(how.locator('[data-how="time"]')).toHaveText(loose('وقتك: 45.00 د.إ. في الساعة.'))
   await expect(how.locator('[data-how="no-time"]')).toContainText('منتج واحد لم يُضف له وقتك بعد')
+  await expect(how.locator('[data-month-costs]')).toContainText(loose('550.00 د.إ.'))
   await expect(page.locator('[data-product-cost-row="فطيرة"] [data-reasons]')).toContainText(
     'لم يُضف وقتك',
   )
   const card = page.locator('[data-product-cost-row="قطعة كيك شوكولاتة"]')
-  await expect(card.locator('[data-figure="cost"]')).toContainText('8.87')
-  await expect(card.locator('[data-figure="margin"]')).toContainText('6.13')
-  await expect(card.locator('[data-figure="margin"]')).toContainText('40.9')
+  await expect(card.locator('[data-figure="cost"]')).toContainText('8.58')
+  await expect(card.locator('[data-figure="margin"]')).toContainText('6.43')
+  await expect(card.locator('[data-figure="margin"]')).toContainText('42.8')
   await expectSound(page, 'ar')
   await shot(page, 'ar-390-baker-product-costs')
   await card.click()
@@ -893,29 +1224,37 @@ test('Arabic, phone: a home baker counts a slice of cake with her own time', asy
   await expect(page.locator('[data-line="materials"] [data-whole]')).toContainText(
     loose('الوصفة كاملة تكلف 12.90 د.إ. وتكفي 12 قطعة.'),
   )
-  await expect(page.locator('[data-line="running"]')).toContainText('0.30')
+  await expect(page.locator('[data-line="running"] [data-awaiting]')).toHaveText(AWAITING_AR)
   const time = page.locator('[data-line="time"]')
   await expect(time).toContainText('7.50')
   await expect(time).toContainText(loose('10 دقائق بأجر 45.00 د.إ. في الساعة.'))
-  await expect(page.locator('[data-line="total"]')).toContainText('8.87')
-  await expect(page.locator('[data-line="margin"]')).toContainText('6.13')
+  await expect(page.locator('[data-line="total"]')).toContainText(
+    'التكلفة لكل قطعة قبل المصاريف التشغيلية',
+  )
+  await expect(page.locator('[data-line="total"]')).toContainText('8.58')
+  await expect(page.locator('[data-line="margin"]')).toContainText('6.43')
   const cake = await breakdownOf(page, businessId, cakeId)
   expect(cake.cost).toMatchObject({
     materials: '1.075',
-    runningCosts: { state: 'applied', share: '0.295625' },
+    runningCosts: { state: 'awaiting_sales' },
     ownerTime: { state: 'applied', minutes: '10', amount: '7.5' },
-    total: '8.870625',
+    total: '8.575',
+    beforeRunningCosts: true,
     complete: true,
   })
-  expect(cake.rate).toMatchObject({ state: 'ready', rate: '0.275' })
-  expect(cake.margin).toEqual({ amount: '6.129375', percent: '40.8625' })
+  expect(plain(cake.monthCosts.total)).toBe('550')
+  expect(cake.margin).toEqual({ amount: '6.425', percent: '42.833333333333' })
   await expectSound(page, 'ar')
   await shot(page, 'ar-390-baker-breakdown')
+  await page.setViewportSize(DESKTOP)
+  await page.goto(`/b/${businessId}/product-costs`)
+  await expect(page.locator('[data-month-costs]')).toContainText(loose('550.00 د.إ.'))
+  await expectSound(page, 'ar')
+  await shot(page, 'ar-1440-baker-product-costs')
 
   // English, desktop.
   await setLanguage(page, 'en')
-  await page.setViewportSize(DESKTOP)
-  await page.reload()
+  await page.goto(`/b/${businessId}/product-costs/${cakeId}`)
   await expect(time).toContainText('10 minutes at AED 45.00 an hour.')
   await expect(page.locator('[data-line="materials"] [data-whole]')).toHaveText(
     /The whole recipe costs AED\s12\.90 and makes 12 pieces\./,
@@ -925,4 +1264,173 @@ test('Arabic, phone: a home baker counts a slice of cake with her own time', asy
   await page.goto(`/b/${businessId}/product-costs`)
   await expectSound(page, 'en')
   await shot(page, 'en-1440-baker-product-costs')
+  await page.setViewportSize(PHONE)
+  await expect(page.locator('[data-how-folded]')).toContainText('Your time: AED 45.00 an hour.')
+  await expectSound(page, 'en')
+  await shot(page, 'en-390-baker-product-costs')
+})
+
+test('a designer who sells only services: asked for running costs, and her logo’s share waits for sales', async ({
+  browser,
+}) => {
+  test.setTimeout(600_000)
+  const { page } = await open(browser, DESKTOP, 'en')
+  const businessId = await createBusiness(page, 'Noura Design Studio', DESIGNER_ANSWERS)
+  await ok(
+    callApi(page, 'productCost.updateSettings', { ownerHourlyRate: '100' }, { businessId }),
+    'hourly rate',
+  )
+  const logoId = await product(page, businessId, {
+    name: 'Logo design',
+    type: 'service',
+    defaultPrice: '1500',
+    ownerMinutes: '600',
+  })
+  await product(page, businessId, {
+    name: 'Design consultation',
+    type: 'service',
+    unit: 'h',
+    defaultPrice: '250',
+    ownerMinutes: '60',
+  })
+  await product(page, businessId, {
+    name: 'Custom illustration',
+    type: 'service',
+    ownerMinutes: '240',
+  })
+
+  // Her Dashboard asks for her running costs too: they reach services by their price (D-202).
+  await page.goto(`/b/${businessId}`)
+  const checklist = page.getByRole('region', { name: "Let's find the real cost of what you sell" })
+  const step = checklist.locator('[data-cost-step="running_costs"]')
+  await expect(step).toContainText(
+    'Rent, electricity, salaries and other regular costs, so each service carries its share.',
+  )
+  await expect(step.getByRole('link')).toHaveAttribute('href', `/b/${businessId}/running-costs`)
+  await expectSound(page, 'en')
+  await shot(page, 'en-1440-designer-checklist')
+
+  // Her software and internet since last month, and her trade licence of 1,200 a year from last
+  // month. Last month's Adobe bill came to 275 (its price went up): it replaces the regular 260;
+  // the licence's bill of 1,200 pays for its whole year, 100 a month (D-203): 275 + 389 + 100 = 764.
+  await runningCosts(page, businessId, [
+    {
+      name: 'Adobe Creative Cloud',
+      amount: '260',
+      frequency: 'monthly',
+      category: 'Software subscriptions',
+    },
+    { name: 'Home internet', amount: '389', frequency: 'monthly', category: 'Internet' },
+    { name: 'Freelance licence', amount: '1200', frequency: 'yearly', category: 'Licences' },
+  ])
+  await lastMonthBill(page, businessId, {
+    category: 'Software subscriptions',
+    amount: '275',
+    description: 'Adobe Creative Cloud',
+  })
+  await lastMonthBill(page, businessId, {
+    category: 'Licences',
+    amount: '1200',
+    description: 'Freelance licence renewal',
+  })
+  const month = monthBefore(await today(page, businessId))
+  const yearEnd = monthBefore(`${String(Number(month.slice(0, 4)) + 1)}${month.slice(4)}-01`)
+  await page.reload()
+  await expect(step).toHaveAttribute('data-done', 'true')
+
+  await page.goto(`/b/${businessId}/product-costs`)
+  await expect(page.getByRole('heading', { level: 1 })).toHaveText('Product costs')
+  const how = page.getByRole('region', { name: 'How your costs are worked out' })
+  await expect(how.locator('[data-how="running"] [data-rule]')).toHaveText(RULE)
+  const costs = how.locator('[data-month-costs]')
+  await expect(costs).toContainText(/AED\s764\.00/)
+  await expect(costs.locator('[data-month-category="Software subscriptions"]')).toHaveText(
+    /From its bills, in place of its regular AED\s260\.00\s*AED\s275\.00$/,
+  )
+  await expect(costs.locator('[data-month-category="Licences"]')).toHaveText(
+    loose(
+      `LicencesIts bills for the year from ${monthName(month)} to ${monthName(yearEnd)} (AED 1,200.00), spread over its 12 months, in place of its regular AED 100.00AED 100.00`,
+    ),
+  )
+  // Not VAT-registered: nothing said about VAT.
+  await expect(costs.locator('[data-month-note]')).not.toContainText('VAT')
+  const logo = page.locator('[data-product-cost-row="Logo design"]')
+  await expect(logo.locator('[data-figure="cost"]')).toHaveText(/^AED\s1,000\.00$/)
+  await expect(logo.locator('[data-figure="margin"]')).toHaveText(/^AED\s500\.00$/)
+  await expect(logo.locator('[data-reasons]')).toHaveCount(0)
+  await expect(
+    page.locator('[data-product-cost-row="Custom illustration"] [data-reasons]'),
+  ).toHaveText('Add its price')
+  await expect(page.locator('[data-attention] button')).toHaveText(['Incomplete (1)'])
+  await expectSound(page, 'en')
+  await shot(page, 'en-1440-designer-product-costs')
+
+  await logo.getByRole('link').click()
+  await expect(page.locator('[data-summary="cost"]')).toContainText(
+    /Cost per piece before running costs\s*AED\s1,000\.00/,
+  )
+  await expect(page.locator('[data-line="running"] [data-awaiting]')).toHaveText(AWAITING)
+  await expect(page.locator('[data-line="time"]')).toContainText('10 hours at AED 100.00 an hour.')
+  const breakdown = await breakdownOf(page, businessId, logoId)
+  expect(breakdown.cost).toMatchObject({
+    runningCosts: { state: 'awaiting_sales' },
+    total: '1000',
+    beforeRunningCosts: true,
+    complete: true,
+    reasons: [],
+  })
+  await expectSound(page, 'en')
+  await shot(page, 'en-1440-designer-logo-breakdown')
+  // Settings → How costs are worked out speaks of her services, with her hourly rate (D-200).
+  await page.goto(`/b/${businessId}/settings/costing`)
+  await expect(
+    page.getByRole('heading', { name: 'Running costs in your service costs' }),
+  ).toBeVisible()
+  await expect(page.getByText('Running costs need no setting:')).toBeVisible()
+  await expect(page.getByRole('link', { name: 'See service costs' })).toHaveAttribute(
+    'href',
+    `/b/${businessId}/product-costs`,
+  )
+  await expect(page.getByRole('textbox')).toHaveCount(1)
+  await expectSound(page, 'en')
+  await shot(page, 'en-1440-designer-settings')
+  await page.setViewportSize(PHONE)
+  await page.goto(`/b/${businessId}/product-costs`)
+  await expect(page.locator('[data-before-running]')).toBeVisible()
+  await expectSound(page, 'en')
+  await shot(page, 'en-390-designer-product-costs')
+
+  // Arabic, on a phone.
+  await setLanguage(page, 'ar')
+  await page.setViewportSize(PHONE)
+  await page.goto(`/b/${businessId}/product-costs`)
+  await expect(page.getByRole('heading', { level: 1 })).toHaveText('تكاليف المنتجات')
+  await expect(page.locator('[data-how-folded]')).toContainText(
+    'المصاريف التشغيلية: تُحسب تلقائيًا بعد تسجيل مبيعاتك.',
+  )
+  await expectSound(page, 'ar')
+  await shot(page, 'ar-390-designer-product-costs')
+  await page.getByRole('button', { name: 'كيف؟' }).click()
+  await expect(page.locator('[data-month-category="Software subscriptions"]')).toContainText(
+    loose('من فواتيرها، بدل مبلغها المنتظم 260.00 د.إ.'),
+  )
+  await expect(page.locator('[data-month-category="Licences"]')).toContainText(
+    'فواتيرها عن السنة من',
+  )
+  await expect(page.locator('[data-month-category="Licences"]')).toContainText(
+    'موزّعة على أشهرها الاثني عشر',
+  )
+  await expectSound(page, 'ar')
+  await shot(page, 'ar-390-designer-product-costs-how')
+  await page.locator('[data-product-cost-row="Logo design"]').click()
+  await expect(page.locator('[data-line="running"] [data-awaiting]')).toHaveText(AWAITING_AR)
+  await expect(page.locator('[data-summary="margin"] [data-before-running]')).toHaveText(
+    'يُضاف إليها نصيبها من المصاريف التشغيلية تلقائيًا بعد تسجيل مبيعاتك.',
+  )
+  await expectSound(page, 'ar')
+  await shot(page, 'ar-390-designer-logo-breakdown')
+  await page.setViewportSize(DESKTOP)
+  await page.goto(`/b/${businessId}/product-costs`)
+  await expectSound(page, 'ar')
+  await shot(page, 'ar-1440-designer-product-costs')
 })

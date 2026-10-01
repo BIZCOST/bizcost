@@ -176,14 +176,13 @@ export const COST_STEP_RULES: readonly CostStepRule[] = [
     withoutTeam: false,
   },
   {
-    // The hourly rate (Settings → How costs are worked out) and the minutes on each product.
+    // The hourly rate (Settings → How costs are worked out: productCost.updateSettings) and the
+    // minutes on each product.
     id: 'owner_time',
     modules: ['cost_engine', 'products'],
     permissions: [
       'cost_engine.product_costs.view',
       'cost_engine.settings.manage',
-      'running_costs.items.view',
-      'purchases.documents.view',
       'products.items.manage',
     ],
     categories: ['cost'],
@@ -223,7 +222,7 @@ export function costStepIds(access: CostStepAccess): CostStepId[] {
   ).map((rule) => rule.id)
 }
 
-/** What the business's data says about the cost steps (read by the API; D-116, D-117, D-119, D-186). */
+/** What the business's data says about the cost steps (read by the API; D-117, D-119, D-186, D-202). */
 export interface CostFacts {
   /** Products and services that are not archived. */
   readonly items: number
@@ -235,45 +234,26 @@ export interface CostFacts {
   readonly usedMaterials: number
   /** Of those, the ones never bought: "no price yet" (D-147). */
   readonly unpricedMaterials: number
-  /** A running cost was entered (removed ones aside, D-186). */
+  /** A running cost was entered (removed ones aside, D-186): they are what is shared (D-202). */
   readonly runningCostsEntered: boolean
-  /**
-   * Running costs are entered but cannot reach products: 3 months of purchases do not count yet and
-   * there is no estimate of monthly purchases (D-116, D-186).
-   */
-  readonly estimateNeeded: boolean
-  /** Whether the member may set the estimate (Settings → How costs are worked out). */
-  readonly canSetEstimate: boolean
   readonly hourlyRateSet: boolean
   /** Items with the owner's minutes (D-119). */
   readonly itemsWithMinutes: number
   /**
-   * Items whose cost for one unit sold is incomplete (the Product costs page's count, D-186), without
-   * the services that wait only for what they cannot carry yet (awaitsServiceShare, D-200).
+   * Items whose cost for one unit sold is incomplete (the Product costs page's count, D-186): never a
+   * share awaiting sales, nor a service that misses only its optional materials (D-203).
    */
   readonly incompleteCosts: number
-  /**
-   * The business sells only services: every item in use is a service, or with none yet it was set up
-   * as a services business (D-200).
-   */
-  readonly sellsOnlyServices: boolean
-  /** The Materials module is on (a service may use materials only then). */
-  readonly materialsOn: boolean
 }
 
 /**
  * Whether a cost step applies to the business's data (until something is added, every step does):
  * "what you use to make it" is not asked of a business whose items are all services or bought ready
  * to sell (D-117; a service's materials are optional, D-186), nor "purchase prices" of one whose
- * items are all services that use no materials. Running costs reach an item through its materials
- * (D-116), so they are not asked of a business that sells only services using none (nor, before any is
- * added, of a services business without Materials) until the owner decides how services carry them
- * (D-200).
+ * items are all services that use no materials. Running costs reach every product and service by its
+ * price (D-202), so they are asked of every business, one that sells only services too.
  */
 function costStepApplies(id: CostStepId, facts: CostFacts): boolean {
-  if (id === 'running_costs' && facts.sellsOnlyServices) {
-    return facts.items === 0 ? facts.materialsOn : facts.usedMaterials > 0
-  }
   if (facts.items === 0) return true
   if (id === 'recipes') return facts.madeProducts > 0
   if (id === 'purchases') return facts.madeProducts > 0 || facts.usedMaterials > 0
@@ -281,10 +261,10 @@ function costStepApplies(id: CostStepId, facts: CostFacts): boolean {
 }
 
 /**
- * A cost step's state. Each is done once nothing it covers leaves a cost incomplete: an item added;
- * every product made here has what goes into it; every material the items use has a price; running
- * costs entered (with the estimate once it is needed and the member may set it); the hourly rate and
- * the minutes of at least one item; every cost complete.
+ * A cost step's state. Each is done once nothing it covers is missing: an item added; every product
+ * made here has what goes into it; every material the items use has a price; running costs entered
+ * (they are what is shared over what the business sells once sales are recorded, D-202); the hourly
+ * rate and the minutes of at least one item; every cost complete.
  */
 export function costStep(id: CostStepId, facts: CostFacts): CostStepDto {
   switch (id) {
@@ -305,9 +285,7 @@ export function costStep(id: CostStepId, facts: CostFacts): CostStepDto {
         remaining: facts.usedMaterials > 0 ? facts.unpricedMaterials : null,
       }
     case 'running_costs': {
-      const missing: CostStepPart[] = []
-      if (!facts.runningCostsEntered) missing.push('runningCosts')
-      if (facts.estimateNeeded && facts.canSetEstimate) missing.push('estimate')
+      const missing: CostStepPart[] = facts.runningCostsEntered ? [] : ['runningCosts']
       return { id, done: missing.length === 0, missing, remaining: null }
     }
     case 'owner_time': {

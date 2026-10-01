@@ -10,9 +10,10 @@ import type {
 // The Costing Core data of each demo business (M2: suppliers, materials, products & services,
 // recipes, purchases, returns and credit notes, payments, running costs, expenses, the owner's time).
 // demo/costing.ts enters it through the API, dated back from the business's today: the first
-// purchases are about 4 months old, so the 90-day average (D-115) and the 3 full months of purchases
-// of the running-cost rate (D-116) both have data, and each business buys again in its last week, so
-// the month in progress is not short of purchases when it becomes one of those 3 months. Names are in
+// purchases are about 4 months old, so the 90-day average (D-115) leaves some out, and each business
+// buys again in its last week. Running costs start 8 months back and expenses fall in the last few
+// months, so the last full month's costs (D-202) hold both; the café's electricity bill, entered on
+// the seed day for the month before, replaces that month's regular electricity. Names are in
 // the business's language (one name, D-113). Every amount is a decimal string; prices move a little
 // over time, so averages differ from the last price. Keys are stable: they make each record's id, so
 // a second run finds what the first one made (a record added later gets a new key; D-185).
@@ -140,6 +141,12 @@ export interface DemoExpense {
    * approved by this member and then finalized by the owner, or left waiting for approval.
    */
   readonly approval?: { readonly by: string } | 'waiting'
+  /**
+   * The key of the running cost it is the bill of. An expense in a category that has a running cost
+   * takes the place of that category's regular amount (D-202, D-203), so only such a bill shares a
+   * category with one: an extra goes in a category of its own.
+   */
+  readonly billOf?: string
 }
 
 export interface DemoCosting {
@@ -596,6 +603,18 @@ export const CAFE_COSTING: DemoCosting = {
       amount: '85',
       document: 'non_tax_invoice',
       payment: 'cash',
+    },
+    // Last month's electricity, billed on the seed day: it is for the month before (the category's
+    // bills come the month after, D-194), and replaces the regular 2 400 in that month (D-202).
+    {
+      key: 'electricity-bill',
+      daysAgo: 0,
+      category: 'electricity',
+      billOf: 'electricity',
+      description: 'فاتورة الكهرباء للشهر الماضي',
+      amount: '2610',
+      payment: 'bank_transfer',
+      reference: 'DEWA-118734',
     },
     // The barista bought ice with her own money and entered it herself (D-180).
     {
@@ -1064,7 +1083,8 @@ export const PRINT3D_COSTING: DemoCosting = {
     {
       key: 'nozzles',
       daysAgo: 20,
-      category: 'maintenance',
+      // Spare parts, not the maintenance contract (a bill of 'maintenance' would take its place).
+      category: 'equipment',
       description: 'Replacement nozzles',
       amount: '60',
       payment: 'card',
@@ -1629,7 +1649,8 @@ export const DESIGNER_COSTING: DemoCosting = {
     {
       key: 'photos',
       daysAgo: 80,
-      category: 'software',
+      // For a client's work, not the Adobe subscription (a bill of 'software' would take its place).
+      category: 'other',
       description: 'Stock photo credits',
       amount: '150',
       payment: 'card',
@@ -1653,7 +1674,7 @@ export const DESIGNER_COSTING: DemoCosting = {
     {
       key: 'font',
       daysAgo: 12,
-      category: 'software',
+      category: 'other',
       description: 'Font licence for a client project',
       amount: '180',
       payment: 'card',
@@ -1813,7 +1834,8 @@ export const FITOUT_COSTING: DemoCosting = {
     ).map(([daysAgo, amount], i): DemoExpense => ({
       key: `fuel${i + 1}`,
       daysAgo,
-      category: 'vehicles',
+      // A category of its own: a bill of 'vehicles' would take the van rental's place.
+      category: { name: 'الوقود' },
       description: 'وقود سيارات النقل',
       amount,
       payment: 'card',

@@ -2,12 +2,13 @@ import type { CurrencyCode } from '@bizcost/domain'
 import { describe, expect, it } from 'vitest'
 import { readSetting, sameAmount, settingsChange } from './costing-draft'
 
-// Settings → How costs are worked out: the estimate of monthly purchases and the hourly rate, as
-// typed, and what productCost.updateSettings is sent (only what changed; empty clears).
+// Settings → How costs are worked out: the owner's hourly rate as typed, and what
+// productCost.updateSettings is sent (only when it changed; empty clears). Running costs need no
+// setting (D-202).
 
 const AED = 'AED' as CurrencyCode
 const KWD = 'KWD' as CurrencyCode
-const NOTHING_SAVED = { estimate: null, hourlyRate: null }
+const NOTHING_SAVED = { hourlyRate: null }
 
 describe('the costing settings as typed', () => {
   it('reads an amount in either language, above zero, with the currency decimals', () => {
@@ -37,34 +38,21 @@ describe('the costing settings as typed', () => {
     expect(sameAmount('45', '45.5')).toBe(false)
   })
 
-  it('sends only what changed; an emptied field clears it', () => {
-    expect(settingsChange({ estimate: '30000' }, NOTHING_SAVED, AED).input).toEqual({
-      estimatedMonthlyPurchases: '30000',
+  it('sends the hourly rate when it changed; an emptied field clears it', () => {
+    expect(settingsChange({ hourlyRate: '45' }, NOTHING_SAVED, AED).input).toEqual({
+      ownerHourlyRate: '45',
     })
-    expect(
-      settingsChange(
-        { estimate: '30,000.00', hourlyRate: '45' },
-        { estimate: '30000', hourlyRate: null },
-        AED,
-      ).input,
-    ).toEqual({ ownerHourlyRate: '45' })
-    expect(
-      settingsChange({ estimate: '' }, { estimate: '30000', hourlyRate: '45' }, AED).input,
-    ).toEqual({ estimatedMonthlyPurchases: null })
+    expect(settingsChange({ hourlyRate: '' }, { hourlyRate: '45' }, AED).input).toEqual({
+      ownerHourlyRate: null,
+    })
     // Nothing changed: nothing to send.
-    expect(
-      settingsChange(
-        { estimate: '2000', hourlyRate: '' },
-        { estimate: '2000', hourlyRate: null },
-        AED,
-      ).input,
-    ).toBeNull()
+    expect(settingsChange({ hourlyRate: '45.00' }, { hourlyRate: '45' }, AED).input).toBeNull()
+    expect(settingsChange({ hourlyRate: '' }, NOTHING_SAVED, AED).input).toBeNull()
   })
 
-  it('says which field does not read, and sends nothing then', () => {
-    const change = settingsChange({ estimate: '0', hourlyRate: '45' }, NOTHING_SAVED, AED)
+  it('says when the rate does not read, and sends nothing then', () => {
+    const change = settingsChange({ hourlyRate: '0' }, NOTHING_SAVED, AED)
     expect(change.input).toBeNull()
-    expect(change.errors.estimate?.key).toBe('catalog.numbers.positive')
-    expect(change.errors.hourlyRate).toBeUndefined()
+    expect(change.errors.hourlyRate?.key).toBe('catalog.numbers.positive')
   })
 })

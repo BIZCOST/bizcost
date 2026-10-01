@@ -119,17 +119,13 @@ function open(
         actionKey: `${key}.action` as I18nKey,
         href: page(businessId, 'purchases/new'),
       }
-    case 'running_costs': {
-      const entries = step.missing.includes('runningCosts')
-      const estimate = step.missing.includes('estimate')
+    case 'running_costs':
       return {
-        bodyKey:
-          `${key}.${entries && estimate ? 'both' : entries ? 'runningCosts' : 'estimate'}` as I18nKey,
+        bodyKey: `${key}.runningCosts` as I18nKey,
         count: null,
-        actionKey: `${key}.${entries ? 'action' : 'actionEstimate'}` as I18nKey,
-        href: entries ? page(businessId, 'running-costs') : sectionPath(businessId, 'costing'),
+        actionKey: `${key}.action` as I18nKey,
+        href: page(businessId, 'running-costs'),
       }
-    }
     case 'owner_time': {
       const rate = step.missing.includes('hourlyRate')
       const minutes = step.missing.includes('minutes')
@@ -185,9 +181,10 @@ export function costStepView(
 }
 
 /**
- * The words of "Your product costs are ready": what the costs come from. The owner's time counts only
- * without a team (D-119); a business that sells only services reads about its services, whose costs
- * running costs do not reach yet (D-200).
+ * The words of "Your product costs are in, before running costs": what the costs come from, and that
+ * each item's share of running costs is added once sales are recorded (D-202). The owner's time
+ * counts only without a team (D-119); a business that sells only services reads about its services
+ * (D-200).
  */
 export function costsReadyKeys({
   servicesOnly,

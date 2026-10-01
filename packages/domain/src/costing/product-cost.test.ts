@@ -1,33 +1,29 @@
 import fc from 'fast-check'
 import { describe, expect, it } from 'vitest'
-import { PRODUCT_TYPES, VAT_CATEGORIES, type ProductType, type VatCategory } from '../catalog/keys'
+import { VAT_CATEGORIES, type VatCategory } from '../catalog/keys'
 import { toDec } from '../numbers/decimal'
+import type { RunningCostsPart } from './cost-share'
 import {
-  awaitsServiceShare,
+  costCompleteFor,
   hoursAndMinutes,
   INCOMPLETE_REASONS,
-  monthlyPurchases,
-  monthlyPurchasesAverage,
+  missesOnlyOptionalMaterials,
   ownerTimeCost,
   priceBeforeVat,
   productCost,
-  purchaseMonths,
-  runningCostRate,
-  runningCostShare,
   saleVatRate,
   type MaterialsPart,
   type OwnerTimePart,
   type ProductCostInput,
-  type RunningCostsPart,
   type SalePrice,
 } from './product-cost'
 
-// A product's cost for one unit sold and its margin (M2 Step 6; D-116, D-119, D-121, D-178): the
+// A product's cost for one unit sold and its margin (M2 Step 6; D-119, D-121, D-178, D-202): the
 // owner's examples as golden tests (the Spanish Latte in a café with a team, the home baker's cake
-// slice with her own time), every state of each line, and fast-check properties: the total is the
-// exact sum of its parts, the margin and the total make the price before VAT exactly, a missing part
-// never counts as 0 and always says why, the running-cost share is the materials × running costs ÷
-// purchases divided once, and the months of purchases follow the calendar.
+// slice with her own time, the owner's AED 400 service), every state of each line, and fast-check
+// properties: the total is the exact sum of its parts, the margin and the total make the price before
+// VAT exactly, a missing part never counts as 0 and always says why, and the share awaiting sales is
+// never a reason the cost is incomplete while it keeps the total "before running costs".
 
 const SALE: SalePrice = {
   price: '18',
@@ -42,61 +38,109 @@ const PRICED = (perUnit: string): MaterialsPart => ({
   unpricedLines: 0,
   tooLarge: false,
 })
+const NO_LINES: MaterialsPart = {
+  state: 'on',
+  perUnit: null,
+  lineCount: 0,
+  unpricedLines: 0,
+  tooLarge: false,
+}
 const TEAM: OwnerTimePart = { state: 'team' }
+/** M2: running costs are on, and there are no sales yet (Phase 3). */
+const AWAITING: RunningCostsPart = { state: 'on', costs: '20000', sales: null }
+/** Phase 3: the owner's example, costs of 20 000 and sales of 80 000 in the month (25 %). */
+const SOLD: RunningCostsPart = { state: 'on', costs: '20000', sales: '80000' }
 
 describe('the owner’s examples', () => {
-  it('the Spanish Latte: 3.002034632035 of materials, running costs 15 000 ÷ 30 000 a month', () => {
+  it('the Spanish Latte in M2: its materials, and running costs worked out once sales are recorded', () => {
     const cost = productCost({
       materials: PRICED('3.002034632035'),
-      runningCosts: {
-        state: 'on',
-        entered: true,
-        monthlyRunningCosts: '15000',
-        monthlyPurchases: '30000',
-      },
+      runningCosts: AWAITING,
       ownerTime: TEAM,
       sale: SALE,
     })
     expect(cost).toEqual({
       materials: '3.002034632035',
-      // Each dirham of materials carries 0.50 of running costs: 3.002034632035 × 15 000 ÷ 30 000
-      // = 1.5010173160175, rounded once.
-      runningCosts: { state: 'applied', rate: '0.5', share: '1.501017316018' },
+      runningCosts: { state: 'awaiting_sales', rate: null, share: null },
       ownerTime: { state: 'team', amount: null },
-      total: '4.503051948053',
+      total: '3.002034632035',
+      // Before running costs: never final, and nothing the owner can add for it (D-202).
+      beforeRunningCosts: true,
       tooLarge: false,
       reasons: [],
       complete: true,
       priceBeforeVat: '18',
-      margin: '13.496948051947',
-      // (1 800 − 450.3051948053) ÷ 18.
-      marginPercent: '74.983044733039',
+      margin: '14.997965367965',
+      marginPercent: '83.322029822028',
     })
   })
 
-  it('the home baker’s cake slice: 1.075 of materials, 550 ÷ 2 000 of running costs, 10 minutes at 45', () => {
+  it('once sales are recorded: costs 20 000 ÷ sales 80 000 = 25 %, so the AED 18 latte carries 4.50', () => {
+    const cost = productCost({
+      materials: PRICED('3.002034632035'),
+      runningCosts: SOLD,
+      ownerTime: TEAM,
+      sale: { ...SALE, vatRegistered: false },
+    })
+    expect(cost).toEqual({
+      materials: '3.002034632035',
+      runningCosts: { state: 'applied', rate: '0.25', share: '4.5' },
+      ownerTime: { state: 'team', amount: null },
+      total: '7.502034632035',
+      beforeRunningCosts: false,
+      tooLarge: false,
+      reasons: [],
+      complete: true,
+      priceBeforeVat: '18',
+      margin: '10.497965367965',
+      marginPercent: '58.322029822028',
+    })
+    // With its VAT in the price of a VAT-registered business: the share is of 17.142857142857.
+    expect(
+      productCost({
+        materials: PRICED('3.002034632035'),
+        runningCosts: SOLD,
+        ownerTime: TEAM,
+        sale: { ...SALE, priceIncludesVat: true },
+      }).runningCosts,
+    ).toEqual({ state: 'applied', rate: '0.25', share: '4.285714285714' })
+  })
+
+  it('a AED 400 service carries 100, with or without materials', () => {
+    for (const materials of [NO_LINES, PRICED('35'), { state: 'off' } as const]) {
+      const cost = productCost({
+        materials,
+        runningCosts: SOLD,
+        ownerTime: { state: 'solo', minutes: '60', hourlyRate: '120' },
+        sale: { ...SALE, price: '400', vatRegistered: false },
+      })
+      expect(cost.runningCosts, JSON.stringify(materials)).toEqual({
+        state: 'applied',
+        rate: '0.25',
+        share: '100',
+      })
+    }
+  })
+
+  it('the home baker’s cake slice: 1.075 of materials and 10 minutes at 45, before running costs', () => {
     const cost = productCost({
       materials: { state: 'on', perUnit: '1.075', lineCount: 4, unpricedLines: 0, tooLarge: false },
-      runningCosts: {
-        state: 'on',
-        entered: true,
-        monthlyRunningCosts: '550',
-        monthlyPurchases: '2000',
-      },
+      runningCosts: { state: 'on', costs: '550', sales: null },
       ownerTime: { state: 'solo', minutes: '10', hourlyRate: '45' },
       sale: { price: '15', priceIncludesVat: false, vatCategory: 'standard', vatRegistered: false },
     })
     expect(cost).toEqual({
       materials: '1.075',
-      runningCosts: { state: 'applied', rate: '0.275', share: '0.295625' },
+      runningCosts: { state: 'awaiting_sales', rate: null, share: null },
       ownerTime: { state: 'applied', amount: '7.5' },
-      total: '8.870625',
+      total: '8.575',
+      beforeRunningCosts: true,
       tooLarge: false,
       reasons: [],
       complete: true,
       priceBeforeVat: '15',
-      margin: '6.129375',
-      marginPercent: '40.8625',
+      margin: '6.425',
+      marginPercent: '42.833333333333',
     })
   })
 
@@ -120,149 +164,94 @@ describe('the owner’s examples', () => {
     expect(cost).toMatchObject({ priceBeforeVat: '20', margin: '15', marginPercent: '75' })
   })
 
-  it('the parts, divided once each', () => {
-    expect(runningCostRate('15000', '30000')).toBe('0.5')
-    expect(runningCostRate('1000', '3000')).toBe('0.333333333333')
-    expect(runningCostRate('1000', '0')).toBeNull()
-    // 4 × 1 000 ÷ 3 000, not 4 × 0.333333333333.
-    expect(runningCostShare('4', '1000', '3000')).toBe('1.333333333333')
-    expect(runningCostShare('4', '15000', '30000')).toBe('2')
+  it('the owner’s time, divided once', () => {
     expect(ownerTimeCost('10', '45')).toBe('7.5')
     expect(ownerTimeCost('7', '50')).toBe('5.833333333333')
-    expect(monthlyPurchasesAverage('9000')).toBe('3000')
-    expect(monthlyPurchasesAverage('100')).toBe('33.333333333333')
   })
 })
 
 describe('each line’s states, never 0 for what is missing', () => {
-  const ON: RunningCostsPart = {
-    state: 'on',
-    entered: true,
-    monthlyRunningCosts: '15000',
-    monthlyPurchases: '30000',
-  }
   const base = (over: Partial<ProductCostInput>): ProductCostInput => ({
     materials: PRICED('4'),
-    runningCosts: ON,
+    runningCosts: AWAITING,
     ownerTime: TEAM,
     sale: SALE,
     ...over,
   })
 
-  it('running costs: off, not entered, none, not set, no materials, no recipe, waiting, applied', () => {
+  it('running costs: off, no price, awaiting sales, none, applied', () => {
+    // Neither Running Costs nor Expenses on: nothing to share, and the total is final.
     expect(productCost(base({ runningCosts: { state: 'off' } }))).toMatchObject({
       runningCosts: { state: 'off', rate: null, share: null },
       total: '4',
+      beforeRunningCosts: false,
       complete: true,
     })
-    // None ever entered (the state right after Smart Setup): not entered yet, never 0 (D-186).
-    expect(
-      productCost(
-        base({
-          runningCosts: {
-            state: 'on',
-            entered: false,
-            monthlyRunningCosts: '0',
-            monthlyPurchases: '30000',
-          },
-        }),
-      ),
-    ).toMatchObject({
-      runningCosts: { state: 'not_entered', rate: null, share: null },
-      total: '4',
-      reasons: ['running_costs_not_entered'],
-      complete: false,
-      margin: '14',
-    })
-    // Entered, and none paid now (they ended, or start later): a share of 0, complete.
-    expect(
-      productCost(
-        base({
-          runningCosts: {
-            state: 'on',
-            entered: true,
-            monthlyRunningCosts: '0',
-            monthlyPurchases: null,
-          },
-        }),
-      ),
-    ).toMatchObject({
-      runningCosts: { state: 'none', rate: '0', share: '0' },
-      total: '4',
-      complete: true,
-    })
-    // Neither an estimate nor 3 full months of purchases: not set yet, never 0.
-    expect(
-      productCost(
-        base({
-          runningCosts: {
-            state: 'on',
-            entered: true,
-            monthlyRunningCosts: '15000',
-            monthlyPurchases: null,
-          },
-        }),
-      ),
-    ).toMatchObject({
-      runningCosts: { state: 'not_set', rate: null, share: null },
-      total: '4',
-      reasons: ['running_costs_not_set'],
-      complete: false,
-      margin: '14',
-    })
-    // A service with no materials: with this method it carries none (a known limit until Phase 5).
-    const NO_LINES: MaterialsPart = {
-      state: 'on',
-      perUnit: null,
-      lineCount: 0,
-      unpricedLines: 0,
-      tooLarge: false,
+    // No price: no share can be worked out by it, and it says so ("add its price"), awaiting sales
+    // or not.
+    for (const runningCosts of [AWAITING, SOLD]) {
+      expect(productCost(base({ runningCosts, sale: { ...SALE, price: null } }))).toMatchObject({
+        runningCosts: { state: 'no_price', rate: null, share: null },
+        total: '4',
+        beforeRunningCosts: true,
+        reasons: ['no_price'],
+        complete: false,
+        margin: null,
+      })
     }
-    const service = productCost(
-      base({
-        type: 'service',
-        materials: NO_LINES,
-        ownerTime: { state: 'solo', minutes: '60', hourlyRate: '100' },
-      }),
-    )
-    expect(service).toMatchObject({
-      materials: null,
-      runningCosts: { state: 'no_materials', rate: '0.5', share: null },
-      ownerTime: { state: 'applied', amount: '100' },
-      total: '100',
-      reasons: ['no_recipe', 'running_costs_need_materials'],
-      complete: false,
+    // Awaiting sales (M2): not a reason, whatever the month's costs; the total is before them.
+    for (const costs of ['20000', '0', '-150']) {
+      expect(
+        productCost(base({ runningCosts: { state: 'on', costs, sales: null } })),
+      ).toMatchObject({
+        runningCosts: { state: 'awaiting_sales', rate: null, share: null },
+        total: '4',
+        beforeRunningCosts: true,
+        reasons: [],
+        complete: true,
+        margin: '14',
+      })
+    }
+    // Sales that come to nothing or less: nothing to divide by, still awaiting sales.
+    for (const sales of ['0', '-10']) {
+      expect(
+        productCost(base({ runningCosts: { state: 'on', costs: '20000', sales } })).runningCosts,
+      ).toEqual({ state: 'awaiting_sales', rate: null, share: null })
+    }
+    // Costs of zero or less (a reversal counted in a later month): nothing to share, 0 and final.
+    for (const costs of ['0', '-150']) {
+      expect(
+        productCost(base({ runningCosts: { state: 'on', costs, sales: '80000' } })),
+      ).toMatchObject({
+        runningCosts: { state: 'none', rate: '0', share: '0' },
+        total: '4',
+        beforeRunningCosts: false,
+        complete: true,
+      })
+    }
+    // Applied: 18 × 20 000 ÷ 80 000.
+    expect(
+      productCost(base({ runningCosts: SOLD, sale: { ...SALE, vatRegistered: false } })),
+    ).toMatchObject({
+      runningCosts: { state: 'applied', rate: '0.25', share: '4.5' },
+      total: '8.5',
+      beforeRunningCosts: false,
+      complete: true,
+      margin: '9.5',
     })
-    // A product without its recipe yet: its share waits for the recipe; "no recipe" says it all
-    // (never "it uses no materials" beside it).
+    // A price of 0 carries nothing, and is not "no price".
+    expect(
+      productCost(base({ runningCosts: SOLD, sale: { ...SALE, price: '0' } })).runningCosts,
+    ).toEqual({ state: 'applied', rate: '0.25', share: '0' })
+  })
+
+  it('the share never depends on what goes into it: a product without a recipe keeps its own reason', () => {
     expect(productCost(base({ materials: NO_LINES }))).toMatchObject({
-      runningCosts: { state: 'no_recipe', rate: '0.5', share: null },
+      runningCosts: { state: 'awaiting_sales' },
       total: null,
       reasons: ['no_recipe'],
       complete: false,
     })
-    // …and while the running costs are not set, it says both.
-    expect(
-      productCost(
-        base({
-          materials: NO_LINES,
-          runningCosts: { ...ON, monthlyPurchases: null },
-        }),
-      ),
-    ).toMatchObject({
-      runningCosts: { state: 'not_set' },
-      reasons: ['no_recipe', 'running_costs_not_set'],
-    })
-    // Materials off (a services business): no materials line and no recipe to ask for.
-    expect(productCost(base({ materials: { state: 'off' } }))).toMatchObject({
-      materials: null,
-      runningCosts: { state: 'no_materials' },
-      total: null,
-      reasons: ['running_costs_need_materials'],
-      margin: null,
-      marginPercent: null,
-    })
-    // Every material unpriced: the share waits for their prices.
     expect(
       productCost(
         base({
@@ -276,9 +265,15 @@ describe('each line’s states, never 0 for what is missing', () => {
         }),
       ),
     ).toMatchObject({
-      runningCosts: { state: 'waiting', rate: '0.5', share: null },
+      runningCosts: { state: 'awaiting_sales' },
       total: null,
       reasons: ['unpriced_materials'],
+    })
+    // Once sales are in, even a product without a priced recipe carries its share.
+    expect(productCost(base({ materials: NO_LINES, runningCosts: SOLD }))).toMatchObject({
+      runningCosts: { state: 'applied', share: '4.5' },
+      total: '4.5',
+      reasons: ['no_recipe'],
       complete: false,
     })
   })
@@ -290,110 +285,121 @@ describe('each line’s states, never 0 for what is missing', () => {
     })
     expect(
       productCost(base({ ownerTime: { state: 'solo', minutes: null, hourlyRate: '45' } })),
-    ).toMatchObject({ ownerTime: { state: 'none', amount: null }, total: '6', complete: true })
+    ).toMatchObject({ ownerTime: { state: 'none', amount: null }, total: '4', complete: true })
     expect(
       productCost(base({ ownerTime: { state: 'solo', minutes: '10', hourlyRate: null } })),
     ).toMatchObject({
       ownerTime: { state: 'rate_not_set', amount: null },
-      total: '6',
+      total: '4',
       reasons: ['hourly_rate_not_set'],
       complete: false,
     })
   })
 
-  it('a service without materials waits only for what it cannot carry yet (D-200)', () => {
-    const NO_LINES: MaterialsPart = {
-      state: 'on',
-      perUnit: null,
-      lineCount: 0,
-      unpricedLines: 0,
-      tooLarge: false,
-    }
+  it('a service without materials misses only what is optional (D-186, D-200, D-203)', () => {
     const mine: OwnerTimePart = { state: 'solo', minutes: '60', hourlyRate: '100' }
     const service = (over: Partial<ProductCostInput>) =>
-      productCost(base({ type: 'service', ownerTime: mine, ...over }))
-    // Its time counts; running costs cannot reach it (Materials on or off, entered or not).
-    for (const materials of [NO_LINES, { state: 'off' } as const]) {
-      expect(awaitsServiceShare('service', service({ materials })), JSON.stringify(materials)).toBe(
-        true,
-      )
-      expect(
-        awaitsServiceShare(
-          'service',
-          service({ materials, runningCosts: { ...ON, entered: false, monthlyRunningCosts: '0' } }),
-        ),
-      ).toBe(true)
-    }
-    // Nothing counted, a product, a service with materials, or anything else missing: it waits.
-    expect(awaitsServiceShare('service', service({ materials: NO_LINES, ownerTime: TEAM }))).toBe(
-      false,
-    )
+      productCost(base({ ownerTime: mine, ...over }))
+    // Its time counts; its share of running costs waits for sales like every product's.
+    const waiting = service({ materials: NO_LINES })
+    expect(waiting).toMatchObject({
+      materials: null,
+      runningCosts: { state: 'awaiting_sales' },
+      total: '100',
+      reasons: ['no_recipe'],
+      complete: false,
+    })
+    expect(missesOnlyOptionalMaterials('service', waiting)).toBe(true)
+    // Shown complete: its materials are only a hint (D-203).
+    expect(costCompleteFor('service', waiting)).toBe(true)
+    expect(costCompleteFor('product', waiting)).toBe(false)
     expect(
-      awaitsServiceShare(
-        'product',
-        productCost(base({ materials: { state: 'off' }, ownerTime: mine })),
+      missesOnlyOptionalMaterials('service', service({ materials: NO_LINES, runningCosts: SOLD })),
+    ).toBe(true)
+    // With a team, its only line is its share awaiting sales: nothing is missing either (D-203).
+    const team = service({ materials: NO_LINES, ownerTime: TEAM })
+    expect(team).toMatchObject({ total: null, reasons: ['no_recipe'], beforeRunningCosts: true })
+    expect(missesOnlyOptionalMaterials('service', team)).toBe(true)
+    expect(costCompleteFor('service', team)).toBe(true)
+    // A product without its recipe waits for it; nothing counted at all (nothing shared either), a
+    // price missing, or the hourly rate missing: it waits too.
+    expect(missesOnlyOptionalMaterials('product', waiting)).toBe(false)
+    expect(
+      missesOnlyOptionalMaterials(
+        'service',
+        service({ materials: NO_LINES, ownerTime: TEAM, runningCosts: { state: 'off' } }),
       ),
     ).toBe(false)
-    expect(awaitsServiceShare('service', service({ materials: PRICED('4') }))).toBe(false)
     expect(
-      awaitsServiceShare(
+      missesOnlyOptionalMaterials(
+        'service',
+        service({ materials: NO_LINES, sale: { ...SALE, price: null } }),
+      ),
+    ).toBe(false)
+    expect(
+      missesOnlyOptionalMaterials(
         'service',
         service({ materials: NO_LINES, ownerTime: { ...mine, hourlyRate: null } }),
       ),
     ).toBe(false)
-    // Only its optional materials missing (Running Costs off): it waits for nothing else.
-    expect(
-      awaitsServiceShare(
-        'service',
-        service({ materials: NO_LINES, runningCosts: { state: 'off' } }),
-      ),
-    ).toBe(true)
-    // Complete: nothing to wait for.
-    expect(
-      awaitsServiceShare(
-        'service',
-        service({ materials: { state: 'off' }, runningCosts: { state: 'off' } }),
-      ),
-    ).toBe(false)
+    // With materials, or Materials off (nothing to ask for): complete, nothing to wait for.
+    expect(missesOnlyOptionalMaterials('service', service({ materials: PRICED('4') }))).toBe(false)
+    const off = service({ materials: { state: 'off' } })
+    expect(off).toMatchObject({ reasons: [], complete: true })
+    expect(missesOnlyOptionalMaterials('service', off)).toBe(false)
   })
 
   it('nothing counted: no total and no margin, never 0', () => {
     const cost = productCost({
       materials: { state: 'off' },
-      runningCosts: {
-        state: 'on',
-        entered: true,
-        monthlyRunningCosts: '0',
-        monthlyPurchases: null,
-      },
+      runningCosts: { state: 'off' },
       ownerTime: TEAM,
       sale: SALE,
     })
     expect(cost).toMatchObject({
       total: null,
+      beforeRunningCosts: false,
       reasons: ['nothing_counted'],
       complete: false,
       margin: null,
       marginPercent: null,
       priceBeforeVat: '18',
     })
+    // Its share awaiting sales is the line that will count (D-203): nothing to add, before running
+    // costs, still no total and no margin.
+    expect(
+      productCost({
+        materials: { state: 'off' },
+        runningCosts: AWAITING,
+        ownerTime: TEAM,
+        sale: SALE,
+      }),
+    ).toMatchObject({
+      total: null,
+      beforeRunningCosts: true,
+      reasons: [],
+      complete: true,
+      margin: null,
+      marginPercent: null,
+    })
   })
 
   it('no price: no margin; a price of 0: a margin and no percent', () => {
     expect(productCost(base({ sale: { ...SALE, price: null } }))).toMatchObject({
-      total: '6',
+      total: '4',
       priceBeforeVat: null,
       margin: null,
       marginPercent: null,
     })
     expect(productCost(base({ sale: { ...SALE, price: '0' } }))).toMatchObject({
-      margin: '-6',
+      margin: '-4',
       marginPercent: null,
     })
-    // A loss is a negative margin.
-    expect(productCost(base({ sale: { ...SALE, price: '5' } }))).toMatchObject({
-      margin: '-1',
-      marginPercent: '-20',
+    // A loss is a negative margin (and only grows once running costs are added).
+    expect(productCost(base({ sale: { ...SALE, price: '2' } }))).toMatchObject({
+      margin: '-2',
+      marginPercent: '-100',
+      beforeRunningCosts: true,
     })
   })
 
@@ -404,20 +410,15 @@ describe('each line’s states, never 0 for what is missing', () => {
       }),
     )
     expect(huge).toMatchObject({ total: null, tooLarge: true, complete: false, margin: null })
-    // A share that does not fit (a tiny estimate).
+    // A share that does not fit (a huge price over tiny sales).
     const share = productCost(
       base({
-        materials: PRICED('9999999999999999'),
-        runningCosts: {
-          state: 'on',
-          entered: true,
-          monthlyRunningCosts: '15000',
-          monthlyPurchases: '0.01',
-        },
+        sale: { ...SALE, price: '9999999999999999' },
+        runningCosts: { state: 'on', costs: '9999999999999999', sales: '0.01' },
       }),
     )
     expect(share).toMatchObject({
-      runningCosts: { state: 'applied', share: null },
+      runningCosts: { state: 'applied', rate: null, share: null },
       total: null,
       tooLarge: true,
       complete: false,
@@ -452,83 +453,8 @@ describe('each line’s states, never 0 for what is missing', () => {
   it('refuses negative inputs', () => {
     expect(() => productCost(base({ materials: PRICED('-1') }))).toThrow(RangeError)
     expect(() => priceBeforeVat({ ...SALE, price: '-1' })).toThrow(RangeError)
+    expect(() => productCost(base({ sale: { ...SALE, price: '-1' } }))).toThrow(RangeError)
     expect(() => ownerTimeCost('-1', '45')).toThrow(RangeError)
-    expect(() => runningCostRate('-1', '10')).toThrow(RangeError)
-    expect(() => monthlyPurchasesAverage('-3')).toThrow(RangeError)
-  })
-})
-
-describe('which months of purchases count (D-116)', () => {
-  it('the last 3 full months before today’s, once 3 full months have passed after the first purchase', () => {
-    expect(purchaseMonths('2026-09-29', '2026-05-20', 3)).toEqual({
-      from: '2026-06-01',
-      to: '2026-08-31',
-      countsFrom: '2026-09-01',
-      monthsBought: 3,
-      ready: true,
-    })
-    expect(purchaseMonths('2026-09-29', '2026-06-01', 3)).toEqual({
-      from: '2026-06-01',
-      to: '2026-08-31',
-      countsFrom: '2026-10-01',
-      monthsBought: 3,
-      ready: false,
-    })
-    expect(purchaseMonths('2026-09-29', null, 0)).toMatchObject({ countsFrom: null, ready: false })
-    // Across a year, and a leap February.
-    expect(purchaseMonths('2027-01-01', '2026-09-30', 3)).toEqual({
-      from: '2026-10-01',
-      to: '2026-12-31',
-      countsFrom: '2027-01-01',
-      monthsBought: 3,
-      ready: true,
-    })
-    expect(purchaseMonths('2028-03-15', null, 0)).toMatchObject({
-      from: '2027-12-01',
-      to: '2028-02-29',
-    })
-    expect(() => purchaseMonths('2026-9-1', null, 0)).toThrow(RangeError)
-    for (const count of [-1, 4, 1.5]) {
-      expect(() => purchaseMonths('2026-09-29', null, count)).toThrow(RangeError)
-    }
-  })
-
-  it('only when each of the 3 months holds a purchase: old invoices typed in on day one do not count (D-186)', () => {
-    // First purchase dated in May (an old invoice), one in July, nothing in June or August: the 3
-    // months would be months of almost nothing, so the estimate stays.
-    expect(purchaseMonths('2026-09-30', '2026-05-10', 1)).toMatchObject({
-      countsFrom: '2026-09-01',
-      monthsBought: 1,
-      ready: false,
-    })
-    expect(purchaseMonths('2026-09-30', '2026-05-10', 2).ready).toBe(false)
-    expect(purchaseMonths('2026-09-30', '2026-05-10', 3).ready).toBe(true)
-  })
-
-  it('the average once it counts and is more than zero, else the estimate, else none', () => {
-    const ready = { ready: true }
-    const waiting = { ready: false }
-    expect(monthlyPurchases({ months: ready, monthsTotal: '9000', estimate: '30000' })).toEqual({
-      source: 'last_3_months',
-      monthly: '3000',
-      average: '3000',
-    })
-    expect(monthlyPurchases({ months: waiting, monthsTotal: '9000', estimate: '30000' })).toEqual({
-      source: 'estimate',
-      monthly: '30000',
-      average: null,
-    })
-    // Nothing bought in those months: the estimate, if any.
-    expect(monthlyPurchases({ months: ready, monthsTotal: '0', estimate: '30000.50' })).toEqual({
-      source: 'estimate',
-      monthly: '30000.5',
-      average: '0',
-    })
-    expect(monthlyPurchases({ months: waiting, monthsTotal: '0', estimate: null })).toEqual({
-      source: null,
-      monthly: null,
-      average: null,
-    })
   })
 })
 
@@ -545,6 +471,11 @@ const decimalArb = (max: number, places: number) =>
     )
 const positiveArb = (max: number, places: number) =>
   decimalArb(max, places).filter((value) => toDec(value).gt(0))
+/** A decimal that may be below zero (a month's costs after a reversal, refunds beyond sales). */
+const signedArb = (max: number, places: number) =>
+  fc
+    .tuple(fc.boolean(), decimalArb(max, places))
+    .map(([negative, value]) => (negative && value !== '0' ? `-${value}` : value))
 
 const materialsArb: fc.Arbitrary<MaterialsPart> = fc.oneof(
   { weight: 1, arbitrary: fc.constant({ state: 'off' } as const) },
@@ -573,15 +504,12 @@ const runningArb: fc.Arbitrary<RunningCostsPart> = fc.oneof(
   { weight: 1, arbitrary: fc.constant({ state: 'off' } as const) },
   {
     weight: 6,
-    arbitrary: fc
-      .record({
-        state: fc.constant('on' as const),
-        entered: fc.boolean(),
-        monthlyRunningCosts: decimalArb(100_000, 12),
-        monthlyPurchases: fc.option(positiveArb(1_000_000, 4), { nil: null }),
-      })
-      // Running costs paid now were entered.
-      .map((part) => (toDec(part.monthlyRunningCosts).gt(0) ? { ...part, entered: true } : part)),
+    arbitrary: fc.record({
+      state: fc.constant('on' as const),
+      costs: signedArb(100_000, 4),
+      // Null: no sales yet (every M2 business).
+      sales: fc.option(signedArb(1_000_000, 4), { nil: null }),
+    }),
   },
 )
 const ownerArb: fc.Arbitrary<OwnerTimePart> = fc.oneof(
@@ -602,7 +530,6 @@ const saleArb: fc.Arbitrary<SalePrice> = fc.record({
   vatRegistered: fc.boolean(),
 })
 const inputArb: fc.Arbitrary<ProductCostInput> = fc.record({
-  type: fc.constantFrom<ProductType>(...PRODUCT_TYPES),
   materials: materialsArb,
   runningCosts: runningArb,
   ownerTime: ownerArb,
@@ -625,18 +552,48 @@ describe('properties', () => {
           const sum = parts.reduce((acc, value) => acc.plus(toDec(value)), toDec('0'))
           expect(toDec(cost.total!).equals(sum)).toBe(true)
         }
-        // A share is worked out only with materials and purchases to divide by.
-        if (cost.runningCosts.state === 'applied') {
-          expect(cost.materials).not.toBeNull()
-          expect(
-            input.runningCosts.state === 'on' && input.runningCosts.monthlyPurchases,
-          ).toBeTruthy()
+        // A share is worked out only with a price and sales to divide by, and is never negative.
+        if (cost.runningCosts.share !== null) {
+          expect(input.sale.price).not.toBeNull()
+          expect(input.runningCosts.state === 'on' && input.runningCosts.sales).toBeTruthy()
+          expect(toDec(cost.runningCosts.share).gte(0)).toBe(true)
         }
-        // Complete exactly when nothing is missing, and something is counted.
+        // Complete exactly when nothing that can be added is missing, and something is counted or
+        // its share awaits sales (the line that will count, D-203).
         expect(cost.complete).toBe(cost.reasons.length === 0 && !cost.tooLarge)
-        if (cost.complete) expect(cost.total).not.toBeNull()
+        if (cost.complete && cost.total === null) {
+          expect(cost.runningCosts.state).toBe('awaiting_sales')
+        }
         expect([...cost.reasons]).toEqual(
           INCOMPLETE_REASONS.filter((r) => cost.reasons.includes(r)),
+        )
+      }),
+    )
+  })
+
+  it('awaiting sales is never a reason, and the total then is before running costs', () => {
+    fc.assert(
+      fc.property(inputArb, (input) => {
+        const cost = productCost(input)
+        const running = input.runningCosts
+        const noSales =
+          running.state === 'on' && (running.sales === null || !toDec(running.sales).gt(0))
+        if (running.state === 'on' && input.sale.price !== null && noSales) {
+          expect(cost.runningCosts.state).toBe('awaiting_sales')
+          expect(cost.beforeRunningCosts).toBe(true)
+          // The same product with running costs off: the same reasons, total and margin (nothing the
+          // member can add, and never counted as 0 or anything else), except that nothing counted
+          // is not missing while the share will count (D-203).
+          const off = productCost({ ...input, runningCosts: { state: 'off' } })
+          expect(cost.reasons).toEqual(off.reasons.filter((r) => r !== 'nothing_counted'))
+          expect(cost.reasons).not.toContain('nothing_counted')
+          expect(cost.total).toBe(off.total)
+          expect(cost.margin).toBe(off.margin)
+          expect(cost.complete).toBe(cost.reasons.length === 0 && !off.tooLarge)
+        }
+        // Before running costs exactly while the share applies and is not in the total.
+        expect(cost.beforeRunningCosts).toBe(
+          cost.runningCosts.state === 'no_price' || cost.runningCosts.state === 'awaiting_sales',
         )
       }),
     )
@@ -661,44 +618,12 @@ describe('properties', () => {
           expect(cost.reasons).toContain('hourly_rate_not_set')
           expect(cost.ownerTime.amount).toBeNull()
         }
-        if (
-          runningCosts.state === 'on' &&
-          toDec(runningCosts.monthlyRunningCosts).gt(0) &&
-          runningCosts.monthlyPurchases === null &&
-          materials.state === 'on' &&
-          materials.lineCount > 0
-        ) {
-          expect(cost.reasons).toContain('running_costs_not_set')
-          expect(cost.runningCosts.share).toBeNull()
-        }
-        // Never entered: said, never 0 (D-186).
-        if (runningCosts.state === 'on' && !runningCosts.entered) {
-          expect(cost.reasons).toContain('running_costs_not_entered')
-          expect(cost.runningCosts.share).toBeNull()
-        }
-        // A product without its recipe waits for it: never "it uses no materials" beside it.
-        if ((input.type ?? 'product') === 'product' && cost.reasons.includes('no_recipe')) {
-          expect(cost.reasons).not.toContain('running_costs_need_materials')
-        }
+        // Without a price, running costs cannot be shared by it: said, never 0.
+        expect(cost.reasons.includes('no_price')).toBe(
+          runningCosts.state === 'on' && input.sale.price === null,
+        )
+        if (cost.reasons.includes('no_price')) expect(cost.runningCosts.share).toBeNull()
       }),
-    )
-  })
-
-  it('the share is materials × running ÷ purchases, divided once (within half a unit of the 12th decimal)', () => {
-    fc.assert(
-      fc.property(
-        decimalArb(10_000, 12),
-        decimalArb(100_000, 12),
-        positiveArb(1_000_000, 4),
-        (materials, running, purchases) => {
-          const share = runningCostShare(materials, running, purchases)!
-          const exact = toDec(materials).times(toDec(running)).dividedBy(toDec(purchases))
-          expect(toDec(share).minus(exact).abs().lte(toDec('0.0000000000005'))).toBe(true)
-          // More materials never carry less.
-          const more = runningCostShare(toDec(materials).plus(1).toString(), running, purchases)!
-          expect(toDec(more).gte(toDec(share))).toBe(true)
-        },
-      ),
     )
   })
 
@@ -740,40 +665,6 @@ describe('properties', () => {
           // before × 1.05 is the price, within the 12th decimal's rounding.
           const back = toDec(before!).times('1.05')
           expect(back.minus(toDec(sale.price)).abs().lte(toDec('0.000000000001'))).toBe(true)
-        }
-      }),
-    )
-  })
-
-  it('the months: 3 whole months that end before today’s month; they count 4 months after the first purchase’s, each holding a purchase', () => {
-    const dayArb = fc
-      .date({
-        min: new Date('2020-01-01T00:00:00Z'),
-        max: new Date('2035-12-31T00:00:00Z'),
-        noInvalidDate: true,
-      })
-      .map((date) => date.toISOString().slice(0, 10))
-    fc.assert(
-      fc.property(dayArb, fc.option(dayArb, { nil: null }), (today, first) => {
-        // Each of the 3 months holding a purchase: the first purchase's day decides alone.
-        const months = purchaseMonths(today, first, 3)
-        // Any month without one keeps the estimate.
-        expect(purchaseMonths(today, first, 2).ready).toBe(false)
-        expect(months.from.endsWith('-01')).toBe(true)
-        expect(months.to < today.slice(0, 7)).toBe(true)
-        const next = new Date(`${months.to}T00:00:00Z`)
-        next.setUTCDate(next.getUTCDate() + 1)
-        // The day after the last one is the first day of today's month.
-        expect(next.toISOString().slice(0, 10)).toBe(`${today.slice(0, 7)}-01`)
-        const monthIndex = (day: string) =>
-          Number.parseInt(day.slice(0, 4), 10) * 12 + Number.parseInt(day.slice(5, 7), 10)
-        expect(monthIndex(today) - monthIndex(months.from)).toBe(3)
-        if (first === null) {
-          expect(months.ready).toBe(false)
-        } else {
-          expect(months.ready).toBe(monthIndex(today) - monthIndex(first) >= 4)
-          // Once ready, every month counted is after the first purchase's month.
-          if (months.ready) expect(monthIndex(months.from) > monthIndex(first)).toBe(true)
         }
       }),
     )

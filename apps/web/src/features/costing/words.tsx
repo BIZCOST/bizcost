@@ -1,25 +1,31 @@
 'use client'
 
-import type { RunningCostRateDto } from '@bizcost/contracts'
+import type { MonthCostsDto } from '@bizcost/contracts'
 import {
+  costRate,
+  costShare,
   hoursAndMinutes,
   type IncompleteReason,
   type ProductType,
   type TerminologyProfile,
 } from '@bizcost/domain'
-import { formatList, formatPercent, formatWholeCurrency, type I18nKey } from '@bizcost/i18n'
+import {
+  formatDecimal,
+  formatList,
+  formatPercent,
+  formatWholeCurrency,
+  type I18nKey,
+} from '@bizcost/i18n'
 import { useTranslation } from 'react-i18next'
 import { useUnitQuantity } from '@/features/catalog/unit-parts'
-import { useBusinessDate, useUnitCost } from '@/features/purchasing/amounts'
+import { useMoney, useUnitCost } from '@/features/purchasing/amounts'
 import { useLocale, useTerminology } from '@/lib/i18n/client'
 import { useBusinessContext } from '@/lib/trpc/client'
 
-// How the product-cost screens say their numbers in words (M2 Step 6; D-116, D-119, D-186): how
-// running costs reach products, the rule first and then why ("Every AED 1 you spend on materials adds
-// AED 0.50 of running costs (50% of the materials). Why: your running costs are AED 15,000 a month
-// and you buy about AED 30,000 of materials a month."), which purchases it is worked out from, the
-// owner's hourly rate and time, and why a cost is incomplete. Amounts are rounded only here (the API
-// keeps 12 decimals); the monthly totals in a sentence are whole.
+// How the product-cost screens say their numbers in words (M2 Step 6; D-119, D-186, D-202): how
+// running costs reach what the business sells (by its price, worked out once sales are recorded,
+// with the owner's example), the owner's hourly rate and time, and why a cost is incomplete. Amounts
+// are rounded only here (the API keeps 12 decimals); totals quoted in a sentence are whole.
 
 /** A percentage: margins with one decimal ("75.0%"), a rate as a fraction ({ ratio: true }). */
 export function usePercent() {
@@ -35,103 +41,75 @@ export function useWholeMoney() {
   return (amount: string) => formatWholeCurrency(locale, amount, context?.currency ?? 'AED')
 }
 
-/** How running costs reach what the business sells, in words, and what it asks the reader to do. */
-export interface RateWords {
-  /** The rule, or what stands in its way (one sentence). */
-  readonly rule: string
-  /** Why the rule is what it is: the monthly totals (none when withheld or not worked out). */
-  readonly why: string | null
-  /** The rule in a few words, for a phone's folded panel. */
-  readonly short: string
-  /** Something is missing for it: said in the warning tone, with the way to add it. */
-  readonly action: 'estimate' | 'runningCosts' | null
-}
+/**
+ * The owner's example of the rule (D-202): costs of 20,000 and sales of 80,000 make 25%, so an item
+ * priced 400 carries 100 and one priced 18 carries 4.50. Worked out by the domain's own rule.
+ */
+const RULE_EXAMPLE = { costs: '20000', sales: '80000', price: '400', small: '18' } as const
 
 /**
- * How running costs reach what the business sells (none when Running Costs is off or the member may
- * not see costs). `materialsOn`: the Materials module is on; without it (a business of services)
- * running costs cannot reach anything yet, and asking for purchases would not help.
+ * The rule's example in words, in the business currency: the month's totals whole, the division
+ * that gives the percentage, and both prices and what they carry alike (with the currency's decimals).
  */
-export function useRateWords() {
+export function useRuleExample() {
   const { t } = useTranslation()
+  const { locale } = useLocale()
   const whole = useWholeMoney()
-  const unitCost = useUnitCost()
+  const money = useMoney()
   const percent = usePercent()
-  const businessDate = useBusinessDate()
-  return (rate: RunningCostRateDto | undefined, materialsOn: boolean): RateWords | null => {
-    if (!rate || rate.state === undefined || rate.state === 'off') return null
-    const running =
-      rate.totalsShown && rate.monthlyRunningCosts ? whole(rate.monthlyRunningCosts) : null
-    const said = (rule: string, action: RateWords['action'] = null): RateWords => ({
-      rule,
-      why: null,
-      short: rule,
-      action,
+  return (): string => {
+    const { costs, sales, price, small } = RULE_EXAMPLE
+    const rate = costRate({ state: 'on', costs, sales }).rate ?? '0'
+    return t('costing.rate.example', {
+      costs: whole(costs),
+      sales: whole(sales),
+      costsNumber: formatDecimal(locale, costs, 0),
+      salesNumber: formatDecimal(locale, sales, 0),
+      percent: percent(rate, { ratio: true, minDigits: 0 }),
+      price: money(price),
+      share: money(costShare(price, costs, sales) ?? '0'),
+      small: money(small),
+      smallShare: money(costShare(small, costs, sales) ?? '0'),
     })
-    if (rate.state === 'not_entered') return said(t('costing.rate.not_entered'), 'runningCosts')
-    if (rate.state === 'none') return said(t('costing.rate.none'))
-    if (!materialsOn) {
-      return said(
-        running ? t('costing.rate.noMaterials', { running }) : t('costing.rate.noMaterials_hidden'),
-      )
-    }
-    if (rate.state === 'not_set') {
-      return said(
-        running ? t('costing.rate.not_set', { running }) : t('costing.rate.not_set_hidden'),
-        'estimate',
-      )
-    }
-    const { source, monthly } = rate.purchases
-    const purchases = rate.totalsShown && monthly ? whole(monthly) : null
-    if (!rate.rate) {
-      return said(
-        running && purchases
-          ? t('costing.rate.tooLarge', { running, purchases })
-          : t('costing.rate.tooLarge_hidden'),
-      )
-    }
-    const share = percent(rate.rate, { ratio: true, minDigits: 0 })
-    return {
-      rule: t('costing.rate.rule', {
-        one: whole('1'),
-        rate: unitCost(rate.rate),
-        percent: share,
-      }),
-      why:
-        running && purchases && source
-          ? t(`costing.rate.why.${source}`, {
-              running,
-              purchases,
-              from: businessDate(rate.purchases.from),
-              to: businessDate(rate.purchases.to),
-            })
-          : null,
-      short: t('costing.rate.short', { percent: share }),
-      action: null,
-    }
   }
 }
 
+/** How running costs reach what the business sells, in words, and what it asks the reader to do. */
+export interface RateWords {
+  /** The rule (one sentence). */
+  readonly rule: string
+  /** The owner's example of it. */
+  readonly example: string
+  /** Worked out once sales are recorded, and what the costs shown are until then (none once shared). */
+  readonly awaiting: string | null
+  /** No running cost was ever entered: they are what will be shared, so the page asks for them. */
+  readonly nudge: string | null
+  /** The rule in a few words, for a phone's folded panel. */
+  readonly short: string
+  /** Something is missing for it: said in the warning tone, with the way to add it. */
+  readonly action: 'runningCosts' | null
+}
+
 /**
- * Which monthly purchases BizCost divides by, and why (D-116, D-186): what was really bought once 3
- * full months count; otherwise the owner's estimate, until `countsFrom`, while a month of the 3 has
- * no purchase, or when what was bought comes to nothing. None when hidden or not in use.
+ * How running costs reach what the business sells (D-202): by its price, worked out once sales are
+ * recorded. None when neither Running Costs nor Expenses is on, or the member may not see costs.
+ * `runningCostsOn`: the Running Costs module is on (only then are running costs asked for; never
+ * entered is not a product's reason, D-202).
  */
-export function useEstimateNote() {
+export function useRateWords() {
   const { t } = useTranslation()
-  const businessDate = useBusinessDate()
-  return (rate: RunningCostRateDto | undefined, today: string): string | null => {
-    if (!rate || rate.state === undefined || rate.purchases.source === undefined) return null
-    const { source, countsFrom, ready, from, to } = rate.purchases
-    if (source === 'last_3_months') return t('costing.rate.fromPurchases')
-    if (source !== 'estimate') return null
-    const months = { from: businessDate(from), to: businessDate(to) }
-    if (ready) return t('costing.rate.estimateNothingBought', months)
-    if (countsFrom === null) return t('costing.rate.estimateUntilUnknown')
-    if (countsFrom > today) {
-      return t('costing.rate.estimateUntil', { date: businessDate(countsFrom) })
+  const example = useRuleExample()
+  return (costs: MonthCostsDto | undefined, runningCostsOn: boolean): RateWords | null => {
+    if (!costs || costs.state === undefined || costs.state === 'off') return null
+    const missing = runningCostsOn && costs.runningCostsEntered === false
+    return {
+      rule: t('costing.rate.byPrice'),
+      example: example(),
+      awaiting: costs.state === 'awaiting_sales' ? t('costing.rate.awaiting') : null,
+      nudge: missing ? t('costing.rate.not_entered') : null,
+      short: t('costing.rate.short'),
+      action: missing ? 'runningCosts' : null,
     }
-    return t('costing.rate.estimateMonthsMissing', months)
   }
 }
 

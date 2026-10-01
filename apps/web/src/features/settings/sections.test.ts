@@ -118,24 +118,13 @@ describe('settings sections', () => {
         'costing',
       ),
     ).toBe(false)
-    const manage = [
-      'cost_engine.product_costs.view',
-      'cost_engine.settings.manage',
-      'running_costs.items.view',
-      'purchases.documents.view',
-    ] as const
+    // Its keys alone, as the API checks them: running costs need no setting any more, so neither
+    // their keys nor purchases' are needed (D-202).
+    const manage = ['cost_engine.product_costs.view', 'cost_engine.settings.manage'] as const
     expect(isSectionVisible({ ...access([...manage]), ...costEngine }, 'costing')).toBe(true)
-    // The estimate and its rate reveal the monthly running costs and purchases (D-186): without
-    // those keys, not offered (the API refuses it too).
-    for (const missing of ['running_costs.items.view', 'purchases.documents.view'] as const) {
-      expect(
-        isSectionVisible(
-          { ...access(manage.filter((key) => key !== missing)), ...costEngine },
-          'costing',
-        ),
-        missing,
-      ).toBe(false)
-    }
+    expect(
+      isSectionVisible({ ...access(['cost_engine.product_costs.view']), ...costEngine }, 'costing'),
+    ).toBe(false)
     expect(visibleSections({ ...access('all', SOLO), ...costEngine })).toEqual([
       'business',
       'modules',

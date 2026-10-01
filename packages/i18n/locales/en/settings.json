@@ -311,7 +311,7 @@
     "running_costs_items_view": "What you pay regularly to run the business, like rent and salaries.",
     "running_costs_items_manage": "Add, change or remove running costs, and the categories they share with expenses.",
     "cost_engine_product_costs_view": "What one of each product or service really costs, line by line, and what it earns.",
-    "cost_engine_settings_manage": "What you expect to buy a month, used to share running costs until 3 months of purchases count, and your hourly rate when you work alone.",
+    "cost_engine_settings_manage": "Your hourly rate when you work alone. Running costs need no setting: they're shared by each item's price.",
     "data_cost_view": "What products, materials and work really cost.",
     "data_cost_view_food": "What products, ingredients, supplies and work really cost.",
     "data_cost_view_factory": "What products, raw materials and work really cost.",
@@ -390,14 +390,12 @@
     "description": "How BizCost works out the full cost of what you sell.",
     "running": {
       "title": "Running costs in your product costs",
-      "explain": "BizCost shares your running costs (rent, electricity, salaries…) across what you sell by the cost of the materials each product uses: a product whose materials cost more carries more.",
-      "estimate": "About how much do you buy in materials a month?",
-      "estimateHint": "Everything you buy to make or sell: ingredients, packaging, goods. A rough figure is fine.",
-      "off": "Running Costs is turned off, so no running costs are added to what you sell.",
-      "estimateHintVat": "Leave out the VAT you get back: count what you pay before VAT.",
-      "estimateUnused": "Your estimate ({{estimate}} a month) isn’t used now.",
-      "notEntered": "Enter your running costs first (rent, electricity…): BizCost then shares them across what you sell.",
-      "goToRunningCosts": "Go to Running Costs"
+      "title_services": "Running costs in your service costs",
+      "explain": "Running costs need no setting: each thing you sell carries its share of them and of your expenses by its price, worked out automatically once you record your sales.",
+      "off": "Running Costs and Expenses are turned off, so no running costs are shared over what you sell.",
+      "goToRunningCosts": "Go to Running Costs",
+      "seeProductCosts": "See product costs",
+      "seeProductCosts_services": "See service costs"
     },
     "time": {
       "title": "Your time",

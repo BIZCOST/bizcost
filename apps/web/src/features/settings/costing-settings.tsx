@@ -17,7 +17,7 @@ import { LoadError, SectionSkeleton } from '@/components/states/query-state'
 import { Button } from '@/components/ui/button'
 import { Section } from '@/features/account/section'
 import { decimalPlaces } from '@/features/catalog/units'
-import { useEstimateNote, useRateWords, useWholeMoney } from '@/features/costing/words'
+import { useRuleExample } from '@/features/costing/words'
 import { hasModule } from '@/features/purchasing/data'
 import { MoneyInput } from '@/features/purchasing/purchase-lines'
 import { useLocale } from '@/lib/i18n/client'
@@ -26,20 +26,18 @@ import { settingsChange } from './costing-draft'
 import { can, isSectionVisible } from './sections'
 import { SectionPage } from './settings-shell'
 
-// Settings → How costs are worked out (M2 Step 6; D-116, D-119, D-186; ROADMAP.md M2 Step 7 lists
-// them in Settings): what BizCost needs to work out the full cost of what the business sells.
-//   - Running costs reach products as a share of their material cost: monthly running costs ÷ the
-//     materials bought a month. Until 3 full months of purchases count, that is the owner's estimate,
-//     asked here in plain words (without the VAT a registered business gets back); the section says
-//     how running costs reach products now, and why the estimate is still in use. The estimate is
-//     not asked once the 3 months count, nor while no running cost is entered, nor for a business
-//     without Materials (running costs cannot reach services yet); nothing is shown while Running
-//     Costs is off.
-//   - Without a team, the owner's hourly rate: each product's minutes are counted at it.
-// Only members with cost_engine.settings.manage and running costs and purchases (Owner, Admin,
-// Manager) see it; the values are costs and supplier prices, so a member who may not see them only
-// reads that they are hidden. Each part saves on its own; leaving with a change not saved asks first.
-// Every change is audited by the API.
+// Settings → How costs are worked out (M2 Step 6; D-119, D-202; ROADMAP.md M2 Step 7 lists them in
+// Settings): what BizCost needs to work out the full cost of what the business sells.
+//   - Running costs reach what the business sells by its price (D-202): that they need no setting
+//     (each item's share is worked out once sales are recorded; the estimate of monthly purchases is
+//     gone), the rule in plain words with the owner's example, and the way to Running Costs and to
+//     Product costs (its services words for a business that sells only services, D-200). Said to be
+//     off, and nothing else, while Running Costs and Expenses both are.
+//   - Without a team, the owner's hourly rate: each product's minutes are counted at it. With a team
+//     there is nothing to set: the page explains the rule and leads on, never an empty form.
+// Only members with cost_engine.settings.manage (Owner, Admin, Manager) see it; the hourly rate is a
+// cost, so a member who may not see costs only reads that it is hidden. Leaving with a change not
+// saved asks first. Every change is audited by the API.
 
 type Settings = ProductCostSettingsDto['data']
 
@@ -52,7 +50,7 @@ function AmountForm({
   suffix,
   onSaved,
 }: {
-  field: 'estimate' | 'hourlyRate'
+  field: 'hourlyRate'
   label: string
   hint: string
   saved: Settings
@@ -63,8 +61,7 @@ function AmountForm({
   const { locale } = useLocale()
   const trpc = useTRPC()
   const update = useMutation(trpc.productCost.updateSettings.mutationOptions())
-  const stored =
-    (field === 'estimate' ? saved.estimatedMonthlyPurchases : saved.ownerHourlyRate) ?? null
+  const stored = saved.ownerHourlyRate ?? null
   const [typed, setTyped] = useState<string | null>(null)
   const [submitted, setSubmitted] = useState(false)
   const [serverError, setServerError] = useState<I18nKey | null>(null)
@@ -72,14 +69,7 @@ function AmountForm({
   const value =
     typed ?? (stored === null ? '' : formatDecimal(locale, stored, decimalPlaces(stored)))
   const currency = saved.currency as CurrencyCode
-  const change = settingsChange(
-    { [field]: value },
-    {
-      estimate: saved.estimatedMonthlyPurchases ?? null,
-      hourlyRate: saved.ownerHourlyRate ?? null,
-    },
-    currency,
-  )
+  const change = settingsChange({ hourlyRate: value }, { hourlyRate: stored }, currency)
   const error = change.errors[field]
   const dirty = typed !== null && (change.input !== null || error !== undefined)
 
@@ -155,9 +145,7 @@ export function CostingSettings({ businessId }: { businessId: string }) {
   const { data: context } = useBusinessContext()
   const visible = context ? isSectionVisible(context, 'costing') : false
   const settings = useQuery({ ...trpc.productCost.settings.queryOptions(), enabled: visible })
-  const rateWords = useRateWords()
-  const estimateNote = useEstimateNote()
-  const whole = useWholeMoney()
+  const example = useRuleExample()
 
   async function saved(result: ProductCostSettingsDto) {
     queryClient.setQueryData(trpc.productCost.settings.queryKey(), result)
@@ -179,20 +167,10 @@ export function CostingSettings({ businessId }: { businessId: string }) {
   }
   const data = settings.data.data
   // Costs hidden for this member (an override): nothing to change here.
-  const hidden = data.estimatedMonthlyPurchases === undefined || data.ownerHourlyRate === undefined
-  const materialsOn = context ? hasModule(context, 'materials') : true
-  const words = rateWords(data.rate, materialsOn)
-  const counted = data.rate.purchases.source === 'last_3_months'
-  const note =
-    data.rate.state === 'none' ||
-    data.rate.state === 'off' ||
-    data.rate.state === 'not_entered' ||
-    !materialsOn
-      ? null
-      : estimateNote(data.rate, data.today)
-  // The estimate is asked only where it can change something (D-186).
-  const asksEstimate = materialsOn && data.rate.state !== 'not_entered' && !counted
-  const vatHint = context?.capabilities.vat_registered === true
+  const hidden = data.ownerHourlyRate === undefined
+  const shared =
+    context === undefined || hasModule(context, 'running_costs') || hasModule(context, 'expenses')
+  const servicesOnly = context?.sellsOnlyServices === true
   const runningCosts =
     context && hasModule(context, 'running_costs') && can(context, 'running_costs.items.view') ? (
       <Button asChild variant="outline">
@@ -209,55 +187,42 @@ export function CostingSettings({ businessId }: { businessId: string }) {
       ) : (
         <>
           <Section
-            title={t('settings.costing.running.title')}
-            description={t('settings.costing.running.explain')}
+            title={t(
+              servicesOnly
+                ? 'settings.costing.running.title_services'
+                : 'settings.costing.running.title',
+            )}
+            description={shared ? t('settings.costing.running.explain') : undefined}
           >
-            {data.rate.state === 'off' ? (
-              <FormAlert tone="info">{t('settings.costing.running.off')}</FormAlert>
-            ) : (
-              <div className="space-y-5">
-                {words ? (
-                  <div
-                    data-rate-now
-                    className="flex items-start gap-3 rounded-xl bg-muted/60 px-4 py-3"
-                  >
-                    <RepeatIcon aria-hidden className="mt-0.5 size-5 shrink-0 text-primary" />
-                    <div role="status" className="min-w-0 space-y-1 text-sm leading-relaxed">
-                      <p data-rule>{words.rule}</p>
-                      {words.why ? <p data-why>{words.why}</p> : null}
-                      {note ? <p className="text-muted-foreground">{note}</p> : null}
-                      {counted && data.estimatedMonthlyPurchases ? (
-                        <p data-estimate-unused className="text-muted-foreground">
-                          {t('settings.costing.running.estimateUnused', {
-                            estimate: whole(data.estimatedMonthlyPurchases),
-                          })}
-                        </p>
-                      ) : null}
-                    </div>
-                  </div>
-                ) : null}
-                {data.rate.state === 'not_entered' ? (
-                  <div className="space-y-3">
-                    <p className="text-sm text-muted-foreground">
-                      {t('settings.costing.running.notEntered')}
+            {shared ? (
+              <div className="space-y-4">
+                <div
+                  data-rule-example
+                  className="flex items-start gap-3 rounded-xl bg-muted/60 px-4 py-3"
+                >
+                  <RepeatIcon aria-hidden className="mt-0.5 size-5 shrink-0 text-primary" />
+                  <div className="min-w-0 space-y-1 text-sm leading-relaxed">
+                    <p data-rule>{t('costing.rate.byPrice')}</p>
+                    <p data-example className="text-muted-foreground">
+                      {example()}
                     </p>
-                    {runningCosts}
                   </div>
-                ) : null}
-                {asksEstimate ? (
-                  <AmountForm
-                    field="estimate"
-                    label={t('settings.costing.running.estimate')}
-                    hint={
-                      vatHint
-                        ? `${t('settings.costing.running.estimateHint')} ${t('settings.costing.running.estimateHintVat')}`
-                        : t('settings.costing.running.estimateHint')
-                    }
-                    saved={data}
-                    onSaved={saved}
-                  />
-                ) : null}
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  {runningCosts}
+                  <Button asChild variant="outline">
+                    <Link href={`/b/${businessId}/product-costs`}>
+                      {t(
+                        servicesOnly
+                          ? 'settings.costing.running.seeProductCosts_services'
+                          : 'settings.costing.running.seeProductCosts',
+                      )}
+                    </Link>
+                  </Button>
+                </div>
               </div>
+            ) : (
+              <FormAlert tone="info">{t('settings.costing.running.off')}</FormAlert>
             )}
           </Section>
           {data.hasTeam ? null : (

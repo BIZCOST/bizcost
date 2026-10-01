@@ -9,7 +9,8 @@
   },
   "list": {
     "intro": "What you spend on the business, bill by bill: a delivery, a repair, cleaning, fees…",
-    "costsNote": "Product costs use your running costs; the expenses here count in your real profit.",
+    "costsNote": "Final expenses count in your costs in the month they're for: a category's bills take the place of its regular running costs for that month (or that quarter or year), so nothing counts twice.",
+    "costsNoteSimple": "Final expenses count in your costs in the month they're for.",
     "new": "New expense",
     "categories": "Categories",
     "searchPlaceholder": "Search expenses",

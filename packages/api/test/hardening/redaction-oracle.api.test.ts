@@ -1,6 +1,7 @@
 import {
   isWithMeta,
   withMeta,
+  type AppErrorCode,
   type AttachmentUploadUrlDto,
   type BooksDto,
   type CostCategoryDto,
@@ -14,7 +15,13 @@ import {
   type RunningCostDto,
   type SupplierDto,
 } from '@bizcost/contracts'
-import { newId, SENSITIVITY_CATEGORIES, type SensitivityCategory } from '@bizcost/domain'
+import {
+  addMonths,
+  monthOf,
+  newId,
+  SENSITIVITY_CATEGORIES,
+  type SensitivityCategory,
+} from '@bizcost/domain'
 import {
   ROLE_TEMPLATE_KEYS,
   roleTemplateByKey,
@@ -66,6 +73,12 @@ interface OracleEntry {
   prepare?: (template: RoleTemplateKey) => Promise<unknown>
   /** The values the call returns in each category (each must be in the answer when visible). */
   valuesOf: Partial<Record<SensitivityCategory, readonly string[]>>
+  /**
+   * The call is refused this way for every member who holds the permission, with nothing sensitive
+   * (the owner's hourly rate in a business with a team, D-119): its output is the output of another
+   * entry, checked there.
+   */
+  refusedWith?: AppErrorCode
 }
 
 // The fixture's numbers: two purchases of a material (3 L at 41.17, then 1 L at 52.39) and a credit
@@ -115,7 +128,15 @@ const CORRECTED_AMOUNT = '97.19'
  * The amounts of the owner's purchases and expenses that cannot be read inside a timestamp (more
  * than 59, so never "…:41.17…" seconds): expense.getMine returns timestamps.
  */
-const OWNERS_AMOUNTS = [LINE_TOTAL, OWED_TOTAL, OWED_LEFT, EXPENSE_NET, EXPENSE_TOTAL, EXPENSE_LEFT]
+const OWNERS_AMOUNTS = [
+  LINE_TOTAL,
+  OWED_TOTAL,
+  OWED_LEFT,
+  EXPENSE_NET,
+  EXPENSE_TOTAL,
+  EXPENSE_LEFT,
+  '611.29',
+]
 
 let api: Api
 let businessId: string
@@ -137,18 +158,24 @@ let running: RunningCostDto
 const ownExpenses = new Map<RoleTemplateKey, string>()
 let costed: ProductDto
 
-// Product costs (M2 Step 6): a product of 18 g of the beans (1.02834 of materials) sold at 99.99,
-// with the owner's estimate of 48 271.37 of purchases a month (`supplier_price`). Its running-cost
-// share, total and margin move as the running-cost cases below add running costs, so the values
-// are what the owner reads just before each call.
+// Product costs (M2 Step 6; D-202): a product of 18 g of the beans (1.02834 of materials) sold at
+// 99.99, its share of the running costs waiting for sales; the business's costs of last month: a
+// rent of 8 123.47 a month since the month before and a bill of 611.29 for last month, 8 734.76 in
+// all (`cost`, shown only with running costs and expenses); the beans' last purchase price
+// (`supplier_price`) in the breakdown. The owner's hourly rate, 47.83, is kept while the business has
+// a team (written in the database: the settings refuse it with a team, D-119).
 const PRODUCT_PRICE = '99.99'
-const ESTIMATE = '48271.37'
-const costedValues = {
+const POOL_RENT = '8123.47'
+const POOL_BILL = '611.29'
+const POOL_TOTAL = '8734.76'
+const HOURLY_RATE = '47.83'
+const costedValues = { cost: [] as string[], profit_margin: [] as string[] }
+const breakdownValues = {
   cost: [] as string[],
   profit_margin: [] as string[],
-  supplier_price: [ESTIMATE],
+  supplier_price: [BEANS_PRICE],
 }
-const settingsValues = { cost: [] as string[], supplier_price: [ESTIMATE] }
+const settingsValues = { cost: [HOURLY_RATE] }
 
 /** Reads the costed product's numbers as the owner (costedValues); its search input for the list. */
 async function readCosted() {
@@ -156,16 +183,18 @@ async function readCosted() {
     productId: costed.id,
   })
   expect(data.cost.complete, JSON.stringify(data.cost)).toBe(true)
-  costedValues.cost = [data.cost.materials!, data.cost.total!, data.cost.runningCosts.share!]
+  expect(data.monthCosts.total).toBe(POOL_TOTAL)
+  costedValues.cost = [data.cost.materials!, data.cost.total!, POOL_RENT, POOL_BILL, POOL_TOTAL]
   costedValues.profit_margin = [data.margin.amount!, data.margin.percent!]
+  breakdownValues.cost = costedValues.cost
+  breakdownValues.profit_margin = costedValues.profit_margin
   return { productId: costed.id, search: costed.name }
 }
 
-/** Reads the settings as the owner (settingsValues): the monthly running costs and the rate. */
+/** Reads the settings as the owner: the hourly rate kept with the team. */
 async function readSettings() {
   const { data } = await asOwner<ProductCostSettingsDto>('productCost.settings', 'query')
-  expect(data.rate.state).toBe('ready')
-  settingsValues.cost = [data.rate.monthlyRunningCosts!, data.rate.rate!]
+  expect(data).toEqual({ ownerHourlyRate: HOURLY_RATE, hasTeam: true, currency: 'AED' })
 }
 
 /** Calls a procedure as the owner (fixture set-up). */
@@ -482,7 +511,7 @@ const PRODUCTION_ORACLE: Record<string, OracleEntry> = {
   'productCost.get': {
     permission: 'cost_engine.product_costs.view',
     prepare: async () => ({ productId: (await readCosted()).productId }),
-    valuesOf: costedValues,
+    valuesOf: breakdownValues,
   },
   'productCost.settings': {
     permission: 'cost_engine.settings.manage',
@@ -492,13 +521,16 @@ const PRODUCTION_ORACLE: Record<string, OracleEntry> = {
     },
     valuesOf: settingsValues,
   },
+  // The owner's hourly rate only without a team (D-119, D-202): refused here, where every
+  // template's member needs the team; its output is productCost.settings's, checked above.
   'productCost.updateSettings': {
     permission: 'cost_engine.settings.manage',
     prepare: async () => {
       await readSettings()
-      return { estimatedMonthlyPurchases: ESTIMATE }
+      return { ownerHourlyRate: HOURLY_RATE }
     },
     valuesOf: settingsValues,
+    refusedWith: 'capability_disabled',
   },
   'payable.list': {
     permission: 'purchases.payments.view',
@@ -791,7 +823,6 @@ beforeAll(async () => {
     productId: costed.id,
     lines: [{ ...recipe.lines[0], id: newId() }],
   })
-  await asOwner('productCost.updateSettings', 'mutation', { estimatedMonthlyPurchases: ESTIMATE })
   cream = await asOwner<MaterialDto>('material.create', 'mutation', {
     id: newId(),
     name: 'Oracle cream',
@@ -811,6 +842,22 @@ beforeAll(async () => {
   running = (
     await asOwner<{ data: RunningCostDto }>('runningCost.create', 'mutation', runningInput())
   ).data
+  // Last month's costs (D-202): a rent since the month before, in a category of its own, and a bill
+  // for last month. The owner's hourly rate, kept with the team.
+  const lastMonth = addMonths(monthOf(today), -1)
+  const premises = await asOwner<CostCategoryDto>('costCategory.create', 'mutation', {
+    id: newId(),
+    name: 'Oracle premises',
+  })
+  await asOwner('runningCost.create', 'mutation', {
+    ...runningInput(),
+    categoryId: premises.id,
+    amount: POOL_RENT,
+    frequency: 'monthly',
+    startsOn: `${addMonths(lastMonth, -1)}-01`,
+  })
+  await newExpensePosted({ amount: POOL_BILL, periodMonth: lastMonth })
+  await api.admin`update app.businesses set owner_hourly_rate = ${HOURLY_RATE} where id = ${businessId}`
   // Each member's own record (D-181): an expense the owner entered, paid by the member from their own
   // money, final and owed to them, with an amount no one else has.
   for (const [template, memberId] of memberIds) {
@@ -998,6 +1045,11 @@ describe('each role template receives exactly the categories it may see', () => 
     if (!holds(template, entry.permission)) {
       // Not theirs to call: refused before anything is read, with nothing sensitive.
       expect(result.error?.data.appCode, result.raw).toBe('forbidden')
+      for (const value of values) expect(result.raw.includes(value), value).toBe(false)
+      return
+    }
+    if (entry.refusedWith) {
+      expect(result.error?.data.appCode, result.raw).toBe(entry.refusedWith)
       for (const value of values) expect(result.raw.includes(value), value).toBe(false)
       return
     }

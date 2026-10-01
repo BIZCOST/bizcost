@@ -80,11 +80,8 @@ describe('costStepView', () => {
     expect(href(step({ id: 'products' }))).toBe(`/b/${ID}/products/new`)
     expect(href(step({ id: 'recipes', remaining: 2 }))).toBe(`/b/${ID}/products`)
     expect(href(step({ id: 'purchases', remaining: 3 }))).toBe(`/b/${ID}/purchases/new`)
-    expect(href(step({ id: 'running_costs', missing: ['runningCosts', 'estimate'] }))).toBe(
+    expect(href(step({ id: 'running_costs', missing: ['runningCosts'] }))).toBe(
       `/b/${ID}/running-costs`,
-    )
-    expect(href(step({ id: 'running_costs', missing: ['estimate'] }))).toBe(
-      `/b/${ID}/settings/costing`,
     )
     expect(href(step({ id: 'owner_time', missing: ['hourlyRate', 'minutes'] }))).toBe(
       `/b/${ID}/settings/costing`,
@@ -104,8 +101,8 @@ describe('costStepView', () => {
       'dashboard.costs.steps.recipes.todo',
     )
     expect(
-      costStepView(ID, step({ id: 'running_costs', missing: ['estimate'] }), null).bodyKey,
-    ).toBe('dashboard.costs.steps.running_costs.estimate')
+      costStepView(ID, step({ id: 'running_costs', missing: ['runningCosts'] }), null).bodyKey,
+    ).toBe('dashboard.costs.steps.running_costs.runningCosts')
     expect(costStepView(ID, step({ id: 'owner_time', done: true }), null).bodyKey).toBe(
       'dashboard.costs.steps.owner_time.done',
     )
@@ -119,8 +116,6 @@ describe('costStepView', () => {
       step({ id: 'purchases', remaining: 1 }),
       step({ id: 'purchases' }),
       step({ id: 'running_costs', missing: ['runningCosts'] }),
-      step({ id: 'running_costs', missing: ['estimate'] }),
-      step({ id: 'running_costs', missing: ['runningCosts', 'estimate'] }),
       step({ id: 'owner_time', missing: ['hourlyRate'] }),
       step({ id: 'owner_time', missing: ['minutes'] }),
       step({ id: 'owner_time', missing: ['hourlyRate', 'minutes'] }),

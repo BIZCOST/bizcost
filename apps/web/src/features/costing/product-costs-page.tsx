@@ -18,8 +18,10 @@ import {
   ChevronDownIcon,
   ChevronRightIcon,
   Clock3Icon,
+  InfoIcon,
   PackageIcon,
   PackageCheckIcon,
+  ReceiptTextIcon,
   RepeatIcon,
   SearchXIcon,
   SettingsIcon,
@@ -63,26 +65,25 @@ import {
   type CostListShow,
   type CostVisibility,
 } from './list-params'
-import {
-  useEstimateNote,
-  useHourlyRateSentence,
-  usePercent,
-  useRateWords,
-  useReasonWords,
-} from './words'
+import { MonthCosts } from './month-costs'
+import { useHourlyRateSentence, usePercent, useRateWords, useReasonWords } from './words'
 
-// Product costs (ROADMAP.md M2 Step 6; D-115, D-116, D-119, D-178, D-186, D-187): what one unit of each
-// product or service really costs (its materials, its share of the running costs and, without a team,
-// the owner's time) and its margin on the price before VAT, worked out by the API on read (nothing is
-// stored). Cards on a phone, a table from 1280 px (beside the sidebar). Each row opens the product's
-// breakdown. Above the list, how the costs are worked out in words, with the way to change it
-// (folded to one line on a phone unless something is missing), then a search, "Show" (in use,
-// incomplete, sold at a loss, archived, all; with how many need a look) and "Sort by".
+// Product costs (ROADMAP.md M2 Step 6; D-115, D-119, D-178, D-186, D-187, D-202): what one unit of
+// each product or service really costs (its materials, its share of the running costs and, without a
+// team, the owner's time) and its margin on the price before VAT, worked out by the API on read
+// (nothing is stored). Cards on a phone, a table from 1280 px (beside the sidebar). Each row opens the
+// product's breakdown. Above the list, how the costs are worked out in words (running costs by each
+// item's price, with the owner's example and the business's costs of the last full month), with the
+// way to change what can be set (folded to one line on a phone unless something is missing), then a
+// search, "Show" (in use, incomplete, sold at a loss, archived, all; with how many need a look) and
+// "Sort by".
 //
 // Costs, margins and supplier prices are visible only together (D-187): a member who may not see
 // them sees a lock, and the page never offers to sort or filter by them (the API refuses it,
 // list-params.ts). A cost with something missing is marked incomplete and says why in a few words;
-// its margin is only "at most" (muted, never green); nothing missing is ever 0.
+// its margin is only "at most" (muted, never green); nothing missing is ever 0. Until sales are
+// recorded (Phase 3) the share of running costs waits for them (D-202): that is not "incomplete",
+// but the list says its costs and margins are before running costs.
 
 /** The page's order and filter, from and to the address. */
 function useListParams(visible: CostVisibility) {
@@ -117,11 +118,11 @@ function HowLine({
     <li
       {...rest}
       className={cn(
-        'flex flex-col gap-2 rounded-xl px-3 py-2.5 sm:flex-row sm:items-center sm:justify-between',
+        'flex flex-col gap-2 rounded-xl px-3 py-2.5 sm:flex-row sm:items-center sm:justify-between sm:gap-4',
         tone === 'warning' ? 'bg-warning/10' : 'bg-muted/50',
       )}
     >
-      <span className="flex min-w-0 items-start gap-2.5">
+      <div className="flex min-w-0 flex-1 items-start gap-2.5">
         <Icon
           aria-hidden
           className={cn(
@@ -129,41 +130,36 @@ function HowLine({
             tone === 'warning' ? 'text-warning' : 'text-muted-foreground',
           )}
         />
-        <span className="min-w-0 text-sm leading-relaxed">{children}</span>
-      </span>
-      {action ? <span className="shrink-0 ps-6.5 sm:ps-0">{action}</span> : null}
+        <div className="min-w-0 flex-1 text-sm leading-relaxed">{children}</div>
+      </div>
+      {action ? <div className="shrink-0 ps-6.5 sm:ps-0">{action}</div> : null}
     </li>
   )
 }
 
-/** Whether the costing settings hold something for this business to change. */
-function settingsApply(data: ListData, context: BusinessContextDto): boolean {
-  const estimateAsked =
-    hasModule(context, 'materials') &&
-    data.rate.state !== 'off' &&
-    data.rate.state !== 'not_entered' &&
-    data.rate.purchases.source !== 'last_3_months'
-  return estimateAsked || data.ownerTime.applies
+/** Whether the costing settings hold something for this business to change: the hourly rate. */
+function settingsApply(data: ListData): boolean {
+  return data.ownerTime.applies
 }
 
 /**
- * How the costs are worked out (members who see costs): the materials' average, how running costs
- * reach products (and what is missing for them), the owner's hourly rate without a team, and how many
- * products have none of the owner's time. On a phone it folds to one line, unless something is
- * missing.
+ * How the costs are worked out (members who see costs): the materials' average; how running costs
+ * reach what the business sells (by its price, with the owner's example, worked out once sales are
+ * recorded, D-202) and the business's costs of the last full month by category; the owner's hourly
+ * rate without a team, and how many products have none of the owner's time. On a phone it folds to
+ * one line, unless something is missing.
  */
 function HowPanel({ data, context }: { data: ListData; context: BusinessContextDto }) {
   const { t } = useTranslation()
   const term = useTerminology()
   const businessDate = useBusinessDate()
   const rateWords = useRateWords()
-  const estimateNote = useEstimateNote()
   const hourly = useHourlyRateSentence()
   const { businessId } = useParams<{ businessId: string }>()
   const wide = useMediaQuery('(min-width: 768px)')
   const [open, setOpen] = useState(false)
   const materialsOn = hasModule(context, 'materials')
-  const running = rateWords(data.rate, materialsOn)
+  const running = rateWords(data.monthCosts, hasModule(context, 'running_costs'))
   const time = data.ownerTime.applies ? hourly(data.ownerTime.hourlyRate) : null
   if (running === null && time === null) return null
   const canChange = isSectionVisible(context, 'costing')
@@ -181,21 +177,15 @@ function HowPanel({ data, context }: { data: ListData; context: BusinessContextD
       <span className="text-sm text-muted-foreground">{t('costing.how.askOwner')}</span>
     )
   const runningAction =
-    running?.action === 'estimate' ? (
-      settingsButton(t('costing.how.setEstimate'))
-    ) : running?.action === 'runningCosts' &&
-      hasModule(context, 'running_costs') &&
-      can(context, 'running_costs.items.view') ? (
+    running?.action === 'runningCosts' &&
+    hasModule(context, 'running_costs') &&
+    can(context, 'running_costs.items.view') ? (
       <Button asChild variant="outline" size="sm" className="h-9 bg-card">
         <Link href={`/b/${businessId}/running-costs`}>{t('costing.how.addRunningCosts')}</Link>
       </Button>
     ) : undefined
-  const note =
-    running && data.rate.state === 'ready' && data.rate.purchases.source === 'estimate'
-      ? estimateNote(data.rate, data.today)
-      : null
   const change =
-    canChange && settingsApply(data, context) ? (
+    canChange && settingsApply(data) ? (
       <Button asChild variant="ghost" size="sm" className="-me-1 h-9">
         <Link href={settings}>
           <SettingsIcon aria-hidden />
@@ -260,21 +250,30 @@ function HowPanel({ data, context }: { data: ListData; context: BusinessContextD
           </HowLine>
         ) : null}
         {running ? (
-          <HowLine
-            icon={RepeatIcon}
-            tone={running.action ? 'warning' : 'muted'}
-            data-how="running"
-            action={runningAction}
-          >
-            <span data-rule className="block">
-              {running.rule}
-            </span>
-            {running.why ? (
-              <span data-why className="block text-muted-foreground">
-                {running.why}
-              </span>
+          <HowLine icon={RepeatIcon} data-how="running">
+            <p data-rule>{running.rule}</p>
+            <p data-example className="mt-1 text-muted-foreground">
+              {running.example}
+            </p>
+            {running.awaiting ? (
+              <p data-awaiting className="mt-1 font-medium">
+                {running.awaiting}
+              </p>
             ) : null}
-            {note ? <span className="block text-muted-foreground">{note}</span> : null}
+          </HowLine>
+        ) : null}
+        {running?.nudge ? (
+          <HowLine icon={RepeatIcon} tone="warning" data-how="not-entered" action={runningAction}>
+            {running.nudge}
+          </HowLine>
+        ) : null}
+        {running ? (
+          <HowLine icon={ReceiptTextIcon} data-how="month">
+            <MonthCosts
+              costs={data.monthCosts}
+              materialsOn={materialsOn}
+              vatRegistered={context.capabilities.vat_registered === true}
+            />
           </HowLine>
         ) : null}
         {time ? (
@@ -314,19 +313,24 @@ function ListChoices({
   params,
   visible,
   counts,
+  beforeRunning,
   onChange,
 }: {
   params: CostListParams
   visible: CostVisibility
   counts: ListData['counts'] | undefined
+  /** The costs are before running costs (D-202): a loss is said to be before them too. */
+  beforeRunning: boolean
   onChange: (next: Partial<CostListParams>) => void
 }) {
   const { t } = useTranslation()
   const id = useId()
   const label = (show: CostListShow) => {
     if (show === 'incomplete' || show === 'loss') {
+      const key = show === 'loss' && beforeRunning ? 'lossBefore' : show
       const count = counts?.[show]
-      if (typeof count === 'number') return t(`costing.list.show.${show}Count`, { count })
+      if (typeof count === 'number') return t(`costing.list.show.${key}Count`, { count })
+      return t(`costing.list.show.${key}`)
     }
     return t(`costing.list.show.${show}`)
   }
@@ -382,9 +386,12 @@ function ListChoices({
 /** What needs a look (members who see margins): how many are sold at a loss or incomplete. */
 function Attention({
   counts,
+  beforeRunning,
   onShow,
 }: {
   counts: ListData['counts']
+  /** The costs are before running costs (D-202): a loss is said to be before them too. */
+  beforeRunning: boolean
   onShow: (show: CostListShow) => void
 }) {
   const { t } = useTranslation()
@@ -408,7 +415,9 @@ function Attention({
               : 'bg-warning/15 text-foreground hover:bg-warning/25',
           )}
         >
-          {t(`costing.list.show.${show}Count`, { count: counts[show] })}
+          {t(`costing.list.show.${show === 'loss' && beforeRunning ? 'lossBefore' : show}Count`, {
+            count: counts[show],
+          })}
         </button>
       ))}
     </p>
@@ -448,15 +457,24 @@ function PriceValue({ row }: { row: ProductCostRowDto }) {
   )
 }
 
-/** One unit's cost: the amount (and "incomplete"), a lock, or why there is none. */
+/**
+ * One unit's cost: the amount (and "incomplete"), a lock, or why there is none: too large, not worked
+ * out yet, or, when nothing is missing and its only line is its share awaiting sales, worked out
+ * once sales are recorded (D-203).
+ */
 function CostValue({ row }: { row: ProductCostRowDto }) {
   const { t } = useTranslation()
   const { total, complete, tooLarge } = row.cost
   if (total === undefined) return <Locked category="cost" />
   if (total === null) {
+    const awaiting = complete === true && row.cost.runningCosts.state === 'awaiting_sales'
     return (
-      <span className="text-muted-foreground">
-        {tooLarge ? t('costing.list.row.tooLarge') : t('costing.list.row.notCounted')}
+      <span data-awaiting={awaiting || undefined} className="text-muted-foreground">
+        {tooLarge
+          ? t('costing.list.row.tooLarge')
+          : awaiting
+            ? t('costing.list.row.awaiting')
+            : t('costing.list.row.notCounted')}
       </span>
     )
   }
@@ -640,6 +658,7 @@ function CostCard({
 function SortHeader({
   sort,
   label,
+  note,
   params,
   visible,
   onSort,
@@ -647,6 +666,8 @@ function SortHeader({
 }: {
   sort: ProductCostSort
   label: string
+  /** Under the label, smaller ("before running costs"). */
+  note?: string
   params: CostListParams
   visible: CostVisibility
   onSort: (next: Partial<CostListParams>) => void
@@ -654,10 +675,16 @@ function SortHeader({
 }) {
   const active = params.sort === sort
   const base = cn('px-4 py-3 text-xs font-medium text-muted-foreground', className)
+  const noted = note ? (
+    <span data-column-note className="block text-[11px] font-normal">
+      {note}
+    </span>
+  ) : null
   if (!maySort(visible, sort)) {
     return (
       <th scope="col" className={base}>
         {label}
+        {noted}
       </th>
     )
   }
@@ -679,6 +706,7 @@ function SortHeader({
         {label}
         <Icon aria-hidden className={cn('size-3.5', !active && 'opacity-50')} />
       </button>
+      {noted}
     </th>
   )
 }
@@ -690,6 +718,7 @@ function CostTable({
   profile,
   params,
   visible,
+  beforeRunning,
   onSort,
   label,
 }: {
@@ -698,20 +727,24 @@ function CostTable({
   profile: TerminologyProfile
   params: CostListParams
   visible: CostVisibility
+  /** The costs are before running costs (D-202): the margin columns say so. */
+  beforeRunning: boolean
   onSort: (next: Partial<CostListParams>) => void
   label: string
 }) {
   const { t } = useTranslation()
-  const header = (sort: ProductCostSort, key: string, className?: string) => (
+  const header = (sort: ProductCostSort, key: string, className?: string, note?: string) => (
     <SortHeader
       sort={sort}
       label={t(`costing.list.columns.${key}` as 'costing.list.columns.name')}
+      note={note}
       params={params}
       visible={visible}
       onSort={onSort}
       className={className}
     />
   )
+  const before = beforeRunning ? t('costing.list.columns.beforeRunning') : undefined
   return (
     <div className="overflow-hidden rounded-2xl bg-card shadow-sm ring-1 ring-foreground/[0.06]">
       <table aria-label={label} className="w-full border-collapse text-sm">
@@ -720,8 +753,8 @@ function CostTable({
             {header('name', 'name', 'text-start ps-5')}
             {header('price', 'price', 'text-end')}
             {header('cost', 'cost', 'text-end')}
-            {header('margin', 'margin', 'text-end')}
-            {header('margin_percent', 'marginPercent', 'text-end')}
+            {header('margin', 'margin', 'text-end', before)}
+            {header('margin_percent', 'marginPercent', 'text-end', before)}
             <td className="w-10" />
           </tr>
         </thead>
@@ -811,6 +844,8 @@ function ProductCostsList() {
   // Costs, margins and supplier prices are visible only together (D-187).
   const seesCosts = visible.includes('cost')
   const canSeeProducts = hasModule(context, 'products') && can(context, 'products.items.view')
+  // Until sales are recorded every cost is before running costs (D-202): the list says so.
+  const beforeRunning = seesCosts && first?.monthCosts.state === 'awaiting_sales'
 
   return (
     <PageContainer>
@@ -834,12 +869,28 @@ function ProductCostsList() {
                 params={params}
                 visible={visible}
                 counts={first?.counts}
+                beforeRunning={beforeRunning}
                 onChange={set}
               />
             </ListToolbar>
           )}
           {first && seesCosts && showOf(params) === 'active' && !params.search ? (
-            <Attention counts={first.counts} onShow={(show) => set(showParams(show))} />
+            <Attention
+              counts={first.counts}
+              beforeRunning={beforeRunning}
+              onShow={(show) => set(showParams(show))}
+            />
+          ) : null}
+          {beforeRunning && rows.length > 0 ? (
+            // Honest totals (D-202): the share of running costs is not in them until sales are
+            // recorded; that is not "incomplete", and never read as final.
+            <p
+              data-before-running
+              className="mb-3 flex items-start gap-2 text-sm leading-relaxed text-muted-foreground"
+            >
+              <InfoIcon aria-hidden className="mt-0.5 size-4 shrink-0" />
+              <span className="min-w-0">{t('costing.list.beforeRunning')}</span>
+            </p>
           ) : null}
           {list.isPending ? (
             <ListSkeleton />
@@ -888,6 +939,7 @@ function ProductCostsList() {
                   profile={profile}
                   params={params}
                   visible={visible}
+                  beforeRunning={beforeRunning}
                   onSort={set}
                   label={title}
                 />

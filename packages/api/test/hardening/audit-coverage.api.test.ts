@@ -20,7 +20,7 @@ import { QUESTION_SET_VERSION } from '@bizcost/modules'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { appRouter } from '../../src'
 import { mintToken, mutate, query, type CallResult, type TestUser } from '../helpers'
-import { join, setupBusiness, WORKSHOP } from '../settings'
+import { BAKER, join, setupBusiness, WORKSHOP } from '../settings'
 import {
   callProcedure,
   createTenant,
@@ -893,13 +893,22 @@ const AUDIT: Record<string, AuditProbe> = {
       return asOwner('expensePayment.reverse', { id })
     },
   },
-  // Product costs (M2 Step 6): the settings are the business's row. The owner's time only without a
-  // team (the fixture has one), so the estimate is what changes here.
+  // Product costs (M2 Step 6): the settings are the business's row: the owner's hourly rate, only
+  // without a team (D-119; the fixture has one, and running costs need no setting, D-202), so in a
+  // business of its own, set up without a team.
   'productCost.updateSettings': {
-    run: () =>
-      asOwner('productCost.updateSettings', {
-        estimatedMonthlyPurchases: String((Date.now() % 100_000) + 1),
-      }),
+    run: async () => {
+      const owner = await api.newPerson()
+      const businessId = await setupBusiness(api.handler, owner.token, BAKER)
+      const result = await call(
+        owner,
+        'productCost.updateSettings',
+        'mutation',
+        { ownerHourlyRate: String((Date.now() % 1_000) + 1) },
+        businessId,
+      )
+      return { result, actor: owner.user, businessId }
+    },
   },
   'runningCost.create': { run: () => asOwner('runningCost.create', runningCostInput()) },
   'runningCost.update': {

@@ -1,8 +1,9 @@
--- pgTAP: product costs (M2 Step 6; docs/DATA_MODEL.md §6, D-116, D-119).
--- The settings of how product costs are worked out are columns of businesses (the owner's estimate
--- of monthly material purchases and hourly rate) and products_services (the owner's minutes for one
--- unit); nothing else is stored: every cost is worked out on read. Two businesses, each with its
--- owner. As bizcost_api, like the API: the column types; the CHECKs refuse 0 or less (NULL is "not
+-- pgTAP: product costs (M2 Step 6; docs/DATA_MODEL.md §6, D-119, D-202).
+-- The settings of how product costs are worked out are a column of businesses (the owner's hourly
+-- rate) and one of products_services (the owner's minutes for one unit); nothing else is stored:
+-- every cost is worked out on read, and running costs reach products by their price without a
+-- setting (the estimate of monthly material purchases is gone, D-202). Two businesses, each with its
+-- owner. As bizcost_api, like the API: the columns; the CHECKs refuse 0 or less (NULL is "not
 -- set yet", never 0); a business changes only its own row and products; every change is audited; and
 -- the permission keys of the Cost Engine are held only with the keys they need (PERMISSION_NEEDS,
 -- which the migration product_costs_access kept when it added them to the existing roles).
@@ -78,8 +79,8 @@ select '00000000-0000-0000-0000-000000000000', pg_temp.id(u.name), 'authenticate
 
 -- 1. Column types (3) ------------------------------------------------------------------------------
 
-select col_type_is('app', 'businesses', 'estimated_monthly_purchases', 'numeric(20,4)',
-                   'businesses.estimated_monthly_purchases is numeric(20,4): a document amount');
+select hasnt_column('app', 'businesses', 'estimated_monthly_purchases',
+                    'businesses has no estimate of monthly purchases any more (D-202)');
 select col_type_is('app', 'businesses', 'owner_hourly_rate', 'numeric(20,4)',
                    'businesses.owner_hourly_rate is numeric(20,4): a document amount');
 select col_type_is('app', 'products_services', 'owner_minutes', 'numeric(24,6)',
@@ -112,8 +113,8 @@ select is(
   v.what
 )
   from (values
-    ($$ update app.businesses set estimated_monthly_purchases = 0 where id = pg_temp.id('biz A') $$,
-     'an estimate of 0 purchases a month is refused (nothing to divide by)'),
+    ($$ update app.businesses set owner_hourly_rate = 0 where id = pg_temp.id('biz A') $$,
+     'an hourly rate of 0 is refused (not set yet is NULL)'),
     ($$ update app.businesses set owner_hourly_rate = -45 where id = pg_temp.id('biz A') $$,
      'a negative hourly rate is refused'),
     ($$ update app.products_services set owner_minutes = 0 where id = pg_temp.id('cake A') $$,
@@ -123,15 +124,15 @@ select is(
 select is(
   pg_temp.api_exec('user A', 'biz A', $$
     update app.businesses
-       set estimated_monthly_purchases = 2000, owner_hourly_rate = 45.5
+       set owner_hourly_rate = 45.5
      where id = pg_temp.id('biz A') $$),
   'ok 1',
-  'the owner of A sets its estimate (2 000 a month) and hourly rate (45.50)'
+  'the owner of A sets its hourly rate (45.50)'
 );
 
 select is(
   pg_temp.api_exec('user A', 'biz A', $$
-    update app.businesses set estimated_monthly_purchases = null, owner_hourly_rate = null
+    update app.businesses set owner_hourly_rate = null
      where id = pg_temp.id('biz A') and false $$),
   'ok 0',
   'sanity: an update that matches nothing changes nothing'
@@ -141,9 +142,9 @@ select is(
 
 select is(
   pg_temp.api_exec('user B', 'biz B', $$
-    update app.businesses set estimated_monthly_purchases = 1 where id = pg_temp.id('biz A') $$),
+    update app.businesses set owner_hourly_rate = 1 where id = pg_temp.id('biz A') $$),
   'ok 0',
-  'the owner of B cannot change A''s estimate (RLS: no row)'
+  'the owner of B cannot change A''s hourly rate (RLS: no row)'
 );
 
 select is(
@@ -154,9 +155,8 @@ select is(
 );
 
 select is(
-  (select trim_scale(estimated_monthly_purchases)::text || '/' || trim_scale(owner_hourly_rate)::text
-     from app.businesses where id = pg_temp.id('biz A')),
-  '2000/45.5',
+  (select trim_scale(owner_hourly_rate)::text from app.businesses where id = pg_temp.id('biz A')),
+  '45.5',
   'A''s settings are as its owner saved them'
 );
 

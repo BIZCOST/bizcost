@@ -29,6 +29,7 @@ import { Input } from '@/components/ui/input'
 import { NativeSelect } from '@/components/ui/native-select'
 import { ListEmpty, ListSkeleton } from '@/features/catalog/catalog-list'
 import { Money, useBusinessDate, useBusinessMonth } from '@/features/purchasing/amounts'
+import { hasModule } from '@/features/purchasing/data'
 import { can, isSectionVisible, sectionPath } from '@/features/settings/sections'
 import { useBusinessContext } from '@/lib/trpc/client'
 import { cn } from '@/lib/utils'
@@ -53,10 +54,12 @@ import { ExpenseStatusBadge } from './status-badge'
 // Expenses (M2 Step 5; PRODUCT.md §4 rule 13, D-164, D-168): the business's expenses, newest day
 // first, with filters kept in the address (status, category, days, a search in what it was for, the
 // number, the supplier's or the category's name). A row opens the expense: a draft in its editor,
-// anything else as it was recorded. The page says in one line that product costs use the regular
-// running costs while expenses count in real profit (D-116). With approval on, it says so, and an
-// approver is told when expenses wait for them; with approval off, a member who may finalize is told
-// when drafts the team entered wait for them (D-184). Everyone with expenses.documents.view sees the list;
+// anything else as it was recorded. To a member who sees costs, the page says in one line that final
+// expenses count in the business's costs in the month they are for, and, with Running Costs on and
+// seen, that a category's bills take the place of its regular running costs (D-202, D-203). With
+// approval on, it says so, and an approver is told when expenses wait for them; with approval off, a
+// member who may finalize is told when drafts the team entered wait for them (D-184). Everyone with
+// expenses.documents.view sees the list;
 // expenses.documents.manage adds expenses and categories. Totals are supplier prices: a member who
 // may not see them sees a lock (redaction, D-165). In a business with a team, "My expenses" lists
 // the member's own with their amounts and what is owed to them (D-181); it is where a member who may
@@ -484,6 +487,13 @@ function ExpensesList() {
   // "Approval is on" is for those who send expenses, and for who may change it (with "Change"); an
   // approver hears only that expenses wait for them (a phone keeps room for the list).
   const showApprovalOn = approvalRequired && (!mayApprove || mayChangeApproval)
+  // How expenses reach costs (D-202, D-203): only for who sees costs; that bills take the place of
+  // the regular running costs only for who sees those, with Running Costs on.
+  const costsNote = !context.visibleCategories.includes('cost')
+    ? null
+    : hasModule(context, 'running_costs') && can(context, 'running_costs.items.view')
+      ? t('expenses.list.costsNote')
+      : t('expenses.list.costsNoteSimple')
 
   const newButton = canManage ? (
     <Button asChild size="lg" className="shrink-0">
@@ -500,13 +510,15 @@ function ExpensesList() {
         <div className="min-w-0">
           <h1 className="text-2xl font-semibold tracking-tight sm:text-3xl">{title}</h1>
           <p className="mt-1.5 max-w-2xl text-muted-foreground">{t('expenses.list.intro')}</p>
-          <p
-            data-costs-note
-            className="mt-2 flex max-w-2xl items-start gap-2 text-sm text-muted-foreground"
-          >
-            <InfoIcon aria-hidden className="mt-0.5 size-4 shrink-0 text-info" />
-            {t('expenses.list.costsNote')}
-          </p>
+          {costsNote ? (
+            <p
+              data-costs-note
+              className="mt-2 flex max-w-2xl items-start gap-2 text-sm text-muted-foreground"
+            >
+              <InfoIcon aria-hidden className="mt-0.5 size-4 shrink-0 text-info" />
+              {costsNote}
+            </p>
+          ) : null}
         </div>
         <div className="flex shrink-0 flex-wrap gap-2">
           {canManageCategories(context) ? (

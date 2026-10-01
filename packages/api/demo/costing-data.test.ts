@@ -1,16 +1,16 @@
 import { isUuid, STANDARD_UNITS } from '@bizcost/domain'
 import { describe, expect, it } from 'vitest'
 import { demoId } from './costing'
-import type { DemoCosting, DemoMaterial, DemoProduct } from './costing-data'
+import type { DemoCategory, DemoCosting, DemoMaterial, DemoProduct } from './costing-data'
 import { DEMO_PERSONAS } from './personas'
 
 // The demo's Costing Core data (demo/costing-data.ts) holds together before it reaches the API: every
 // reference names a record of the same business, units are the material's, documents follow what
-// they refer to, and purchases go back far enough for the 3-month running-cost rate (D-116) and come
-// up close enough to today that the month in progress is not short of them once it counts.
+// they refer to, and purchases go back further than the 90-day average (D-115) and come up close
+// enough to today that the average has recent prices.
 
-/** Days back of the oldest purchase so that 3 full months have passed after its month, any day. */
-const OLDEST_PURCHASE_DAYS = 124
+/** Days back of the oldest purchase at least: older than the 90 days the average covers (D-115). */
+const OLDEST_PURCHASE_DAYS = 91
 /** Days back of the latest purchase at most (a business buys again in its last week). */
 const LATEST_PURCHASE_DAYS = 7
 
@@ -92,6 +92,23 @@ describe.each(DEMO_PERSONAS.filter((p) => p.costing).map((p) => [p.title, p] as 
       }
       for (const e of data.expenses ?? []) {
         if (e.supplier) expect(suppliers.has(e.supplier), e.supplier).toBe(true)
+      }
+    })
+
+    it('shares a category with a running cost only for that running cost’s bill (D-202, D-203)', () => {
+      // A category's bills take the place of its regular amount: an extra in it would undercount.
+      const sameCategory = (a: DemoCategory, b: DemoCategory) =>
+        typeof a === 'string' ? a === b : typeof b !== 'string' && a.name === b.name
+      for (const e of data.expenses ?? []) {
+        const running = (data.runningCosts ?? []).filter((r) =>
+          sameCategory(r.category, e.category),
+        )
+        if (e.billOf === undefined) expect(running, e.key).toEqual([])
+        else
+          expect(
+            running.map((r) => r.key),
+            e.key,
+          ).toEqual([e.billOf])
       }
     })
 

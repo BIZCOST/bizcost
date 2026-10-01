@@ -5,10 +5,8 @@ import type {
   ProductCostSettingsDto,
   ProductCostsDto,
   ProductDto,
-  PurchaseDto,
-  PurchaseReturnDto,
 } from '@bizcost/contracts'
-import { newId } from '@bizcost/domain'
+import { addMonths, costRatio, daysIn, monthOf, newId, sumDecimals } from '@bizcost/domain'
 import type { SetupAnswers } from '@bizcost/modules'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { addMember, handlerFor } from './helpers'
@@ -16,17 +14,21 @@ import { CostScope, ProductCostsApi, tag } from './product-costs'
 import { codeOf, ok, purchaseInput, type Person } from './purchasing'
 import { BAKER, WORKSHOP } from './settings'
 
-// Product costs (ROADMAP.md M2 Step 6; D-115, D-116, D-119, D-121, D-178), through the API with real
-// purchases, recipes and running costs. The owner's two examples with exact numbers:
-//   - the Spanish Latte in a café with a team: its materials from real purchases (3.002034632035),
-//     running costs of 15 000 a month over the owner's estimate of 30 000 of purchases a month (each
-//     dirham of materials carries 0.50: 1.501017316018), its price and margin before VAT;
+// Product costs (ROADMAP.md M2 Step 6; D-115, D-119, D-121, D-178, D-202), through the API with real
+// purchases, recipes, running costs and expenses. Running costs reach every product and service by its
+// price (D-202, the owner's decision of 2026-09-30): its price before VAT × the month's costs ÷ the
+// month's sales. Sales arrive in Phase 3, so every share is "awaiting sales" (or "no price"), never a
+// reason the cost is incomplete, and the total and margin are before running costs. The owner's
+// examples with exact numbers:
+//   - the Spanish Latte in a café with a team: its materials from real purchases (3.002034632035), its
+//     price and margin before VAT, before running costs;
 //   - the home baker's chocolate cake slice (she works alone): a cake that makes 12 slices (1.075 a
-//     slice), running costs of 550 a month over an estimate of 2 000 (0.295625), 10 minutes of her
-//     time at AED 45 an hour (7.5).
-// Also: the last 3 full months of purchases replacing the estimate (net of returns, reversals left
-// out), each line's states (not set, no materials, no hourly rate, modules off), the settings, the
-// list's sorting, filters and pages, and who sees and may do what.
+//     slice) and 10 minutes of her time at AED 45 an hour (7.5).
+// Also: the business's costs of the last full month, counted once (a category's bills replace its
+// regular amount; running costs for the days they ran; finalized expenses only, in the month they
+// belong to; no purchases), each line's states (no price, awaiting sales, no hourly rate, modules
+// off), the settings (the hourly rate only), the list's sorting, filters and pages, and who sees and
+// may do what (the month's costs only with running costs and expenses, D-202).
 
 /** A coffee shop with a POS and staff, VAT-registered (persona 2): terminology profile `food`. */
 const CAFE: SetupAnswers = {
@@ -58,12 +60,11 @@ function bought(materialId: string, qty: string, unitPrice: string, unit: object
 
 /** A day of the month `offset` months from today's month (YYYY-MM-DD). */
 function dayOfMonth(today: string, offset: number, day = 10): string {
-  const year = Number.parseInt(today.slice(0, 4), 10)
-  const month = Number.parseInt(today.slice(5, 7), 10) - 1 + offset
-  const y = year + Math.floor(month / 12)
-  const m = ((month % 12) + 12) % 12
-  return `${y}-${String(m + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`
+  return `${addMonths(monthOf(today), offset)}-${String(day).padStart(2, '0')}`
 }
+
+/** The last full calendar month (YYYY-MM): the month whose costs are shown (D-202). */
+const lastMonthOf = (today: string) => addMonths(monthOf(today), -1)
 
 describe('the Spanish Latte in a café with a team', () => {
   let cafe: CostScope
@@ -147,77 +148,17 @@ describe('the Spanish Latte in a café with a team', () => {
       { id: newId(), materialId: lid.id, qty: '1', unit: 'piece' },
       { id: newId(), materialId: straw.id, qty: '1', unit: 'piece' },
     ])
-    // Rent 12 000 and electricity 3 000 a month: 15 000 of running costs a month.
-    const categories = await cafe.categories()
-    const rent = categories.find((c) => c.name === 'Rent')!
-    const electricity = categories.find((c) => c.name === 'Electricity')!
-    await cafe.runningCost({
-      id: newId(),
-      name: 'Shop rent',
-      categoryId: rent.id,
-      amount: '12000',
-      startsOn: today,
-    })
-    await cafe.runningCost({
-      id: newId(),
-      name: 'Electricity',
-      categoryId: electricity.id,
-      amount: '3000',
-      startsOn: today,
-    })
   }, 90_000)
 
-  it('without an estimate and 3 full months of purchases, the share is "not set yet", never 0', async () => {
+  it('its materials, and its share of running costs worked out once sales are recorded (D-202)', async () => {
     const cost = await cafe.breakdown(latte.id)
-    expect(cost.rate).toEqual({
-      state: 'not_set',
-      totalsShown: true,
-      monthlyRunningCosts: '15000',
-      purchases: {
-        source: null,
-        monthly: null,
-        from: dayOfMonth(today, -3, 1),
-        to: expect.stringMatching(new RegExp(`^${dayOfMonth(today, -1, 1).slice(0, 8)}`)),
-        average: null,
-        estimate: null,
-        // The first purchase is this month: its 3 full months have passed 4 months from now.
-        countsFrom: dayOfMonth(today, 4, 1),
-        monthsBought: 0,
-        ready: false,
-      },
-      rate: null,
-    })
     expect(cost.cost).toEqual({
       materials: '3.002034632035',
-      runningCosts: { state: 'not_set', share: null },
+      runningCosts: { state: 'awaiting_sales' },
       ownerTime: { state: 'team', minutes: null, amount: null },
       total: '3.002034632035',
-      tooLarge: false,
-      reasons: ['running_costs_not_set'],
-      complete: false,
-    })
-    // The margin on what is known, marked incomplete with the cost.
-    expect(cost.margin).toEqual({ amount: '14.997965367965', percent: '83.322029822028' })
-  })
-
-  it('with the owner’s estimate of 30 000 a month: each dirham of materials carries 0.50', async () => {
-    const settings = await cafe.settings({ estimatedMonthlyPurchases: '30000' })
-    expect(settings.estimatedMonthlyPurchases).toBe('30000')
-    expect(settings.hasTeam).toBe(true)
-    expect(settings.rate).toMatchObject({
-      state: 'ready',
-      monthlyRunningCosts: '15000',
-      purchases: { source: 'estimate', monthly: '30000', estimate: '30000', ready: false },
-      rate: '0.5',
-    })
-    const cost = await cafe.breakdown(latte.id)
-    expect(cost.rate.rate).toBe('0.5')
-    // 3.002034632035 × 15 000 ÷ 30 000 = 1.5010173160175, rounded once to 12 decimals.
-    expect(cost.cost).toEqual({
-      materials: '3.002034632035',
-      runningCosts: { state: 'applied', share: '1.501017316018' },
-      ownerTime: { state: 'team', minutes: null, amount: null },
-      total: '4.503051948053',
+      // Before running costs: never final, and nothing the owner can add for it now.
+      beforeRunningCosts: true,
       tooLarge: false,
       reasons: [],
       complete: true,
@@ -228,8 +169,18 @@ describe('the Spanish Latte in a café with a team', () => {
       vatRate: '0',
       beforeVat: '18',
     })
-    // 18 − 4.503051948053; (1 800 − 450.3051948053) ÷ 18.
-    expect(cost.margin).toEqual({ amount: '13.496948051947', percent: '74.983044733039' })
+    // 18 − 3.002034632035; (1 800 − 300.2034632035) ÷ 18: before running costs.
+    expect(cost.margin).toEqual({ amount: '14.997965367965', percent: '83.322029822028' })
+    // No running cost entered yet: the page asks for them (they are what will be shared); still
+    // awaiting sales, never a reason on the product.
+    expect(cost.monthCosts).toEqual({
+      state: 'awaiting_sales',
+      runningCostsEntered: false,
+      month: lastMonthOf(today),
+      amountsShown: true,
+      total: '0',
+      categories: [],
+    })
   })
 
   it('each material line: quantity, its average per unit, the line’s cost and the last price paid', async () => {
@@ -326,8 +277,8 @@ describe('the Spanish Latte in a café with a team', () => {
       vatRate: '5',
       beforeVat: '17.142857142857',
     })
-    // 17.142857142857 − 4.503051948053; (1 800 − 4.503051948053 × 105) ÷ 18 = 1 327.179545454435 ÷ 18.
-    expect(cost.margin).toEqual({ amount: '12.639805194804', percent: '73.732196969691' })
+    // 17.142857142857 − 3.002034632035; (1 800 − 3.002034632035 × 105) ÷ 18.
+    expect(cost.margin).toEqual({ amount: '14.140822510822', percent: '82.488131313129' })
     latte = await cafe.updateProduct(withVat, { priceIncludesVat: false })
   })
 
@@ -350,14 +301,20 @@ describe('the Spanish Latte in a café with a team', () => {
       cost: cost.cost,
       margin: cost.margin,
     })
-    expect(list.rate).toEqual(cost.rate)
-    expect(list.counts).toMatchObject({ all: 1, incomplete: 0, loss: 0, noTime: 0 })
+    expect(list.monthCosts).toEqual(cost.monthCosts)
+    // Awaiting sales puts nothing under "incomplete" (D-202).
+    expect(list.counts).toEqual({
+      all: 1,
+      incomplete: 0,
+      loss: 0,
+      noTime: 0,
+    })
     expect(list.currency).toBe('AED')
     expect(list.today).toBe(today)
     expect(list.ownerTime).toEqual({ applies: false, hourlyRate: null })
   })
 
-  it('an item bought ready to sell costs its material’s average, with its running-cost share', async () => {
+  it('an item bought ready to sell costs its material’s average, before running costs', async () => {
     const caseId = newId()
     const water = await cafe.product({
       name: `Water ${tag()}`,
@@ -384,14 +341,41 @@ describe('the Spanish Latte in a café with a team', () => {
     ])
     expect(cost.cost).toMatchObject({
       materials: '1',
-      runningCosts: { state: 'applied', share: '0.5' },
-      total: '1.5',
+      runningCosts: { state: 'awaiting_sales' },
+      total: '1',
+      beforeRunningCosts: true,
       complete: true,
     })
-    expect(cost.margin).toEqual({ amount: '1.5', percent: '50' })
+    expect(cost.margin).toEqual({ amount: '2', percent: '66.666666666667' })
   })
 
-  it('the café’s owner has no time line (a team), and minutes are refused while it has one', async () => {
+  it('without a price, its share cannot be worked out by it: "add its price", never "awaiting sales"', async () => {
+    const cookie = await cafe.product({ name: `Cookie ${tag()}` })
+    await cafe.recipe(cookie.id, [{ id: newId(), materialId: ids.beans, qty: '5', unit: 'g' }])
+    const cost = await cafe.breakdown(cookie.id)
+    expect(cost.cost).toEqual({
+      materials: '0.325',
+      runningCosts: { state: 'no_price' },
+      ownerTime: { state: 'team', minutes: null, amount: null },
+      total: '0.325',
+      beforeRunningCosts: true,
+      tooLarge: false,
+      reasons: ['no_price'],
+      complete: false,
+    })
+    expect(cost.margin).toEqual({ amount: null, percent: null })
+    const list = await cafe.costList({ search: cookie.name, filter: 'incomplete' })
+    expect(list.items.map((i) => i.productId)).toEqual([cookie.id])
+    // With its price: awaiting sales like every other product, and complete.
+    await cafe.updateProduct(cookie, { defaultPrice: '6' })
+    expect((await cafe.breakdown(cookie.id)).cost).toMatchObject({
+      runningCosts: { state: 'awaiting_sales' },
+      reasons: [],
+      complete: true,
+    })
+  })
+
+  it('the café’s owner has no time line (a team), and minutes and the hourly rate are refused while it has one', async () => {
     const result = await cafe.run('product.update', {
       id: latte.id,
       version: latte.version,
@@ -405,6 +389,12 @@ describe('the Spanish Latte in a café with a team', () => {
     expect(codeOf(await cafe.run('productCost.updateSettings', { ownerHourlyRate: '40' }))).toBe(
       'capability_disabled',
     )
+    // Nothing else to set: the settings say it has a team (D-202).
+    expect(ok(await cafe.run<ProductCostSettingsDto>('productCost.settings')).data).toEqual({
+      ownerHourlyRate: null,
+      hasTeam: true,
+      currency: 'AED',
+    })
   })
 })
 
@@ -441,7 +431,7 @@ describe('the home baker’s cake slice: she works alone, her time counts', () =
       ],
       '12',
     )
-    // Electricity 300 and gas 150 a month, a trade licence of 1 200 a year: 550 a month.
+    // Electricity 300 and gas 150 a month, a trade licence of 1 200 a year, since 2 months ago.
     const categories = await baker.categories()
     const byName = (name: string) => categories.find((c) => c.name === name)!.id
     for (const [name, categoryId, amount, frequency] of [
@@ -449,9 +439,15 @@ describe('the home baker’s cake slice: she works alone, her time counts', () =
       ['Gas', byName('Other'), '150', 'monthly'],
       ['Trade licence', byName('Licences'), '1200', 'yearly'],
     ] as const) {
-      await baker.runningCost({ id: newId(), name, categoryId, amount, frequency, startsOn: today })
+      await baker.runningCost({
+        id: newId(),
+        name,
+        categoryId,
+        amount,
+        frequency,
+        startsOn: dayOfMonth(today, -2, 1),
+      })
     }
-    await baker.settings({ estimatedMonthlyPurchases: '2000' })
   }, 90_000)
 
   it('minutes without an hourly rate ask for the rate, never 0', async () => {
@@ -460,9 +456,10 @@ describe('the home baker’s cake slice: she works alone, her time counts', () =
     expect(cost.ownerTime).toEqual({ applies: true, hourlyRate: null })
     expect(cost.cost).toEqual({
       materials: '1.075',
-      runningCosts: { state: 'applied', share: '0.295625' },
+      runningCosts: { state: 'awaiting_sales' },
       ownerTime: { state: 'rate_not_set', minutes: '10', amount: null },
-      total: '1.370625',
+      total: '1.075',
+      beforeRunningCosts: true,
       tooLarge: false,
       reasons: ['hourly_rate_not_set'],
       complete: false,
@@ -473,27 +470,18 @@ describe('the home baker’s cake slice: she works alone, her time counts', () =
     expect(forForm?.ownerMinutes).toBe('10')
   })
 
-  it('10 minutes at AED 45 an hour: 1.075 + 0.295625 + 7.5 = 8.870625, 40.8625 % of 15', async () => {
+  it('10 minutes at AED 45 an hour: 1.075 + 7.5 = 8.575 before running costs, 42.83 % of 15', async () => {
     const settings = await baker.settings({ ownerHourlyRate: '45' })
-    expect(settings).toMatchObject({
-      estimatedMonthlyPurchases: '2000',
-      ownerHourlyRate: '45',
-      hasTeam: false,
-      rate: {
-        state: 'ready',
-        monthlyRunningCosts: '550',
-        purchases: { source: 'estimate', monthly: '2000' },
-        rate: '0.275',
-      },
-    })
+    expect(settings).toEqual({ ownerHourlyRate: '45', hasTeam: false, currency: 'AED' })
     const cost = await baker.breakdown(slice.id)
     expect(cost.materials).toMatchObject({ yieldQty: '12', total: '12.9', perUnit: '1.075' })
     expect(cost.materials?.lines.map((l) => l.cost?.lineCost)).toEqual(['2.5', '1.6', '0.8', '8'])
     expect(cost.cost).toEqual({
       materials: '1.075',
-      runningCosts: { state: 'applied', share: '0.295625' },
+      runningCosts: { state: 'awaiting_sales' },
       ownerTime: { state: 'applied', minutes: '10', amount: '7.5' },
-      total: '8.870625',
+      total: '8.575',
+      beforeRunningCosts: true,
       tooLarge: false,
       reasons: [],
       complete: true,
@@ -505,11 +493,24 @@ describe('the home baker’s cake slice: she works alone, her time counts', () =
       vatRate: '0',
       beforeVat: '15',
     })
-    expect(cost.margin).toEqual({ amount: '6.129375', percent: '40.8625' })
+    expect(cost.margin).toEqual({ amount: '6.425', percent: '42.833333333333' })
     expect(cost.ownerTime).toEqual({ applies: true, hourlyRate: '45' })
+    // Her costs of last month: 300 + 150 + 100 (1 200 a year), from their regular amounts. Her time
+    // is not in them (D-119, D-202).
+    expect(cost.monthCosts).toMatchObject({
+      state: 'awaiting_sales',
+      runningCostsEntered: true,
+      amountsShown: true,
+      total: '550',
+    })
+    expect(cost.monthCosts.categories?.map((c) => [c.name, c.amount, c.source])).toEqual([
+      ['Electricity', '300', 'regular'],
+      ['Other', '150', 'regular'],
+      ['Licences', '100', 'regular'],
+    ])
   })
 
-  it('a service without materials: her time only, and running costs cannot reach it (a known limit)', async () => {
+  it('a service without materials: her time, and its share of running costs by its price like any product', async () => {
     const lesson = await baker.product({
       name: `Baking lesson ${tag()}`,
       type: 'service',
@@ -521,14 +522,18 @@ describe('the home baker’s cake slice: she works alone, her time counts', () =
     expect(cost.materials?.lines).toEqual([])
     expect(cost.cost).toEqual({
       materials: null,
-      runningCosts: { state: 'no_materials', share: null },
+      runningCosts: { state: 'awaiting_sales' },
       ownerTime: { state: 'applied', minutes: '60', amount: '45' },
       total: '45',
+      beforeRunningCosts: true,
       tooLarge: false,
-      reasons: ['no_recipe', 'running_costs_need_materials'],
-      complete: false,
+      // Its materials are optional (D-186): a hint, its cost complete (D-203).
+      reasons: ['no_recipe'],
+      complete: true,
     })
     expect(cost.margin).toEqual({ amount: '55', percent: '55' })
+    const list = await baker.costList({ search: lesson.name })
+    expect(list.counts).toMatchObject({ incomplete: 0 })
   })
 
   it('minutes are cleared with null, kept when left out, and refused at 0', async () => {
@@ -546,24 +551,27 @@ describe('the home baker’s cake slice: she works alone, her time counts', () =
     })
   })
 
-  it('Arabic-Indic digits are read; more decimals than the currency has are refused', async () => {
+  it('the hourly rate: Arabic-Indic digits read; more decimals than the currency, 0 or less, or nothing are refused', async () => {
     expect((await baker.settings({ ownerHourlyRate: '٤٥٫٥٠' })).ownerHourlyRate).toBe('45.5')
-    expect(
-      codeOf(await baker.run('productCost.updateSettings', { ownerHourlyRate: '45.555' })),
-    ).toBe('validation')
-    for (const value of ['0', '-1', '1e3', 45]) {
+    for (const value of ['45.555', '0', '-1', '1e3', 45]) {
       expect(
-        codeOf(await baker.run('productCost.updateSettings', { estimatedMonthlyPurchases: value })),
+        codeOf(await baker.run('productCost.updateSettings', { ownerHourlyRate: value })),
         String(value),
       ).toBe('validation')
     }
+    // Nothing to save, and the estimate of monthly purchases is no setting any more (D-202).
     expect(codeOf(await baker.run('productCost.updateSettings', {}))).toBe('validation')
+    expect(
+      codeOf(await baker.run('productCost.updateSettings', { estimatedMonthlyPurchases: '2000' })),
+    ).toBe('validation')
+    // Null clears it.
+    expect((await baker.settings({ ownerHourlyRate: null })).ownerHourlyRate).toBeNull()
     await baker.settings({ ownerHourlyRate: '45' })
   })
 
   it('every change of the settings is audited, by whom and in which request', async () => {
     const result = await baker.run<ProductCostSettingsDto>('productCost.updateSettings', {
-      estimatedMonthlyPurchases: '2100',
+      ownerHourlyRate: '46',
     })
     ok(result)
     const rows = await api.admin<{ entity: string; action: string; actor_user_id: string }[]>`
@@ -572,166 +580,240 @@ describe('the home baker’s cake slice: she works alone, her time counts', () =
     expect(rows).toEqual([
       { entity: 'businesses', action: 'update', actor_user_id: baker.owner.user.id },
     ])
-    await baker.settings({ estimatedMonthlyPurchases: '2000' })
+    await baker.settings({ ownerHourlyRate: '45' })
   })
 })
 
-describe('monthly purchases: the last 3 full months once they count, else the estimate', () => {
-  it('3 full months after the first purchase’s month: their average, net of returns, reversals left out', async () => {
-    const shop = await CostScope.open(api, WORKSHOP)
-    const today = await shop.today()
-    const wood = await shop.newMaterial({ name: `Wood ${tag()}`, unit: 'kg' })
-    const buy = (offset: number, qty: string, price: string, day = 10) =>
-      shop.buy(
-        purchaseInput(dayOfMonth(today, offset, day), [
-          bought(wood.id, qty, price, { unit: 'kg' }),
-        ]),
-      )
-    // The first purchase, 4 months ago: not counted (its month is before the 3 months).
-    await buy(-4, '10', '100')
-    await buy(-3, '20', '100')
-    const second: PurchaseDto = await buy(-2, '30', '100')
-    await buy(-1, '40', '100')
-    // Reversed: left out.
-    const wrong = await buy(-1, '9.99', '100', 20)
-    await shop.reverse(wrong.id)
-    // This month's: not a full month yet.
-    await buy(0, '50', '100', 1)
-    // 3 kg of the second one sent back today: 300 less for its month.
-    const draft = ok(
-      await shop.run<{ data: PurchaseReturnDto }>('purchaseReturn.create', {
-        id: newId(),
-        purchaseId: second.id,
-        kind: 'return',
-        businessDate: today,
-        lines: [{ id: newId(), purchaseLineId: second.lines[0]?.id, qty: '3' }],
-      }),
-    ).data
-    await shop.postReturn(draft)
-    // A running cost to share, and an estimate the purchases now replace.
-    const [category] = await shop.categories()
+describe('the month’s costs: every running cost and expense counted once (D-202)', () => {
+  let shop: CostScope
+  let today: string
+  let lastMonth: string
+  let stool: ProductDto
+  const CATEGORY_NAMES = ['Rent', 'Electricity', 'Marketing', 'Maintenance', 'Internet'] as const
+  const cat = {} as Record<(typeof CATEGORY_NAMES)[number], string>
+
+  /** Rent of 5 000 up to the 15th of last month, then 6 000: one division over its days. */
+  const rentOf = (month: string) => {
+    const days = daysIn(month)
+    return costRatio([String(5000 * 15 + 6000 * (days - 15))], [String(days)])!
+  }
+
+  beforeAll(async () => {
+    shop = await CostScope.open(api, WORKSHOP)
+    today = await shop.today()
+    lastMonth = lastMonthOf(today)
+    const categories = await shop.categories()
+    for (const name of CATEGORY_NAMES) {
+      cat[name] = categories.find((c) => c.name === name)!.id
+    }
+    const since = dayOfMonth(today, -3, 1)
+    // The rent changed on the 16th of last month: counted once, for the days each ran.
     await shop.runningCost({
       id: newId(),
       name: 'Workshop rent',
-      categoryId: category!.id,
-      amount: '5800',
-      startsOn: today,
+      categoryId: cat.Rent,
+      amount: '5000',
+      startsOn: since,
+      endsOn: `${lastMonth}-16`,
     })
-    const settings = await shop.settings({ estimatedMonthlyPurchases: '10000' })
-    // (2 000 + 2 700 + 4 000) ÷ 3 = 2 900 a month; 5 800 ÷ 2 900 = 2.
-    expect(settings.rate).toEqual({
-      state: 'ready',
-      totalsShown: true,
-      monthlyRunningCosts: '5800',
-      purchases: {
-        source: 'last_3_months',
-        monthly: '2900',
-        from: dayOfMonth(today, -3, 1),
-        to: expect.stringMatching(new RegExp(`^${dayOfMonth(today, -1, 1).slice(0, 8)}`)),
-        average: '2900',
-        estimate: '10000',
-        countsFrom: dayOfMonth(today, 0, 1),
-        monthsBought: 3,
-        ready: true,
-      },
-      rate: '2',
-    })
-  })
-
-  it('a month of the 3 without a purchase keeps the estimate (D-186): old invoices typed in on day one', async () => {
-    const shop = await CostScope.open(api, WORKSHOP)
-    const today = await shop.today()
-    const wood = await shop.newMaterial({ name: `Wood ${tag()}`, unit: 'kg' })
-    const buy = (offset: number, qty: string) =>
-      shop.buy(
-        purchaseInput(offset === 0 ? today : dayOfMonth(today, offset), [
-          bought(wood.id, qty, '30', { unit: 'kg' }),
-        ]),
-      )
-    // Two old invoices (4 and 2 months ago), then this month's real buying.
-    await buy(-4, '1')
-    await buy(-2, '1')
-    await buy(0, '1000')
-    const [category] = await shop.categories()
     await shop.runningCost({
       id: newId(),
       name: 'Workshop rent',
-      categoryId: category!.id,
-      amount: '15000',
-      startsOn: today,
+      categoryId: cat.Rent,
+      amount: '6000',
+      startsOn: `${lastMonth}-16`,
     })
-    const early = await shop.settings({ estimatedMonthlyPurchases: '30000' })
-    expect(early.rate.purchases).toMatchObject({
-      source: 'estimate',
-      monthly: '30000',
-      average: null,
-      countsFrom: dayOfMonth(today, 0, 1),
-      monthsBought: 1,
-      ready: false,
+    await shop.runningCost({
+      id: newId(),
+      name: 'Electricity',
+      categoryId: cat.Electricity,
+      amount: '900',
+      startsOn: since,
     })
-    expect(early.rate.rate).toBe('0.5')
-    // The two months without a purchase get one: the 3 months count, and their average replaces it.
-    await buy(-3, '1')
-    await buy(-1, '1')
-    const counted = await shop.settings({ estimatedMonthlyPurchases: '30000' })
-    // 90 ÷ 3 = 30 a month.
-    expect(counted.rate.purchases).toMatchObject({
-      source: 'last_3_months',
-      monthly: '30',
-      monthsBought: 3,
-      ready: true,
-    })
-    expect(counted.rate.rate).toBe('500')
-  })
-
-  it('until then the estimate, and the day the purchases will count', async () => {
-    const shop = await CostScope.open(api, WORKSHOP)
-    const today = await shop.today()
-    const wood = await shop.newMaterial({ name: `Wood ${tag()}`, unit: 'kg' })
-    await shop.buy(
-      purchaseInput(dayOfMonth(today, -3, 28), [bought(wood.id, '10', '100', { unit: 'kg' })]),
+    // Last month's electricity bill, billed today: it replaces the regular 900 (never both).
+    const post = async (categoryId: string, amount: string, periodMonth: string) =>
+      shop.postExpense(
+        await shop.expenseDraft(shop.expenseInput(categoryId, today, { amount, periodMonth })),
+      )
+    await post(cat.Electricity, '950', lastMonth)
+    // An ad for last month, without a running cost in its category: it counts as itself.
+    await post(cat.Marketing, '480', lastMonth)
+    // A repair finalized and reversed in last month: as if never posted.
+    const repair = await post(cat.Maintenance, '777', lastMonth)
+    ok(await shop.run('expense.reverse', { id: repair.id }))
+    // Not counted: a draft for last month, this month's bill, and what was bought (materials are
+    // each product's own line).
+    await shop.expenseDraft(
+      shop.expenseInput(cat.Internet, today, { amount: '333', periodMonth: lastMonth }),
     )
-    const settings = await shop.settings({ estimatedMonthlyPurchases: '4000' })
-    expect(settings.rate.purchases).toMatchObject({
-      source: 'estimate',
-      monthly: '4000',
-      average: null,
-      countsFrom: dayOfMonth(today, 1, 1),
-      monthsBought: 1,
-      ready: false,
+    await post(cat.Internet, '222', monthOf(today))
+    const steel = await shop.newMaterial({ name: `Steel ${tag()}`, unit: 'kg' })
+    await shop.buy(
+      purchaseInput(dayOfMonth(today, -1, 5), [bought(steel.id, '100', '9.5', { unit: 'kg' })]),
+    )
+    stool = await shop.product({ name: `Stool ${tag()}`, defaultPrice: '99' })
+    await shop.recipe(stool.id, [{ id: newId(), materialId: steel.id, qty: '2', unit: 'kg' }])
+  }, 90_000)
+
+  it('per category, its bills or its regular amount; the largest first', async () => {
+    const rent = rentOf(lastMonth)
+    const cost = await shop.breakdown(stool.id)
+    expect(cost.monthCosts).toEqual({
+      state: 'awaiting_sales',
+      runningCostsEntered: true,
+      month: lastMonth,
+      amountsShown: true,
+      // Rent + 950 + 480: never 900 + 950 for electricity, and no purchase.
+      total: sumDecimals([rent, '950', '480']),
+      categories: [
+        {
+          categoryId: cat.Rent,
+          name: 'Rent',
+          source: 'regular',
+          amount: rent,
+          regular: rent,
+          period: null,
+          takenBack: null,
+        },
+        {
+          categoryId: cat.Electricity,
+          name: 'Electricity',
+          source: 'bills',
+          amount: '950',
+          regular: '900',
+          period: null,
+          takenBack: null,
+        },
+        {
+          categoryId: cat.Marketing,
+          name: 'Marketing',
+          source: 'bills',
+          amount: '480',
+          regular: null,
+          period: null,
+          takenBack: null,
+        },
+      ],
     })
-    // No running cost entered yet: "not entered yet", never 0 (D-186).
-    expect(settings.rate).toMatchObject({
-      state: 'not_entered',
-      monthlyRunningCosts: '0',
-      rate: null,
-    })
-    const stool = await shop.product({ name: `Stool ${tag()}`, defaultPrice: '99' })
-    await shop.recipe(stool.id, [{ id: newId(), materialId: wood.id, qty: '1', unit: 'kg' }])
-    expect((await shop.breakdown(stool.id)).cost).toMatchObject({
-      materials: '100',
-      runningCosts: { state: 'not_entered', share: null },
-      total: '100',
-      reasons: ['running_costs_not_entered'],
-      complete: false,
-    })
-    // One that ended: entered, none paid now: nothing to share, 0 and complete.
-    const [category] = await shop.categories()
-    await shop.runningCost({
-      id: newId(),
-      name: 'Old rent',
-      categoryId: category!.id,
-      amount: '1000',
-      startsOn: dayOfMonth(today, -2, 1),
-      endsOn: dayOfMonth(today, -1, 1),
-    })
-    const ended = await shop.breakdown(stool.id)
-    expect(ended.rate).toMatchObject({ state: 'none', monthlyRunningCosts: '0', rate: '0' })
-    expect(ended.cost).toMatchObject({
-      runningCosts: { state: 'none', share: '0' },
-      total: '100',
+    // The product's share still waits for sales: its total is its materials.
+    expect(cost.cost).toMatchObject({
+      materials: '19',
+      runningCosts: { state: 'awaiting_sales' },
+      total: '19',
+      beforeRunningCosts: true,
       complete: true,
     })
+    expect((await shop.costList({ search: stool.name })).monthCosts).toEqual(cost.monthCosts)
+  })
+
+  it('each module counts what it holds: Expenses off, Running Costs off, both off', async () => {
+    const customize = (id: string, enabled: boolean) =>
+      shop.run('business.customize', { item: { kind: 'module', id }, enabled })
+    const rent = rentOf(lastMonth)
+    ok(await customize('expenses', false))
+    const noBills = (await shop.breakdown(stool.id)).monthCosts
+    // Without its bills, electricity is its regular amount again.
+    expect(noBills.categories?.map((c) => [c.name, c.source, c.amount])).toEqual([
+      ['Rent', 'regular', rent],
+      ['Electricity', 'regular', '900'],
+    ])
+    ok(await customize('expenses', true))
+    ok(await customize('running_costs', false))
+    const billsOnly = (await shop.breakdown(stool.id)).monthCosts
+    expect(billsOnly).toMatchObject({ state: 'awaiting_sales', total: '1430' })
+    expect(billsOnly.categories?.map((c) => [c.name, c.source, c.amount, c.regular])).toEqual([
+      ['Electricity', 'bills', '950', null],
+      ['Marketing', 'bills', '480', null],
+    ])
+    ok(await customize('expenses', false))
+    const off = await shop.breakdown(stool.id)
+    expect(off.monthCosts).toEqual({
+      state: 'off',
+      runningCostsEntered: true,
+      month: lastMonth,
+      amountsShown: true,
+      total: null,
+      categories: null,
+    })
+    // Nothing to share: the total is final.
+    expect(off.cost).toMatchObject({
+      runningCosts: { state: 'off' },
+      total: '19',
+      beforeRunningCosts: false,
+      complete: true,
+    })
+    ok(await customize('expenses', true))
+    ok(await customize('running_costs', true))
+  })
+
+  it('a yearly running cost and its one bill count once: the bill pays for every month of its year (D-203)', async () => {
+    // A trade licence of 1 200 a year from 3 months before last month; its renewal bill is for the
+    // month after it started. Last month counts 1 200 ÷ 12 = 100 of it, from the bill (never 100
+    // beside the bill), and the month the bill is for counts the same.
+    const other = await CostScope.open(api, WORKSHOP)
+    const licences = (await other.categories()).find((c) => c.name === 'Licences')!.id
+    const first = addMonths(lastMonth, -3)
+    await other.runningCost({
+      id: newId(),
+      name: 'Trade licence',
+      categoryId: licences,
+      amount: '1200',
+      frequency: 'yearly',
+      startsOn: `${first}-01`,
+    })
+    await other.postExpense(
+      await other.expenseDraft(
+        other.expenseInput(licences, today, {
+          amount: '1200',
+          periodMonth: addMonths(first, 1),
+        }),
+      ),
+    )
+    const product = await other.product({ name: `Licence shelf ${tag()}`, defaultPrice: '10' })
+    const { monthCosts } = await other.breakdown(product.id)
+    expect(monthCosts).toMatchObject({ month: lastMonth, total: '100' })
+    expect(monthCosts.categories).toEqual([
+      {
+        categoryId: licences,
+        name: 'Licences',
+        source: 'bills',
+        amount: '100',
+        regular: '100',
+        period: { from: first, to: addMonths(first, 11), months: 12, bills: '1200' },
+        takenBack: null,
+      },
+    ])
+  })
+
+  it('a reversal counts where its month’s books leave it: in the first open month (D-200)', async () => {
+    // A bill for the month before last, finalized, then the books closed through that month's end:
+    // its reversal counts back in last month.
+    const other = await CostScope.open(api, WORKSHOP)
+    const [internet] = (await other.categories()).filter((c) => c.name === 'Internet')
+    const before = addMonths(lastMonth, -1)
+    const bill = await other.postExpense(
+      await other.expenseDraft(
+        other.expenseInput(internet!.id, `${lastMonth}-01`, { amount: '300', periodMonth: before }),
+      ),
+    )
+    ok(await other.run('books.close', { closedThrough: `${lastMonth}-01` }))
+    // Closed through the 1st: the month before last is closed, last month open.
+    ok(await other.run('expense.reverse', { id: bill.id }))
+    const product = await other.product({ name: `Shelf ${tag()}`, defaultPrice: '10' })
+    const { monthCosts } = await other.breakdown(product.id)
+    expect(monthCosts).toMatchObject({ month: lastMonth, total: '-300' })
+    // Taken back on its own: it replaces nothing in last month (D-203).
+    expect(monthCosts.categories).toEqual([
+      {
+        categoryId: internet!.id,
+        name: 'Internet',
+        source: 'taken_back',
+        amount: '-300',
+        regular: null,
+        period: null,
+        takenBack: '300',
+      },
+    ])
   })
 })
 
@@ -746,20 +828,10 @@ describe('the Product costs list: sorted, filtered and in pages', () => {
     const steel = await shop.newMaterial({ name: `Steel ${tag()}`, unit: 'kg' })
     const paint = await shop.newMaterial({ name: `Paint ${tag()}`, unit: 'l' })
     await shop.buy(purchaseInput(today, [bought(steel.id, '100', '10', { unit: 'kg' })]))
-    // Running costs entered, none paid now: every share is 0.
-    const [category] = await shop.categories()
-    await shop.runningCost({
-      id: newId(),
-      name: 'Old rent',
-      categoryId: category!.id,
-      amount: '1000',
-      startsOn: dayOfMonth(today, -2, 1),
-      endsOn: dayOfMonth(today, -1, 1),
-    })
     // A: 2 kg of steel = 20, sold at 50 (margin 30, 60 %); B: 1 kg = 10, sold at 12 (2, 16.67 %);
     // C: 5 kg = 50, sold at 40 (a loss of 10); D: paint never bought (incomplete), sold at 9; E: no
     // recipe and no price; F: 1 kg of steel and paint never bought, sold at 100: incomplete, with a
-    // margin of at most 90 (90 %).
+    // margin of at most 90 (90 %). Every share awaits sales, which changes no order.
     const add = async (key: string, price: string | null, lines: object[]) => {
       made[key] = await shop.product({ name: `${prefix} ${key}`, defaultPrice: price })
       if (lines.length > 0) await shop.recipe(made[key].id, lines)
@@ -798,7 +870,7 @@ describe('the Product costs list: sorted, filtered and in pages', () => {
     })
     const c = (await shop.costList({ search: `${prefix} C` })).items[0]
     expect(c?.margin).toEqual({ amount: '-10', percent: '-25' })
-    expect(c?.cost.total).toBe('50')
+    expect(c?.cost).toMatchObject({ total: '50', beforeRunningCosts: true, complete: true })
   })
 
   it('filters: incomplete, at a loss; how many of each, whatever the filter', async () => {
@@ -809,7 +881,6 @@ describe('the Product costs list: sorted, filtered and in pages', () => {
       incomplete: 3,
       loss: 1,
       noTime: 0,
-      servicesAwaitingShare: 0,
     })
     const loss = await shop.costList({ search: prefix, filter: 'loss' })
     expect(names(loss)).toEqual(['C'])
@@ -825,7 +896,12 @@ describe('the Product costs list: sorted, filtered and in pages', () => {
     expect(e).toMatchObject({
       lineCount: 0,
       price: { defaultPrice: null, beforeVat: null },
-      cost: { total: null, reasons: ['no_recipe'], complete: false },
+      cost: {
+        runningCosts: { state: 'no_price' },
+        total: null,
+        reasons: ['no_recipe', 'no_price'],
+        complete: false,
+      },
       margin: { amount: null, percent: null },
     })
   })
@@ -870,42 +946,42 @@ describe('the Product costs list: sorted, filtered and in pages', () => {
 })
 
 describe('modules off: no line for them, and nothing counted as 0', () => {
-  it('Running Costs off: no share; Materials off: no materials, and no recipe asked for', async () => {
+  it('Running Costs and Expenses off: no share; Materials off: no materials, and no recipe asked for', async () => {
     const shop = await CostScope.open(api, BAKER)
     const today = await shop.today()
     const flour = await shop.newMaterial({ name: `Flour ${tag()}`, unit: 'kg' })
     await shop.buy(purchaseInput(today, [bought(flour.id, '1', '6', { unit: 'kg' })]))
     const bread = await shop.product({ name: `Bread ${tag()}`, defaultPrice: '10' })
     await shop.recipe(bread.id, [{ id: newId(), materialId: flour.id, qty: '500', unit: 'g' }])
-    const [category] = await shop.categories()
-    await shop.runningCost({
-      id: newId(),
-      name: 'Oven gas',
-      categoryId: category!.id,
-      amount: '100',
-      startsOn: today,
-    })
     const customize = (id: string, enabled: boolean) =>
       shop.run('business.customize', { item: { kind: 'module', id }, enabled })
     ok(await customize('running_costs', false))
+    // Expenses alone still hold costs to share.
+    expect((await shop.breakdown(bread.id)).cost.runningCosts).toEqual({ state: 'awaiting_sales' })
+    ok(await customize('expenses', false))
     const off = await shop.breakdown(bread.id)
-    expect(off.rate).toMatchObject({ state: 'off', monthlyRunningCosts: null, rate: null })
+    expect(off.monthCosts).toMatchObject({ state: 'off', total: null, categories: null })
     expect(off.cost).toMatchObject({
       materials: '3',
-      runningCosts: { state: 'off', share: null },
+      runningCosts: { state: 'off' },
       total: '3',
+      beforeRunningCosts: false,
       complete: true,
     })
     ok(await customize('running_costs', true))
+    ok(await customize('expenses', true))
     ok(await customize('materials', false))
     const noMaterials = await shop.breakdown(bread.id)
     expect(noMaterials.materials).toBeNull()
+    // Its share awaiting sales is the line that will count: nothing missing, nothing counted yet
+    // (D-203).
     expect(noMaterials.cost).toMatchObject({
       materials: null,
-      runningCosts: { state: 'no_materials', share: null },
+      runningCosts: { state: 'awaiting_sales' },
       total: null,
-      reasons: ['running_costs_need_materials'],
-      complete: false,
+      beforeRunningCosts: true,
+      reasons: [],
+      complete: true,
     })
     expect(noMaterials.margin).toEqual({ amount: null, percent: null })
     ok(await customize('materials', true))
@@ -921,17 +997,13 @@ describe('modules off: no line for them, and nothing counted as 0', () => {
 function ownerValues(data: ProductCostBreakdownDto['data']): string[] {
   const values = [
     data.cost.materials,
-    data.cost.runningCosts.share,
     data.cost.ownerTime.minutes,
     data.cost.ownerTime.amount,
     data.cost.total,
     data.margin.amount,
     data.margin.percent,
-    data.rate.monthlyRunningCosts,
-    data.rate.purchases.monthly,
-    data.rate.purchases.average,
-    data.rate.purchases.estimate,
-    data.rate.rate,
+    data.monthCosts.total,
+    ...(data.monthCosts.categories ?? []).flatMap((c) => [c.amount, c.regular]),
     data.ownerTime.hourlyRate,
     data.materials?.total,
     data.materials?.perUnit,
@@ -948,36 +1020,32 @@ function ownerValues(data: ProductCostBreakdownDto['data']): string[] {
 
 /** What a member who sees no costs, margins or supplier prices gets withheld (a hand-written oracle). */
 const COST_PATHS = [
+  'beforeRunningCosts',
   'complete',
   'materials',
   'ownerTime.amount',
   'ownerTime.minutes',
   'ownerTime.state',
   'reasons',
-  'runningCosts.share',
   'runningCosts.state',
   'tooLarge',
   'total',
 ]
-const RATE_PATHS = [
+const MONTH_PATHS = [
+  'monthCosts.categories',
+  'monthCosts.runningCostsEntered',
+  'monthCosts.state',
+  'monthCosts.total',
   'ownerTime.hourlyRate',
-  'rate.monthlyRunningCosts',
-  'rate.purchases.average',
-  'rate.purchases.estimate',
-  'rate.purchases.monthly',
-  'rate.purchases.source',
-  'rate.rate',
-  'rate.state',
 ]
 const LIST_HIDDEN = [
   'counts.incomplete',
   'counts.loss',
   'counts.noTime',
-  'counts.servicesAwaitingShare',
   ...COST_PATHS.map((path) => `items.*.cost.${path}`),
   'items.*.margin.amount',
   'items.*.margin.percent',
-  ...RATE_PATHS,
+  ...MONTH_PATHS,
 ].sort()
 const BREAKDOWN_HIDDEN = [
   ...COST_PATHS.map((path) => `cost.${path}`),
@@ -988,7 +1056,7 @@ const BREAKDOWN_HIDDEN = [
   'materials.lines.*.lastPurchase.pricePerUnit',
   'materials.perUnit',
   'materials.total',
-  ...RATE_PATHS,
+  ...MONTH_PATHS,
 ].sort()
 
 describe('who sees and may do what', () => {
@@ -1007,15 +1075,24 @@ describe('who sees and may do what', () => {
     await shop.buy(purchaseInput(today, [bought(oak.id, '10', '7.77', { unit: 'kg' })]))
     product = await shop.product({ name: `Stool ${tag()}`, defaultPrice: '99' })
     await shop.recipe(product.id, [{ id: newId(), materialId: oak.id, qty: '3', unit: 'kg' }])
-    // Running costs of 15 678 a month over an estimate of 31 234 a month: every line has a value.
-    const [category] = await shop.categories()
+    // Last month's costs: a rent of 15 678 and an ad of 432.19: every line has a value.
+    const categories = await shop.categories()
+    const byName = (name: string) => categories.find((c) => c.name === name)!.id
     await shop.runningCost({
       id: newId(),
       name: 'Workshop rent',
-      categoryId: category!.id,
+      categoryId: byName('Rent'),
       amount: '15678',
-      startsOn: today,
+      startsOn: `${addMonths(monthOf(today), -2)}-01`,
     })
+    await shop.postExpense(
+      await shop.expenseDraft(
+        shop.expenseInput(byName('Marketing'), today, {
+          amount: '432.19',
+          periodMonth: lastMonthOf(today),
+        }),
+      ),
+    )
     employee = await api.member(shop, 'employee')
     accountant = await api.member(shop, 'accountant')
     manager = await api.member(shop, 'manager')
@@ -1033,7 +1110,7 @@ describe('who sees and may do what', () => {
     })
   }, 90_000)
 
-  it('Owner, Admin, Manager and Accountant see product costs; Sales, Supervisor and Employee do not', async () => {
+  it('Owner, Admin, Manager and Accountant see product costs and the month’s costs; Sales, Supervisor and Employee do not', async () => {
     for (const person of [manager, accountant]) {
       const cost = ok(
         await shop.as<ProductCostBreakdownDto>(person, 'productCost.get', {
@@ -1042,6 +1119,7 @@ describe('who sees and may do what', () => {
       )
       // 3 × 7.77 = 23.31.
       expect(cost.data.cost.materials).toBe('23.31')
+      expect(cost.data.monthCosts).toMatchObject({ amountsShown: true, total: '16110.19' })
       expect(cost.meta.redacted).toEqual([])
     }
     for (const template of ['sales', 'supervisor', 'employee'] as const) {
@@ -1050,32 +1128,45 @@ describe('who sees and may do what', () => {
         ['productCost.list', {}],
         ['productCost.get', { productId: product.id }],
         ['productCost.settings', undefined],
-        ['productCost.updateSettings', { estimatedMonthlyPurchases: '1' }],
+        ['productCost.updateSettings', { ownerHourlyRate: '1' }],
       ] as const) {
         const result = await shop.as(person, path, input)
         expect(codeOf(result), `${template} ${path}`).toBe('forbidden')
         expect(result.raw.includes('23.31')).toBe(false)
+        expect(result.raw.includes('16110.19')).toBe(false)
       }
     }
   })
 
-  it('the settings: Manager changes them; Accountant only sees product costs', async () => {
-    ok(await shop.as(manager, 'productCost.updateSettings', { estimatedMonthlyPurchases: '5000' }))
+  it('the settings: Manager reads them (nothing to set with a team); Accountant only sees product costs', async () => {
+    expect(ok(await shop.as<ProductCostSettingsDto>(manager, 'productCost.settings')).data).toEqual(
+      { ownerHourlyRate: null, hasTeam: true, currency: 'AED' },
+    )
+    expect(
+      codeOf(await shop.as(manager, 'productCost.updateSettings', { ownerHourlyRate: '50' })),
+    ).toBe('capability_disabled')
     expect(codeOf(await shop.as(accountant, 'productCost.settings'))).toBe('forbidden')
     expect(
-      codeOf(
-        await shop.as(accountant, 'productCost.updateSettings', { estimatedMonthlyPurchases: '1' }),
-      ),
+      codeOf(await shop.as(accountant, 'productCost.updateSettings', { ownerHourlyRate: '1' })),
     ).toBe('forbidden')
+    // They need no running costs or purchases any more: nothing of theirs is in them (D-202).
+    const person = await api.person()
+    await addMember(api.db, shop.owner.user, shop.id, person.user, {
+      template: 'manager',
+      overrides: [
+        { key: 'purchases.documents.view', effect: 'deny' },
+        { key: 'running_costs.items.view', effect: 'deny' },
+      ],
+    })
+    ok(await shop.as(person, 'productCost.settings'))
   })
 
   it('a member who may see the page but not costs: locks, and no sort or filter on hidden values', async () => {
-    await shop.settings({ estimatedMonthlyPurchases: '31234' })
     // What the owner reads: every value the others must not get.
     const owner = await shop.breakdown(product.id)
     const secrets = ownerValues(owner)
     expect(secrets).toEqual(
-      expect.arrayContaining(['23.31', '11.700524428507', '15678', '31234', '63.989475571493']),
+      expect.arrayContaining(['23.31', '75.69', '15678', '432.19', '16110.19']),
     )
     for (const person of [pageOnly, noCosts]) {
       const list = ok(
@@ -1088,8 +1179,8 @@ describe('who sees and may do what', () => {
       expect(row?.cost.total).toBeUndefined()
       expect(row?.margin.amount).toBeUndefined()
       expect(list.data.counts).toEqual({ all: 1 })
-      // Without running costs and purchases, their totals are withheld too (D-186).
-      expect(list.data.rate.totalsShown).toBe(person !== pageOnly)
+      // Without costs, the month's costs are withheld too (D-202).
+      expect(list.data.monthCosts).toEqual({ month: lastMonthOf(owner.today), amountsShown: false })
       for (const value of secrets) {
         expect(JSON.stringify(list.data).includes(`"${value}"`), value).toBe(false)
       }
@@ -1121,10 +1212,9 @@ describe('who sees and may do what', () => {
     }
   })
 
-  it('costs without running costs or purchases: the rate alone, never their monthly totals (D-186)', async () => {
-    await shop.settings({ estimatedMonthlyPurchases: '31234' })
-    // An Accountant whose own override takes running costs away, and one without purchases.
-    for (const key of ['running_costs.items.view', 'purchases.documents.view'] as const) {
+  it('costs without running costs or expenses: the product’s cost, never the month’s amounts (D-202)', async () => {
+    // An Accountant whose own override takes running costs away, and one without expenses.
+    for (const key of ['running_costs.items.view', 'expenses.documents.view'] as const) {
       const person = await api.person()
       await addMember(api.db, shop.owner.user, shop.id, person.user, {
         template: 'accountant',
@@ -1136,36 +1226,25 @@ describe('who sees and may do what', () => {
         }),
       )
       expect(one.meta.redacted).toEqual([])
-      // Its own cost, share and rate: 23.31 × 15 678 ÷ 31 234.
-      expect(one.data.cost.runningCosts.share).toBe('11.700524428507')
-      expect(one.data.rate).toMatchObject({
-        state: 'ready',
-        totalsShown: false,
-        monthlyRunningCosts: null,
-        purchases: { source: 'estimate', monthly: null, average: null, estimate: null },
-        rate: '0.501952999936',
+      // Its own cost and margin.
+      expect(one.data.cost).toMatchObject({ materials: '23.31', total: '23.31' })
+      expect(one.data.monthCosts).toEqual({
+        state: 'awaiting_sales',
+        runningCostsEntered: true,
+        month: lastMonthOf(one.data.today),
+        amountsShown: false,
+        total: null,
+        categories: null,
       })
       const list = ok(
         await shop.as<ProductCostListDto>(person, 'productCost.list', { search: product.name }),
       )
-      expect(list.data.rate).toEqual(one.data.rate)
-      for (const value of ['15678', '31234']) {
+      expect(list.data.monthCosts).toEqual(one.data.monthCosts)
+      for (const value of ['15678', '432.19', '16110.19', 'Marketing']) {
         expect(JSON.stringify(list).includes(value), `${key} ${value}`).toBe(false)
         expect(JSON.stringify(one).includes(value), `${key} ${value}`).toBe(false)
       }
     }
-    // The settings need them: the estimate and the rate it gives reveal the running costs.
-    const manager = await api.person()
-    await addMember(api.db, shop.owner.user, shop.id, manager.user, {
-      template: 'manager',
-      overrides: [{ key: 'purchases.documents.view', effect: 'deny' }],
-    })
-    expect(codeOf(await shop.as(manager, 'productCost.settings'))).toBe('forbidden')
-    expect(
-      codeOf(
-        await shop.as(manager, 'productCost.updateSettings', { estimatedMonthlyPurchases: '1' }),
-      ),
-    ).toBe('forbidden')
   })
 
   it('a business without a team: the page-only member gets none of the owner’s time either', async () => {
@@ -1179,9 +1258,9 @@ describe('who sees and may do what', () => {
       name: 'Gas',
       categoryId: category!.id,
       amount: '432.1',
-      startsOn: today,
+      startsOn: `${addMonths(monthOf(today), -2)}-01`,
     })
-    await solo.settings({ estimatedMonthlyPurchases: '2345.67', ownerHourlyRate: '43.21' })
+    await solo.settings({ ownerHourlyRate: '43.21' })
     const bread = await solo.product({
       name: `Bread ${tag()}`,
       defaultPrice: '19.99',
@@ -1197,7 +1276,7 @@ describe('who sees and may do what', () => {
     })
     expect(owner.ownerTime).toEqual({ applies: true, hourlyRate: '43.21' })
     const secrets = ownerValues(owner)
-    expect(secrets).toEqual(expect.arrayContaining(['17.25', '12.422875', '43.21', '2345.67']))
+    expect(secrets).toEqual(expect.arrayContaining(['17.25', '12.422875', '43.21', '432.1']))
     const person = await api.person()
     await addMember(api.db, solo.owner.user, solo.id, person.user, {
       template: 'employee',
@@ -1219,14 +1298,10 @@ describe('who sees and may do what', () => {
     expect(one.data.cost.ownerTime).toEqual({})
   })
 
-  it('writing what one cannot see is FORBIDDEN: the settings, a product’s minutes', async () => {
-    // As the Manager left it.
-    await shop.as(manager, 'productCost.updateSettings', { estimatedMonthlyPurchases: '5000' })
-    // The Manager with costs hidden holds cost_engine.settings.manage.
+  it('writing what one cannot see is FORBIDDEN: the hourly rate, a product’s minutes', async () => {
+    // The Manager with costs hidden holds cost_engine.settings.manage: refused before the team is.
     expect(
-      codeOf(
-        await shop.as(noCosts, 'productCost.updateSettings', { estimatedMonthlyPurchases: '1' }),
-      ),
+      codeOf(await shop.as(noCosts, 'productCost.updateSettings', { ownerHourlyRate: '1' })),
     ).toBe('forbidden')
     expect(
       codeOf(
@@ -1241,10 +1316,9 @@ describe('who sees and may do what', () => {
         }),
       ),
     ).toBe('forbidden')
-    const [row] = await api.admin<{ estimated_monthly_purchases: string }[]>`
-      select trim_scale(estimated_monthly_purchases)::text as estimated_monthly_purchases
-        from app.businesses where id = ${shop.id}`
-    expect(row?.estimated_monthly_purchases).toBe('5000')
+    const [row] = await api.admin<{ owner_hourly_rate: string | null }[]>`
+      select owner_hourly_rate::text from app.businesses where id = ${shop.id}`
+    expect(row?.owner_hourly_rate).toBeNull()
   })
 
   it('another business’s product is NOT_FOUND', async () => {

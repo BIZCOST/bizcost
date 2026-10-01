@@ -30,8 +30,8 @@ import { isoOf } from './stock'
 // Running costs (ROADMAP.md M2 Step 5; D-116, D-169): "What do you pay to run your business?" A
 // regular amount per period (weekly, monthly, quarterly or yearly) in a category shared with
 // expenses, from a day and until a day (or still paid). Its monthly amount is worked out on read
-// (monthlyAmount in @bizcost/domain: never rounded to the currency, D-107); Step 6 shares the monthly
-// total of the running costs active on a day over product costs. Never posted and never part of
+// (monthlyAmount in @bizcost/domain: never rounded to the currency, D-107); product costs count them
+// in each month's costs, for the days they ran (costPool, D-202). Never posted and never part of
 // stock. Module `running_costs`: running_costs.items.view to read, .manage to add, change or remove
 // one (the router checks them). Amounts are `cost` (D-165). A running cost entered by mistake is
 // removed (soft-deleted, audited); one that stopped gets its last day.

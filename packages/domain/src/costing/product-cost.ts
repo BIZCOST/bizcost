@@ -1,21 +1,25 @@
 import type { ProductType, VatCategory } from '../catalog/keys'
 import { exactProduct, plain, roundHalfUp, toDec } from '../numbers/decimal'
 import { checkDecimal, COST_SCALE, type CostAmount, type Percent } from '../numbers/kinds'
+import { costRate, costShare, type RunningCostsPart } from './cost-share'
 
-// A product's cost for one unit sold, and its margin (ROADMAP.md M2 Step 6; D-115, D-116, D-119,
-// D-121, D-178). Each part is its own line:
+// A product's cost for one unit sold, and its margin (ROADMAP.md M2 Step 6; D-115, D-119, D-121,
+// D-178, D-202). Each part is its own line:
 //   - materials: what its recipe uses at the materials' averages (rollUpRecipe's perUnit: the total ÷
 //     what the recipe makes), or for an item bought ready to sell its material's average (D-117);
-//   - running costs, as a share of the material cost (D-116, method "a share of the material cost"):
-//     materials × monthly running costs ÷ monthly material purchases, an exact product divided once.
-//     The rate (running costs ÷ purchases) is what "each dirham of materials carries";
+//   - running costs, by its price (D-202, which replaces D-116's share of the material cost): its
+//     price before VAT × the month's costs ÷ the month's sales (cost-share.ts), an exact product
+//     divided once. Sales arrive in Phase 3: until then the share is "awaiting sales" and the total
+//     and margin are before running costs (`beforeRunningCosts`), which is nothing the member can add
+//     (never a reason the cost is incomplete). A product or service without a price cannot carry a
+//     share by its price: that is a reason (`no_price`, "add its price");
 //   - the owner's time, for a business without a team (D-119): minutes × hourly rate ÷ 60.
 // The total is their exact sum. Nothing is rounded to the currency (D-107): each division is
 // rounded once, half away from zero, to 12 decimals, and screens round what they show.
 //
-// Nothing missing is ever 0: a material with no price, running costs with nothing to divide them by,
-// minutes without an hourly rate each leave their part out (null) and say why (`reasons`), so the
-// total is marked incomplete. The margin is worked out on what is known and carries the same flag.
+// Nothing missing is ever 0: a material with no price, a price missing for the share, minutes
+// without an hourly rate each leave their part out (null) and say why (`reasons`), so the total is
+// marked incomplete. The margin is worked out on what is known and carries the same flags.
 //
 // The price the margin is taken from is before VAT: VAT is never revenue (D-114, D-121). A price that
 // includes VAT loses it only when the business is VAT-registered (the product's VAT category gives
@@ -28,9 +32,6 @@ export const STANDARD_VAT_RATE = '5' as Percent
 export function saleVatRate(category: VatCategory): Percent {
   return category === 'standard' ? STANDARD_VAT_RATE : ('0' as Percent)
 }
-
-/** Full calendar months of purchases the monthly average counts (D-116). */
-export const PURCHASE_MONTHS = 3
 
 /** The price a margin is taken from (see above). */
 export interface SalePrice {
@@ -63,60 +64,9 @@ export function priceBeforeVat(sale: SalePrice): CostAmount | null {
   ) as CostAmount
 }
 
-/** Divides once and rounds once to 12 decimals: the exact product of `numerators` ÷ `divisor`. */
-function divideOnce(numerators: readonly string[], divisor: string): CostAmount {
-  return plain(
-    roundHalfUp(exactProduct(numerators.map(toDec)).dividedBy(toDec(divisor)), COST_SCALE),
-  ) as CostAmount
-}
-
 /** A value that fits a cost amount (numeric(28,12)), else null. */
 function fitting(value: CostAmount): CostAmount | null {
   return checkDecimal(value, 'costAmount') === null ? value : null
-}
-
-/**
- * The monthly material purchases from the last full months (D-116): their total ÷ the months, one
- * division rounded once to 12 decimals. Throws RangeError for a negative total.
- */
-export function monthlyPurchasesAverage(total: string, months = PURCHASE_MONTHS): CostAmount {
-  if (toDec(total).lt(0)) throw new RangeError(`Purchases must not be negative: "${total}"`)
-  return divideOnce([total], String(months))
-}
-
-/**
- * The running-cost rate (D-116): monthly running costs ÷ monthly material purchases, rounded once to
- * 12 decimals: what each unit of currency of materials carries. 15 000 ÷ 30 000 = 0.5. Null when
- * there are no purchases to divide by (not more than zero). Throws RangeError for negative inputs.
- */
-export function runningCostRate(
-  monthlyRunningCosts: string,
-  monthlyPurchases: string,
-): CostAmount | null {
-  if (toDec(monthlyRunningCosts).lt(0)) {
-    throw new RangeError(`Running costs must not be negative: "${monthlyRunningCosts}"`)
-  }
-  if (!toDec(monthlyPurchases).gt(0)) return null
-  return divideOnce([monthlyRunningCosts], monthlyPurchases)
-}
-
-/**
- * A product's running-cost share (D-116): its material cost × monthly running costs ÷ monthly
- * purchases, an exact product divided once and rounded once to 12 decimals (never the rounded rate ×
- * the materials). AED 4 of materials at 15 000 ÷ 30 000 carries AED 2. Null when there are no
- * purchases to divide by. Throws RangeError for negative inputs.
- */
-export function runningCostShare(
-  materials: string,
-  monthlyRunningCosts: string,
-  monthlyPurchases: string,
-): CostAmount | null {
-  if (toDec(materials).lt(0)) throw new RangeError(`A cost must not be negative: "${materials}"`)
-  if (toDec(monthlyRunningCosts).lt(0)) {
-    throw new RangeError(`Running costs must not be negative: "${monthlyRunningCosts}"`)
-  }
-  if (!toDec(monthlyPurchases).gt(0)) return null
-  return divideOnce([materials, monthlyRunningCosts], monthlyPurchases)
 }
 
 /**
@@ -127,7 +77,9 @@ export function runningCostShare(
 export function ownerTimeCost(minutes: string, hourlyRate: string): CostAmount {
   if (toDec(minutes).lt(0)) throw new RangeError(`Minutes must not be negative: "${minutes}"`)
   if (toDec(hourlyRate).lt(0)) throw new RangeError(`A rate must not be negative: "${hourlyRate}"`)
-  return divideOnce([minutes, hourlyRate], '60')
+  return plain(
+    roundHalfUp(exactProduct([toDec(minutes), toDec(hourlyRate)]).dividedBy(60), COST_SCALE),
+  ) as CostAmount
 }
 
 /**
@@ -139,106 +91,6 @@ export function hoursAndMinutes(minutes: string): { hours: string; minutes: stri
   if (value.lt(0)) throw new RangeError(`Minutes must not be negative: "${minutes}"`)
   const hours = value.dividedToIntegerBy(60)
   return { hours: plain(hours), minutes: plain(value.minus(hours.times(60))) }
-}
-
-// ---------------------------------------------------------------------------------------------------
-// Which months of purchases count (D-116)
-// ---------------------------------------------------------------------------------------------------
-
-/** YYYY-MM-DD of the first day of the month `offset` months from the month of `day` (YYYY-MM-DD). */
-function monthStart(day: string, offset: number): string {
-  const year = Number.parseInt(day.slice(0, 4), 10)
-  const month = Number.parseInt(day.slice(5, 7), 10) - 1 + offset
-  const y = year + Math.floor(month / 12)
-  const m = ((month % 12) + 12) % 12
-  return `${String(y).padStart(4, '0')}-${String(m + 1).padStart(2, '0')}-01`
-}
-
-/** YYYY-MM-DD of the last day of the month before the month that starts on `nextMonthStart`. */
-function dayBefore(nextMonthStart: string): string {
-  const date = new Date(`${nextMonthStart}T00:00:00Z`)
-  date.setUTCDate(0)
-  return date.toISOString().slice(0, 10)
-}
-
-const DAY = /^\d{4}-\d{2}-\d{2}$/
-
-export interface PurchaseMonths {
-  /** The last 3 full calendar months before today's month: first and last day. */
-  readonly from: string
-  readonly to: string
-  /**
-   * The first day on which they can count: the first day of the 4th month after the month of the
-   * first posted purchase (3 full months have passed after it). Null: nothing bought yet.
-   */
-  readonly countsFrom: string | null
-  /** How many of those 3 months hold at least one posted purchase still standing (0 to 3). */
-  readonly monthsBought: number
-  /**
-   * They count today: countsFrom is on or before today, and each of the 3 months holds a purchase
-   * (old invoices typed in on the first day do not make months of almost nothing count, D-186).
-   */
-  readonly ready: boolean
-}
-
-/**
- * The months the monthly purchases average counts on `today` (YYYY-MM-DD, the business's day), given
- * the day of the business's first posted purchase (null: none) and how many of the 3 months hold a
- * posted purchase. On 29 September 2026 they are June to August; with a first purchase in May they
- * can count (from 1 September), with one in June not yet (from 1 October); and they count only when
- * June, July and August each hold a purchase. Until then the owner's estimate is used (D-116,
- * D-186). Throws RangeError for a malformed day or a count outside 0 to 3.
- */
-export function purchaseMonths(
-  today: string,
-  firstPurchase: string | null,
-  monthsBought: number,
-): PurchaseMonths {
-  if (!DAY.test(today)) throw new RangeError(`Not a day: "${today}"`)
-  if (firstPurchase !== null && !DAY.test(firstPurchase)) {
-    throw new RangeError(`Not a day: "${firstPurchase}"`)
-  }
-  if (!Number.isInteger(monthsBought) || monthsBought < 0 || monthsBought > PURCHASE_MONTHS) {
-    throw new RangeError(`Not a count of months: ${String(monthsBought)}`)
-  }
-  const from = monthStart(today, -PURCHASE_MONTHS)
-  const to = dayBefore(monthStart(today, 0))
-  const countsFrom = firstPurchase === null ? null : monthStart(firstPurchase, PURCHASE_MONTHS + 1)
-  const ready = countsFrom !== null && countsFrom <= today && monthsBought === PURCHASE_MONTHS
-  return { from, to, countsFrom, monthsBought, ready }
-}
-
-export type MonthlyPurchasesSource = 'last_3_months' | 'estimate'
-
-export interface MonthlyPurchases {
-  /** Which figure the rate divides by; null: neither (the running-cost share is "not set yet"). */
-  readonly source: MonthlyPurchasesSource | null
-  /** The figure itself (more than zero), or null. */
-  readonly monthly: CostAmount | null
-  /** The last 3 full months' average, once they count (null before; it may be 0). */
-  readonly average: CostAmount | null
-}
-
-/**
- * The monthly material purchases the running-cost rate divides by (D-116): the average of the last 3
- * full months once they count and it is more than zero, else the owner's estimate when set (more
- * than zero), else none.
- */
-export function monthlyPurchases(input: {
-  readonly months: Pick<PurchaseMonths, 'ready'>
-  /** The value of the posted purchases dated in those months (net of returns and credit notes). */
-  readonly monthsTotal: string
-  /** businesses.estimated_monthly_purchases (null: not set). */
-  readonly estimate: string | null
-}): MonthlyPurchases {
-  const average = input.months.ready ? monthlyPurchasesAverage(input.monthsTotal) : null
-  if (average !== null && toDec(average).gt(0)) {
-    return { source: 'last_3_months', monthly: average, average }
-  }
-  if (input.estimate !== null && toDec(input.estimate).gt(0)) {
-    return { source: 'estimate', monthly: plain(toDec(input.estimate)) as CostAmount, average }
-  }
-  return { source: null, monthly: null, average }
 }
 
 // ---------------------------------------------------------------------------------------------------
@@ -261,23 +113,6 @@ export type MaterialsPart =
       readonly tooLarge: boolean
     }
 
-/** The running costs of the business (D-116). */
-export type RunningCostsPart =
-  /** The Running Costs module is off: no share. */
-  | { readonly state: 'off' }
-  | {
-      readonly state: 'on'
-      /**
-       * A running cost was ever entered (removed ones aside), active today or not. Without one the
-       * share is "not entered yet", never 0 (D-186).
-       */
-      readonly entered: boolean
-      /** The running costs active today, a month (monthlyTotal). */
-      readonly monthlyRunningCosts: string
-      /** The monthly material purchases the rate divides by (monthlyPurchases); null: neither. */
-      readonly monthlyPurchases: string | null
-    }
-
 /** The owner's own time (D-119): only for a business without a team. */
 export type OwnerTimePart =
   | { readonly state: 'team' }
@@ -290,38 +125,27 @@ export type OwnerTimePart =
     }
 
 export interface ProductCostInput {
-  /**
-   * A product or a service (default `product`). A service may use no materials: without any it
-   * carries no running costs with this method (a known limit until Phase 5), while a product without
-   * its recipe waits for it.
-   */
-  readonly type?: ProductType
   readonly materials: MaterialsPart
+  /** The month's costs and sales the share is worked out from (D-202). */
   readonly runningCosts: RunningCostsPart
   readonly ownerTime: OwnerTimePart
   readonly sale: SalePrice
 }
 
 /**
- * The running-cost line:
- * - `off`: the Running Costs module is off (no line);
- * - `not_entered`: no running cost was ever entered (never 0: the cost is incomplete, D-186);
- * - `none`: none is paid now (they ended, or start later): the share is 0;
- * - `no_materials`: nothing to carry them: Materials is off, or a service without materials (with
- *   this method it carries none until working time comes in Phase 5);
- * - `not_set`: neither the owner's estimate of monthly purchases nor 3 full months of purchases;
- * - `no_recipe`: a product without its recipe yet: worked out once it is in;
- * - `waiting`: its materials have no price yet;
+ * The running-cost line (D-202):
+ * - `off`: neither Running Costs nor Expenses is on (no line: nothing to share);
+ * - `no_price`: it has no price, so no share can be worked out by it ("add its price");
+ * - `awaiting_sales`: worked out automatically once sales are recorded (Phase 3); until then the
+ *   total and the margin are before running costs;
+ * - `none`: the month's costs come to zero or less: the share is 0;
  * - `applied`: the share is worked out.
  */
 export const RUNNING_SHARE_STATES = [
   'off',
-  'not_entered',
+  'no_price',
+  'awaiting_sales',
   'none',
-  'no_materials',
-  'not_set',
-  'no_recipe',
-  'waiting',
   'applied',
 ] as const
 export type RunningShareState = (typeof RUNNING_SHARE_STATES)[number]
@@ -333,22 +157,21 @@ export type RunningShareState = (typeof RUNNING_SHARE_STATES)[number]
 export type OwnerTimeState = 'team' | 'none' | 'rate_not_set' | 'applied'
 
 /**
- * Why a product's cost is incomplete (each is a line the screen says in words):
- * - `no_recipe`: nothing entered for what it uses (Materials on, no recipe lines);
+ * Why a product's cost is incomplete: something the member can add (each is a line the screen says
+ * in words):
+ * - `no_recipe`: nothing entered for what it uses (Materials on, no recipe lines; optional for a
+ *   service);
  * - `unpriced_materials`: some of its materials were never bought;
- * - `running_costs_not_entered`: Running Costs is on and no running cost was ever entered;
- * - `running_costs_not_set`: running costs to share and nothing to divide them by;
- * - `running_costs_need_materials`: running costs to share and no materials to carry them (Materials
- *   off, or a service without materials); never beside `no_recipe` for a product;
+ * - `no_price`: it has no price, and running costs are shared by the price (D-202);
  * - `hourly_rate_not_set`: minutes for it and no hourly rate;
- * - `nothing_counted`: no part of it is counted at all.
+ * - `nothing_counted`: no part of it is counted at all, and none awaits sales.
+ * A share awaiting sales is not one of them (D-202): nothing can be added for it before Phase 3, and
+ * when it is the only line, nothing is missing (D-203).
  */
 export const INCOMPLETE_REASONS = [
   'no_recipe',
   'unpriced_materials',
-  'running_costs_not_entered',
-  'running_costs_not_set',
-  'running_costs_need_materials',
+  'no_price',
   'hourly_rate_not_set',
   'nothing_counted',
 ] as const
@@ -359,9 +182,9 @@ export interface ProductCost {
   readonly materials: CostAmount | null
   readonly runningCosts: {
     readonly state: RunningShareState
-    /** Monthly running costs ÷ monthly purchases (0 with none); null when it cannot be worked out. */
+    /** The month's costs ÷ its sales (0 when they come to zero or less); null until worked out. */
     readonly rate: CostAmount | null
-    /** materials × running ÷ purchases; '0' with no running costs; null unless `applied`/`none`. */
+    /** Price before VAT × costs ÷ sales; '0' with no costs; null unless `applied`/`none`. */
     readonly share: CostAmount | null
   }
   readonly ownerTime: {
@@ -370,11 +193,16 @@ export interface ProductCost {
   }
   /** Σ of the parts worked out (exact); null when none is, or when it is too large. */
   readonly total: CostAmount | null
+  /**
+   * The running-cost share applies but is not in the total yet (awaiting sales, or no price): the
+   * total and the margin are before running costs, never final.
+   */
+  readonly beforeRunningCosts: boolean
   /** A part or the total does not fit a cost amount (numeric(28,12)): nothing is totalled. */
   readonly tooLarge: boolean
   /** Why it is incomplete, in the order of INCOMPLETE_REASONS; empty when complete. */
   readonly reasons: readonly IncompleteReason[]
-  /** Every part that applies is worked out, and something is counted. */
+  /** Nothing the member can add is missing, and something is counted (see beforeRunningCosts). */
   readonly complete: boolean
   /** The price before VAT (priceBeforeVat); null without a price. */
   readonly priceBeforeVat: CostAmount | null
@@ -388,36 +216,19 @@ export interface ProductCost {
 }
 
 function runningShareOf(
-  materials: MaterialsPart,
   running: RunningCostsPart,
-  type: ProductType,
+  beforeVat: CostAmount | null,
 ): ProductCost['runningCosts'] {
   if (running.state === 'off') return { state: 'off', rate: null, share: null }
-  const rate =
-    running.monthlyPurchases === null
-      ? null
-      : runningCostRate(running.monthlyRunningCosts, running.monthlyPurchases)
-  if (!toDec(running.monthlyRunningCosts).gt(0)) {
-    return running.entered
-      ? { state: 'none', rate: '0' as CostAmount, share: '0' as CostAmount }
-      : { state: 'not_entered', rate: null, share: null }
+  if (beforeVat === null) return { state: 'no_price', rate: null, share: null }
+  const { state, rate } = costRate(running)
+  if (state === 'awaiting_sales') return { state: 'awaiting_sales', rate: null, share: null }
+  if (state === 'none') return { state: 'none', rate: '0' as CostAmount, share: '0' as CostAmount }
+  return {
+    state: 'applied',
+    rate: rate === null ? null : fitting(rate),
+    share: costShare(beforeVat, running.costs, running.sales),
   }
-  const rateOut = rate === null ? null : fitting(rate)
-  const noLines = materials.state === 'off' || materials.lineCount === 0
-  if (materials.state === 'off' || (noLines && type === 'service')) {
-    return { state: 'no_materials', rate: rateOut, share: null }
-  }
-  if (running.monthlyPurchases === null || rate === null) {
-    return { state: 'not_set', rate: null, share: null }
-  }
-  if (noLines) return { state: 'no_recipe', rate: rateOut, share: null }
-  if (materials.perUnit === null) return { state: 'waiting', rate: rateOut, share: null }
-  const share = runningCostShare(
-    materials.perUnit,
-    running.monthlyRunningCosts,
-    running.monthlyPurchases,
-  )
-  return { state: 'applied', rate: rateOut, share }
 }
 
 function ownerTimeOf(time: OwnerTimePart): ProductCost['ownerTime'] {
@@ -437,7 +248,8 @@ export function productCost(input: ProductCostInput): ProductCost {
   if (materials !== null && toDec(materials).lt(0)) {
     throw new RangeError(`A cost must not be negative: "${materials}"`)
   }
-  const shareOf = runningShareOf(part, input.runningCosts, input.type ?? 'product')
+  const beforeVat = priceBeforeVat(sale)
+  const shareOf = runningShareOf(input.runningCosts, beforeVat)
   const timeOf = ownerTimeOf(input.ownerTime)
   // A share or a time line that does not fit a cost amount is not given (the cost is too large).
   const shareFits = shareOf.share === null || fitting(shareOf.share) !== null
@@ -448,12 +260,10 @@ export function productCost(input: ProductCostInput): ProductCost {
   const reasons = new Set<IncompleteReason>()
   if (part.state === 'on' && part.lineCount === 0) reasons.add('no_recipe')
   if (part.state === 'on' && part.unpricedLines > 0) reasons.add('unpriced_materials')
-  if (runningCosts.state === 'not_entered') reasons.add('running_costs_not_entered')
-  if (runningCosts.state === 'not_set') reasons.add('running_costs_not_set')
-  if (runningCosts.state === 'no_materials') reasons.add('running_costs_need_materials')
+  if (runningCosts.state === 'no_price') reasons.add('no_price')
   if (ownerTime.state === 'rate_not_set') reasons.add('hourly_rate_not_set')
 
-  // What is counted: a share of 0 (no running costs) adds nothing and counts nothing by itself.
+  // What is counted: a share of 0 (no costs) adds nothing and counts nothing by itself.
   const parts = [
     materials,
     runningCosts.state === 'applied' ? runningCosts.share : null,
@@ -467,9 +277,17 @@ export function productCost(input: ProductCostInput): ProductCost {
   const tooLarge =
     (part.state === 'on' && part.tooLarge) || !partsFit || (sum !== null && fitting(sum) === null)
   const total = tooLarge ? null : sum
-  if (total === null && !tooLarge && reasons.size === 0) reasons.add('nothing_counted')
+  // Nothing counted and nothing to add: incomplete, unless its share awaits sales (D-203), the line
+  // that will count once sales are recorded (with a team and without materials it is the only one).
+  if (
+    total === null &&
+    !tooLarge &&
+    reasons.size === 0 &&
+    runningCosts.state !== 'awaiting_sales'
+  ) {
+    reasons.add('nothing_counted')
+  }
 
-  const beforeVat = priceBeforeVat(sale)
   const margin =
     beforeVat === null || total === null
       ? null
@@ -493,6 +311,8 @@ export function productCost(input: ProductCostInput): ProductCost {
     runningCosts,
     ownerTime,
     total,
+    beforeRunningCosts:
+      runningCosts.state === 'no_price' || runningCosts.state === 'awaiting_sales',
     tooLarge,
     reasons: ordered,
     complete: ordered.length === 0 && !tooLarge,
@@ -502,26 +322,27 @@ export function productCost(input: ProductCostInput): ProductCost {
   }
 }
 
-/** What a service without materials cannot have yet, and its optional materials (D-186). */
-const SERVICE_WAITS: ReadonlySet<IncompleteReason> = new Set([
-  'no_recipe',
-  'running_costs_not_entered',
-  'running_costs_need_materials',
-])
-
 /**
- * A service whose cost is complete but for what it cannot carry yet (D-200): it uses no materials,
- * so with the method "a share of the material cost" (D-116) no running costs reach it until the owner
- * decides how services carry them, and its materials are optional (D-186). Something is counted (the
- * owner's time), so its cost is not empty. The Product costs page still says it is incomplete, and
- * why; the Dashboard's "see your product costs" does not wait for it.
+ * A service whose cost is complete but for its optional materials (D-186, D-200, D-202, D-203): it
+ * uses no materials (its recipe is optional), nothing else is missing, and something is counted (the
+ * owner's time) or will be (its share awaits sales), so its cost is not empty. The screens say it has
+ * no materials as a hint, not as something missing.
  */
-export function awaitsServiceShare(type: ProductType, cost: ProductCost): boolean {
+export function missesOnlyOptionalMaterials(type: ProductType, cost: ProductCost): boolean {
   return (
     type === 'service' &&
     cost.materials === null &&
-    cost.total !== null &&
-    cost.reasons.length > 0 &&
-    cost.reasons.every((reason) => SERVICE_WAITS.has(reason))
+    (cost.total !== null || cost.runningCosts.state === 'awaiting_sales') &&
+    cost.reasons.length === 1 &&
+    cost.reasons[0] === 'no_recipe'
   )
+}
+
+/**
+ * Whether a product's or service's cost is complete as the screens and counts say it (D-203): nothing
+ * missing that can be added (`complete`), or a service that misses only its optional materials. It
+ * puts nothing under "incomplete" or "Needs a look", and holds no checklist step back.
+ */
+export function costCompleteFor(type: ProductType, cost: ProductCost): boolean {
+  return cost.complete || missesOnlyOptionalMaterials(type, cost)
 }

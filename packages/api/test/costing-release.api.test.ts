@@ -261,7 +261,7 @@ describe('"Let\'s find the real cost of what you sell" (dashboard.checklist)', (
     // Its price: a purchase, final.
     await baker.buy(purchaseInput(today, [line(flour.id, '10', '4', { unit: 'kg', vatRate: '0' })]))
     expect(byId(await steps(baker))).toMatchObject({ purchases: { done: true, remaining: 0 } })
-    // Running costs: entered, and the estimate of monthly purchases while 3 months do not count.
+    // Running costs: entered, and nothing else to set (they reach products by their price, D-202).
     const categories = await baker.categories()
     await baker.runningCost({
       id: newId(),
@@ -270,12 +270,6 @@ describe('"Let\'s find the real cost of what you sell" (dashboard.checklist)', (
       amount: '300',
       startsOn: today,
     })
-    expect(byId(await steps(baker)).running_costs).toEqual({
-      done: false,
-      missing: ['estimate'],
-      remaining: null,
-    })
-    await baker.settings({ estimatedMonthlyPurchases: '1500' })
     expect(byId(await steps(baker)).running_costs).toEqual({
       done: true,
       missing: [],
@@ -384,7 +378,7 @@ describe('"Let\'s find the real cost of what you sell" (dashboard.checklist)', (
     })
   })
 
-  it('a business that sells only services finishes: running costs cannot reach its services yet (D-200)', async () => {
+  it('a business that sells only services is asked for its running costs too: they reach every service by its price (D-202)', async () => {
     // The freelance designer: services only, alone, no materials.
     const designer = await CostScope.open(api, {
       what_you_do: ['services'],
@@ -400,10 +394,11 @@ describe('"Let\'s find the real cost of what you sell" (dashboard.checklist)', (
     expect(await servicesOnly()).toBe(true)
     expect((await steps(designer)).map((step) => step.id)).toEqual([
       'products',
+      'running_costs',
       'owner_time',
       'product_costs',
     ])
-    // A logo design, 3 hours of her time; running costs entered (they reach no service yet).
+    // A logo design, 3 hours of her time, and her running costs.
     const logo = await designer.product({
       name: `Logo design ${tag()}`,
       type: 'service',
@@ -411,6 +406,11 @@ describe('"Let\'s find the real cost of what you sell" (dashboard.checklist)', (
     })
     await designer.settings({ ownerHourlyRate: '150' })
     await designer.updateProduct(logo, { ownerMinutes: '180' })
+    expect(byId(await steps(designer)).running_costs).toEqual({
+      done: false,
+      missing: ['runningCosts'],
+      remaining: null,
+    })
     const [category] = await designer.categories()
     await designer.runningCost({
       id: newId(),
@@ -419,18 +419,42 @@ describe('"Let\'s find the real cost of what you sell" (dashboard.checklist)', (
       amount: '300',
       startsOn: today,
     })
-    // Its cost is her time: the Product costs page says running costs do not reach it yet; the
-    // checklist does not wait for them.
+    // Its cost is her time until sales are recorded, then its share of the running costs by its
+    // price: nothing is missing now (Materials off: no materials to ask for).
     const page = await designer.costList()
-    expect(page.counts).toMatchObject({ incomplete: 1, servicesAwaitingShare: 1 })
+    expect(page.counts).toMatchObject({ incomplete: 0 })
+    expect(page.items[0]?.cost).toMatchObject({
+      runningCosts: { state: 'awaiting_sales' },
+      total: '450',
+      beforeRunningCosts: true,
+      complete: true,
+    })
     expect(byId(await steps(designer))).toEqual({
       products: { done: true, missing: [], remaining: null },
+      running_costs: { done: true, missing: [], remaining: null },
       owner_time: { done: true, missing: [], remaining: null },
       product_costs: { done: true, missing: [], remaining: 0 },
     })
-    // A product too: not only services any more, and running costs are asked again.
-    await designer.product({ name: `Printed poster ${tag()}`, defaultPrice: '80' })
-    expect(await servicesOnly()).toBe(false)
-    expect((await steps(designer)).map((step) => step.id)).toContain('running_costs')
+  })
+
+  it('a service that uses no materials, in a business with Materials on, is complete and does not hold the checklist back (D-200, D-203)', async () => {
+    const baker = await CostScope.open(api, BAKER)
+    const lesson = await baker.product({
+      name: `Baking lesson ${tag()}`,
+      type: 'service',
+      unit: 'h',
+      defaultPrice: '100',
+      ownerMinutes: '60',
+    })
+    await baker.settings({ ownerHourlyRate: '45' })
+    // Its materials are optional: said on the page as a hint, never incomplete, not waited for.
+    const page = await baker.costList({ search: lesson.name })
+    expect(page.counts).toMatchObject({ incomplete: 0 })
+    expect(page.items[0]?.cost).toMatchObject({ reasons: ['no_recipe'], complete: true })
+    expect(byId(await steps(baker)).product_costs).toEqual({
+      done: true,
+      missing: [],
+      remaining: 0,
+    })
   })
 })

@@ -439,7 +439,14 @@ test('a new solo café, from nothing to "Your product costs are ready"', async (
     'purchase.post',
   )
   await owner.reload()
-  await expect(card).toContainText('3 of 6 done')
+  // Every product's cost is complete already: its share of running costs waits for sales, and
+  // running costs never entered change no number shown, so they are only the next step (D-202).
+  await expect(card).toContainText('4 of 6 done')
+  await expect(stepOf('product_costs')).toHaveAttribute('data-done', 'true')
+  // Done, and said to be before running costs: never "nothing is missing" beside the open step.
+  await expect(stepOf('product_costs')).toContainText(
+    'Your product costs are complete before running costs, which are added once you record your sales.',
+  )
   await expect(stepOf('running_costs')).toHaveAttribute('data-next', 'true')
   await expect(stepOf('running_costs')).toContainText('Rent, electricity, salaries')
 
@@ -448,7 +455,7 @@ test('a new solo café, from nothing to "Your product costs are ready"', async (
   await owner.setViewportSize(PHONE)
   await owner.reload()
   const arCard = owner.getByRole('region', { name: 'لنعرف التكلفة الحقيقية لما تبيعه' })
-  await expect(arCard).toContainText('تم 3 من 6')
+  await expect(arCard).toContainText('تم 4 من 6')
   await expect(arCard.locator('[data-cost-step="running_costs"]')).toContainText(
     'أضف مصاريفك التشغيلية',
   )
@@ -457,7 +464,7 @@ test('a new solo café, from nothing to "Your product costs are ready"', async (
   await setLanguage(owner, 'en')
   await owner.setViewportSize(DESKTOP)
 
-  // 4. Running costs; then the estimate of monthly purchases (not 3 months of them yet).
+  // 4. Running costs: nothing else to type in (no estimate; they are shared by price, D-202).
   const categories = await ok(
     callApi<{ items: { id: string; name: string }[] }>(
       owner,
@@ -485,26 +492,10 @@ test('a new solo café, from nothing to "Your product costs are ready"', async (
     'runningCost.create',
   )
   await owner.reload()
-  await expect(stepOf('running_costs')).toContainText(
-    'Add an estimate of what you buy in a month, until 3 months of purchases are in.',
-  )
-  await expect(stepOf('running_costs').getByRole('link')).toHaveAttribute(
-    'href',
-    `/b/${soloId}/settings/costing`,
-  )
-  await ok(
-    callApi(
-      owner,
-      'productCost.updateSettings',
-      { estimatedMonthlyPurchases: '6000' },
-      { businessId: soloId },
-    ),
-    'estimate',
-  )
-  await owner.reload()
-  // Running costs are done, and so is every product's cost: the owner's time is not counted until
-  // its minutes are there, so nothing is missing from it.
+  // Running costs are done; every product's cost stays complete: the owner's time is not counted
+  // until its minutes are there.
   await expect(card).toContainText('5 of 6 done')
+  await expect(stepOf('running_costs')).toHaveAttribute('data-done', 'true')
   await expect(stepOf('product_costs')).toHaveAttribute('data-done', 'true')
 
   // 5. The owner's time: the hourly rate, then the minutes on the product.
@@ -537,10 +528,13 @@ test('a new solo café, from nothing to "Your product costs are ready"', async (
     'product.update',
   )
 
-  // 6. Every cost complete: the card gives way to "Your product costs are ready".
+  // 6. Every cost complete: the card gives way to "Your product costs are in, before running
+  // costs" (their share comes once sales are recorded, D-202).
   await owner.reload()
   await expect(card).toHaveCount(0)
-  const ready = owner.getByRole('region', { name: 'Your product costs are ready' })
+  const ready = owner.getByRole('region', {
+    name: 'Your product costs are in, before running costs',
+  })
   await expect(ready).toBeVisible()
   await expect(ready.getByRole('link', { name: 'See product costs' })).toHaveAttribute(
     'href',

@@ -108,37 +108,48 @@ export {
   type RecipeCost,
   type RecipeCostLine,
 } from './costing/recipe'
-// A product's whole cost for one unit sold (M2 Step 6): materials, the running-cost share (D-116),
-// the owner's time (D-119), and the margin on the price before VAT (D-121).
+// A product's whole cost for one unit sold (M2 Step 6): materials, the running-cost share by its
+// price (D-202), the owner's time (D-119), and the margin on the price before VAT (D-121).
 export {
-  awaitsServiceShare,
+  costCompleteFor,
   hoursAndMinutes,
   INCOMPLETE_REASONS,
-  monthlyPurchases,
-  monthlyPurchasesAverage,
+  missesOnlyOptionalMaterials,
   ownerTimeCost,
   priceBeforeVat,
   productCost,
-  PURCHASE_MONTHS,
-  purchaseMonths,
-  runningCostRate,
   RUNNING_SHARE_STATES,
-  runningCostShare,
   saleVatRate,
   STANDARD_VAT_RATE,
   type IncompleteReason,
   type MaterialsPart,
-  type MonthlyPurchases,
-  type MonthlyPurchasesSource,
   type OwnerTimePart,
   type OwnerTimeState,
   type ProductCost,
   type ProductCostInput,
-  type PurchaseMonths,
-  type RunningCostsPart,
   type RunningShareState,
   type SalePrice,
 } from './costing/product-cost'
+// The business's running costs of a month, counted once (a quarter's or a year's bills over its
+// months, D-203), and how they reach what it sells: by its price, the month's costs ÷ the month's
+// sales (D-202).
+export {
+  COST_RATE_STATES,
+  costPool,
+  costRate,
+  costShare,
+  daysIn,
+  daysRunIn,
+  POOL_SOURCES,
+  type CostPool,
+  type CostRateState,
+  type PoolCategory,
+  type PoolExpense,
+  type PoolPeriod,
+  type PoolRunningCost,
+  type PoolSource,
+  type RunningCostsPart,
+} from './costing/cost-share'
 export {
   MATERIAL_UNIT_KINDS,
   PRODUCT_TYPES,

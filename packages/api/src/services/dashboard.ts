@@ -23,11 +23,11 @@ import { listProductCostsIn } from './product-costs'
 //   - "Finish setting up" (M1): the profile, the TRN, the first team member, the second branch.
 //   - "Let's find the real cost of what you sell" (M2 Step 7): what you sell → what you use to make
 //     it → purchase prices → your regular running costs → your time (without a team) → your product
-//     costs. What the last steps count (costs still incomplete, whether the estimate of monthly
-//     purchases is needed) is the Product costs page's own count (productCost.list), read only for a
-//     member who sees costs, in the same transaction. A business that sells only services without
-//     materials is not asked for running costs, and its services' costs do not wait for them: with
-//     the method of a share of the material cost none reach a service yet (D-200, D-116).
+//     costs. What the last step counts (costs still incomplete) is the Product costs page's own count
+//     (productCost.list), read only for a member who sees costs, in the same transaction, without
+//     the services that miss only their optional materials (D-200). Running costs reach every product
+//     and service by its price (D-202), so every business is asked for them, one that sells only
+//     services too.
 
 /**
  * Whether the business sells only services (D-200): every product or service in use (not archived) is
@@ -118,36 +118,15 @@ interface CostFactsRow extends Record<string, unknown> {
 }
 
 /**
- * Whether the member may set the estimate of monthly purchases (Settings → How costs are worked out,
- * productCost.updateSettings): the Cost Engine on, its keys, and costs visible (what it writes).
- */
-function maySetEstimate(ctx: BusinessCtx, holds: (key: PermissionKey) => boolean): boolean {
-  return (
-    passes(ctx, ['cost_engine']) &&
-    holds('cost_engine.product_costs.view') &&
-    holds('cost_engine.settings.manage') &&
-    holds('running_costs.items.view') &&
-    holds('purchases.documents.view') &&
-    ctx.access.visibleCategories.has('cost') &&
-    ctx.access.visibleCategories.has('supplier_price')
-  )
-}
-
-/**
  * What the business's data says about the cost steps: the items in use (products and services not
  * archived), which of them are made here (products, not bought ready to sell, D-117) and have nothing
  * in what goes into them yet, the materials they use (their recipes' lines and what items bought
  * ready to sell are bought as) and of those the ones never bought ("no price yet": no posted purchase
  * that stands, D-147), whether a running cost was ever entered (removed ones aside, D-186), the
  * owner's hourly rate and the items with the owner's minutes (D-119). With `costs`, the Product costs
- * page's own reading: how many items' costs are incomplete, and whether the running costs wait for
- * the estimate (entered, 3 full months of purchases not counting yet, no estimate; D-116).
+ * page's own reading: how many items' costs are incomplete.
  */
-async function readCostFacts(
-  tx: Tx,
-  ctx: BusinessCtx,
-  options: { readonly costs: boolean; readonly canSetEstimate: boolean },
-): Promise<CostFacts> {
+async function readCostFacts(tx: Tx, ctx: BusinessCtx, costs: boolean): Promise<CostFacts> {
   const businessId = ctx.businessId
   const [row] = (await tx.execute(sql`
     with items as (
@@ -193,14 +172,10 @@ async function readCostFacts(
   `)) as unknown as CostFactsRow[]
   if (!row) throw new AppError('forbidden')
   let incompleteCosts = 0
-  let estimateNeeded = false
-  if (options.costs) {
+  if (costs) {
     const page = await listProductCostsIn(tx, ctx, productCostListInput.parse({ limit: 1 }))
-    // Services waiting only for what they cannot carry yet do not hold the step back (D-200).
-    incompleteCosts =
-      (page.data.counts.incomplete ?? 0) - (page.data.counts.servicesAwaitingShare ?? 0)
-    // Asked only where it changes something: not without Materials (D-186).
-    estimateNeeded = page.data.rate.state === 'not_set' && passes(ctx, ['materials'])
+    // Services that miss only their optional materials are complete there (D-203).
+    incompleteCosts = page.data.counts.incomplete ?? 0
   }
   return {
     items: row.items,
@@ -209,13 +184,9 @@ async function readCostFacts(
     usedMaterials: row.used_materials,
     unpricedMaterials: row.unpriced_materials,
     runningCostsEntered: row.running_costs_entered,
-    estimateNeeded,
-    canSetEstimate: options.canSetEstimate,
     hourlyRateSet: row.hourly_rate_set,
     itemsWithMinutes: row.items_with_minutes,
     incompleteCosts,
-    sellsOnlyServices: await sellsOnlyServices(tx, businessId),
-    materialsOn: passes(ctx, ['materials']),
   }
 }
 
@@ -234,18 +205,13 @@ export async function getChecklist(ctx: BusinessCtx): Promise<DashboardChecklist
     capabilities: ctx.access.capabilities,
   })
   if (ids.length === 0 && costIds.length === 0) return { items: [], costSteps: [] }
-  const canSetEstimate = maySetEstimate(ctx, holds)
-  // The Product costs page's count is read only for a step that shows it (costs visible there).
-  const costs =
-    costIds.includes('product_costs') || (costIds.includes('running_costs') && canSetEstimate)
+  // The Product costs page's count is read only for the step that shows it (costs visible there).
+  const costs = costIds.includes('product_costs')
   return ctx.tx(async (tx) => ({
     items:
       ids.length === 0
         ? []
         : checklistItems(ids, await readFacts(tx, ctx.businessId, ctx.access.memberId)),
-    costSteps:
-      costIds.length === 0
-        ? []
-        : costSteps(costIds, await readCostFacts(tx, ctx, { costs, canSetEstimate })),
+    costSteps: costIds.length === 0 ? [] : costSteps(costIds, await readCostFacts(tx, ctx, costs)),
   }))
 }

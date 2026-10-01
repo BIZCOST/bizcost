@@ -1,5 +1,5 @@
 import type { ProductCostListDto, ProductCostsDto, ProductDto } from '@bizcost/contracts'
-import { newId } from '@bizcost/domain'
+import { addMonths, monthOf, newId } from '@bizcost/domain'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { addMember } from './helpers'
 import { CostScope, ProductCostsApi, tag } from './product-costs'
@@ -79,54 +79,65 @@ describe('pages and cursors', () => {
 })
 
 describe('values at the columns’ limits are never an internal error', () => {
-  it('a tiny estimate under huge running costs: the share is too large to work out, never INTERNAL', async () => {
+  it('the month’s costs at the columns’ widest amounts are summed exactly, never INTERNAL', async () => {
     const shop = await CostScope.open(api, WORKSHOP)
     const today = await shop.today()
+    const lastMonth = addMonths(monthOf(today), -1)
     const steel = await shop.newMaterial({ name: `Steel ${tag()}`, unit: 'kg' })
     await shop.buy(purchaseInput(today, [bought(steel.id, '1', '3', 'kg')]))
     const beam = await shop.product({ name: `Beam ${tag()}`, defaultPrice: '9999999999999999' })
     await shop.recipe(beam.id, [{ id: newId(), materialId: steel.id, qty: '1', unit: 'kg' }])
-    const [category] = await shop.categories()
-    await shop.runningCost({
-      id: newId(),
-      name: 'Huge',
-      categoryId: category!.id,
-      amount: '9999999999999999',
-      frequency: 'weekly',
-      startsOn: today,
-    })
-    const settings = await shop.settings({ estimatedMonthlyPurchases: '0.01' })
-    // 9 999 999 999 999 999 × 52 ÷ 12 ÷ 0.01 does not fit a cost amount.
-    expect(settings.rate).toMatchObject({ state: 'ready', rate: null })
+    const categories = await shop.categories()
+    const byName = (name: string) => categories.find((c) => c.name === name)!.id
+    // Two of the widest running costs, each paid weekly since 2 months ago, and the widest bill.
+    for (const name of ['Rent', 'Salaries']) {
+      await shop.runningCost({
+        id: newId(),
+        name,
+        categoryId: byName(name),
+        amount: '9999999999999999',
+        frequency: 'weekly',
+        startsOn: `${addMonths(lastMonth, -1)}-01`,
+      })
+    }
+    await shop.postExpense(
+      await shop.expenseDraft(
+        shop.expenseInput(byName('Marketing'), today, {
+          amount: '9999999999999999',
+          vatRate: '0',
+          periodMonth: lastMonth,
+        }),
+      ),
+    )
     const cost = await shop.breakdown(beam.id)
+    // 9 999 999 999 999 999 × 52 ÷ 12 = 43 333 333 333 333 329 a month, twice, and the bill.
+    expect(cost.monthCosts).toMatchObject({
+      state: 'awaiting_sales',
+      total: '96666666666666657',
+    })
+    expect(cost.monthCosts.categories?.map((c) => c.amount)).toEqual([
+      '43333333333333329',
+      '43333333333333329',
+      '9999999999999999',
+    ])
     expect(cost.cost).toMatchObject({
       materials: '3',
-      runningCosts: { state: 'applied', share: null },
-      total: null,
-      tooLarge: true,
-      complete: false,
+      runningCosts: { state: 'awaiting_sales' },
+      total: '3',
+      tooLarge: false,
     })
-    expect(cost.margin).toEqual({ amount: null, percent: null })
     const list = await shop.costList({ search: beam.name, sort: 'margin' })
-    expect(list.items[0]?.cost.tooLarge).toBe(true)
+    expect(list.items[0]?.margin.amount).toBe('9999999999999996')
   })
 
-  it('the widest estimate and hourly rate are stored exactly', async () => {
+  it('the widest hourly rate is stored exactly', async () => {
     const baker = await CostScope.open(api, BAKER)
-    const settings = await baker.settings({
-      estimatedMonthlyPurchases: '9999999999999999.99',
-      ownerHourlyRate: '9999999999999999.99',
-    })
-    expect(settings).toMatchObject({
-      estimatedMonthlyPurchases: '9999999999999999.99',
-      ownerHourlyRate: '9999999999999999.99',
-    })
+    const settings = await baker.settings({ ownerHourlyRate: '9999999999999999.99' })
+    expect(settings).toMatchObject({ ownerHourlyRate: '9999999999999999.99' })
     // One more digit does not fit numeric(20,4): VALIDATION, before anything is written.
     expect(
       codeOf(
-        await baker.run('productCost.updateSettings', {
-          estimatedMonthlyPurchases: '99999999999999999',
-        }),
+        await baker.run('productCost.updateSettings', { ownerHourlyRate: '99999999999999999' }),
       ),
     ).toBe('validation')
   })
@@ -173,14 +184,12 @@ describe('what seeing product costs needs, checked on every call', () => {
     const person = await managerWithout('data.supplier_price.view')
     const list = ok(await shop.as<ProductCostListDto>(person, 'productCost.list', {}))
     expect(list.meta.redacted).toEqual(
-      expect.arrayContaining(['items.*.cost.total', 'items.*.margin.percent', 'rate.rate']),
+      expect.arrayContaining(['items.*.cost.total', 'items.*.margin.percent', 'monthCosts.total']),
     )
     expect(JSON.stringify(list.data).includes('24.39')).toBe(false)
     expect(codeOf(await shop.as(person, 'productCost.list', { sort: 'cost' }))).toBe('forbidden')
     expect(
-      codeOf(
-        await shop.as(person, 'productCost.updateSettings', { estimatedMonthlyPurchases: '100' }),
-      ),
+      codeOf(await shop.as(person, 'productCost.updateSettings', { ownerHourlyRate: '100' })),
     ).toBe('forbidden')
     // It still sees its own view of the page by name and by price.
     ok(await shop.as(person, 'productCost.list', { sort: 'price' }))
@@ -243,8 +252,6 @@ describe('a business that takes on a team: the owner’s time is hidden and kept
     expect(codeOf(await baker.run('productCost.updateSettings', { ownerHourlyRate: '50' }))).toBe(
       'capability_disabled',
     )
-    // The estimate is for every business.
-    ok(await baker.run('productCost.updateSettings', { estimatedMonthlyPurchases: '1000' }))
 
     ok(await team(false))
     expect((await baker.breakdown(loaf.id)).cost).toMatchObject({

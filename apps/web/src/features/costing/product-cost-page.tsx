@@ -37,14 +37,18 @@ import { useBusinessContext } from '@/lib/trpc/client'
 import { cn } from '@/lib/utils'
 import { useDuration, usePercent, useRateWords, useReasonWords } from './words'
 
-// One product's cost, line by line (ROADMAP.md M2 Step 6; D-115, D-116, D-119, D-178): what one unit
+// One product's cost, line by line (ROADMAP.md M2 Step 6; D-115, D-119, D-178, D-202): what one unit
 // sold costs and what is left of its price; each part of the cost with how it was worked out, in
-// words (the materials of its recipe ÷ what it makes, its share of the running costs and why, the
-// owner's time); what is missing, with the way to add it; and each material of its recipe (how much,
-// its average cost, the line's cost and its last purchase cost). The product and its recipe open
-// from here, and the costs are read again once they close. Costs are `cost`, prices paid
+// words (the materials of its recipe ÷ what it makes, its share of the running costs by its price,
+// the owner's time); what is missing, with the way to add it; and each material of its recipe (how
+// much, its average cost, the line's cost and its last purchase cost). The product and its recipe
+// open from here, and the costs are read again once they close. Costs are `cost`, prices paid
 // `supplier_price` and margins `profit_margin`, visible only together (D-187): a member who may not
-// see them sees locks. While the cost is incomplete its margin is only "at most" (D-186).
+// see them sees locks. While the cost is incomplete its margin is only "at most" (D-186). Until sales
+// are recorded its share of running costs waits for them (D-202): its cost and margin say they are
+// before running costs, and the margin is never green; when that share is its only line, its cost is
+// worked out then, never "not worked out yet", and a service's optional materials are a hint on its
+// materials line, never "what's missing" (D-203).
 
 type Breakdown = ProductCostBreakdownDto['data']
 
@@ -99,7 +103,10 @@ function Summary({ data, per }: { data: Breakdown; per: string }) {
   const { cost, margin, price } = data
   const loss = typeof margin.amount === 'string' && compareDecimal(margin.amount, '0') < 0
   const upTo = cost.complete === false && typeof margin.amount === 'string' && !loss
+  // Its share of running costs is not in them yet (awaiting sales, D-202): never read as final.
+  const before = cost.beforeRunningCosts === true
   const stripped = compareDecimal(price.vatRate, '0') > 0 && price.beforeVat !== null
+  const awaiting = cost.complete === true && cost.runningCosts.state === 'awaiting_sales'
   const shownMargin =
     typeof margin.amount === 'string' && loss ? margin.amount.replace(/^-/, '') : margin.amount
   return (
@@ -109,7 +116,9 @@ function Summary({ data, per }: { data: Breakdown; per: string }) {
     >
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-1">
         <div data-summary="cost" className="min-w-0">
-          <p className="text-sm text-muted-foreground">{t('costing.detail.cost', { per })}</p>
+          <p className="text-sm text-muted-foreground">
+            {t(before ? 'costing.detail.costBefore' : 'costing.detail.cost', { per })}
+          </p>
           <p className="mt-1 text-2xl font-semibold sm:text-3xl">
             {cost.total === undefined ? (
               <Locked category="cost" className="text-base" />
@@ -118,7 +127,9 @@ function Summary({ data, per }: { data: Breakdown; per: string }) {
                 <span className="text-base">
                   {cost.tooLarge
                     ? t('costing.list.row.tooLarge')
-                    : t('costing.list.row.notCounted')}
+                    : awaiting
+                      ? t('costing.list.row.awaiting')
+                      : t('costing.list.row.notCounted')}
                 </span>
               </Muted>
             ) : (
@@ -133,12 +144,27 @@ function Summary({ data, per }: { data: Breakdown; per: string }) {
         </div>
         <div data-summary="margin" className="min-w-0">
           <p className="text-sm text-muted-foreground">
-            {t(loss ? 'costing.detail.loss' : 'costing.detail.margin', { per })}
+            {t(
+              loss
+                ? before
+                  ? 'costing.detail.lossBefore'
+                  : 'costing.detail.loss'
+                : before
+                  ? 'costing.detail.marginBefore'
+                  : 'costing.detail.margin',
+              { per },
+            )}
           </p>
           <p
             className={cn(
               'mt-1 text-2xl font-semibold sm:text-3xl',
-              loss ? 'text-destructive' : upTo ? 'text-muted-foreground' : 'text-success',
+              loss
+                ? 'text-destructive'
+                : upTo
+                  ? 'text-muted-foreground'
+                  : before
+                    ? 'text-foreground'
+                    : 'text-success',
             )}
           >
             {margin.amount === undefined ? (
@@ -171,6 +197,15 @@ function Summary({ data, per }: { data: Breakdown; per: string }) {
           {upTo ? (
             <p data-margin-at-most className="mt-1 text-sm text-muted-foreground">
               {t('costing.detail.marginAtMost')}
+            </p>
+          ) : null}
+          {cost.runningCosts.state === 'awaiting_sales' ? (
+            <p data-before-running className="mt-1 text-sm text-muted-foreground">
+              {t(
+                data.type === 'service'
+                  ? 'costing.detail.beforeRunningService'
+                  : 'costing.detail.beforeRunning',
+              )}
             </p>
           ) : null}
         </div>
@@ -250,13 +285,15 @@ function CostLines({
   const unitQuantity = useUnitQuantity()
   const duration = useDuration()
   const rateWords = useRateWords()
-  const reasons = useReasonWords()
   const { data: context } = useBusinessContext()
+  const runningCostsOn = context ? hasModule(context, 'running_costs') : false
   const { cost, margin, price, materials } = data
   const notCounted = t('costing.detail.lines.notCounted')
   const running = cost.runningCosts
   const time = cost.ownerTime
   const stripped = compareDecimal(price.vatRate, '0') > 0 && price.beforeVat !== null
+  // The share of running costs is not in the total yet (D-202): the total and margin say so.
+  const before = cost.beforeRunningCosts === true
 
   let materialsLine: ReactNode = null
   if (materials !== null) {
@@ -302,43 +339,25 @@ function CostLines({
 
   let runningLine: ReactNode = null
   if (running.state !== 'off') {
-    const words = rateWords(data.rate, context ? hasModule(context, 'materials') : true)
+    // By its price, worked out once sales are recorded (D-202); without a price, none can be worked
+    // out by it: said plainly, with the way to add it.
+    const words = rateWords(data.monthCosts, runningCostsOn)
     runningLine = (
       <CostLine
         id="running"
         label={t('costing.detail.lines.running')}
         value={
-          running.state === undefined ? (
-            <Locked category="cost" />
-          ) : running.state === 'none' ? (
-            <Muted>{t('costing.list.row.none')}</Muted>
-          ) : (
-            lineValue(running.share, notCounted)
-          )
+          running.state === undefined ? <Locked category="cost" /> : <Muted>{notCounted}</Muted>
         }
       >
-        {running.state === 'no_materials' ? (
-          <p>{reasons.short('running_costs_need_materials', profile, data.type)}</p>
-        ) : running.state === 'no_recipe' ? (
-          <p>{term('costing.detail.lines.runningNoRecipe', profile)}</p>
-        ) : running.state === 'waiting' ? (
-          <p>{t('costing.detail.lines.runningWaiting')}</p>
-        ) : words ? (
-          <>
-            <p data-rate>{words.rule}</p>
-            {words.why ? <p data-why>{words.why}</p> : null}
-          </>
-        ) : null}
-        {running.state === 'applied' &&
-        typeof running.share === 'string' &&
-        typeof cost.materials === 'string' ? (
-          <p data-share>
-            {t('costing.detail.lines.runningShare', {
-              materials: money(cost.materials),
-              share: money(running.share),
-            })}
+        {running.state === 'no_price' ? (
+          <p data-no-price>{t('costing.detail.lines.runningNoPrice')}</p>
+        ) : running.state === 'awaiting_sales' ? (
+          <p data-awaiting className="font-medium text-foreground">
+            {t('costing.detail.lines.runningAwaiting')}
           </p>
         ) : null}
+        {words ? <p data-rate>{words.rule}</p> : null}
       </CostLine>
     )
   }
@@ -411,13 +430,19 @@ function CostLines({
         <CostLine
           id="total"
           strong
-          label={t('costing.detail.lines.total', { per })}
+          label={t(before ? 'costing.detail.lines.totalBefore' : 'costing.detail.lines.total', {
+            per,
+          })}
           value={
             cost.total === undefined ? (
               <Locked category="cost" />
             ) : cost.total === null ? (
               <Muted>
-                {cost.tooLarge ? t('costing.list.row.tooLarge') : t('costing.list.row.notCounted')}
+                {cost.tooLarge
+                  ? t('costing.list.row.tooLarge')
+                  : cost.complete === true && running.state === 'awaiting_sales'
+                    ? t('costing.list.row.awaiting')
+                    : t('costing.list.row.notCounted')}
               </Muted>
             ) : (
               <Amount value={cost.total} />
@@ -429,7 +454,7 @@ function CostLines({
         {priceLine}
         <CostLine
           id="margin"
-          label={t('costing.detail.lines.margin')}
+          label={t(before ? 'costing.detail.lines.marginBefore' : 'costing.detail.lines.margin')}
           value={
             margin.amount === undefined ? (
               <Locked category="profit_margin" />
@@ -473,7 +498,8 @@ function Missing({
   const { t } = useTranslation()
   const { locale } = useLocale()
   const words = useReasonWords()
-  const reasons = data.cost.reasons ?? []
+  // Complete with a reason left: only a service's optional materials, said on its materials line.
+  const reasons = data.cost.complete === true ? [] : (data.cost.reasons ?? [])
   const unpriced = [
     ...new Set(
       (data.materials?.lines ?? [])
@@ -756,23 +782,20 @@ function Breakdown({ productId }: { productId: string }) {
       {term('catalog.recipes.title', profile)}
     </Button>
   ) : null
-  const runningCostsLink =
-    hasModule(context, 'running_costs') && can(context, 'running_costs.items.view') ? (
-      <Button asChild variant="outline" size="sm" className="h-9">
-        <Link href={`/b/${businessId}/running-costs`}>{t('costing.how.addRunningCosts')}</Link>
-      </Button>
-    ) : null
   const action = (reason: IncompleteReason): ReactNode => {
     switch (reason) {
       case 'no_recipe':
       case 'unpriced_materials':
         return recipeButton
-      case 'running_costs_not_entered':
-        return runningCostsLink
-      case 'running_costs_not_set':
-        return settingsLink(t('costing.how.setEstimate'))
       case 'hourly_rate_not_set':
         return settingsLink(t('costing.how.setRate'))
+      case 'no_price':
+        return canEditProduct ? (
+          <Button variant="outline" size="sm" className="h-9" onClick={() => setOpen('product')}>
+            <PencilIcon aria-hidden />
+            {t('costing.detail.addPrice')}
+          </Button>
+        ) : null
       default:
         return null
     }

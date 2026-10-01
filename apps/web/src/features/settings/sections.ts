@@ -65,15 +65,13 @@ export function isSectionVisible(access: Access, section: SettingsSection): bool
         can(access, 'expenses.approval.manage')
       )
     case 'costing':
-      // How product costs are worked out (M2 Step 6; D-116, D-119): the Cost Engine on, and the keys
-      // to see product costs and change how they are worked out (Owner, Admin, Manager), with running
-      // costs and purchases (the estimate and its rate reveal their monthly totals, D-186).
+      // How product costs are worked out (M2 Step 6; D-119, D-202): the Cost Engine on, and the keys
+      // to see product costs and change how they are worked out (Owner, Admin, Manager), as the API
+      // checks them (running costs need no setting, so their keys and purchases' are not needed).
       return (
         (access.modules ?? []).some((module) => module.id === 'cost_engine') &&
         can(access, 'cost_engine.product_costs.view') &&
-        can(access, 'cost_engine.settings.manage') &&
-        can(access, 'running_costs.items.view') &&
-        can(access, 'purchases.documents.view')
+        can(access, 'cost_engine.settings.manage')
       )
   }
 }

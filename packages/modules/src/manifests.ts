@@ -347,8 +347,9 @@ const EXPENSES = {
 } as const satisfies ModuleManifest
 
 // Running Costs (M2 Step 5; released in Step 7): "What do you pay to run your business?" Regular
-// amounts per period in the categories shared with Expenses, turned into monthly amounts that Step 6
-// shares over product costs (D-116). Never posted. Amounts are `cost` (D-165).
+// amounts per period in the categories shared with Expenses, counted with the expenses in each month's
+// costs, which reach what the business sells by its price (D-202). Never posted. Amounts are `cost`
+// (D-165).
 const RUNNING_COSTS = {
   id: 'running_costs',
   kind: 'core',
@@ -372,11 +373,12 @@ const RUNNING_COSTS = {
 } as const satisfies ModuleManifest
 
 // Cost Engine (M2 Step 6; released in Step 7): "Product costs", each product's cost for one unit
-// sold, line by line (its materials at their averages, D-115; the running-cost share of its material
-// cost, D-116; the owner's time without a team, D-119) and its margin on the price before VAT, worked
-// out on read; and how it is worked out (the owner's estimate of monthly purchases and hourly rate).
-// Costs are `cost`, margins `profit_margin`, the monthly purchases `supplier_price`. Its breakdown
-// shows recipes, so seeing it needs seeing what goes into each product (PERMISSION_NEEDS).
+// sold, line by line (its materials at their averages, D-115; its share of the running costs by its
+// price, worked out once sales are recorded, D-202; the owner's time without a team, D-119) and its
+// margin on the price before VAT, worked out on read, with the business's costs of the last full
+// month; and how it is worked out (the owner's hourly rate). Costs are `cost`, margins
+// `profit_margin`, a material's last purchase price `supplier_price`. Its breakdown shows recipes, so
+// seeing it needs seeing what goes into each product (PERMISSION_NEEDS).
 const COST_ENGINE = {
   id: 'cost_engine',
   kind: 'core',

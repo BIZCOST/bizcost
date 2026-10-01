@@ -41,11 +41,10 @@ export const COST_STEP_IDS = [
 export type CostStepId = (typeof COST_STEP_IDS)[number]
 
 /**
- * What a cost step still needs: running costs not entered yet, the estimate of monthly purchases
- * (running costs entered, fewer than 3 months of purchases, no estimate; only for a member who may
- * set it), the owner's hourly rate, their minutes on any product or service.
+ * What a cost step still needs: running costs not entered yet (they are what is shared over what the
+ * business sells, D-202), the owner's hourly rate, their minutes on any product or service.
  */
-export const COST_STEP_PARTS = ['runningCosts', 'estimate', 'hourlyRate', 'minutes'] as const
+export const COST_STEP_PARTS = ['runningCosts', 'hourlyRate', 'minutes'] as const
 export type CostStepPart = (typeof COST_STEP_PARTS)[number]
 
 export const costStepDto = z.object({

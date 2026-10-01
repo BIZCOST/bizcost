@@ -228,13 +228,9 @@ describe('cost steps', () => {
     usedMaterials: 0,
     unpricedMaterials: 0,
     runningCostsEntered: false,
-    estimateNeeded: false,
-    canSetEstimate: true,
     hourlyRateSet: false,
     itemsWithMinutes: 0,
     incompleteCosts: 0,
-    sellsOnlyServices: false,
-    materialsOn: true,
   }
 
   it('lists every step, in order, for the owner of a business without a team; the time step goes with a team', () => {
@@ -301,7 +297,7 @@ describe('cost steps', () => {
       { id: 'product_costs', done: false, missing: [], remaining: null },
     ])
     // A café: 3 drinks made here, one without its recipe; 5 materials, 2 never bought; running
-    // costs entered but the 3 months of purchases do not count yet.
+    // costs entered: that step is done (no estimate of purchases is ever asked, D-202).
     const cafe: CostFacts = {
       ...EMPTY,
       items: 3,
@@ -310,7 +306,6 @@ describe('cost steps', () => {
       usedMaterials: 5,
       unpricedMaterials: 2,
       runningCostsEntered: true,
-      estimateNeeded: true,
       hourlyRateSet: true,
       itemsWithMinutes: 1,
       incompleteCosts: 3,
@@ -319,20 +314,15 @@ describe('cost steps', () => {
       { id: 'products', done: true, missing: [], remaining: null },
       { id: 'recipes', done: false, missing: [], remaining: 1 },
       { id: 'purchases', done: false, missing: [], remaining: 2 },
-      { id: 'running_costs', done: false, missing: ['estimate'], remaining: null },
+      { id: 'running_costs', done: true, missing: [], remaining: null },
       { id: 'owner_time', done: true, missing: [], remaining: null },
       { id: 'product_costs', done: false, missing: [], remaining: 3 },
-    ])
-    // The estimate is asked only of a member who may set it.
-    expect(costSteps(['running_costs'], { ...cafe, canSetEstimate: false })).toEqual([
-      { id: 'running_costs', done: true, missing: [], remaining: null },
     ])
     // Everything in: every step done.
     const done: CostFacts = {
       ...cafe,
       madeWithoutRecipe: 0,
       unpricedMaterials: 0,
-      estimateNeeded: false,
       incompleteCosts: 0,
     }
     expect(costSteps(ids, done).every((step) => step.done)).toBe(true)
@@ -361,35 +351,19 @@ describe('cost steps', () => {
     )
   })
 
-  it('asks no running costs of a business that sells only services using no materials (D-200)', () => {
+  it('asks running costs of a business that sells only services too: they reach every item by its price (D-202)', () => {
     const ids = [...COST_STEP_IDS]
-    // The freelance designer: services only, none with materials, Materials off.
-    const designer: CostFacts = { ...EMPTY, sellsOnlyServices: true, materialsOn: false }
-    expect(costSteps(ids, designer).map((s) => s.id)).toEqual([
-      'products',
-      'recipes',
-      'purchases',
-      'owner_time',
-      'product_costs',
+    // The freelance designer: services only, none with materials.
+    expect(costSteps(ids, EMPTY).map((s) => s.id)).toContain('running_costs')
+    const designer: CostFacts = { ...EMPTY, items: 4 }
+    expect(costSteps(ids, designer)).toEqual([
+      { id: 'products', done: true, missing: [], remaining: null },
+      { id: 'running_costs', done: false, missing: ['runningCosts'], remaining: null },
+      { id: 'owner_time', done: false, missing: ['hourlyRate', 'minutes'], remaining: null },
+      { id: 'product_costs', done: true, missing: [], remaining: 0 },
     ])
-    expect(costSteps(ids, { ...designer, items: 4 }).map((s) => s.id)).toEqual([
-      'products',
-      'owner_time',
-      'product_costs',
+    expect(costSteps(['running_costs'], { ...designer, runningCostsEntered: true })).toEqual([
+      { id: 'running_costs', done: true, missing: [], remaining: null },
     ])
-    // With Materials on, a services business may use them: asked until its services show none, and
-    // again once one does.
-    const cleaning: CostFacts = { ...designer, materialsOn: true }
-    expect(costSteps(ids, cleaning).map((s) => s.id)).toContain('running_costs')
-    expect(costSteps(ids, { ...cleaning, items: 3 }).map((s) => s.id)).not.toContain(
-      'running_costs',
-    )
-    expect(costSteps(ids, { ...cleaning, items: 3, usedMaterials: 2 }).map((s) => s.id)).toContain(
-      'running_costs',
-    )
-    // A business that sells products too is asked, as before.
-    expect(costSteps(ids, { ...EMPTY, items: 2, materialsOn: false }).map((s) => s.id)).toContain(
-      'running_costs',
-    )
   })
 })

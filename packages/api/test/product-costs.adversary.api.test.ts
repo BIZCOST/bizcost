@@ -1,13 +1,18 @@
-import type { ProductCostBreakdownDto, ProductCostListDto } from '@bizcost/contracts'
-import { newId } from '@bizcost/domain'
+import type {
+  DashboardChecklistDto,
+  ProductCostBreakdownDto,
+  ProductCostListDto,
+} from '@bizcost/contracts'
+import { addMonths, monthOf, newId } from '@bizcost/domain'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { addMember } from './helpers'
 import { CostScope, ProductCostsApi, tag } from './product-costs'
 import { ok, purchaseInput } from './purchasing'
 import { WORKSHOP } from './settings'
 
-// The costing and security adversary's proof tests for product costs (M2 Step 6). Each test states
-// what D-116 or ARCHITECTURE.md §Redaction asks for and fails while the build does otherwise.
+// The costing and security adversary's proof tests for product costs (M2 Step 6; D-202). Each test
+// states what the owner's rule of 2026-09-30 (D-202) or ARCHITECTURE.md §Redaction asks for and
+// fails while the build does otherwise.
 
 let api: ProductCostsApi
 
@@ -23,41 +28,135 @@ function bought(materialId: string, qty: string, unitPrice: string) {
   return { kind: 'material', id: newId(), materialId, qty, unitPrice, unit: 'kg' }
 }
 
-/** A day of the month `offset` months from today's month (YYYY-MM-DD). */
-function dayOfMonth(today: string, offset: number, day = 10): string {
-  const year = Number.parseInt(today.slice(0, 4), 10)
-  const month = Number.parseInt(today.slice(5, 7), 10) - 1 + offset
-  const y = year + Math.floor(month / 12)
-  const m = ((month % 12) + 12) % 12
-  return `${y}-${String(m + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`
-}
-
-describe('D-116: the 3 months replace the estimate once 3 months of buying are recorded', () => {
-  it('two old invoices typed in on the first day do not replace the estimate with months of almost nothing', async () => {
-    // A workshop starts with BizCost today. For their prices, the owner types in two invoices she
-    // still has: 1 kg of wood 4 months ago and 1 kg 2 months ago (AED 30 each). Then today's real
-    // buying: 1 000 kg at 30. Running costs 15 000 a month; her estimate: 30 000 of materials a month.
-    const shop = await CostScope.open(api, WORKSHOP)
-    const today = await shop.today()
-    const wood = await shop.newMaterial({ name: `Wood ${tag()}`, unit: 'kg' })
-    await shop.buy(purchaseInput(dayOfMonth(today, -4), [bought(wood.id, '1', '30')]))
-    await shop.buy(purchaseInput(dayOfMonth(today, -2), [bought(wood.id, '1', '30')]))
-    await shop.buy(purchaseInput(today, [bought(wood.id, '1000', '30')]))
-    const [category] = await shop.categories()
+/** A workshop with a rent of 3 000 and electricity of 900 a month since 3 months ago. */
+async function workshop() {
+  const shop = await CostScope.open(api, WORKSHOP)
+  const today = await shop.today()
+  const lastMonth = addMonths(monthOf(today), -1)
+  const categories = await shop.categories()
+  const byName = (name: string) => categories.find((c) => c.name === name)!.id
+  for (const [name, amount] of [
+    ['Rent', '3000'],
+    ['Electricity', '900'],
+  ] as const) {
     await shop.runningCost({
       id: newId(),
-      name: 'Workshop rent',
-      categoryId: category!.id,
-      amount: '15000',
-      startsOn: today,
+      name,
+      categoryId: byName(name),
+      amount,
+      startsOn: `${addMonths(lastMonth, -2)}-01`,
     })
-    const settings = await shop.settings({ estimatedMonthlyPurchases: '30000' })
-    // Today the build takes the first purchase's business_date (4 months ago), so the last 3 full
-    // months "count": 30 bought in them, 10 a month, and each dirham of materials carries AED 1 500
-    // of running costs (a stool of AED 50 of wood would cost 75 050). Nothing was recorded as bought
-    // in those months: the business has not had 3 full months of purchases, so its estimate stands.
-    expect(settings.rate.purchases).toMatchObject({ source: 'estimate', monthly: '30000' })
-    expect(settings.rate.rate).toBe('0.5')
+  }
+  const bill = (name: string, amount: string) =>
+    shop.expenseDraft(shop.expenseInput(byName(name), today, { amount, periodMonth: lastMonth }))
+  const product = await shop.product({ name: `Shelf ${tag()}`, defaultPrice: '40' })
+  const monthCosts = async () => (await shop.breakdown(product.id)).monthCosts
+  return { shop, today, lastMonth, byName, bill, product, monthCosts }
+}
+
+describe('D-202: every running cost and expense counts once', () => {
+  it('a category’s bills replace its regular amount, never add to it', async () => {
+    // Last month's electricity bill came to 950: that month's electricity is 950, not 900 + 950, and
+    // the month's costs are 3 950, not 4 850.
+    const { shop, bill, monthCosts } = await workshop()
+    await shop.postExpense(await bill('Electricity', '950'))
+    const costs = await monthCosts()
+    expect(costs.total).toBe('3950')
+    expect(costs.categories?.find((c) => c.name === 'Electricity')).toMatchObject({
+      source: 'bills',
+      amount: '950',
+      regular: '900',
+    })
+  })
+
+  it('a bill finalized by mistake and reversed is as if never posted: the regular amount counts again', async () => {
+    const { shop, bill, monthCosts } = await workshop()
+    const wrong = await shop.postExpense(await bill('Electricity', '9500'))
+    ok(await shop.run('expense.reverse', { id: wrong.id }))
+    const costs = await monthCosts()
+    expect(costs.total).toBe('3900')
+    expect(costs.categories?.find((c) => c.name === 'Electricity')).toMatchObject({
+      source: 'regular',
+      amount: '900',
+    })
+  })
+
+  it('only finalized expenses count: a draft, one sent for approval or approved, never does', async () => {
+    const { shop, bill, monthCosts } = await workshop()
+    await bill('Marketing', '480')
+    ok(await shop.run('expense.updateSettings', { approval: true }))
+    const sent = await bill('Maintenance', '120')
+    ok(await shop.run('expense.submit', { id: sent.id, version: sent.version }))
+    const approved = await bill('Marketing', '75')
+    const submitted = ok(
+      await shop.run<{ data: { version: number } }>('expense.submit', {
+        id: approved.id,
+        version: approved.version,
+      }),
+    ).data
+    ok(await shop.run('expense.approve', { id: approved.id, version: submitted.version }))
+    expect((await monthCosts()).total).toBe('3900')
+  })
+
+  it('what was bought never counts in them: materials are each product’s own line', async () => {
+    const { shop, lastMonth, monthCosts } = await workshop()
+    const wood = await shop.newMaterial({ name: `Wood ${tag()}`, unit: 'kg' })
+    await shop.buy(purchaseInput(`${lastMonth}-12`, [bought(wood.id, '1000', '30')]))
+    expect((await monthCosts()).total).toBe('3900')
+  })
+
+  it('a rent that changes on a day of the month counts once', async () => {
+    const { shop, lastMonth, byName, monthCosts } = await workshop()
+    // A second rent "paid since" the 1st of last month beside the first one would be counted twice;
+    // the first "stopped on" the 1st: only the second counts, for every day.
+    const [old] = ok(
+      await shop.run<{ data: { items: { id: string; version: number; name: string }[] } }>(
+        'runningCost.list',
+        { search: 'Rent' },
+      ),
+    ).data.items
+    ok(
+      await shop.run('runningCost.update', {
+        id: old!.id,
+        version: old!.version,
+        name: 'Rent',
+        categoryId: byName('Rent'),
+        amount: '3000',
+        startsOn: `${addMonths(lastMonth, -2)}-01`,
+        endsOn: `${lastMonth}-01`,
+      }),
+    )
+    await shop.runningCost({
+      id: newId(),
+      name: 'Rent',
+      categoryId: byName('Rent'),
+      amount: '3300',
+      startsOn: `${lastMonth}-01`,
+    })
+    expect((await monthCosts()).total).toBe('4200')
+  })
+})
+
+describe('D-202: awaiting sales is not something the owner can fix', () => {
+  it('complete products stay complete, and the Dashboard’s last step is done', async () => {
+    const { shop, today } = await workshop()
+    const steel = await shop.newMaterial({ name: `Steel ${tag()}`, unit: 'kg' })
+    await shop.buy(purchaseInput(today, [bought(steel.id, '10', '12')]))
+    for (const name of ['Bench', 'Rack']) {
+      const product = await shop.product({ name: `${name} ${tag()}`, defaultPrice: '99' })
+      await shop.recipe(product.id, [{ id: newId(), materialId: steel.id, qty: '2', unit: 'kg' }])
+    }
+    // The workshop's own shelf has no recipe: the only real reason, and the only one counted.
+    const page = await shop.costList()
+    expect(page.counts.incomplete).toBe(1)
+    expect(page.items.every((item) => item.cost.runningCosts.state === 'awaiting_sales')).toBe(true)
+    const incomplete = await shop.costList({ filter: 'incomplete' })
+    expect(incomplete.items.map((item) => item.cost.reasons)).toEqual([['no_recipe']])
+    // Its margin is before running costs, and says so.
+    const bench = page.items.find((item) => item.name.startsWith('Bench'))
+    expect(bench?.cost).toMatchObject({ complete: true, beforeRunningCosts: true, total: '24' })
+    const steps = ok(await shop.run<DashboardChecklistDto>('dashboard.checklist')).costSteps
+    expect(steps.find((step) => step.id === 'product_costs')).toMatchObject({ remaining: 1 })
   })
 })
 
@@ -101,5 +200,23 @@ describe('ARCHITECTURE.md §Redaction: a hidden value cannot be derived from vis
       typeof row?.cost.total === 'string' && typeof row.price.beforeVat === 'string',
       'the list row carries the price before VAT and the cost side by side as well',
     ).toBe(false)
+  })
+
+  it('a member who sees costs but not expenses cannot read an expense’s amount off the month’s costs', async () => {
+    // Expense amounts are supplier prices shown with the expenses (D-165); a category that only has
+    // a bill would show that bill's amount.
+    const { shop, bill, product } = await workshop()
+    await shop.postExpense(await bill('Marketing', '481.37'))
+    const person = await api.person()
+    await addMember(api.db, shop.owner.user, shop.id, person.user, {
+      template: 'accountant',
+      overrides: [{ key: 'expenses.documents.view', effect: 'deny' }],
+    })
+    const result = await shop.as<ProductCostBreakdownDto>(person, 'productCost.get', {
+      productId: product.id,
+    })
+    expect(ok(result).data.monthCosts).toMatchObject({ amountsShown: false, total: null })
+    expect(result.raw.includes('481.37')).toBe(false)
+    expect(result.raw.includes('4381.37')).toBe(false)
   })
 })

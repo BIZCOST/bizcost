@@ -85,11 +85,8 @@
         "title": "Add your running costs",
         "runningCosts": "Rent, electricity, salaries and other regular costs, so each product carries its share.",
         "runningCosts_services": "Rent, electricity, salaries and other regular costs, so each service carries its share.",
-        "estimate": "Add an estimate of what you buy in a month, until 3 months of purchases are in.",
-        "both": "Add your regular costs, then an estimate of what you buy in a month.",
         "done": "Your running costs are added.",
-        "action": "Add running costs",
-        "actionEstimate": "Add the estimate"
+        "action": "Add running costs"
       },
       "owner_time": {
         "title": "Add your time",
@@ -111,19 +108,19 @@
         "remaining_other": "{{count}} products still have part of their cost missing.",
         "remainingServices_one": "{{count}} service still has part of its cost missing.",
         "remainingServices_other": "{{count}} services still have part of their cost missing.",
-        "done": "Every product's real cost is ready.",
-        "done_services": "Every service's cost is ready.",
+        "done": "Your product costs are complete before running costs, which are added once you record your sales.",
+        "done_services": "Your service costs are complete before running costs, which are added once you record your sales.",
         "action": "See product costs",
         "action_services": "See service costs"
       }
     },
     "ready": {
-      "title": "Your product costs are ready",
-      "title_services": "Your service costs are ready",
-      "body": "Each product's cost comes from your purchases, running costs and time. It stays up to date as you enter new purchases.",
-      "bodyWithoutTime": "Each product's cost comes from your purchases and running costs. It stays up to date as you enter new purchases.",
-      "bodyServices": "Each service's cost comes from your time and what it uses. Running costs don't reach services yet: Product costs says why.",
-      "bodyServicesWithoutTime": "Each service's cost comes from what it uses. Running costs don't reach services yet: Product costs says why.",
+      "title": "Your product costs are in, before running costs",
+      "title_services": "Your service costs are in, before running costs",
+      "body": "Each product's cost comes from your purchases and your time; its share of running costs is added once you record your sales. It stays up to date as you enter new purchases.",
+      "bodyWithoutTime": "Each product's cost comes from your purchases; its share of running costs is added once you record your sales. It stays up to date as you enter new purchases.",
+      "bodyServices": "Each service's cost comes from your time and what it uses; its share of running costs is added once you record your sales.",
+      "bodyServicesWithoutTime": "Each service's cost comes from what it uses; its share of running costs is added once you record your sales.",
       "action": "See product costs",
       "action_services": "See service costs"
     }

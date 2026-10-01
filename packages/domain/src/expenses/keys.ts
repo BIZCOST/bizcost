@@ -49,7 +49,7 @@ export const RUNNING_COST_FREQUENCIES = ['weekly', 'monthly', 'quarterly', 'year
 export type RunningCostFrequency = (typeof RUNNING_COST_FREQUENCIES)[number]
 
 /** Periods of each frequency in a year (a year has 52 weeks here, as people count them). */
-const PER_YEAR: Readonly<Record<RunningCostFrequency, string>> = {
+export const PER_YEAR: Readonly<Record<RunningCostFrequency, string>> = {
   weekly: '52',
   monthly: '12',
   quarterly: '4',
@@ -57,10 +57,10 @@ const PER_YEAR: Readonly<Record<RunningCostFrequency, string>> = {
 }
 
 /**
- * A running cost's regular amount as a monthly amount (D-116: the running-cost rate of Step 6 sums
- * these): amount × periods a year ÷ 12, an exact product divided once and rounded once to 12 decimals
- * (a cost-engine value, never rounded to the currency; D-107). Weekly 1 200 → 5 200; quarterly 900 →
- * 300; yearly 1 000 → 83.333333333333.
+ * A running cost's regular amount as a monthly amount (the Running Costs screen): amount × periods a
+ * year ÷ 12, an exact product divided once and rounded once to 12 decimals (a cost-engine value,
+ * never rounded to the currency; D-107). Weekly 1 200 → 5 200; quarterly 900 → 300; yearly 1 000 →
+ * 83.333333333333.
  */
 export function monthlyAmount(amount: string, frequency: RunningCostFrequency): CostAmount {
   const perYear = exactProduct([toDec(amount), toDec(PER_YEAR[frequency])])
@@ -68,9 +68,9 @@ export function monthlyAmount(amount: string, frequency: RunningCostFrequency): 
 }
 
 /**
- * What running costs come to in a month (D-116: "monthly running costs"): Σ amount × periods a year,
- * exact, divided by 12 once and rounded once to 12 decimals. It may differ from the sum of the rounded
- * monthlyAmount of each in the 12th decimal, never more.
+ * What running costs come to in a month (the Running Costs screen's monthly total): Σ amount ×
+ * periods a year, exact, divided by 12 once and rounded once to 12 decimals. It may differ from the
+ * sum of the rounded monthlyAmount of each in the 12th decimal, never more.
  */
 export function monthlyTotal(
   costs: readonly { readonly amount: string; readonly frequency: RunningCostFrequency }[],
@@ -86,7 +86,7 @@ export function monthlyTotal(
  * Whether a running cost counts on `day` (YYYY-MM-DD): it has started (`startsOn` on or before the
  * day) and has not stopped (`endsOn` null, or after the day). `endsOn` is the day it stopped: it no
  * longer counts from that day, so a rent that stops on the day the new one starts is counted once
- * (D-116, D-176).
+ * (D-176; daysRunIn counts the days of a month the same way, D-202).
  */
 export function runningCostActiveOn(
   cost: { readonly startsOn: string; readonly endsOn: string | null },

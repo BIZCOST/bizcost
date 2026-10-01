@@ -944,7 +944,8 @@ const PROBES: Record<string, Probe> = {
   'productCost.updateSettings': {
     base: 'business',
     reason: NO_ROWS,
-    variants: () => [{ input: { estimatedMonthlyPurchases: '12345' } }],
+    // The owner's hourly rate: the tenants have a team, so it is refused in their own business too.
+    variants: () => [{ input: { ownerHourlyRate: '12345' }, own: ['capability_disabled'] }],
   },
   // Expenses, their categories and payments, and running costs (M2 Step 5): every reference is
   // looked up in the x-business-id business, ids used anywhere are CONFLICT, and composite foreign

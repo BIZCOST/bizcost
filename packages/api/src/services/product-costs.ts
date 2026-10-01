@@ -1,4 +1,5 @@
 import type {
+  MonthCostsDto,
   productCostGetInput,
   ProductCostBreakdownDto,
   ProductCostLineDto,
@@ -6,30 +7,30 @@ import type {
   ProductCostListDto,
   ProductCostRowDto,
   ProductCostSettingsDto,
-  RunningCostRateDto,
+  runningShareStateDto,
   SalePriceDto,
   UnitCostDto,
   updateProductCostSettingsInput,
 } from '@bizcost/contracts'
 import { businesses, type Tx } from '@bizcost/db'
 import {
-  awaitsServiceShare,
+  addMonths,
   can,
-  checkDecimal,
   compareDecimal,
+  costCompleteFor,
   costOfQty,
+  costPool,
+  costRate,
   costRatio,
   dimensionOf,
+  firstDayOf,
   fitsCurrency,
   isCurrencyCode,
-  monthlyPurchases,
-  monthlyTotal,
+  monthOf,
   PURCHASE_AVERAGE_DAYS,
   priceBeforeVat,
   productCost,
-  purchaseMonths,
   rollUpRecipe,
-  runningCostRate,
   saleVatRate,
   STANDARD_UNITS,
   unitCostOf,
@@ -39,6 +40,7 @@ import {
   type ProductType,
   type RunningCostFrequency,
   type RunningCostsPart,
+  type RunningShareState,
   type SalePrice,
   type StandardUnit,
   type VatCategory,
@@ -52,33 +54,32 @@ import { containsPattern } from './catalog'
 import { averageBasisOf, costRecordsOf, lastPurchaseOf } from './material-costs'
 import { basesOf, findRecipe, linesOf, materialCostsOf, type ProductMaterialCost } from './recipes'
 
-// Product costs (ROADMAP.md M2 Step 6; D-115, D-116, D-119, D-121, D-178): what one unit sold of each
+// Product costs (ROADMAP.md M2 Step 6; D-115, D-119, D-121, D-178, D-202): what one unit sold of each
 // product or service costs, line by line, and its margin. Module `cost_engine` (and `products`; the
 // router checks them and the keys). Worked out on read, nothing stored: the sums in SQL from the cost
-// rows (the purchase ledger, recipes, running costs, the business's settings), each division once in
-// the domain (productCost), never rounded to the currency.
+// rows (the purchase ledger, recipes, running costs, expenses, the business's settings), each
+// division once in the domain (productCost, costPool), never rounded to the currency.
 //
 //   - Materials: its recipe at the materials' averages (the D-115 basis) ÷ what it makes, or, bought
 //     ready to sell, its material's average (materialCostsOf in services/recipes.ts, the same as
 //     product.costs). With the Materials module off there is no materials line.
-//   - Running costs (D-116): the running costs active today, a month (monthlyTotal), ÷ the monthly
-//     material purchases: the average of the last 3 full calendar months of posted purchases by
-//     business_date (what went into stock: after discounts, without reclaimable VAT, net of returns
-//     and credit notes, reversed purchases left out), once 3 full months have passed after the month
-//     of the first posted purchase and each of the 3 months holds a posted purchase (D-186); until
-//     then (or when that average is 0) the owner's estimate (businesses.estimated_monthly_purchases).
-//     A product's share = its materials × that rate. With the Running Costs module off there is no
-//     share; with none ever entered it is "not entered yet", never 0 (D-186).
+//   - Running costs, by its price (D-202, the owner's decision of 2026-09-30, which replaces D-116's
+//     share of the material cost): its price before VAT × the month's costs ÷ the month's sales. The
+//     month is the last full calendar month, for the costs and (Phase 3) the sales alike. Its costs
+//     (costPool): the running costs for the days they ran (Running Costs on) and the finalized
+//     expenses that belong to it, at what they cost the business (Expenses on), counted once: a
+//     category's bills replace its regular amount. Sales arrive in Phase 3, so every share is
+//     "awaiting sales" (the sales are simply absent here), or "no price" without a price. With both
+//     modules off there is no share.
 //   - The owner's time (D-119), only without a team: minutes for one unit × hourly rate ÷ 60.
 //   - The margin, on the price before VAT (VAT is never revenue; D-114, D-121).
 //
-// Sensitive: costs `cost`, monthly purchases `supplier_price`, margins `profit_margin` (the redact
-// middleware removes them; the three are visible only together, D-187). Sorting or filtering on a
-// hidden one is FORBIDDEN before anything is read. The business's monthly running costs and material
-// purchases behind the rate are withheld here from a member who may not see running costs and
-// purchases (D-186): the rate alone is no more than any product's share ÷ its materials. The settings
-// (the estimate, the hourly rate) need those keys, and are written only by a member who sees what
-// they write.
+// Sensitive: costs `cost`, a material's last purchase price `supplier_price`, margins
+// `profit_margin` (the redact middleware removes them; the three are visible only together, D-187).
+// Sorting or filtering on a hidden one is FORBIDDEN before anything is read. The month's costs are
+// withheld here (null, `amountsShown: false`) from a member who may not see running costs and
+// expenses themselves (D-202). The settings (the hourly rate) are written only by a member who sees
+// what they write.
 
 type ListInput = z.output<typeof productCostListInput>
 type GetInput = z.output<typeof productCostGetInput>
@@ -89,8 +90,6 @@ interface Costing {
   readonly today: string
   readonly currency: string
   readonly vatRegistered: boolean
-  /** businesses.estimated_monthly_purchases (null: not set). */
-  readonly estimate: string | null
   /** businesses.owner_hourly_rate (null: not set). */
   readonly hourlyRate: string | null
 }
@@ -98,15 +97,13 @@ interface Costing {
 async function costingOf(tx: Tx, businessId: string): Promise<Costing> {
   const [row] = (await tx.execute(sql`
     select (now() at time zone b.timezone)::date::text as today, trim(b.currency) as currency,
-           b.vat_registered, trim_scale(b.estimated_monthly_purchases)::text as estimate,
-           trim_scale(b.owner_hourly_rate)::text as hourly_rate
+           b.vat_registered, trim_scale(b.owner_hourly_rate)::text as hourly_rate
       from app.businesses b
      where b.id = ${businessId} and b.deleted_at is null
   `)) as unknown as {
     today: string
     currency: string
     vat_registered: boolean
-    estimate: string | null
     hourly_rate: string | null
   }[]
   if (!row) throw new AppError('forbidden')
@@ -114,7 +111,6 @@ async function costingOf(tx: Tx, businessId: string): Promise<Costing> {
     today: row.today,
     currency: row.currency,
     vatRegistered: row.vat_registered,
-    estimate: row.estimate,
     hourlyRate: row.hourly_rate,
   }
 }
@@ -126,139 +122,173 @@ function averageFromOf(today: string): string {
   return day.toISOString().slice(0, 10)
 }
 
-/** A rate that fits a cost amount (numeric(28,12)), else null. */
-const fittingRate = (value: string | null) =>
-  value !== null && checkDecimal(value, 'costAmount') === null ? value : null
+// ---------------------------------------------------------------------------------------------------
+// The month's costs (D-202)
+// ---------------------------------------------------------------------------------------------------
 
-interface Rate {
+interface MonthCosts {
   readonly part: RunningCostsPart
-  readonly dto: RunningCostRateDto
+  readonly dto: MonthCostsDto
 }
 
 /**
- * Whether the member may see the business's monthly running costs and material purchases (D-186):
- * it may see running costs and purchases themselves (their keys, as the Owner does whether or not
- * the modules are on).
+ * Whether the member may see the business's costs of a month (D-202): costs visible (with supplier
+ * prices and margins, D-187), and running costs and expenses themselves (their keys, as the Owner
+ * does whether or not the modules are on). An expense's amounts are supplier prices (D-165).
  */
-function mayReadTotals(ctx: BusinessCtx): boolean {
+function mayReadMonthCosts(ctx: BusinessCtx): boolean {
   return (
+    ctx.access.visibleCategories.has('cost') &&
+    ctx.access.visibleCategories.has('supplier_price') &&
     can(ctx.access.effective, 'running_costs.items.view') &&
-    can(ctx.access.effective, 'purchases.documents.view')
+    can(ctx.access.effective, 'expenses.documents.view')
   )
 }
 
+interface RunningRow extends Record<string, unknown> {
+  category_id: string
+  category_name: string
+  amount: string
+  frequency: RunningCostFrequency
+  starts_on: string
+  ends_on: string | null
+}
+
+interface ExpenseRow extends Record<string, unknown> {
+  category_id: string
+  category_name: string
+  cost: string
+  month: string
+  reversed_in: string | null
+}
+
 /**
- * How running costs reach products today (D-116): the monthly running costs, the monthly material
- * purchases the rate divides by (the last 3 full months once they count, else the owner's estimate),
- * and the rate. One read of the purchase ledger and one of the running costs. The totals are
- * withheld from the DTO (never from what the costs are worked out with) unless mayReadTotals.
+ * The business's costs of the last full calendar month and how they reach what it sells (D-202,
+ * D-203): its running costs (Running Costs on) and its finalized expenses (Expenses on), counted
+ * once by costPool, with the categories' names; the sales are absent until Phase 3. Two reads: every
+ * running cost (whether any was ever entered; costPool takes those that ran in the month, and the
+ * quarters and years of the quarterly and yearly ones), and the finalized expenses of the 11 months
+ * on either side of it (a year's bills pay for every month of that year) with the reversals counted
+ * in it. The amounts are withheld from the DTO (never from what the costs are worked out with) unless
+ * mayReadMonthCosts.
  */
-async function rateOf(tx: Tx, ctx: BusinessCtx, costing: Costing): Promise<Rate> {
+async function monthCostsOf(tx: Tx, ctx: BusinessCtx, costing: Costing): Promise<MonthCosts> {
   const businessId = ctx.businessId
-  const window = purchaseMonths(costing.today, null, 0)
-  // Each posted purchase line's value (its receipt), net of its returns and credit notes that stand
-  // (D-120 rule 4); reversed receipts, returns and credits are left out.
-  const [ledger] = (await tx.execute(sql`
-    with receipts as (
-      select m.id, m.business_date, m.value
-        from app.stock_movements m
-       where m.business_id = ${businessId}
-         and m.kind = 'purchase'
-         and not exists (
-           select 1 from app.stock_movements r
-            where r.business_id = m.business_id and r.reverses_id = m.id)
-    ),
-    taken as (
-      select x.receipt_id, sum(-x.value) as value
-        from app.stock_movements x
-       where x.business_id = ${businessId}
-         and x.kind in ('purchase_return', 'purchase_credit')
-         and not exists (
-           select 1 from app.stock_movements r
-            where r.business_id = x.business_id and r.reverses_id = x.id)
-       group by x.receipt_id
-    )
-    select min(r.business_date)::text as first_day,
-           trim_scale(coalesce(sum(r.value - coalesce(t.value, 0)) filter (
-             where r.business_date >= ${window.from}::date
-               and r.business_date <= ${window.to}::date), 0))::text as months_total,
-           (count(distinct date_trunc('month', r.business_date)) filter (
-             where r.business_date >= ${window.from}::date
-               and r.business_date <= ${window.to}::date))::int as months_bought
-      from receipts r
-      left join taken t on t.receipt_id = r.id
-  `)) as unknown as { first_day: string | null; months_total: string; months_bought: number }[]
-  const months = purchaseMonths(
-    costing.today,
-    ledger?.first_day ?? null,
-    Number(ledger?.months_bought ?? 0),
-  )
-  const purchases = monthlyPurchases({
-    months,
-    monthsTotal: ledger?.months_total ?? '0',
-    estimate: costing.estimate,
-  })
-  const totalsShown = mayReadTotals(ctx)
-  const shown = <T>(value: T): T | null => (totalsShown ? value : null)
-  const purchasesDto: RunningCostRateDto['purchases'] = {
-    source: purchases.source,
-    monthly: shown(purchases.monthly),
-    from: months.from,
-    to: months.to,
-    average: shown(purchases.average),
-    estimate: shown(costing.estimate),
-    countsFrom: months.countsFrom,
-    monthsBought: months.monthsBought,
-    ready: months.ready,
-  }
-  if (!passes(ctx, ['running_costs'])) {
+  const month = addMonths(monthOf(costing.today), -1)
+  const from = firstDayOf(month)
+  const runningOn = passes(ctx, ['running_costs'])
+  const expensesOn = passes(ctx, ['expenses'])
+  const amountsShown = mayReadMonthCosts(ctx)
+  // Every running cost not removed: whether one was ever entered, and what the month counts.
+  const running = (await tx.execute(sql`
+    select r.category_id, c.name as category_name, trim_scale(r.amount)::text as amount,
+           r.frequency, r.starts_on::text as starts_on, r.ends_on::text as ends_on
+      from app.running_costs r
+      join app.cost_categories c on c.business_id = r.business_id and c.id = r.category_id
+     where r.business_id = ${businessId} and r.deleted_at is null
+  `)) as unknown as RunningRow[]
+  const runningCostsEntered = running.length > 0
+  if (!runningOn && !expensesOn) {
     return {
       part: { state: 'off' },
       dto: {
         state: 'off',
-        totalsShown,
-        monthlyRunningCosts: null,
-        purchases: purchasesDto,
-        rate: null,
+        runningCostsEntered,
+        month,
+        amountsShown,
+        total: null,
+        categories: null,
       },
     }
   }
-  // Active: from its start up to the day before it stopped (runningCostActiveOn, D-176). Entered: any
-  // running cost not removed, whatever its days (D-186).
-  const costs = (await tx.execute(sql`
-    select trim_scale(r.amount)::text as amount, r.frequency,
-           (r.starts_on <= ${costing.today}::date
-             and (r.ends_on is null or r.ends_on > ${costing.today}::date)) as active
-      from app.running_costs r
-     where r.business_id = ${businessId} and r.deleted_at is null
-  `)) as unknown as { amount: string; frequency: RunningCostFrequency; active: boolean }[]
-  const entered = costs.length > 0
-  const monthlyRunningCosts = monthlyTotal(costs.filter((c) => c.active))
-  const none = !(compareDecimal(monthlyRunningCosts, '0') > 0)
-  const rate = !entered
-    ? null
-    : none
-      ? '0'
-      : purchases.monthly === null
-        ? null
-        : fittingRate(runningCostRate(monthlyRunningCosts, purchases.monthly))
-  const state = !entered
-    ? 'not_entered'
-    : none
-      ? 'none'
-      : purchases.monthly === null
-        ? 'not_set'
-        : 'ready'
+  const ran = runningOn ? running : []
+  // Finalized (posted, or posted then reversed): those of the months a period holding the month can
+  // span, and the reversals that count in it (reversal_period_month; null is the expense's own month).
+  const expenses = expensesOn
+    ? ((await tx.execute(sql`
+        select e.category_id, c.name as category_name, trim_scale(e.cost_total)::text as cost,
+               to_char(e.period_month, 'YYYY-MM') as month,
+               case when e.status = 'reversed'
+                    then to_char(coalesce(e.reversal_period_month, e.period_month), 'YYYY-MM')
+               end as reversed_in
+          from app.expenses e
+          join app.cost_categories c on c.business_id = e.business_id and c.id = e.category_id
+         where e.business_id = ${businessId} and e.deleted_at is null
+           and e.status in ('posted', 'reversed')
+           and (e.period_month between ${firstDayOf(addMonths(month, -11))}::date
+                                   and ${firstDayOf(addMonths(month, 11))}::date
+             or (e.status = 'reversed'
+               and coalesce(e.reversal_period_month, e.period_month) = ${from}::date))
+      `)) as unknown as ExpenseRow[])
+    : []
+  const pool = costPool(
+    month,
+    ran.map((r) => ({
+      categoryId: r.category_id,
+      amount: r.amount,
+      frequency: r.frequency,
+      startsOn: r.starts_on,
+      endsOn: r.ends_on,
+    })),
+    expenses.map((e) => ({
+      categoryId: e.category_id,
+      cost: e.cost,
+      month: e.month,
+      reversedIn: e.reversed_in,
+    })),
+  )
+  const part: RunningCostsPart = { state: 'on', costs: pool.total, sales: null }
+  let categories: MonthCostsDto['categories'] = null
+  if (amountsShown) {
+    const names = new Map(
+      [...ran, ...expenses].map((row) => [row.category_id, row.category_name] as const),
+    )
+    categories = pool.categories
+      .map((c) => ({
+        categoryId: c.categoryId,
+        name: names.get(c.categoryId) ?? '',
+        source: c.source,
+        amount: c.amount,
+        regular: c.regular,
+        period: c.period,
+        takenBack: c.takenBack,
+      }))
+      // The largest first, then by name.
+      .sort(
+        (a, b) =>
+          compareDecimal(b.amount, a.amount) ||
+          a.name.toLowerCase().localeCompare(b.name.toLowerCase()) ||
+          (a.categoryId < b.categoryId ? -1 : 1),
+      )
+  }
   return {
-    part: { state: 'on', entered, monthlyRunningCosts, monthlyPurchases: purchases.monthly },
+    part,
     dto: {
-      state,
-      totalsShown,
-      monthlyRunningCosts: shown(monthlyRunningCosts),
-      purchases: purchasesDto,
-      rate,
+      state: shownRateState(part),
+      runningCostsEntered,
+      month,
+      amountsShown,
+      total: amountsShown ? pool.total : null,
+      categories,
     },
   }
+}
+
+/** The business's rate state as M2 gives it: without sales (Phase 3) nothing is divided (D-202). */
+function shownRateState(part: RunningCostsPart): 'off' | 'awaiting_sales' {
+  const { state } = costRate(part)
+  if (state !== 'off' && state !== 'awaiting_sales') {
+    throw new Error(`a cost rate without sales: ${state}`)
+  }
+  return state
+}
+
+/** A product's share state as M2 gives it: without sales no share is worked out (D-202). */
+function shownShareState(state: RunningShareState): z.infer<typeof runningShareStateDto> {
+  if (state === 'none' || state === 'applied') {
+    throw new Error(`a running-cost share without sales: ${state}`)
+  }
+  return state
 }
 
 /** A product or service as its cost needs it. */
@@ -305,19 +335,21 @@ function ownerTimeOf(ctx: BusinessCtx, product: ProductRow, costing: Costing): O
     : { state: 'solo', minutes: product.owner_minutes, hourlyRate: costing.hourlyRate }
 }
 
-function unitCostDtoOf(cost: ProductCost, time: OwnerTimePart): UnitCostDto {
+/** The cost's DTO, `complete` as the screens and counts say it (costCompleteFor, D-203). */
+function unitCostDtoOf(cost: ProductCost, time: OwnerTimePart, complete: boolean): UnitCostDto {
   return {
     materials: cost.materials,
-    runningCosts: { state: cost.runningCosts.state, share: cost.runningCosts.share },
+    runningCosts: { state: shownShareState(cost.runningCosts.state) },
     ownerTime: {
       state: cost.ownerTime.state,
       minutes: time.state === 'solo' ? time.minutes : null,
       amount: cost.ownerTime.amount,
     },
     total: cost.total,
+    beforeRunningCosts: cost.beforeRunningCosts,
     tooLarge: cost.tooLarge,
     reasons: [...cost.reasons],
-    complete: cost.complete,
+    complete,
   }
 }
 
@@ -383,6 +415,8 @@ interface Costed {
   readonly sortKey: number
   readonly row: ProductCostRowDto
   readonly cost: ProductCost
+  /** Complete as the screens and counts say it (costCompleteFor, D-203). */
+  readonly complete: boolean
 }
 
 /** The value a row is sorted by (null: it has none, and goes last whichever the direction). */
@@ -406,9 +440,10 @@ function sortValue(costed: Costed, sort: ListInput['sort']): string | null {
  * with its cost for one unit sold, line by line, and its margin; sorted by name (as the database
  * orders lower(name)), price, cost, margin or margin % (nulls last, then by name; by margin, an
  * incomplete cost's margin is only "at most", so those rows come after the complete ones either way),
- * and filtered to those incomplete or at a loss; with how many of them are incomplete, at a loss or
- * without the owner's minutes. Sorting and filtering on costs or margins need them visible
- * (FORBIDDEN otherwise, before anything is read).
+ * and filtered to those incomplete or at a loss; with how many of them are incomplete (a service
+ * missing only its optional materials is not, D-203), at a loss, or without the owner's minutes; and
+ * the business's costs of the last full month (D-202). Sorting and filtering on costs or margins need
+ * them visible (FORBIDDEN otherwise, before anything is read).
  */
 export function listProductCosts(ctx: BusinessCtx, input: ListInput): Promise<ProductCostListDto> {
   return ctx.tx((tx) => listProductCostsIn(tx, ctx, input))
@@ -433,7 +468,7 @@ export async function listProductCostsIn(
   const byName = input.sort === 'name'
   const pagedInSql = byName && input.filter === undefined && !counting
   const costing = await costingOf(tx, businessId)
-  const rate = await rateOf(tx, ctx, costing)
+  const monthCosts = await monthCostsOf(tx, ctx, costing)
   const conditions: SQL[] = [sql`p.business_id = ${businessId}`, sql`p.deleted_at is null`]
   if (input.status === 'active') conditions.push(sql`p.archived_at is null`)
   if (input.status === 'archived') conditions.push(sql`p.archived_at is not null`)
@@ -473,12 +508,12 @@ export async function listProductCostsIn(
     const sale = saleOf(product, costing)
     const time = ownerTimeOf(ctx, product, costing)
     const cost = productCost({
-      type: product.type,
       materials: part,
-      runningCosts: rate.part,
+      runningCosts: monthCosts.part,
       ownerTime: time,
       sale,
     })
+    const complete = costCompleteFor(product.type, cost)
     const row: ProductCostRowDto = {
       productId: product.id,
       name: product.name,
@@ -490,18 +525,17 @@ export async function listProductCostsIn(
       lineCount: material?.lineCount ?? 0,
       unpricedLines: material?.cost.unpricedLines ?? 0,
       price: salePriceDtoOf(sale),
-      cost: unitCostDtoOf(cost, time),
+      cost: unitCostDtoOf(cost, time, complete),
       margin: { amount: cost.margin, percent: cost.marginPercent },
     }
-    return { product, sortKey, row, cost }
+    return { product, sortKey, row, cost, complete }
   })
   const atLoss = (c: Costed) => c.cost.margin !== null && compareDecimal(c.cost.margin, '0') < 0
   const counts = {
     all: pagedInSql ? 0 : costed.length,
-    incomplete: costed.filter((c) => !c.cost.complete).length,
+    incomplete: costed.filter((c) => !c.complete).length,
     loss: costed.filter(atLoss).length,
     noTime: costed.filter((c) => c.cost.ownerTime.state === 'none').length,
-    servicesAwaitingShare: costed.filter((c) => awaitsServiceShare(c.product.type, c.cost)).length,
   }
   if (pagedInSql) {
     const [row] = (await tx.execute(sql`
@@ -510,7 +544,7 @@ export async function listProductCostsIn(
       `)) as unknown as { total: number }[]
     counts.all = row?.total ?? 0
   }
-  if (input.filter === 'incomplete') costed = costed.filter((c) => !c.cost.complete)
+  if (input.filter === 'incomplete') costed = costed.filter((c) => !c.complete)
   if (input.filter === 'loss') costed = costed.filter(atLoss)
   if (!byName) {
     const sign = input.order === 'asc' ? 1 : -1
@@ -519,8 +553,8 @@ export async function listProductCostsIn(
       const x = sortValue(a, input.sort)
       const y = sortValue(b, input.sort)
       // By margin, an incomplete cost's margin is "at most": after the complete ones.
-      if (byMargin && x !== null && y !== null && a.cost.complete !== b.cost.complete) {
-        return a.cost.complete ? -1 : 1
+      if (byMargin && x !== null && y !== null && a.complete !== b.complete) {
+        return a.complete ? -1 : 1
       }
       if (x !== null && y !== null) {
         const order = compareDecimal(x, y)
@@ -542,7 +576,7 @@ export async function listProductCostsIn(
       currency: costing.currency,
       today: costing.today,
       averageFrom: averageFromOf(costing.today),
-      rate: rate.dto,
+      monthCosts: monthCosts.dto,
       ownerTime: ownerTimeSettingOf(ctx, costing),
     },
     meta: { redacted: [] },
@@ -689,8 +723,9 @@ async function recipeMaterialsOf(
 /**
  * `productCost.get`: one product's or service's cost for one unit sold, line by line: each material
  * (quantity, its average per unit, the line's cost and its last purchase price), the running-cost
- * share and how it was worked out, the owner's time, the total and the margin. NOT_FOUND unless it is
- * a product or service of this business.
+ * share and how it is worked out (with the business's costs of the last full month, D-202), the
+ * owner's time, the total and the margin. NOT_FOUND unless it is a product or service of this
+ * business.
  */
 export function getProductCost(
   ctx: BusinessCtx,
@@ -705,7 +740,7 @@ export function getProductCost(
     `)) as unknown as ProductRow[]
     if (!product) throw new AppError('not_found')
     const costing = await costingOf(tx, businessId)
-    const rate = await rateOf(tx, ctx, costing)
+    const monthCosts = await monthCostsOf(tx, ctx, costing)
     let materials: Materials | null = null
     let part: MaterialsPart = { state: 'off' }
     if (passes(ctx, ['materials'])) {
@@ -723,9 +758,8 @@ export function getProductCost(
     const sale = saleOf(product, costing)
     const time = ownerTimeOf(ctx, product, costing)
     const cost = productCost({
-      type: product.type,
       materials: part,
-      runningCosts: rate.part,
+      runningCosts: monthCosts.part,
       ownerTime: time,
       sale,
     })
@@ -741,9 +775,9 @@ export function getProductCost(
         today: costing.today,
         price: salePriceDtoOf(sale),
         materials,
-        cost: unitCostDtoOf(cost, time),
+        cost: unitCostDtoOf(cost, time, costCompleteFor(product.type, cost)),
         margin: { amount: cost.margin, percent: cost.marginPercent },
-        rate: rate.dto,
+        monthCosts: monthCosts.dto,
         ownerTime: ownerTimeSettingOf(ctx, costing),
       },
       meta: { redacted: [] },
@@ -757,69 +791,49 @@ export function getProductCost(
 
 async function readSettings(tx: Tx, ctx: BusinessCtx): Promise<ProductCostSettingsDto> {
   const costing = await costingOf(tx, ctx.businessId)
-  const rate = await rateOf(tx, ctx, costing)
   return {
     data: {
-      estimatedMonthlyPurchases: costing.estimate,
       ownerHourlyRate: costing.hourlyRate,
       hasTeam: ctx.access.capabilities.has_team,
       currency: costing.currency,
-      today: costing.today,
-      rate: rate.dto,
     },
     meta: { redacted: [] },
   }
 }
 
 /**
- * `productCost.settings`: the owner's estimate of monthly material purchases and hourly rate, and how
- * running costs reach products now.
+ * `productCost.settings`: the owner's hourly rate (D-119), and whether the business has a team (then
+ * nothing is left to set: running costs need no setting, D-202).
  */
 export function getProductCostSettings(ctx: BusinessCtx): Promise<ProductCostSettingsDto> {
   return ctx.tx((tx) => readSettings(tx, ctx))
 }
 
 /**
- * `productCost.updateSettings`: saves each field given (null clears it), keeps the others. Needs
- * costs and supplier prices visible (what it writes are a supplier-price estimate and a cost:
- * FORBIDDEN otherwise, before anything is read). The hourly rate only without a team
- * (CAPABILITY_DISABLED; kept as it is with one). Amounts at most the currency's decimals
- * (VALIDATION). Audited (businesses).
+ * `productCost.updateSettings`: saves the owner's hourly rate (null clears it). Needs costs visible
+ * (what it writes is a cost: FORBIDDEN otherwise, before anything is read), and a business without a
+ * team (CAPABILITY_DISABLED; kept as it is with one). At most the currency's decimals (VALIDATION).
+ * Audited (businesses).
  */
 export function updateProductCostSettings(
   ctx: BusinessCtx,
   input: SettingsInput,
 ): Promise<ProductCostSettingsDto> {
-  assertQueryable(ctx, [
-    { name: 'estimatedMonthlyPurchases', category: 'supplier_price' },
-    { name: 'ownerHourlyRate', category: 'cost' },
-  ])
-  if (input.ownerHourlyRate !== undefined && ctx.access.capabilities.has_team) {
-    throw new AppError('capability_disabled')
-  }
+  assertQueryable(ctx, [{ name: 'ownerHourlyRate', category: 'cost' }])
+  if (ctx.access.capabilities.has_team) throw new AppError('capability_disabled')
   return ctx.tx(async (tx) => {
     const { currency } = await costingOf(tx, ctx.businessId)
     if (!isCurrencyCode(currency)) {
       throw new AppError('validation', { message: `currency: ${currency} is not supported` })
     }
-    for (const [name, value] of [
-      ['estimatedMonthlyPurchases', input.estimatedMonthlyPurchases],
-      ['ownerHourlyRate', input.ownerHourlyRate],
-    ] as const) {
-      if (value != null && !fitsCurrency(value, currency)) {
-        throw new AppError('validation', {
-          message: `${name}: more decimals than the currency has`,
-        })
-      }
+    if (input.ownerHourlyRate !== null && !fitsCurrency(input.ownerHourlyRate, currency)) {
+      throw new AppError('validation', {
+        message: 'ownerHourlyRate: more decimals than the currency has',
+      })
     }
     await tx
       .update(businesses)
-      .set({
-        ...(input.estimatedMonthlyPurchases !== undefined
-          ? { estimatedMonthlyPurchases: input.estimatedMonthlyPurchases }
-          : {}),
-        ...(input.ownerHourlyRate !== undefined ? { ownerHourlyRate: input.ownerHourlyRate } : {}),
-      })
+      .set({ ownerHourlyRate: input.ownerHourlyRate })
       .where(eq(businesses.id, ctx.businessId))
     return readSettings(tx, ctx)
   })

@@ -2,14 +2,14 @@ import {
   checkDecimal,
   compareDecimal,
   INCOMPLETE_REASONS,
+  POOL_SOURCES,
   PRODUCT_TYPES,
-  PURCHASE_MONTHS,
-  RUNNING_SHARE_STATES,
+  type RunningShareState,
 } from '@bizcost/domain'
 import { z } from 'zod'
 import { CATALOG_SEARCH_MAX_LENGTH } from '../catalog'
 import { withMeta } from '../envelope'
-import { zBusinessDate, zDecimal, zUuid } from '../primitives'
+import { zBusinessDate, zBusinessMonth, zDecimal, zUuid } from '../primitives'
 import {
   PRODUCT_COST_FILTERS,
   PRODUCT_COST_PAGE_SIZE,
@@ -21,87 +21,107 @@ import { dimensionDto, standardUnitDto } from './catalog'
 import { averageBasisDto } from './purchases'
 import { productCostKindDto } from './recipes'
 
-// Product costs (ROADMAP.md M2 Step 6; D-115, D-116, D-119, D-121, D-178): what one unit sold of each
+// Product costs (ROADMAP.md M2 Step 6; D-115, D-119, D-121, D-178, D-202): what one unit sold of each
 // product or service costs, line by line, and its margin, worked out on read (nothing stored):
 //   - materials: its recipe at the materials' averages ÷ what the recipe makes, or, bought ready to
 //     sell, its material's average;
-//   - running costs: a share of the material cost, materials × monthly running costs ÷ monthly
-//     material purchases (the last 3 full months of purchases, or the owner's estimate until they
-//     count), with the numbers it was worked out from, so the screen can say it in words ("your
-//     running costs are AED 15,000 a month and you buy about AED 30,000 of materials a month, so each
-//     dirham of materials carries 0.50");
+//   - running costs, by its price (D-202, the owner's decision of 2026-09-30, which replaces D-116's
+//     share of the material cost): its price before VAT × the month's costs ÷ the month's sales. Sales
+//     arrive in Phase 3, so in M2 the line says it is worked out once sales are recorded
+//     (`awaiting_sales`), and the total and the margin are before running costs
+//     (`beforeRunningCosts`); without a price no share can be worked out by it (`no_price`). The
+//     business's costs of the last full calendar month are shown with it (`monthCosts`): per
+//     category, its bills or its running costs' regular amount, counted once;
 //   - the owner's time, for a business without a team: minutes × hourly rate ÷ 60;
 //   - the total (their exact sum), the price before VAT, and the margin on it (amount and %).
 // Never rounded here (12 decimals; screens round). Nothing missing is ever 0: its value is null and
 // `reasons` says why, so the screen says it plainly and marks the total incomplete.
 //
-// Sensitive: costs, what they are made of and why they are incomplete are `cost`; monthly purchases
-// are `supplier_price`; margins `profit_margin`. The three are visible only together (D-144, D-187:
+// Sensitive: costs, what they are made of and why they are incomplete are `cost`; supplier prices
+// `supplier_price`; margins `profit_margin`. The three are visible only together (D-144, D-187:
 // price − cost is the margin). Outputs are withMeta() envelopes. Sorting or filtering on a hidden
-// value is FORBIDDEN (the API checks it before anything is read). The business's monthly running
-// costs and material purchases behind the rate are shown only to a member who may see running costs
-// and purchases (D-186); others get the rate alone.
+// value is FORBIDDEN (the API checks it before anything is read). The month's costs are shown only to
+// a member who may also see running costs and expenses (D-202); others get none of their amounts.
 
 /** Why a product's cost is incomplete (INCOMPLETE_REASONS in @bizcost/domain). */
 export const incompleteReasonDto = z.enum(INCOMPLETE_REASONS)
 
 /**
- * The running-cost line of a product: `off` (Running Costs off), `not_entered` (none ever entered:
- * incomplete, never 0), `none` (nothing paid to run the business now: 0), `no_materials` (Materials
- * off, or a service without materials: a known limit of this method until working time comes in
- * Phase 5), `not_set` (neither an estimate nor 3 full months of purchases), `no_recipe` (a product
- * without its recipe yet), `waiting` (its materials have no price yet), `applied`.
+ * The running-cost line of a product (RUNNING_SHARE_STATES in @bizcost/domain, as M2 gives them):
+ * `off` (neither Running Costs nor Expenses is on: nothing to share), `no_price` (no price, so no
+ * share by it: an incomplete reason, "add its price"), `awaiting_sales` (worked out automatically once
+ * sales are recorded: Phase 3 turns the share on, with its states `none` and `applied`).
  */
-export const runningShareStateDto = z.enum(RUNNING_SHARE_STATES)
+export const runningShareStateDto = z.enum([
+  'off',
+  'no_price',
+  'awaiting_sales',
+] as const satisfies readonly RunningShareState[])
 
 /** The owner's time line: `team` (none with a team), `none` (no minutes), `rate_not_set`, `applied`. */
 export const ownerTimeStateDto = z.enum(['team', 'none', 'rate_not_set', 'applied'])
 
-/**
- * How the business's running costs reach its products (D-116), in numbers the screen says in words:
- * `off` (Running Costs off), `not_entered` (none ever entered), `none` (no running cost paid today),
- * `not_set` (running costs, and neither the owner's estimate nor 3 full months of purchases),
- * `ready` (the rate is known).
- */
-export const runningCostRateDto = z.object({
-  state: sensitive(z.enum(['off', 'not_entered', 'none', 'not_set', 'ready']), 'cost'),
+/** One category of the month's costs (costPool in @bizcost/domain). */
+export const monthCostCategoryDto = z.object({
+  categoryId: zUuid,
+  /** The category's name (cost_categories.name). */
+  name: z.string(),
   /**
-   * The monthly running costs and material purchases below are shown: the member may see running
-   * costs and purchases (running_costs.items.view and purchases.documents.view). Otherwise they are
-   * null and only the rate is given (D-186): it is no more than any product's share ÷ its materials.
+   * `bills`: its expenses for the period that holds the month (they replace its running costs'
+   * regular amount, never both); `regular`: its running costs' regular amount for the days they ran;
+   * `taken_back`: only a reversal of an earlier month's bill counts in it (D-203).
    */
-  totalsShown: z.boolean(),
-  /** The running costs paid today, a month (each turned into a monthly amount); null when off. */
-  monthlyRunningCosts: sensitive(zDecimal.nullable(), 'cost'),
-  purchases: z.object({
-    /** Which figure the rate divides by: the last 3 full months, the owner's estimate, or none. */
-    source: sensitive(z.enum(['last_3_months', 'estimate']).nullable(), 'supplier_price'),
-    /** That figure, a month (null: none). */
-    monthly: sensitive(zDecimal.nullable(), 'supplier_price'),
-    /** The last 3 full calendar months: their first and last day. */
-    from: zBusinessDate,
-    to: zBusinessDate,
-    /** Their average a month once they count (null before; it may be 0). */
-    average: sensitive(zDecimal.nullable(), 'supplier_price'),
-    /** The owner's estimate of materials bought a month (null: not set). */
-    estimate: sensitive(zDecimal.nullable(), 'supplier_price'),
-    /**
-     * The first day on which the 3 months can count: 3 full months after the month of the first
-     * posted purchase (null: nothing bought yet). Until then the estimate is used.
-     */
-    countsFrom: zBusinessDate.nullable(),
-    /** How many of the 3 months hold a posted purchase: they count only when all 3 do (D-186). */
-    monthsBought: z.int().min(0).max(PURCHASE_MONTHS),
-    /** They count today (from countsFrom, each of the 3 months holding a purchase). */
-    ready: z.boolean(),
-  }),
+  source: z.enum(POOL_SOURCES),
+  /** What it counts in the month (12 decimals; zero or less after a reversal taken back in it). */
+  amount: zDecimal,
+  /** Its running costs' regular amount for the month, when it had any (not counted beside bills). */
+  regular: zDecimal.nullable(),
   /**
-   * Monthly running costs ÷ monthly purchases (12 decimals): what each unit of currency of materials
-   * carries. 0 with no running costs; null when off or not set.
+   * With `bills`: the quarter or year of its quarterly or yearly running cost they pay for (its first
+   * and last month, 3 or 12 months, and what its bills come to), spread evenly over its months
+   * (D-203); null: the month's own bills.
    */
-  rate: sensitive(zDecimal.nullable(), 'cost'),
+  period: z
+    .object({
+      from: zBusinessMonth,
+      to: zBusinessMonth,
+      months: z.union([z.literal(3), z.literal(12)]),
+      bills: zDecimal,
+    })
+    .nullable(),
+  /** What reversals of earlier months' bills take back in this month (already out of `amount`). */
+  takenBack: zDecimal.nullable(),
 })
-export type RunningCostRateDto = z.infer<typeof runningCostRateDto>
+export type MonthCostCategoryDto = z.infer<typeof monthCostCategoryDto>
+
+/**
+ * How the business's running costs reach what it sells (D-202), with its costs of the last full
+ * calendar month: every running cost and finalized expense counted once (an expense in the month it
+ * belongs to; a category's bills replace its regular amount, over the quarter or year they pay for
+ * when its running cost is quarterly or yearly, D-203). Phase 3 divides them by the same month's
+ * sales before VAT. Material purchases and the owner's time are not in them.
+ */
+export const monthCostsDto = z.object({
+  /**
+   * `off`: neither Running Costs nor Expenses is on; `awaiting_sales`: shared once sales are
+   * recorded (Phase 3).
+   */
+  state: sensitive(z.enum(['off', 'awaiting_sales']), 'cost'),
+  /** A running cost was ever entered (removed ones aside): without any, the page asks for them. */
+  runningCostsEntered: sensitive(z.boolean(), 'cost'),
+  /** The month shown: the last full calendar month (YYYY-MM). */
+  month: zBusinessMonth,
+  /**
+   * The amounts below are shown: the member may see costs, running costs
+   * (running_costs.items.view) and expenses (expenses.documents.view). Otherwise they are null.
+   */
+  amountsShown: z.boolean(),
+  /** The month's costs (Σ of the categories, exact); null when off or not shown. */
+  total: sensitive(zDecimal.nullable(), 'cost'),
+  /** Each category with something in the month, the largest first; null when off or not shown. */
+  categories: sensitive(z.array(monthCostCategoryDto).nullable(), 'cost'),
+})
+export type MonthCostsDto = z.infer<typeof monthCostsDto>
 
 /** The price the margin is taken from (not sensitive: every member who sees products sees it). */
 export const salePriceDto = z.object({
@@ -122,8 +142,6 @@ export const unitCostDto = z.object({
   materials: sensitive(zDecimal.nullable(), 'cost'),
   runningCosts: z.object({
     state: sensitive(runningShareStateDto, 'cost'),
-    /** materials × running costs ÷ purchases; 0 with no running costs; null otherwise. */
-    share: sensitive(zDecimal.nullable(), 'cost'),
   }),
   ownerTime: z.object({
     state: sensitive(ownerTimeStateDto, 'cost'),
@@ -134,18 +152,32 @@ export const unitCostDto = z.object({
   }),
   /** The exact sum of the lines worked out; null when none is (or too large). */
   total: sensitive(zDecimal.nullable(), 'cost'),
+  /**
+   * The running-cost share applies and is not in the total yet (awaiting sales, or no price): the
+   * total and the margin are before running costs, never final.
+   */
+  beforeRunningCosts: sensitive(z.boolean(), 'cost'),
   /** A line or the total does not fit a cost amount: nothing is totalled. */
   tooLarge: sensitive(z.boolean(), 'cost'),
-  /** Why it is incomplete, one entry per thing missing (empty when complete). */
+  /**
+   * Why it is incomplete, one entry per thing missing that can be added (empty when complete). A
+   * service's `no_recipe` alone is a hint: its materials are optional, and its cost is complete.
+   */
   reasons: sensitive(z.array(incompleteReasonDto), 'cost'),
-  /** Every line that applies is worked out (`cost`: what is missing says what the cost is made of). */
+  /**
+   * Nothing that can be added is missing, or only a service's optional materials (costCompleteFor,
+   * D-203; `cost`: what is missing says what the cost is made of). A share awaiting sales is not
+   * missing: see beforeRunningCosts (with a team and without materials it may be the only line, so
+   * the total is null and nothing is missing).
+   */
   complete: sensitive(z.boolean(), 'cost'),
 })
 export type UnitCostDto = z.infer<typeof unitCostDto>
 
 /**
  * The margin on the price before VAT, worked out on what is known: while the cost is incomplete
- * (`cost.complete`, visible with it) the real margin is at most this.
+ * (`cost.complete`, visible with it) or before running costs (`cost.beforeRunningCosts`) the real
+ * margin is at most this.
  */
 export const marginDto = z.object({
   /** Price before VAT − total (12 decimals; negative is a loss); null without a price or a total. */
@@ -215,18 +247,14 @@ export type ProductCostRowDto = z.infer<typeof productCostRowDto>
 
 /**
  * How many products of the list (its search, status and type; whatever the filter) need a look: the
- * page's filter shows them. `noTime`: without a team, those with none of the owner's minutes.
+ * page's filter shows them (`incomplete`: those not `complete`, the Dashboard's count too). `noTime`:
+ * without a team, those with none of the owner's minutes.
  */
 export const productCostCountsDto = z.object({
   all: z.int().min(0),
   incomplete: sensitive(z.int().min(0), 'cost'),
   loss: sensitive(z.int().min(0), 'profit_margin'),
   noTime: sensitive(z.int().min(0), 'cost'),
-  /**
-   * Of the incomplete ones, services without materials missing only what they cannot carry yet: running
-   * costs, with this method, and their optional materials (awaitsServiceShare, D-200).
-   */
-  servicesAwaitingShare: sensitive(z.int().min(0), 'cost'),
 })
 
 export const productCostListDto = withMeta(
@@ -240,8 +268,8 @@ export const productCostListDto = withMeta(
     today: zBusinessDate,
     /** The days the materials' 90-day average covers (D-115). */
     averageFrom: zBusinessDate,
-    /** How running costs reach products (the same for every product). */
-    rate: runningCostRateDto,
+    /** How running costs reach what the business sells (the same for every product). */
+    monthCosts: monthCostsDto,
     ownerTime: ownerTimeSettingDto,
   }),
 )
@@ -322,7 +350,7 @@ export const productCostBreakdownDto = withMeta(
       .nullable(),
     cost: unitCostDto,
     margin: marginDto,
-    rate: runningCostRateDto,
+    monthCosts: monthCostsDto,
     ownerTime: ownerTimeSettingDto,
   }),
 )
@@ -340,33 +368,23 @@ const positiveAmount = zDecimal.refine(
 
 export const productCostSettingsDto = withMeta(
   z.object({
-    /** The owner's estimate of materials bought a month (null: not set). */
-    estimatedMonthlyPurchases: sensitive(zDecimal.nullable(), 'supplier_price'),
-    /** The owner's hourly rate (null: not set). Used only without a team. */
+    /** The owner's hourly rate (null: not set). Used only without a team (D-119). */
     ownerHourlyRate: sensitive(zDecimal.nullable(), 'cost'),
-    /** The business has a team: the owner's time is not counted (the rate is kept). */
+    /**
+     * The business has a team: the owner's time is not counted (the rate is kept), and nothing is
+     * left to set here (running costs need no setting, D-202).
+     */
     hasTeam: z.boolean(),
     currency: z.string(),
-    /** Today in the business's time zone (when the 3 months of purchases can count is said from it). */
-    today: zBusinessDate,
-    /** How running costs reach products now, with the estimate or the purchases. */
-    rate: runningCostRateDto,
   }),
 )
 export type ProductCostSettingsDto = z.infer<typeof productCostSettingsDto>
 
 /**
- * `productCost.updateSettings`: each field given is saved (null clears it), each left out is kept; at
- * least one. At most the currency's decimals (VALIDATION). The hourly rate only without a team
- * (CAPABILITY_DISABLED).
+ * `productCost.updateSettings`: the owner's hourly rate (null clears it). At most the currency's
+ * decimals (VALIDATION). Only without a team (CAPABILITY_DISABLED).
  */
-export const updateProductCostSettingsInput = z
-  .object({
-    estimatedMonthlyPurchases: positiveAmount.nullable().optional(),
-    ownerHourlyRate: positiveAmount.nullable().optional(),
-  })
-  .refine(
-    (input) => input.estimatedMonthlyPurchases !== undefined || input.ownerHourlyRate !== undefined,
-    { message: 'nothing to save' },
-  )
+export const updateProductCostSettingsInput = z.object({
+  ownerHourlyRate: positiveAmount.nullable(),
+})
 export type UpdateProductCostSettingsInput = z.input<typeof updateProductCostSettingsInput>

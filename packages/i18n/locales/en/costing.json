@@ -5,7 +5,6 @@
     "title": "How your costs are worked out",
     "materials": "Materials: the average of what you paid for them from {{from}} to {{to}}, or your last purchase.",
     "change": "Change",
-    "setEstimate": "Set your monthly purchases",
     "setRate": "Set your hourly rate",
     "addRunningCosts": "Add your running costs",
     "askOwner": "Ask the owner to set it in Settings.",
@@ -15,25 +14,31 @@
     "noTime_other": "{{count}} products have none of your time yet: add the minutes each takes you on the product."
   },
   "rate": {
-    "rule": "Every {{one}} you spend on materials adds {{rate}} of running costs ({{percent}} of the materials).",
-    "short": "Running costs add {{percent}} to the cost of materials.",
-    "why": {
-      "estimate": "Why: your running costs are {{running}} a month and you buy about {{purchases}} of materials a month.",
-      "last_3_months": "Why: your running costs are {{running}} a month and you bought {{purchases}} of materials a month on average from {{from}} to {{to}}."
+    "byPrice": "Your running costs and expenses (rent, salaries, bills…) are shared over everything you sell by its price: each thing you sell carries the same percentage of its price.",
+    "example": "For example, if a month's costs are {{costs}} and its sales {{sales}}, that's {{costsNumber}} ÷ {{salesNumber}} = {{percent}}: something priced {{price}} carries {{share}}, and something priced {{small}} carries {{smallShare}}.",
+    "awaiting": "Worked out automatically once you record your sales. Until then, your costs and margins are before running costs.",
+    "short": "Running costs: worked out automatically once you record your sales.",
+    "not_entered": "Enter your running costs (rent, salaries…): they're what is shared over what you sell."
+  },
+  "pool": {
+    "title": "Your business's costs in {{month}}",
+    "shared": "This is what will be shared over what you sold in {{month}} once your sales are recorded.",
+    "regular": "Its regular amount",
+    "bills": "From its bills",
+    "billsInstead": "From its bills, in place of its regular {{regular}}",
+    "period": {
+      "quarter": "Its bills for the quarter from {{from}} to {{to}} ({{bills}}), spread over its 3 months",
+      "quarterInstead": "Its bills for the quarter from {{from}} to {{to}} ({{bills}}), spread over its 3 months, in place of its regular {{regular}}",
+      "year": "Its bills for the year from {{from}} to {{to}} ({{bills}}), spread over its 12 months",
+      "yearInstead": "Its bills for the year from {{from}} to {{to}} ({{bills}}), spread over its 12 months, in place of its regular {{regular}}"
     },
-    "tooLarge": "Your running costs are {{running}} a month and you buy about {{purchases}} of materials a month: too little to share them across.",
-    "tooLarge_hidden": "Your running costs are too large for what you buy in materials to share them across.",
-    "not_set": "Your running costs ({{running}} a month) aren't in your product costs yet: BizCost needs to know about how much you buy in materials a month.",
-    "not_set_hidden": "Your running costs aren't in your product costs yet: BizCost needs to know about how much you buy in materials a month.",
-    "not_entered": "You haven't entered your running costs yet (rent, electricity…), so your product costs don't include them.",
-    "none": "You have no running costs right now, so none are added to what you sell.",
-    "noMaterials": "Your running costs ({{running}} a month) aren't in your service costs yet: BizCost shares them by the materials each product uses, and your services use none. Sharing them by working time comes later.",
-    "noMaterials_hidden": "Your running costs aren't in your service costs yet: BizCost shares them by the materials each product uses, and your services use none. Sharing them by working time comes later.",
-    "estimateUntil": "BizCost uses your estimate until you have 3 full months of purchases: from {{date}}, it can use what you really bought.",
-    "estimateUntilUnknown": "BizCost uses your estimate until you have 3 full months of purchases, then what you really bought.",
-    "estimateMonthsMissing": "Some months from {{from}} to {{to}} have no purchases recorded, so BizCost uses your estimate. Once each of the last 3 full months has purchases, it uses what you really bought.",
-    "estimateNothingBought": "What you bought from {{from}} to {{to}} comes to nothing after returns, so BizCost uses your estimate.",
-    "fromPurchases": "You have 3 full months of purchases, so BizCost uses what you really bought."
+    "takenBackOnly": "An earlier month's bill, reversed in this month",
+    "takenBack": "Less {{amount}}: an earlier month's bill, reversed in this month",
+    "note": "Each category counts once: its bills for the month, or else its regular amount. The bills of a running cost paid by the quarter or the year are spread over its months.",
+    "noPurchases": "Material purchases aren't here: they're in each item's materials.",
+    "vat": "Amounts are before VAT: VAT you get back isn't a cost.",
+    "none": "Nothing counted for {{month}}: no running costs and no final expenses for that month.",
+    "hidden": "Your business's costs in {{month}} show only to those who can see running costs and expenses."
   },
   "time": {
     "rate": "Your time: {{amount}} an hour.",
@@ -60,16 +65,20 @@
       "incompleteCount": "Incomplete ({{count}})",
       "loss": "Sold at a loss",
       "lossCount": "Sold at a loss ({{count}})",
+      "lossBefore": "Sold at a loss before running costs",
+      "lossBeforeCount": "Sold at a loss before running costs ({{count}})",
       "archived": "Archived",
       "all": "All"
     },
     "attention": "Needs a look:",
+    "beforeRunning": "Costs and margins here are before running costs: those are added automatically once you record your sales.",
     "columns": {
       "name": "Name",
       "price": "Price",
       "cost": "Cost per unit",
       "margin": "Margin",
-      "marginPercent": "Margin %"
+      "marginPercent": "Margin %",
+      "beforeRunning": "before running costs"
     },
     "row": {
       "price": "Price",
@@ -77,6 +86,7 @@
       "margin": "Margin",
       "beforeVat": "{{amount}} before VAT",
       "notCounted": "Not worked out yet",
+      "awaiting": "Worked out once you record your sales",
       "tooLarge": "Too large to count",
       "none": "None",
       "atMost": "at most",
@@ -98,9 +108,7 @@
       "unpriced_materials": "Some materials have no price yet",
       "unpriced_materials_food": "Some ingredients have no price yet",
       "unpriced_materials_retail": "Some items have no price yet",
-      "running_costs_not_entered": "Running costs not entered yet",
-      "running_costs_not_set": "Running costs not added yet",
-      "running_costs_need_materials": "No share of running costs yet: it uses no materials",
+      "no_price": "Add its price",
       "hourly_rate_not_set": "Your hourly rate isn't set",
       "nothing_counted": "Nothing counted yet"
     },
@@ -111,9 +119,7 @@
       "no_recipe_service": "If it uses materials, add them, so they count.",
       "unpriced_materials": "Some of what it uses was never bought, so it has no price yet. It counts once you buy it.",
       "unpriced_named": "Never bought, so no price yet: {{names}}. It counts once you buy it.",
-      "running_costs_not_entered": "Enter your running costs (rent, electricity…), so a share of them is added to it.",
-      "running_costs_not_set": "Your running costs aren't in it yet: tell BizCost about how much you buy in materials a month.",
-      "running_costs_need_materials": "BizCost shares your running costs by the materials each product uses. This one uses none, so it carries no running costs for now. Sharing them by working time comes later.",
+      "no_price": "It has no price, so its share of running costs can't be worked out: add its price.",
       "hourly_rate_not_set": "It has your minutes, but your hourly rate isn't set yet.",
       "nothing_counted": "Nothing of its cost is known yet."
     }
@@ -122,16 +128,21 @@
     "intro": "What it really costs you {{per}}, part by part.",
     "pageTitle": "Product cost",
     "cost": "Cost {{per}}",
+    "costBefore": "Cost {{per}} before running costs",
     "margin": "Margin {{per}}",
+    "marginBefore": "Margin {{per}} before running costs",
     "loss": "Loss {{per}}",
+    "lossBefore": "Loss {{per}} before running costs",
     "ofPrice": "{{percent}} of the price before VAT",
     "ofPriceNoVat": "{{percent}} of the price",
     "atMost": "At most {{percent}} of the price before VAT",
     "atMostNoVat": "At most {{percent}} of the price",
     "marginAtMost": "The real margin is lower until what's missing is added.",
+    "beforeRunning": "Its share of running costs is added automatically once you record your sales.",
+    "beforeRunningService": "Its share of running costs is added automatically once you record your sales.",
     "atPrice": "At your price of {{price}}.",
     "atPriceBeforeVat": "At your price of {{price}}, which is {{beforeVat}} before VAT.",
-    "noPrice": "It has no price yet, so there's no margin. Set its usual price on the product.",
+    "noPrice": "It has no price yet, so there's no margin. Add its price.",
     "incomplete": "This cost is incomplete: see what's missing.",
     "incompleteShort": "incomplete",
     "lines": {
@@ -145,13 +156,10 @@
       "whole_food": "The whole recipe costs {{total}} and makes {{qty}}.",
       "whole_retail": "All the items cost {{total}} and make {{qty}}.",
       "withoutUnpriced": "Without what has no price yet.",
-      "noMaterials": "It uses no materials.",
+      "noMaterials": "No materials added. If it uses any, add them so they count.",
       "running": "Running costs",
-      "runningShare": "Its materials cost {{materials}}, so {{share}} of running costs is added to it.",
-      "runningWaiting": "Worked out once its materials have a price.",
-      "runningNoRecipe": "Worked out once what it uses is in.",
-      "runningNoRecipe_food": "Worked out once its recipe is in.",
-      "runningNoRecipe_retail": "Worked out once its items are in.",
+      "runningAwaiting": "Worked out automatically once you record your sales.",
+      "runningNoPrice": "It has no price, so its share can't be worked out: add its price.",
       "time": "Your time",
       "timeApplied": "{{minutes}} at {{rate}} an hour.",
       "timeNone": "No time added for it. Add the minutes it takes you on the product.",
@@ -159,9 +167,11 @@
       "notCounted": "Not counted yet",
       "noPrice": "No price yet",
       "total": "Cost {{per}}",
+      "totalBefore": "Cost {{per}} before running costs",
       "price": "Price",
       "priceBeforeVat": "Price before VAT",
-      "margin": "Margin"
+      "margin": "Margin",
+      "marginBefore": "Margin before running costs"
     },
     "missing": {
       "title": "What's missing"
@@ -176,6 +186,7 @@
       "basis": "Average costs come from your purchases from {{from}} to {{to}}, or your last purchase for anything you didn't buy then. Shown rounded; BizCost keeps the exact amounts."
     },
     "editProduct": "Edit product",
+    "addPrice": "Add its price",
     "notFound": {
       "title": "This product isn't here",
       "body": "It may have been removed, or the link is wrong."
