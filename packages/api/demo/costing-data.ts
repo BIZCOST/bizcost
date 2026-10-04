@@ -142,11 +142,17 @@ export interface DemoExpense {
    */
   readonly approval?: { readonly by: string } | 'waiting'
   /**
-   * The key of the running cost it is the bill of. An expense in a category that has a running cost
-   * takes the place of that category's regular amount (D-202, D-203), so only such a bill shares a
-   * category with one: an extra goes in a category of its own.
+   * What it pays (D-216), said exactly when its category has a running cost: the key of the running
+   * cost it is the bill of (it takes the place of that running cost's regular amount alone), or
+   * 'extra' (it counts as itself, on top of the category's running costs). The owner says it when he
+   * finalizes it.
    */
-  readonly billOf?: string
+  readonly pays?: { readonly runningCost: string } | 'extra'
+  /**
+   * The month it is for, as months before the seed day's month (default: the category's own default,
+   * D-194): a bonus paid today for last month says 1.
+   */
+  readonly monthsBack?: number
 }
 
 export interface DemoCosting {
@@ -605,16 +611,30 @@ export const CAFE_COSTING: DemoCosting = {
       payment: 'cash',
     },
     // Last month's electricity, billed on the seed day: it is for the month before (the category's
-    // bills come the month after, D-194), and replaces the regular 2 400 in that month (D-202).
+    // bills come the month after, D-194), and replaces the regular 2 400 of the electricity in that
+    // month (D-202, D-216: the bill of that running cost).
     {
       key: 'electricity-bill',
       daysAgo: 0,
       category: 'electricity',
-      billOf: 'electricity',
+      pays: { runningCost: 'electricity' },
       description: 'فاتورة الكهرباء للشهر الماضي',
       amount: '2610',
       payment: 'bank_transfer',
       reference: 'DEWA-118734',
+    },
+    // The owner's own example (D-216): a bonus for last month under Salaries, paid on the seed day.
+    // It is an extra: last month's salaries are the regular 16 000 and the bonus on top.
+    {
+      key: 'bonus',
+      daysAgo: 0,
+      monthsBack: 1,
+      category: 'salaries',
+      pays: 'extra',
+      description: 'مكافأة الموظفين للشهر الماضي',
+      amount: '300',
+      document: 'no_invoice',
+      payment: 'bank_transfer',
     },
     // The barista bought ice with her own money and entered it herself (D-180).
     {

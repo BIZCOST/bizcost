@@ -217,6 +217,11 @@ export interface Tenant {
   payment: PurchasePaymentDto
   /** A category of its own (besides the starter ones every business has). */
   category: CostCategoryDto
+  /**
+   * The running cost's category, apart from the expenses' (an expense in a category that has a
+   * running cost says what it pays before it is final, D-216).
+   */
+  runningCategory: CostCategoryDto
   /** A posted expense bought on credit from the supplier, with a receipt and a payment. */
   expense: ExpenseDto
   /** Its receipt. */
@@ -584,12 +589,16 @@ export async function createTenant(api: Api, label: string): Promise<Tenant> {
       'expense.submit',
     ) as { data: ExpenseDto }
   ).data
+  const runningCategory = ok(
+    await as('costCategory.create', 'mutation', { id: newId(), name: `Rent ${label} ${tag}` }),
+    'costCategory.create (rent)',
+  ) as CostCategoryDto
   const runningCost = (
     ok(
       await as('runningCost.create', 'mutation', {
         id: newId(),
         name: `Shop rent ${label} ${tag}`,
-        categoryId: category.id,
+        categoryId: runningCategory.id,
         amount: '15000',
         startsOn: today,
       }),
@@ -628,6 +637,7 @@ export async function createTenant(api: Api, label: string): Promise<Tenant> {
     creditPurchase,
     payment,
     category,
+    runningCategory,
     expense,
     expenseAttachment,
     expensePayment,
@@ -654,6 +664,9 @@ export function queryInputOf(path: string, tenant: Tenant): unknown {
   if (path === 'expense.getMine') return { id: tenant.expense.id }
   if (path === 'expensePayment.list') return { expenseId: tenant.expense.id }
   if (path === 'runningCost.get') return { id: tenant.runningCost.id }
+  if (path === 'expense.payableRunningCosts') {
+    return { categoryId: tenant.category.id, periodMonth: tenant.expense.periodMonth }
+  }
   if (path === 'productCost.get') return { productId: tenant.product.id }
   if (path === 'member.permissions') return { memberId: tenant.employeeMemberId }
   return undefined

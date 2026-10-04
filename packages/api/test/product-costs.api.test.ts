@@ -1,14 +1,17 @@
 import type {
+  ExpensePaysInput,
   MaterialDto,
   ProductCostBreakdownDto,
   ProductCostListDto,
   ProductCostSettingsDto,
   ProductCostsDto,
   ProductDto,
+  RunningCostDto,
 } from '@bizcost/contracts'
 import { addMonths, costRatio, daysIn, monthOf, newId, sumDecimals } from '@bizcost/domain'
 import type { SetupAnswers } from '@bizcost/modules'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
+import { billOf } from './expenses'
 import { addMember, handlerFor } from './helpers'
 import { CostScope, ProductCostsApi, tag } from './product-costs'
 import { codeOf, ok, purchaseInput, type Person } from './purchasing'
@@ -503,10 +506,12 @@ describe('the home baker’s cake slice: she works alone, her time counts', () =
       amountsShown: true,
       total: '550',
     })
-    expect(cost.monthCosts.categories?.map((c) => [c.name, c.amount, c.source])).toEqual([
-      ['Electricity', '300', 'regular'],
-      ['Other', '150', 'regular'],
-      ['Licences', '100', 'regular'],
+    expect(
+      cost.monthCosts.categories?.map((c) => [c.name, c.amount, c.lines.map((l) => l.source)]),
+    ).toEqual([
+      ['Electricity', '300', ['regular']],
+      ['Other', '150', ['regular']],
+      ['Licences', '100', ['regular']],
     ])
   })
 
@@ -592,11 +597,21 @@ describe('the month’s costs: every running cost and expense counted once (D-20
   const CATEGORY_NAMES = ['Rent', 'Electricity', 'Marketing', 'Maintenance', 'Internet'] as const
   const cat = {} as Record<(typeof CATEGORY_NAMES)[number], string>
 
-  /** Rent of 5 000 up to the 15th of last month, then 6 000: one division over its days. */
-  const rentOf = (month: string) => {
+  /**
+   * Rent of 5 000 up to the 15th of last month, then 6 000: each running cost for the days it ran,
+   * one division each (D-216): [the new rent, the old rent], and the two together (one line: the
+   * same rent changed, D-217).
+   */
+  const rentLines = (month: string) => {
     const days = daysIn(month)
-    return costRatio([String(5000 * 15 + 6000 * (days - 15))], [String(days)])!
+    return [
+      costRatio([String(6000 * (days - 15))], [String(days)])!,
+      costRatio([String(5000 * 15)], [String(days)])!,
+    ] as const
   }
+  const rentOf = (month: string) => sumDecimals([...rentLines(month)])
+  let newRent: RunningCostDto
+  let power: RunningCostDto
 
   beforeAll(async () => {
     shop = await CostScope.open(api, WORKSHOP)
@@ -616,26 +631,33 @@ describe('the month’s costs: every running cost and expense counted once (D-20
       startsOn: since,
       endsOn: `${lastMonth}-16`,
     })
-    await shop.runningCost({
+    newRent = await shop.runningCost({
       id: newId(),
       name: 'Workshop rent',
       categoryId: cat.Rent,
       amount: '6000',
       startsOn: `${lastMonth}-16`,
     })
-    await shop.runningCost({
+    power = await shop.runningCost({
       id: newId(),
       name: 'Electricity',
       categoryId: cat.Electricity,
       amount: '900',
       startsOn: since,
     })
-    // Last month's electricity bill, billed today: it replaces the regular 900 (never both).
-    const post = async (categoryId: string, amount: string, periodMonth: string) =>
+    // Last month's electricity bill, billed today: the bill of the electricity (D-216), it replaces
+    // its regular 900 (never both).
+    const post = async (
+      categoryId: string,
+      amount: string,
+      periodMonth: string,
+      pays?: ExpensePaysInput,
+    ) =>
       shop.postExpense(
         await shop.expenseDraft(shop.expenseInput(categoryId, today, { amount, periodMonth })),
+        pays,
       )
-    await post(cat.Electricity, '950', lastMonth)
+    await post(cat.Electricity, '950', lastMonth, billOf(power))
     // An ad for last month, without a running cost in its category: it counts as itself.
     await post(cat.Marketing, '480', lastMonth)
     // A repair finalized and reversed in last month: as if never posted.
@@ -655,9 +677,10 @@ describe('the month’s costs: every running cost and expense counted once (D-20
     await shop.recipe(stool.id, [{ id: newId(), materialId: steel.id, qty: '2', unit: 'kg' }])
   }, 90_000)
 
-  it('per category, its bills or its regular amount; the largest first', async () => {
+  it('per running cost, its own bills or its regular amount; extras as themselves; the largest first', async () => {
     const rent = rentOf(lastMonth)
     const cost = await shop.breakdown(stool.id)
+    const line = (over: object) => ({ regular: null, period: null, takenBack: null, ...over })
     expect(cost.monthCosts).toEqual({
       state: 'awaiting_sales',
       runningCostsEntered: true,
@@ -669,29 +692,48 @@ describe('the month’s costs: every running cost and expense counted once (D-20
         {
           categoryId: cat.Rent,
           name: 'Rent',
-          source: 'regular',
           amount: rent,
-          regular: rent,
-          period: null,
-          takenBack: null,
+          // The rent changed on the 16th (D-176): one running cost that month (D-217), named by
+          // the one that runs at its end, with both regular amounts.
+          lines: [
+            line({
+              kind: 'running_cost',
+              runningCostId: newRent.id,
+              name: 'Workshop rent',
+              source: 'regular',
+              amount: rent,
+              regular: rent,
+            }),
+          ],
         },
         {
           categoryId: cat.Electricity,
           name: 'Electricity',
-          source: 'bills',
           amount: '950',
-          regular: '900',
-          period: null,
-          takenBack: null,
+          lines: [
+            line({
+              kind: 'running_cost',
+              runningCostId: power.id,
+              name: 'Electricity',
+              source: 'bills',
+              amount: '950',
+              regular: '900',
+            }),
+          ],
         },
         {
           categoryId: cat.Marketing,
           name: 'Marketing',
-          source: 'bills',
           amount: '480',
-          regular: null,
-          period: null,
-          takenBack: null,
+          lines: [
+            line({
+              kind: 'extra',
+              runningCostId: null,
+              name: null,
+              source: 'expenses',
+              amount: '480',
+            }),
+          ],
         },
       ],
     })
@@ -713,17 +755,22 @@ describe('the month’s costs: every running cost and expense counted once (D-20
     ok(await customize('expenses', false))
     const noBills = (await shop.breakdown(stool.id)).monthCosts
     // Without its bills, electricity is its regular amount again.
-    expect(noBills.categories?.map((c) => [c.name, c.source, c.amount])).toEqual([
-      ['Rent', 'regular', rent],
-      ['Electricity', 'regular', '900'],
+    expect(
+      noBills.categories?.map((c) => [c.name, c.lines.map((l) => l.source), c.amount]),
+    ).toEqual([
+      ['Rent', ['regular'], rent],
+      ['Electricity', ['regular'], '900'],
     ])
     ok(await customize('expenses', true))
     ok(await customize('running_costs', false))
     const billsOnly = (await shop.breakdown(stool.id)).monthCosts
     expect(billsOnly).toMatchObject({ state: 'awaiting_sales', total: '1430' })
-    expect(billsOnly.categories?.map((c) => [c.name, c.source, c.amount, c.regular])).toEqual([
-      ['Electricity', 'bills', '950', null],
-      ['Marketing', 'bills', '480', null],
+    // Without its running cost, the electricity's bill counts as itself.
+    expect(
+      billsOnly.categories?.map((c) => [c.name, c.lines.map((l) => [l.kind, l.source]), c.amount]),
+    ).toEqual([
+      ['Electricity', [['extra', 'expenses']], '950'],
+      ['Marketing', [['extra', 'expenses']], '480'],
     ])
     ok(await customize('expenses', false))
     const off = await shop.breakdown(stool.id)
@@ -753,7 +800,7 @@ describe('the month’s costs: every running cost and expense counted once (D-20
     const other = await CostScope.open(api, WORKSHOP)
     const licences = (await other.categories()).find((c) => c.name === 'Licences')!.id
     const first = addMonths(lastMonth, -3)
-    await other.runningCost({
+    const licence = await other.runningCost({
       id: newId(),
       name: 'Trade licence',
       categoryId: licences,
@@ -768,6 +815,7 @@ describe('the month’s costs: every running cost and expense counted once (D-20
           periodMonth: addMonths(first, 1),
         }),
       ),
+      billOf(licence),
     )
     const product = await other.product({ name: `Licence shelf ${tag()}`, defaultPrice: '10' })
     const { monthCosts } = await other.breakdown(product.id)
@@ -776,11 +824,19 @@ describe('the month’s costs: every running cost and expense counted once (D-20
       {
         categoryId: licences,
         name: 'Licences',
-        source: 'bills',
         amount: '100',
-        regular: '100',
-        period: { from: first, to: addMonths(first, 11), months: 12, bills: '1200' },
-        takenBack: null,
+        lines: [
+          {
+            kind: 'running_cost',
+            runningCostId: licence.id,
+            name: 'Trade licence',
+            source: 'bills',
+            amount: '100',
+            regular: '100',
+            period: { from: first, to: addMonths(first, 11), months: 12, bills: '1200' },
+            takenBack: null,
+          },
+        ],
       },
     ])
   })
@@ -807,11 +863,19 @@ describe('the month’s costs: every running cost and expense counted once (D-20
       {
         categoryId: internet!.id,
         name: 'Internet',
-        source: 'taken_back',
         amount: '-300',
-        regular: null,
-        period: null,
-        takenBack: '300',
+        lines: [
+          {
+            kind: 'extra',
+            runningCostId: null,
+            name: null,
+            source: 'taken_back',
+            amount: '-300',
+            regular: null,
+            period: null,
+            takenBack: '300',
+          },
+        ],
       },
     ])
   })
@@ -1003,7 +1067,10 @@ function ownerValues(data: ProductCostBreakdownDto['data']): string[] {
     data.margin.amount,
     data.margin.percent,
     data.monthCosts.total,
-    ...(data.monthCosts.categories ?? []).flatMap((c) => [c.amount, c.regular]),
+    ...(data.monthCosts.categories ?? []).flatMap((c) => [
+      c.amount,
+      ...c.lines.flatMap((l) => [l.amount, l.regular]),
+    ]),
     data.ownerTime.hourlyRate,
     data.materials?.total,
     data.materials?.perUnit,

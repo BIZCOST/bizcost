@@ -293,7 +293,7 @@ function runningCostInput(extra: object = {}) {
   return {
     id: newId(),
     name: `Rent ${newId().slice(-6)}`,
-    categoryId: tenant.category.id,
+    categoryId: tenant.runningCategory.id,
     amount: '1000',
     startsOn: tenant.expense.businessDate,
     ...extra,

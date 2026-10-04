@@ -498,6 +498,9 @@ class CostingSeed {
           locationId: null,
           amount: e.amount,
           vatRate,
+          ...(e.monthsBack === undefined
+            ? {}
+            : { periodMonth: monthStart(this.today, -e.monthsBack).slice(0, 7) }),
         },
         token,
       )
@@ -527,10 +530,27 @@ class CostingSeed {
         ).data
       }
     }
-    // The owner finalizes it (with approval on, the owner's finalizing approves it too, D-164).
+    // The owner finalizes it (with approval on, the owner's finalizing approves it too, D-164),
+    // saying what it pays in a category that has running costs (D-216).
     if (['draft', 'submitted', 'approved'].includes(doc.status)) {
-      await this.mutate('expense.post', { id, version: doc.version })
+      await this.mutate('expense.post', { id, version: doc.version, ...this.paysOf(e) })
     }
+  }
+
+  /**
+   * What an expense pays (D-216), as the owner says it when he finalizes it: only while Running Costs
+   * is on (otherwise nothing is asked, and the running costs were not entered).
+   */
+  private paysOf(e: DemoExpense): { pays?: object } {
+    if (e.pays === undefined || !this.active('running_costs')) return {}
+    return e.pays === 'extra'
+      ? { pays: { kind: 'extra' } }
+      : {
+          pays: {
+            kind: 'running_cost',
+            runningCostId: this.id(`running-cost:${e.pays.runningCost}`),
+          },
+        }
   }
 
   /** Expenses need approval (D-164): turned on when an expense is first sent for it. */

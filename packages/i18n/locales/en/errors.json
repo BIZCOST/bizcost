@@ -38,6 +38,7 @@
   "approval_required": "This expense needs approval before it is final. Send it for approval instead.",
   "approval_off": "Expenses don't need approval now. Finalize it instead.",
   "expense_has_payments": "This expense has payments recorded on it. Reverse the payments first, then try again.",
+  "running_cost_choice_required": "Say what this expense pays first: the bill of one of your running costs, or an extra expense. Then finalize it.",
   "internal": "Something went wrong on our side. Please try again.",
   "network": "Can't connect. Check your internet and try again."
 }

@@ -10,7 +10,7 @@
 -- owned by postgres, callable only by bizcost_api. 00_catalog_coverage, 01_grants and 03_rls_initplan
 -- check the same rules generically for every table and function.
 begin;
-select plan(122);
+select plan(124);
 
 do $$
 begin
@@ -181,7 +181,7 @@ select is(pg_temp.setup(s.x, f.stmt), 'ok 1', 'setup ' || s.x || ': ' || f.what)
   ) as f(n, what, stmt)
  order by s.x, f.n;
 
--- 2. Every link: A's own row is accepted, B's refused (2 × 39 = 78, then 1) ----------------------
+-- 2. Every link: A's own row is accepted, B's refused (2 × 40 = 80, then 1) ----------------------
 -- `:t` in a statement is the target: A's row named `<target> A`, or B's named `<target> B`.
 
 create temp table links (n integer, child text, cols text, target text, what text, stmt text);
@@ -320,7 +320,13 @@ insert into links values
   (39, 'attachments', 'entity_id', 'exp', 'a receipt and its expense (check_target)', $$
     insert into app.attachments (id, business_id, entity, entity_id, path, file_name, content_type, size_bytes)
     values (pg_temp.id('t'), pg_temp.id('biz A'), 'expense', :t, pg_temp.id('biz A') || '/expense/t.png',
-            'r.png', 'image/png', 10) $$);
+            'r.png', 'image/png', 10) $$),
+  (40, 'expenses', 'running_cost_id', 'run', 'an expense and the running cost it pays (D-216)', $$
+    insert into app.expenses (id, business_id, category_id, location_id, business_date, document_type,
+                              payment_method, currency, amount, net_total, vat_total, total, pays,
+                              running_cost_id)
+    values (pg_temp.id('t'), pg_temp.id('biz A'), pg_temp.id('cat A'), pg_temp.id('loc A'), current_date,
+            'no_invoice', 'cash', 'AED', 10, 10, 0, 10, 'running_cost', :t) $$);
 
 -- The target's id: `<target> A` / `<target> B` ('biz owner member' becomes 'biz A owner member').
 create function pg_temp.target(p_target text, p_side text)

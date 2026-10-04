@@ -225,6 +225,8 @@ let latte: ProductDto
 let cream: MaterialDto
 let owed: PurchaseDto
 let category: CostCategoryDto
+/** The running costs' category (an expense in one that has a running cost says what it pays, D-216). */
+let rentCategory: CostCategoryDto
 let spent: ExpenseDto
 let owedExpense: ExpenseDto
 let running: RunningCostDto
@@ -492,7 +494,7 @@ function runningInput(extra: object = {}) {
   return {
     id: newId(),
     name: 'Oracle rent',
-    categoryId: category.id,
+    categoryId: rentCategory.id,
     amount: RUNNING,
     frequency: 'weekly',
     startsOn: today,
@@ -994,6 +996,10 @@ beforeAll(async () => {
   category = await asOwner<CostCategoryDto>('costCategory.create', 'mutation', {
     id: newId(),
     name: 'Oracle cleaning',
+  })
+  rentCategory = await asOwner<CostCategoryDto>('costCategory.create', 'mutation', {
+    id: newId(),
+    name: 'Oracle rent costs',
   })
   spent = await newExpensePosted()
   owedExpense = await newOwedExpense()

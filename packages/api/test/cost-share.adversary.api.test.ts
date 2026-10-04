@@ -1,6 +1,7 @@
 import type { CostStepDto, DashboardChecklistDto } from '@bizcost/contracts'
 import { addMonths, firstDayOf, monthOf, newId } from '@bizcost/domain'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
+import { billOf } from './expenses'
 import { CostScope, ProductCostsApi, tag } from './product-costs'
 import { ok } from './purchasing'
 import { WORKSHOP } from './settings'
@@ -45,18 +46,20 @@ describe('D-202: a reversal counted in a later month takes back only itself', ()
     const lastMonth = addMonths(monthOf(today), -1)
     const monthBefore = addMonths(lastMonth, -1)
     const rent = (await shop.categories()).find((c) => c.name === 'Rent')!.id
-    await shop.runningCost({
+    const monthly = await shop.runningCost({
       id: newId(),
       name: `Rent ${tag()}`,
       categoryId: rent,
       amount: '3000',
       startsOn: `${addMonths(lastMonth, -3)}-01`,
     })
+    // Both are the rent's bills (D-216).
     const bill = async () =>
       shop.postExpense(
         await shop.expenseDraft(
           shop.expenseInput(rent, today, { amount: '3000', periodMonth: monthBefore }),
         ),
+        billOf(monthly),
       )
     await bill()
     const duplicate = await bill()

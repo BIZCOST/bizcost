@@ -9,7 +9,7 @@
   },
   "list": {
     "intro": "What you spend on the business, bill by bill: a delivery, a repair, cleaning, fees…",
-    "costsNote": "Final expenses count in your costs in the month they're for: a category's bills take the place of its regular running costs for that month (or that quarter or year), so nothing counts twice.",
+    "costsNote": "Final expenses count in your costs in the month they're for: a running cost's bill takes the place of its regular amount for that month (or that quarter or year), and an extra expense counts on top, so nothing counts twice.",
     "costsNoteSimple": "Final expenses count in your costs in the month they're for.",
     "new": "New expense",
     "categories": "Categories",
@@ -301,5 +301,26 @@
     "owedCount_other": "{{count}} purchases and expenses not paid back yet",
     "paidBackSoFar": "Paid back so far: {{amount}}",
     "details": "Details"
+  },
+  "pays": {
+    "question": "What does this expense pay for?",
+    "label": "What it pays for",
+    "bill": "Bill for {{name}}",
+    "billUnnamed": "Bill for a running cost",
+    "extra": "Extra expense",
+    "notSaid": "Not said yet",
+    "hint": {
+      "month": "It takes the place of its regular amount for {{month}}.",
+      "quarter": "It takes the place of its regular amount for the quarter from {{from}} to {{to}}.",
+      "year": "It takes the place of its regular amount for the year from {{from}} to {{to}}.",
+      "extra": "It's added to the month's costs, like a bonus or a one-off repair."
+    },
+    "when": {
+      "from": "From {{from}}.",
+      "fromTo": "From {{from}}, stopped on {{to}}."
+    },
+    "required": "Choose what this expense pays for.",
+    "approveOptional": "You can say it now or when it's finalized.",
+    "byOther": "This category has running costs. Ask someone who can see running costs to say what this expense pays for, then finalize it."
   }
 }

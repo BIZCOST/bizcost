@@ -57,9 +57,11 @@ import { useBusinessContext } from '@/lib/trpc/client'
 import { CategoryField } from './category-field'
 import {
   canManageCategories,
+  mayChoosePays,
   mayReviewExpenses,
   useCategoryOptions,
   useExpenseSettings,
+  usePayableRunningCosts,
 } from './data'
 import {
   checkExpense,
@@ -71,6 +73,7 @@ import {
   type ExpenseDraft,
   type ExpenseFields,
 } from './expense-draft'
+import { PaysChoice } from './pays-choice'
 import { ExpenseStatusBadge } from './status-badge'
 
 // Enter an expense (M2 Step 5; D-114, D-157, D-159, D-164, D-168): a new one, a saved draft, or one
@@ -84,7 +87,11 @@ import { ExpenseStatusBadge } from './status-badge'
 // A member who may not see supplier prices still works on their own expense with its amounts
 // (expense.getMine, D-181). Leaving with changes not saved asks first (D-161). "For which month?"
 // (D-194) follows the bill's date and category (the month before for a category billed the month
-// after) until the person picks one. Receipts only with the Files module on (D-188).
+// after) until the person picks one. Receipts only with the Files module on (D-188). In a category
+// that has a running cost a bill for its month can pay, "What does this expense pay for?" (D-216):
+// the bill of one of them, by name, or an extra; only for a member who may see running costs (for
+// anyone else it is said by the one who approves or finalizes it), needed before Finalize, never
+// before a save or "Send for approval". A new category asks again.
 
 const NEW_SUPPLIER = '__new-supplier__'
 
@@ -173,7 +180,15 @@ export function ExpenseEditor({
   const [addingSupplier, setAddingSupplier] = useState(false)
   // Finalize was tapped while the closed books stop it: said at the top too.
   const [finalizeBlocked, setFinalizeBlocked] = useState(false)
+  // Finalize was tapped before saying what it pays: said under the choice until it is chosen.
+  const [paysAsked, setPaysAsked] = useState(false)
   const form = useRef<HTMLFormElement>(null)
+  const paysField = useRef<HTMLFieldSetElement>(null)
+  // What it pays (D-216): asked of a member who may see running costs, when its category has a
+  // running cost a bill for its month can pay (read for the category and month it has now).
+  const choosesPays = context ? mayChoosePays(context) : false
+  const payable = usePayableRunningCosts(draft.categoryId, draft.periodMonth, choosesPays)
+  const payableItems = choosesPays ? payable.data?.items : undefined
 
   const payerItems = payers.data?.items
   const payerIds = useMemo(
@@ -204,9 +219,11 @@ export function ExpenseEditor({
         today,
         categories: categoryIds,
         payers: payerIds,
+        payable: payableItems,
       }),
-    [draft, currency, vatRegistered, today, categoryIds, payerIds],
+    [draft, currency, vatRegistered, today, categoryIds, payerIds, payableItems],
   )
+  const paysError = paysAsked && check.paysMissing ? t('expenses.pays.required') : undefined
   const shown = (error: FieldError | undefined): string | undefined =>
     error && (submitted || !EXPENSE_MISSING.has(error.key)) ? t(error.key, error.values) : undefined
   const supplierNeeded =
@@ -234,10 +251,19 @@ export function ExpenseEditor({
   const set = (patch: Partial<ExpenseDraft>) => setDraft((d) => ({ ...d, ...patch }))
   const billedNextMonth = (categoryId: string) =>
     categoryOptions.categories.find((c) => c.id === categoryId)?.billedNextMonth === true
-  /** A new category or day: the month follows them until the person picks one. */
+  /**
+   * A new category or day: the month follows them until the person picks one. A new category asks
+   * again what it pays (its running costs are others).
+   */
   const setBill = (patch: Pick<Partial<ExpenseDraft>, 'categoryId' | 'businessDate'>) =>
     setDraft((d) => {
-      const next = { ...d, ...patch }
+      const next = {
+        ...d,
+        ...patch,
+        ...(patch.categoryId !== undefined && patch.categoryId !== d.categoryId
+          ? { pays: '' }
+          : {}),
+      }
       return withPeriodDefault(next, {
         chosen: periodChosen,
         billedNextMonth: billedNextMonth(next.categoryId),
@@ -328,6 +354,8 @@ export function ExpenseEditor({
     ) {
       return 'expenses.confirm.payerLeft'
     }
+    // What it pays is said by someone who may see running costs (D-216).
+    if (code === 'running_cost_choice_required' && !choosesPays) return 'expenses.pays.byOther'
     return apiErrorKey(error)
   }
 
@@ -387,9 +415,21 @@ export function ExpenseEditor({
     return true
   }
 
+  /** Nothing said about what it pays while its category has a running cost: asked first (D-216). */
+  function paysNeeded(): boolean {
+    if (!check.paysMissing) return false
+    setPaysAsked(true)
+    setTimeout(() => {
+      paysField.current?.querySelector<HTMLElement>('input')?.focus({ preventScroll: true })
+      paysField.current?.scrollIntoView({ block: 'center' })
+    })
+    return true
+  }
+
   function askFinalize() {
     if (busy || !ready()) return
     if (blockedByBooks()) return
+    if (paysNeeded()) return
     setFinalizeBlocked(false)
     setConfirmError(null)
     setConfirm('finalize')
@@ -427,6 +467,11 @@ export function ExpenseEditor({
       setConfirm(null)
       if (isNew) await openSaved()
     } catch (error) {
+      // Its category had a running cost after all (read again): the choice is asked under it.
+      if (apiErrorCode(error) === 'running_cost_choice_required' && choosesPays) {
+        setPaysAsked(true)
+        void payable.refetch()
+      }
       if (isNew && saved) {
         // Saved as a draft, then the next step failed: the draft's own page from now on, with the
         // problem said there (this page and its dialog go away).
@@ -715,6 +760,20 @@ export function ExpenseEditor({
                 </NativeSelect>
               )}
             />
+            {payableItems && payableItems.length > 0 ? (
+              // Under its category and month (what it depends on), across the form from 640px; the
+              // document type fills the place beside the month (a dense grid).
+              <div className="sm:col-span-2">
+                <PaysChoice
+                  ref={paysField}
+                  options={payableItems}
+                  value={draft.pays}
+                  onChange={(pays) => set({ pays })}
+                  error={paysError}
+                  columns
+                />
+              </div>
+            ) : null}
             <TextField
               label={t('purchasing.editor.documentType')}
               render={(a11y) => (

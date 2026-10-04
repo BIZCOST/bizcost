@@ -334,6 +334,7 @@ describe('APP_ERROR_CODES', () => {
     'approval_required',
     'approval_off',
     'expense_has_payments',
+    'running_cost_choice_required',
     'internal',
   ]
 

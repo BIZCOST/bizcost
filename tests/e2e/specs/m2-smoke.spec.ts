@@ -405,13 +405,16 @@ async function seedBusinesses(owner: Page, employee: Page, employeeUser: TestUse
     ).items.map((category) => [category.name, category.id]),
   )
   const lastMonth = monthBefore(today)
+  const runningCostIds = new Map<string, string>()
   for (const [name, amount, category] of [
     ['Shop rent', '12000', 'Rent'],
     ['Staff salaries', '8000', 'Salaries'],
     ['Electricity', '3000', 'Electricity'],
   ] as const) {
+    const id = randomUUID()
+    runningCostIds.set(name, id)
     await call('runningCost.create', {
-      id: randomUUID(),
+      id,
       name,
       categoryId: categories.get(category),
       amount,
@@ -430,7 +433,12 @@ async function seedBusinesses(owner: Page, employee: Page, employeeUser: TestUse
     amount: '3150',
     description: 'DEWA bill',
   })
-  await call('expense.post', { id: finalExpense, version: bill.data.version })
+  // The electricity's own bill (D-216): it takes the place of its regular amount.
+  await call('expense.post', {
+    id: finalExpense,
+    version: bill.data.version,
+    pays: { kind: 'running_cost', runningCostId: runningCostIds.get('Electricity') },
+  })
   const submittedExpense = randomUUID()
   const sent = await call<{ data: { version: number } }>(
     'expense.create',

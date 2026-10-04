@@ -1,7 +1,14 @@
 import { randomUUID } from 'node:crypto'
 import { mkdirSync } from 'node:fs'
 import { join } from 'node:path'
-import { expect, test, type Browser, type BrowserContext, type Page } from '@playwright/test'
+import {
+  expect,
+  test,
+  type Browser,
+  type BrowserContext,
+  type Locator,
+  type Page,
+} from '@playwright/test'
 import {
   BAKER_ANSWERS,
   callApi,
@@ -34,7 +41,13 @@ import { baseURL } from '../stack'
 //     still sees its amount (their own); the manager sees it waiting, approves it, then finalizes it
 //     (English, desktop); a second is rejected, the manager stays on it, with "Edit" (D-175, D-177),
 //     and it comes back to the employee's editor with its amount;
-//   - approval off: the employee's draft waits for someone who may finalize it, and says so.
+//   - approval off: the employee's draft waits for someone who may finalize it, and says so;
+//   - what an expense pays (the owner's "1أ", D-216): in a workshop with staff salaries and DEWA as
+//     running costs, a 300 bonus under Salaries is an extra (the month's costs: regular 16,000 + extra
+//     300), the electricity bill takes the place of DEWA's regular amount alone, Maintenance (no
+//     running cost) asks nothing; Finalize needs the choice. An employee, who may not see running
+//     costs, is never asked and sends one; the owner says it as he approves and finalizes it
+//     (English desktop, Arabic phone).
 // With E2E_SHOTS_DIR set, each step leaves a screenshot there (AR/EN at 375, 390 and 1440 px).
 
 test.describe.configure({ mode: 'serial' })
@@ -358,10 +371,10 @@ test('a home baker: rent and electricity as running costs (English desktop, Arab
   await expectSound(page, 'ar')
   await shot(page, 'ar-1440-running-costs')
 
-  // A solo business has no approval, and its Expenses page says how expenses count (D-202, D-203).
+  // A solo business has no approval, and its Expenses page says how expenses count (D-202, D-216).
   await page.goto(`/b/${businessId}/expenses`)
   await expect(page.locator('[data-costs-note]')).toHaveText(
-    'تدخل المصروفات النهائية في تكاليفك في الشهر الذي تخصّه: فواتير أي فئة تحلّ محلّ مصاريفها التشغيلية المنتظمة في ذلك الشهر (أو ربع السنة أو السنة)، فلا يُحسب شيء مرتين.',
+    'تدخل المصروفات النهائية في تكاليفك في الشهر الذي تخصّه: فاتورة المصروف التشغيلي تحلّ محلّ مبلغه المنتظم في ذلك الشهر (أو ربع السنة أو السنة)، والمصروف الإضافي يُضاف فوق ذلك، فلا يُحسب شيء مرتين.',
   )
   await expect(page.getByRole('heading', { name: 'لا توجد مصروفات بعد' })).toBeVisible()
   await expectSound(page, 'ar')
@@ -393,7 +406,7 @@ test('a café: an expense an employee paid, owed to them, then paid back (Englis
   await page.goto(`/b/${businessId}/expenses`)
   await expect(page.getByRole('heading', { level: 1 })).toHaveText('Expenses')
   await expect(page.locator('[data-costs-note]')).toHaveText(
-    "Final expenses count in your costs in the month they're for: a category's bills take the place of its regular running costs for that month (or that quarter or year), so nothing counts twice.",
+    "Final expenses count in your costs in the month they're for: a running cost's bill takes the place of its regular amount for that month (or that quarter or year), and an extra expense counts on top, so nothing counts twice.",
   )
   await page.getByRole('link', { name: 'New expense' }).click()
   await expect(page.getByRole('heading', { level: 1 })).toHaveText('New expense')
@@ -883,4 +896,364 @@ test('approval on: the employee sends an expense, the manager approves and final
   await expectSound(owner, 'en')
   await shot(owner, 'en-1440-expenses-drafts-waiting')
   await setLanguage(employee, 'ar')
+})
+
+// ---------------------------------------------------------------------------------------------------
+// What an expense pays (the owner's decision of 2026-10-01, "1أ"; D-216)
+// ---------------------------------------------------------------------------------------------------
+
+/** `month` (YYYY-MM) moved by `count` months. */
+function addMonths(month: string, count: number): string {
+  const total = Number(month.slice(0, 4)) * 12 + Number(month.slice(5, 7)) - 1 + count
+  return `${Math.floor(total / 12)}-${String((total % 12) + 1).padStart(2, '0')}`
+}
+
+/** A month as the pages write it ("September 2026", «سبتمبر 2026»). */
+function monthName(month: string, locale: 'en' | 'ar'): string {
+  return new Intl.DateTimeFormat(locale === 'ar' ? 'ar-AE-u-nu-latn' : 'en-US', {
+    month: 'long',
+    year: 'numeric',
+    timeZone: 'UTC',
+  }).format(new Date(`${month}-01T00:00:00Z`))
+}
+
+/** The option of "What does this expense pay for?" whose radio is named `name` (its card). */
+function payOption(question: Locator, name: string | RegExp): Locator {
+  return question.locator('label').filter({ has: question.page().getByRole('radio', { name }) })
+}
+
+test('what an expense pays: a bonus as an extra, the electricity bill, and the employee’s one said by the owner', async ({
+  browser,
+}) => {
+  test.setTimeout(900_000)
+  const { page: owner } = await open(browser, DESKTOP, 'en', 'Faisal')
+  const businessId = await createBusiness(owner, 'Faisal Joinery', WORKSHOP_ANSWERS)
+  const base = `/b/${businessId}`
+  async function api<T>(path: string, input: unknown, query = false): Promise<T> {
+    const result = await callApi<T>(owner, path, input, { businessId, query })
+    expect(result.appCode, path).toBeUndefined()
+    return result.data as T
+  }
+  const { today } = await api<{ today: string }>('books.get', {}, true)
+  const thisMonth = today.slice(0, 7)
+  const lastMonth = addMonths(thisMonth, -1)
+  const categories = new Map(
+    (
+      await api<{ items: { id: string; name: string }[] }>(
+        'costCategory.list',
+        { limit: 100 },
+        true,
+      )
+    ).items.map((category) => [category.name, category.id]),
+  )
+  // Staff salaries and DEWA, paid every month since before last month; something to sell, so
+  // Product costs shows how costs are worked out.
+  for (const [name, amount, category] of [
+    ['Staff salaries', '16000', 'Salaries'],
+    ['DEWA', '3000', 'Electricity'],
+  ] as const) {
+    await api('runningCost.create', {
+      id: randomUUID(),
+      name,
+      categoryId: categories.get(category),
+      amount,
+      frequency: 'monthly',
+      startsOn: `${addMonths(thisMonth, -2)}-01`,
+    })
+  }
+  await api('product.create', {
+    id: randomUUID(),
+    name: 'Dining table',
+    type: 'product',
+    unit: 'piece',
+    defaultPrice: '2000',
+  })
+
+  // 1. A 300 bonus for last month under Salaries (English, desktop). Salaries has a running cost,
+  // so the expense says what it pays, by name, never with its amount; Finalize needs it. An extra.
+  await owner.goto(`${base}/expenses/new`)
+  await owner.getByRole('textbox', { name: 'Amount' }).fill('300')
+  await expect(owner.locator('[data-pays-choice]')).toHaveCount(0)
+  await owner
+    .getByRole('combobox', { name: 'Category', exact: true })
+    .selectOption({ label: 'Salaries' })
+  await owner.getByRole('combobox', { name: 'For which month?' }).selectOption(lastMonth)
+  await owner.getByRole('combobox', { name: 'How it was paid' }).selectOption({ label: 'Cash' })
+  await owner.getByRole('textbox', { name: 'What it was for' }).fill('Eid bonus')
+  const question = owner.getByRole('group', { name: 'What does this expense pay for?' })
+  await expect(question.getByRole('radio')).toHaveCount(2)
+  const salariesBill = payOption(question, withValue('Bill for ', 'Staff salaries'))
+  await expect(salariesBill).toContainText(
+    `It takes the place of its regular amount for ${monthName(lastMonth, 'en')}.`,
+  )
+  await expect(payOption(question, 'Extra expense')).toContainText(
+    "It's added to the month's costs, like a bonus or a one-off repair.",
+  )
+  await expect(question.getByRole('radio', { checked: true })).toHaveCount(0)
+  await expect(question).not.toContainText('16,000')
+  await owner.getByRole('button', { name: 'Finalize' }).click()
+  await expect(owner.getByRole('alertdialog')).toHaveCount(0)
+  await expect(question.getByRole('alert')).toHaveText('Choose what this expense pays for.')
+  await expectSound(owner, 'en')
+  await shot(owner, 'en-1440-pays-required')
+  await payOption(question, 'Extra expense').click()
+  await expect(question.getByRole('radio', { name: 'Extra expense' })).toBeChecked()
+  await expect(question.getByRole('alert')).toHaveCount(0)
+  await shot(owner, 'en-1440-pays-choice')
+  await owner.getByRole('button', { name: 'Finalize' }).click()
+  await owner
+    .getByRole('alertdialog', { name: 'Finalize this expense?' })
+    .getByRole('button', { name: 'Finalize' })
+    .click()
+  await expect(owner.getByText('Expense finalized.')).toBeVisible()
+  await expect(owner.locator('[data-pays="extra"]')).toHaveText('Extra expense')
+  await expect(owner.getByText('What it pays for', { exact: true })).toBeVisible()
+  await expectSound(owner, 'en')
+  await shot(owner, 'en-1440-pays-view')
+
+  // 2. A repair under Maintenance, which has no running cost: nothing is asked (once its running
+  // costs are read: none), and it is finalized as itself.
+  await owner.goto(`${base}/expenses/new`)
+  await owner.getByRole('textbox', { name: 'Amount' }).fill('450')
+  await owner
+    .getByRole('combobox', { name: 'Category', exact: true })
+    .selectOption({ label: 'Salaries' })
+  await expect(owner.locator('[data-pays-choice]')).toBeVisible()
+  const maintenanceRead = owner.waitForResponse(
+    (response) =>
+      response.url().includes('expense.payableRunningCosts') &&
+      decodeURIComponent(response.url()).includes(categories.get('Maintenance')!),
+  )
+  await owner
+    .getByRole('combobox', { name: 'Category', exact: true })
+    .selectOption({ label: 'Maintenance' })
+  await maintenanceRead
+  await expect(owner.locator('[data-pays-choice]')).toHaveCount(0)
+  await owner.getByRole('combobox', { name: 'For which month?' }).selectOption(lastMonth)
+  await owner.getByRole('combobox', { name: 'How it was paid' }).selectOption({ label: 'Cash' })
+  await owner.getByRole('textbox', { name: 'What it was for' }).fill('Saw repair')
+  await owner.getByRole('button', { name: 'Finalize' }).click()
+  await owner
+    .getByRole('alertdialog', { name: 'Finalize this expense?' })
+    .getByRole('button', { name: 'Finalize' })
+    .click()
+  await expect(owner.getByText('Expense finalized.')).toBeVisible()
+  await expect(owner.locator('[data-pays]')).toHaveCount(0)
+
+  // 3. The electricity bill (Arabic, phone): DEWA's bill, for last month (its bills come the month
+  // after), in place of DEWA's regular amount alone.
+  await setLanguage(owner, 'ar')
+  await owner.setViewportSize(PHONE)
+  await owner.goto(`${base}/expenses/new`)
+  await owner.getByRole('textbox', { name: 'المبلغ' }).fill('3150')
+  await owner
+    .getByRole('combobox', { name: 'الفئة', exact: true })
+    .selectOption({ label: 'Electricity' })
+  await expect(owner.getByRole('combobox', { name: 'لأي شهر هذه الفاتورة؟' })).toHaveValue(
+    lastMonth,
+  )
+  await owner.getByRole('combobox', { name: 'طريقة الدفع' }).selectOption({ label: 'نقدًا' })
+  await owner.getByRole('textbox', { name: 'ما صُرف عليه' }).fill('فاتورة الكهرباء')
+  const arQuestion = owner.getByRole('group', { name: 'ماذا يدفع هذا المصروف؟' })
+  const dewaBill = payOption(arQuestion, withValue('فاتورة لـ ', 'DEWA'))
+  await expect(dewaBill).toContainText(`تحلّ محلّ المبلغ المنتظم عن ${monthName(lastMonth, 'ar')}.`)
+  await expect(payOption(arQuestion, 'مصروف إضافي')).toContainText(
+    'يُضاف إلى تكاليف الشهر، مثل مكافأة أو تصليح لمرة واحدة.',
+  )
+  await dewaBill.click()
+  await arQuestion.scrollIntoViewIfNeeded()
+  await expectSound(owner, 'ar')
+  await shot(owner, 'ar-390-pays-choice')
+  await owner.getByRole('button', { name: 'اعتمد نهائيًا' }).click()
+  await owner
+    .getByRole('alertdialog', { name: 'اعتماد هذا المصروف نهائيًا؟' })
+    .getByRole('button', { name: 'اعتمد نهائيًا' })
+    .click()
+  await expect(owner.getByText('أصبح المصروف نهائيًا.')).toBeVisible()
+  await expect(owner.locator('[data-pays="running_cost"]')).toHaveText(
+    withValue('فاتورة لـ ', 'DEWA'),
+  )
+  await expectSound(owner, 'ar')
+  await shot(owner, 'ar-390-pays-view')
+  // The list says what each pays.
+  await owner.goto(`${base}/expenses`)
+  const rows = owner.locator('[data-expense]')
+  await expect(rows.filter({ hasText: 'فاتورة الكهرباء' }).locator('[data-pays]')).toHaveText(
+    withValue('فاتورة لـ ', 'DEWA'),
+  )
+  await expect(rows.filter({ hasText: 'Eid bonus' }).locator('[data-pays]')).toHaveText(
+    'مصروف إضافي',
+  )
+  await expect(rows.filter({ hasText: 'Saw repair' }).locator('[data-pays]')).toHaveCount(0)
+  await expectSound(owner, 'ar')
+  await shot(owner, 'ar-390-pays-list')
+
+  // 4. Last month's costs on Product costs: Salaries, its regular 16,000 and the 300 extra on top;
+  // Electricity, DEWA's bill in place of its regular 3,000; the repair as itself. 19,900 in all.
+  await owner.goto(`${base}/product-costs`)
+  await owner.getByRole('button', { name: 'كيف؟' }).click()
+  const arCosts = owner.locator('[data-month-costs]')
+  await expect(arCosts).toContainText('19,900.00')
+  const arSalaries = arCosts.locator('[data-month-category="Salaries"]')
+  await expect(arSalaries).toContainText('16,300.00')
+  await expect(arSalaries.locator('[data-month-line="Staff salaries"]')).toHaveAttribute(
+    'data-source',
+    'regular',
+  )
+  await expect(arSalaries.locator('[data-month-line="Staff salaries"]')).toContainText(
+    'المبلغ المنتظم',
+  )
+  await expect(arSalaries.locator('[data-month-line="extra"]')).toContainText(
+    'مصروفات إضافية فوق مصاريفها التشغيلية',
+  )
+  await expect(arSalaries.locator('[data-month-line="extra"]')).toContainText('300.00')
+  const arElectricity = arCosts.locator('[data-month-category="Electricity"]')
+  await expect(arElectricity.locator('[data-month-line="DEWA"]')).toHaveAttribute(
+    'data-source',
+    'bills',
+  )
+  await expect(arElectricity).toContainText('من الفواتير، بدل المبلغ المنتظم')
+  await expect(arCosts.locator('[data-month-note]')).toContainText(
+    'يُحسب كل مصروف تشغيلي مرة واحدة',
+  )
+  await arCosts.scrollIntoViewIfNeeded()
+  await expectSound(owner, 'ar')
+  await shot(owner, 'ar-390-pays-month-costs')
+
+  // In English, on a desktop, word for word.
+  await setLanguage(owner, 'en')
+  await owner.setViewportSize(DESKTOP)
+  await owner.goto(`${base}/product-costs`)
+  const costs = owner
+    .getByRole('region', { name: 'How your costs are worked out' })
+    .locator('[data-month-costs]')
+  await expect(costs).toContainText(/AED\s19,900\.00/)
+  expect(
+    await costs
+      .locator('[data-month-category]')
+      .evaluateAll((items) => items.map((item) => item.getAttribute('data-month-category'))),
+  ).toEqual(['Salaries', 'Electricity', 'Maintenance'])
+  await expect(costs.locator('[data-month-category="Salaries"]')).toHaveText(
+    /^Salaries\s*AED\s16,300\.00\s*Staff salaries\s*Its regular amount\s*AED\s16,000\.00\s*Extra expenses, on top of its running costs\s*AED\s300\.00$/,
+  )
+  await expect(costs.locator('[data-month-category="Electricity"]')).toHaveText(
+    /^Electricity\s*AED\s3,150\.00\s*DEWA\s*From its bills, in place of its regular AED\s3,000\.00$/,
+  )
+  await expect(costs.locator('[data-month-category="Maintenance"]')).toHaveText(
+    /^Maintenance\s*AED\s450\.00\s*From its bills$/,
+  )
+  await expect(costs.locator('[data-month-note]')).toContainText(
+    'Each running cost counts once: its own bills for the month, or else its regular amount. Extra expenses count on top',
+  )
+  await expectSound(owner, 'en')
+  await shot(owner, 'en-1440-pays-month-costs')
+
+  // 5. Approval on, and an employee (Arabic, phone), who may not see running costs: never asked;
+  // they send one under Salaries.
+  await api('expense.updateSettings', { approval: true })
+  const employeeUser = await createUser('expenses-pays', { locale: 'en' })
+  users.push(employeeUser)
+  const employee = await openAs(browser, employeeUser, PHONE, 'ar', 'Yousef')
+  await joinBusiness(owner, businessId, employee, employeeUser, 'employee')
+  await employee.goto(`${base}/expenses/new`)
+  await employee.getByRole('textbox', { name: 'المبلغ' }).fill('95')
+  await employee
+    .getByRole('combobox', { name: 'الفئة', exact: true })
+    .selectOption({ label: 'Salaries' })
+  await employee.getByRole('combobox', { name: 'طريقة الدفع' }).selectOption({ label: 'نقدًا' })
+  await employee.getByRole('textbox', { name: 'ما صُرف عليه' }).fill('وجبات للموظفين')
+  await expect(employee.locator('[data-pays-choice]')).toHaveCount(0)
+  await expectSound(employee, 'ar')
+  await shot(employee, 'ar-390-pays-employee-editor')
+  await employee.getByRole('button', { name: 'أرسل للموافقة' }).click()
+  await employee
+    .getByRole('alertdialog', { name: 'إرسال هذا المصروف للموافقة؟' })
+    .getByRole('button', { name: 'أرسل', exact: true })
+    .click()
+  await expect(employee.locator('[data-status="submitted"]').first()).toBeVisible()
+  const sentId = employee.url().split('/').at(-1)!
+  await expect(employee.locator('[data-pays]')).toHaveCount(0)
+
+  // The owner (English, desktop) says it: "Approve" offers it (it may wait), "Approve and finalize"
+  // needs it.
+  await owner.goto(`${base}/expenses/${sentId}`)
+  await expect(owner.locator('[data-pays="none"]')).toHaveText('Not said yet')
+  await owner.getByRole('button', { name: 'Approve', exact: true }).click()
+  const approve = owner.getByRole('alertdialog', { name: 'Approve this expense?' })
+  await expect(
+    approve.getByRole('group', { name: 'What does this expense pay for?' }),
+  ).toContainText("You can say it now or when it's finalized.")
+  await expectSound(owner, 'en')
+  await shot(owner, 'en-1440-pays-approve-dialog')
+  await approve.getByRole('button', { name: 'Cancel' }).click()
+  await expect(approve).toHaveCount(0)
+  await owner.getByRole('button', { name: 'Approve and finalize' }).click()
+  const finalize = owner.getByRole('alertdialog', { name: 'Finalize this expense?' })
+  const review = finalize.getByRole('group', { name: 'What does this expense pay for?' })
+  await expect(review.getByRole('radio')).toHaveCount(2)
+  await finalize.getByRole('button', { name: 'Finalize' }).click()
+  await expect(review.getByRole('alert')).toHaveText('Choose what this expense pays for.')
+  await expect(finalize).toBeVisible()
+  await payOption(review, 'Extra expense').click()
+  await expectSound(owner, 'en')
+  await shot(owner, 'en-1440-pays-finalize-dialog')
+  await finalize.getByRole('button', { name: 'Finalize' }).click()
+  await expect(owner.getByText('Expense finalized.')).toBeVisible()
+  await expect(owner.locator('[data-status="posted"]').first()).toHaveText('Final')
+  await expect(owner.locator('[data-pays="extra"]')).toHaveText('Extra expense')
+
+  // The employee sees what it pays in "My expenses"; in every expense, a bill of a running cost
+  // says so without its name.
+  await employee.goto(`${base}/expenses`)
+  await expect(employee.locator(`[data-mine-expense="${sentId}"] [data-pays]`)).toHaveText(
+    'مصروف إضافي',
+  )
+  await expectSound(employee, 'ar')
+  await shot(employee, 'ar-390-pays-mine')
+  await employee.getByRole('tab', { name: 'كل المصروفات' }).click()
+  const bill = employee.locator('[data-expense]').filter({ hasText: 'فاتورة الكهرباء' })
+  await expect(bill.locator('[data-pays]')).toHaveText('فاتورة لمصروف تشغيلي')
+  await expect(bill).not.toContainText('DEWA')
+  await expectSound(employee, 'ar')
+  await shot(employee, 'ar-390-pays-all-employee')
+
+  // The other widths: the choice, the month's costs and the list (Arabic, desktop; English, phone).
+  await setLanguage(owner, 'ar')
+  await owner.goto(`${base}/expenses/new`)
+  await owner
+    .getByRole('combobox', { name: 'الفئة', exact: true })
+    .selectOption({ label: 'Salaries' })
+  await expect(owner.getByRole('group', { name: 'ماذا يدفع هذا المصروف؟' })).toBeVisible()
+  await expectSound(owner, 'ar')
+  await shot(owner, 'ar-1440-pays-choice')
+  await owner.goto(`${base}/product-costs`)
+  await expect(owner.locator('[data-month-costs]')).toContainText('19,900.00')
+  await expectSound(owner, 'ar')
+  await shot(owner, 'ar-1440-pays-month-costs')
+  await owner.goto(`${base}/expenses`)
+  await expect(owner.locator('[data-expense] [data-pays]').first()).toBeVisible()
+  await expectSound(owner, 'ar')
+  await shot(owner, 'ar-1440-pays-list')
+  await setLanguage(owner, 'en')
+  await owner.setViewportSize(PHONE)
+  await owner.goto(`${base}/expenses/new`)
+  await owner
+    .getByRole('combobox', { name: 'Category', exact: true })
+    .selectOption({ label: 'Electricity' })
+  await expect(owner.getByRole('group', { name: 'What does this expense pay for?' })).toBeVisible()
+  await owner.locator('[data-pays-choice]').scrollIntoViewIfNeeded()
+  await expectSound(owner, 'en')
+  await shot(owner, 'en-390-pays-choice')
+  await owner.goto(`${base}/product-costs`)
+  await owner.getByRole('button', { name: 'How?' }).click()
+  await owner.locator('[data-month-costs]').scrollIntoViewIfNeeded()
+  await expectSound(owner, 'en')
+  await shot(owner, 'en-390-pays-month-costs')
+  await owner.goto(`${base}/expenses/${sentId}`)
+  await expect(owner.locator('[data-pays="extra"]')).toBeVisible()
+  await expectSound(owner, 'en')
+  await shot(owner, 'en-390-pays-view')
+  await owner.goto(`${base}/expenses`)
+  await expectSound(owner, 'en')
+  await shot(owner, 'en-390-pays-list')
 })

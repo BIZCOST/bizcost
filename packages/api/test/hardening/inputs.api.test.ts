@@ -65,6 +65,8 @@ let alone: CostScope
 let today: string
 let supplier: SupplierDto
 let category: CostCategoryDto
+/** The running costs' own category (an expense in one with a running cost says what it pays, D-216). */
+let rentCategory: CostCategoryDto
 /** Bought once, for recipes (its average does not move in these tests). */
 let beans: MaterialDto
 
@@ -77,6 +79,7 @@ beforeAll(async () => {
   today = await shop.today()
   supplier = await shop.supplier()
   category = await shop.category()
+  rentCategory = await shop.category()
   beans = await shop.newMaterial({ name: `Beans ${tag()}`, unit: 'kg' })
   await shop.buy(purchaseInput(today, [line(beans.id, '2', '48.5', { unit: 'kg' })]))
   ok(await shop.run('expense.updateSettings', { approval: true }))
@@ -138,7 +141,7 @@ function runningCostInput(extra: object = {}) {
   return {
     id: newId(),
     name: `Rent ${tag()}`,
-    categoryId: category.id,
+    categoryId: rentCategory.id,
     amount: '1200.5',
     frequency: 'quarterly',
     startsOn: today,
@@ -488,10 +491,13 @@ function topLevelKeys(path: string): Set<string> {
   return new Set((schema ? inputLeaves(schema) : []).map((l) => l.path.split('.')[0] ?? ''))
 }
 
-/** Takes only an id (and its version, or a reason): an operation on a row that exists. */
+/**
+ * Takes only an id (and its version, a reason, or what an expense pays, optional: D-216): an
+ * operation on a row that exists.
+ */
 const BY_ID = MUTATIONS.filter((p) => {
   const keys = [...topLevelKeys(p.path)]
-  return keys.includes('id') && keys.every((k) => ['id', 'version', 'reason'].includes(k))
+  return keys.includes('id') && keys.every((k) => ['id', 'version', 'reason', 'pays'].includes(k))
 }).map((p) => p.path)
 
 describe('idempotent creates replay safely', () => {

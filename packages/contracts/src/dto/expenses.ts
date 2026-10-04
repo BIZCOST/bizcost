@@ -1,4 +1,4 @@
-import { EXPENSE_STATUSES, RUNNING_COST_FREQUENCIES } from '@bizcost/domain'
+import { EXPENSE_PAYS, EXPENSE_STATUSES, RUNNING_COST_FREQUENCIES } from '@bizcost/domain'
 import { z } from 'zod'
 import { withMeta } from '../envelope'
 import {
@@ -101,6 +101,54 @@ export type CostCategoryListDto = z.infer<typeof costCategoryListDto>
 export const expenseStatusDto = z.enum(EXPENSE_STATUSES)
 export type ExpenseStatusDto = z.infer<typeof expenseStatusDto>
 
+// What an expense pays (the owner's decision of 2026-10-01, D-216). In a category that has running
+// costs a bill for its month can pay (`expense.payableRunningCosts`), an expense says which one it
+// pays, its bill «فاتورة لـ…» / "Bill for …" (it takes the place of that running cost's regular amount
+// alone over the period it pays for), or that it is an extra «مصروف إضافي» / "Extra expense" (it
+// counts as itself, on top). It must be said before the expense is finalized
+// (RUNNING_COST_CHOICE_REQUIRED); a draft or an expense sent for approval may wait. Only a member who
+// may see running costs (running_costs.items.view, with Running Costs on) says it: for anyone else it
+// is said by the one who approves or finalizes the expense (expense.approve and expense.post take it).
+
+export const expensePaysKindDto = z.enum(EXPENSE_PAYS)
+export type ExpensePaysKindDto = z.infer<typeof expensePaysKindDto>
+
+/**
+ * What an expense pays, as said: `running_cost` names a running cost of its category that a bill for
+ * its month can pay (NOT_FOUND unless a live running cost of the business; VALIDATION when it is of
+ * another category or cannot be paid for that month); `extra` (VALIDATION when its category has no
+ * running cost for its month: then there is nothing to say).
+ */
+export const expensePaysInput = z.discriminatedUnion('kind', [
+  z.object({ kind: z.literal('running_cost'), runningCostId: zUuid }),
+  z.object({ kind: z.literal('extra') }),
+])
+export type ExpensePaysInput = z.input<typeof expensePaysInput>
+
+/**
+ * What it pays, said or left out. Left out: an update keeps what the expense says while it still fits
+ * its category and month (else nothing is said: it is asked again); a new expense says nothing. Null:
+ * nothing said. Only a member who may see running costs gives it (FORBIDDEN otherwise, even null).
+ */
+const paysField = expensePaysInput.nullable().optional()
+
+/**
+ * What an expense pays (null: nothing said: a draft or an expense under review not yet said, or a
+ * category without a running cost for its month; it counts as itself).
+ */
+export const expensePaysDto = z
+  .object({
+    kind: expensePaysKindDto,
+    /**
+     * `running_cost`: the running cost it pays, by its name as it is now, to a member who may see
+     * running costs (running_costs.items.view, with Running Costs on); null for anyone else ("Bill
+     * for a running cost") and for an extra. Never an amount.
+     */
+    runningCost: z.object({ id: zUuid, name: z.string() }).nullable(),
+  })
+  .nullable()
+export type ExpensePaysDto = z.infer<typeof expensePaysDto>
+
 const expenseFields = {
   /** A live category of the business (NOT_FOUND otherwise); an archived one only if it already has it. */
   categoryId: zUuid,
@@ -143,6 +191,8 @@ const expenseFields = {
   /** The VAT rate on the bill, in percent (5 for the UAE standard rate; 0 without VAT). */
   vatRate: percentInput.default('0'),
   notes: notesInput,
+  /** What it pays in a category that has running costs (D-216; see expensePaysInput). */
+  pays: paysField,
 }
 
 /** `expense.create` (a draft): idempotent on the client's `id`. */
@@ -161,9 +211,57 @@ export type UpdateExpenseInput = z.input<typeof updateExpenseInput>
 export const expenseIdInput = z.object({ id: zUuid })
 export type ExpenseIdInput = z.input<typeof expenseIdInput>
 
-/** `expense.discard`, `.submit`, `.approve`, `.post`: the `version` as read. */
+/** `expense.discard`, `.submit`: the `version` as read. */
 export const expenseVersionInput = z.object({ id: zUuid, version: z.int().positive() })
 export type ExpenseVersionInput = z.input<typeof expenseVersionInput>
+
+/**
+ * `expense.approve`, `.post`: the `version` as read, and what the expense pays when the one who
+ * approves or finalizes it says it (D-216: for a member who entered it without seeing running costs).
+ * Left out: what it says stays. Finalizing needs it said whenever its category has a running cost a
+ * bill for its month can pay (RUNNING_COST_CHOICE_REQUIRED).
+ */
+export const expenseReviewInput = expenseVersionInput.extend({ pays: paysField })
+export type ExpenseReviewInput = z.input<typeof expenseReviewInput>
+
+/**
+ * `expense.payableRunningCosts` (expenses.documents.view and running_costs.items.view, both modules
+ * on): the running costs an expense in this category for this month can pay (D-216).
+ */
+export const payableRunningCostsInput = z.object({
+  categoryId: zUuid,
+  /** The month the expense is for (`YYYY-MM`). */
+  periodMonth: zBusinessMonth,
+})
+export type PayableRunningCostsInput = z.input<typeof payableRunningCostsInput>
+
+/**
+ * A running cost an expense can pay, by name, never with its amount: the choice «فاتورة لـ{name}» /
+ * "Bill for {name}". `period`: what its bill pays for (its month, or for a quarterly or yearly one its
+ * quarter or year, D-203), so the hint can say "for this month" or "for this quarter". `startsOn` /
+ * `endsOn`: when it counts (D-176: `endsOn` is the first day it no longer counts), so two of the same
+ * name (a rent changed that month) can be told apart (D-217).
+ */
+export const payableRunningCostDto = z.object({
+  id: zUuid,
+  name: z.string(),
+  frequency: z.enum(RUNNING_COST_FREQUENCIES),
+  startsOn: zBusinessDate,
+  endsOn: zBusinessDate.nullable(),
+  period: z.object({
+    from: zBusinessMonth,
+    to: zBusinessMonth,
+    months: z.union([z.literal(1), z.literal(3), z.literal(12)]),
+  }),
+})
+export type PayableRunningCostDto = z.infer<typeof payableRunningCostDto>
+
+/**
+ * By name. Empty: the category has no running cost for that month, and the expense says nothing about
+ * what it pays (the choice does not show).
+ */
+export const payableRunningCostsDto = z.object({ items: z.array(payableRunningCostDto) })
+export type PayableRunningCostsDto = z.infer<typeof payableRunningCostsDto>
 
 /** `expense.reject`: the `version` as read, and why (optional; the one who entered it reads it). */
 export const rejectExpenseInput = z.object({
@@ -257,6 +355,8 @@ export const expenseDto = z.object({
   reversalDate: zBusinessDate.nullable(),
   /** A draft made by "correct": the reversed expense it replaces. */
   copiedFromId: zUuid.nullable(),
+  /** What it pays in a category that has running costs (D-216). */
+  pays: expensePaysDto,
   createdAt: isoTimestamp,
   version: z.int().positive(),
 })
@@ -283,6 +383,8 @@ export const expenseListItemDto = z.object({
   total: paid(),
   /** Who entered it (an approver's list shows it). */
   createdBy: memberNameDto,
+  /** What it pays in a category that has running costs (D-216). */
+  pays: expensePaysDto,
   version: z.int().positive(),
 })
 export type ExpenseListItemDto = z.infer<typeof expenseListItemDto>

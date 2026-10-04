@@ -67,6 +67,7 @@ const EXPENSES: Gate = [['expenses']]
 const RUNNING_COSTS: Gate = [['running_costs']]
 const PURCHASES_OR_EXPENSES: Gate = [['purchases'], ['expenses']]
 const EXPENSES_OR_RUNNING_COSTS: Gate = [['expenses'], ['running_costs']]
+const EXPENSES_AND_RUNNING_COSTS: Gate = [['expenses', 'running_costs']]
 const RECIPES: Gate = [['products', 'materials']]
 const RECEIPTS: Gate = [
   ['files', 'purchases'],
@@ -103,6 +104,7 @@ const MODULE_GATES: Record<string, Gate> = {
   'expense.getMine': EXPENSES,
   'expense.list': EXPENSES,
   'expense.mine': EXPENSES,
+  'expense.payableRunningCosts': EXPENSES_AND_RUNNING_COSTS,
   'expense.payers': EXPENSES,
   'expense.post': EXPENSES,
   'expense.reject': EXPENSES,

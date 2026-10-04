@@ -16,6 +16,7 @@ import {
   isOwedPaymentMethod,
   outstandingOf,
   type DocumentStatus,
+  type ExpensePays,
   type ExpenseStatus,
   type PaymentMethod,
   type PurchaseDocumentType,
@@ -26,7 +27,7 @@ import type { z } from 'zod'
 import type { BusinessCtx } from '../business-context'
 import { AppError } from '../errors'
 import { decodeCursor, encodeCursor } from './catalog'
-import { readExpense } from './expenses'
+import { paysDtoOf, readExpense } from './expenses'
 
 // A member's own records (the owner's answers of 2026-09-29, A4; D-181): "My expenses" (expense.mine,
 // expense.getMine: module expenses and expenses.documents.view, the router checks them) and "Owed to
@@ -102,6 +103,9 @@ interface MineExpenseRecord extends Record<string, unknown> {
   currency: string
   total: string
   paid: string
+  pays: ExpensePays | null
+  running_cost_id: string | null
+  running_cost_name: string | null
 }
 
 /**
@@ -132,9 +136,12 @@ export function listMineExpenses(
              trim_scale(coalesce((
                select sum(p.amount) from app.expense_payments p
                 where p.business_id = d.business_id and p.expense_id = d.id
-                  and p.reversed_at is null and p.deleted_at is null), 0))::text as paid
+                  and p.reversed_at is null and p.deleted_at is null), 0))::text as paid,
+             d.pays, d.running_cost_id, rc.name as running_cost_name
         from app.expenses d
         join app.cost_categories c on c.business_id = d.business_id and c.id = d.category_id
+        left join app.running_costs rc
+          on rc.business_id = d.business_id and rc.id = d.running_cost_id
        where d.business_id = ${ctx.businessId} and d.deleted_at is null and ${MY_EXPENSE}
              ${after}
        order by d.business_date desc, d.id desc
@@ -162,6 +169,7 @@ export function listMineExpenses(
           paymentMethod: r.payment_method,
           enteredByMe: r.entered_by_me,
           paidByMe: r.paid_by_me,
+          pays: paysDtoOf(ctx, r),
           currency: r.currency,
           total: r.total,
           paid: owed ? r.paid : null,

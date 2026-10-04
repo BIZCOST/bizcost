@@ -11,7 +11,8 @@ import { can } from '@/features/settings/sections'
 import { orderCategories } from './categories'
 
 // What the expense and running-cost screens read besides their records (M2 Step 5): the categories
-// they share (D-116, D-167), who may change them, and whether expenses need approval (D-164).
+// they share (D-116, D-167), who may change them, whether expenses need approval (D-164), and the
+// running costs an expense can pay (D-216).
 
 /**
  * Every category of the business, archived ones too (a record may have one), in pages of 100 read one
@@ -90,6 +91,29 @@ export function mayReviewExpenses(context: BusinessContextDto): boolean {
     can(context, 'expenses.documents.approve') &&
     context.visibleCategories.includes('supplier_price')
   )
+}
+
+/**
+ * Whether the member says what an expense pays (D-216): who may see running costs (Running Costs on
+ * and running_costs.items.view; the API refuses `pays` from anyone else). They read the running
+ * costs' names only, never their amounts.
+ */
+export function mayChoosePays(context: BusinessContextDto): boolean {
+  return hasModule(context, 'running_costs') && can(context, 'running_costs.items.view')
+}
+
+/**
+ * The running costs an expense in `categoryId` for `periodMonth` can pay (expense.payableRunningCosts:
+ * by name, with the period a bill of each pays for), for a member who says what it pays. Empty: the
+ * choice does not show. Not read while `enabled` is false or the category is not chosen.
+ */
+export function usePayableRunningCosts(categoryId: string, periodMonth: string, enabled: boolean) {
+  const trpc = useTRPC()
+  return useQuery({
+    ...trpc.expense.payableRunningCosts.queryOptions({ categoryId, periodMonth }),
+    enabled: enabled && categoryId !== '' && /^\d{4}-\d{2}$/.test(periodMonth),
+    staleTime: 30_000,
+  })
 }
 
 /** Whether expenses need approval now (expense.settings), for members who may see expenses. */

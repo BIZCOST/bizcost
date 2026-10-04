@@ -68,7 +68,8 @@ import { basesOf, findRecipe, linesOf, materialCostsOf, type ProductMaterialCost
 //     month is the last full calendar month, for the costs and (Phase 3) the sales alike. Its costs
 //     (costPool): the running costs for the days they ran (Running Costs on) and the finalized
 //     expenses that belong to it, at what they cost the business (Expenses on), counted once: a
-//     category's bills replace its regular amount. Sales arrive in Phase 3, so every share is
+//     running cost's own bills replace its regular amount, extras count on top (D-216). Sales arrive
+//     in Phase 3, so every share is
 //     "awaiting sales" (the sales are simply absent here), or "no price" without a price. With both
 //     modules off there is no share.
 //   - The owner's time (D-119), only without a team: minutes for one unit × hourly rate ÷ 60.
@@ -146,6 +147,8 @@ function mayReadMonthCosts(ctx: BusinessCtx): boolean {
 }
 
 interface RunningRow extends Record<string, unknown> {
+  id: string
+  name: string
   category_id: string
   category_name: string
   amount: string
@@ -157,6 +160,8 @@ interface RunningRow extends Record<string, unknown> {
 interface ExpenseRow extends Record<string, unknown> {
   category_id: string
   category_name: string
+  /** The running cost it is a bill of (pays running_cost, D-216); null: it counts as itself. */
+  running_cost_id: string | null
   cost: string
   month: string
   reversed_in: string | null
@@ -164,8 +169,9 @@ interface ExpenseRow extends Record<string, unknown> {
 
 /**
  * The business's costs of the last full calendar month and how they reach what it sells (D-202,
- * D-203): its running costs (Running Costs on) and its finalized expenses (Expenses on), counted
- * once by costPool, with the categories' names; the sales are absent until Phase 3. Two reads: every
+ * D-203, D-216): its running costs (Running Costs on) and its finalized expenses (Expenses on),
+ * counted once by costPool (per running cost: its own bills in place of its regular amount; extras on
+ * top), with the categories' and running costs' names; the sales are absent until Phase 3. Two reads: every
  * running cost (whether any was ever entered; costPool takes those that ran in the month, and the
  * quarters and years of the quarterly and yearly ones), and the finalized expenses of the 11 months
  * on either side of it (a year's bills pay for every month of that year) with the reversals counted
@@ -181,8 +187,9 @@ async function monthCostsOf(tx: Tx, ctx: BusinessCtx, costing: Costing): Promise
   const amountsShown = mayReadMonthCosts(ctx)
   // Every running cost not removed: whether one was ever entered, and what the month counts.
   const running = (await tx.execute(sql`
-    select r.category_id, c.name as category_name, trim_scale(r.amount)::text as amount,
-           r.frequency, r.starts_on::text as starts_on, r.ends_on::text as ends_on
+    select r.id, r.name, r.category_id, c.name as category_name,
+           trim_scale(r.amount)::text as amount, r.frequency, r.starts_on::text as starts_on,
+           r.ends_on::text as ends_on
       from app.running_costs r
       join app.cost_categories c on c.business_id = r.business_id and c.id = r.category_id
      where r.business_id = ${businessId} and r.deleted_at is null
@@ -206,7 +213,8 @@ async function monthCostsOf(tx: Tx, ctx: BusinessCtx, costing: Costing): Promise
   // span, and the reversals that count in it (reversal_period_month; null is the expense's own month).
   const expenses = expensesOn
     ? ((await tx.execute(sql`
-        select e.category_id, c.name as category_name, trim_scale(e.cost_total)::text as cost,
+        select e.category_id, c.name as category_name, e.running_cost_id,
+               trim_scale(e.cost_total)::text as cost,
                to_char(e.period_month, 'YYYY-MM') as month,
                case when e.status = 'reversed'
                     then to_char(coalesce(e.reversal_period_month, e.period_month), 'YYYY-MM')
@@ -224,6 +232,8 @@ async function monthCostsOf(tx: Tx, ctx: BusinessCtx, costing: Costing): Promise
   const pool = costPool(
     month,
     ran.map((r) => ({
+      id: r.id,
+      name: r.name,
       categoryId: r.category_id,
       amount: r.amount,
       frequency: r.frequency,
@@ -232,6 +242,7 @@ async function monthCostsOf(tx: Tx, ctx: BusinessCtx, costing: Costing): Promise
     })),
     expenses.map((e) => ({
       categoryId: e.category_id,
+      runningCostId: e.running_cost_id,
       cost: e.cost,
       month: e.month,
       reversedIn: e.reversed_in,
@@ -243,22 +254,45 @@ async function monthCostsOf(tx: Tx, ctx: BusinessCtx, costing: Costing): Promise
     const names = new Map(
       [...ran, ...expenses].map((row) => [row.category_id, row.category_name] as const),
     )
+    const runningNames = new Map(ran.map((r) => [r.id, r.name] as const))
+    // The largest first, then by name (the extras, without one, after a running cost of the same
+    // amount), then by id.
+    const largestFirst = (
+      a: { amount: string; name: string | null; id: string },
+      b: { amount: string; name: string | null; id: string },
+    ) =>
+      compareDecimal(b.amount, a.amount) ||
+      (a.name === null ? 1 : 0) - (b.name === null ? 1 : 0) ||
+      (a.name ?? '').toLowerCase().localeCompare((b.name ?? '').toLowerCase()) ||
+      (a.id < b.id ? -1 : a.id > b.id ? 1 : 0)
     categories = pool.categories
       .map((c) => ({
         categoryId: c.categoryId,
         name: names.get(c.categoryId) ?? '',
-        source: c.source,
         amount: c.amount,
-        regular: c.regular,
-        period: c.period,
-        takenBack: c.takenBack,
+        lines: c.lines
+          .map((line) => ({
+            kind: line.kind,
+            runningCostId: line.runningCostId,
+            name: line.runningCostId === null ? null : (runningNames.get(line.runningCostId) ?? ''),
+            source: line.source,
+            amount: line.amount,
+            regular: line.regular,
+            period: line.period,
+            takenBack: line.takenBack,
+          }))
+          .sort((a, b) =>
+            largestFirst(
+              { amount: a.amount, name: a.name, id: a.runningCostId ?? '' },
+              { amount: b.amount, name: b.name, id: b.runningCostId ?? '' },
+            ),
+          ),
       }))
-      // The largest first, then by name.
-      .sort(
-        (a, b) =>
-          compareDecimal(b.amount, a.amount) ||
-          a.name.toLowerCase().localeCompare(b.name.toLowerCase()) ||
-          (a.categoryId < b.categoryId ? -1 : 1),
+      .sort((a, b) =>
+        largestFirst(
+          { amount: a.amount, name: a.name, id: a.categoryId },
+          { amount: b.amount, name: b.name, id: b.categoryId },
+        ),
       )
   }
   return {

@@ -274,6 +274,13 @@
       "when": 1790830220755,
       "tag": "20261001045020_books_closed_insert",
       "breakpoints": true
+    },
+    {
+      "idx": 39,
+      "version": "7",
+      "when": 1791060944714,
+      "tag": "20261003205544_expense_running_cost",
+      "breakpoints": true
     }
   ]
 }

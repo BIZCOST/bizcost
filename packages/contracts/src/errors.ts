@@ -94,6 +94,11 @@ export const APP_ERROR_CODES = [
   'approval_off',
   /** Reversing an expense that has payments recorded on it: they are reversed first. */
   'expense_has_payments',
+  /**
+   * Finalizing an expense in a category that has a running cost a bill for its month can pay, while
+   * it does not say what it pays: the bill of which running cost, or an extra (D-216).
+   */
+  'running_cost_choice_required',
   'internal',
 ] as const
 export type AppErrorCode = (typeof APP_ERROR_CODES)[number]

@@ -5,16 +5,23 @@ import type {
   expenseIdInput,
   expenseListInput,
   ExpenseListDto,
+  ExpensePaysDto,
+  ExpensePaysInput,
   ExpenseResultDto,
+  expenseReviewInput,
   ExpenseSettingsDto,
   expenseVersionInput,
   OkDto,
+  PayableRunningCostDto,
+  payableRunningCostsInput,
+  PayableRunningCostsDto,
   rejectExpenseInput,
   updateExpenseInput,
   updateExpenseSettingsInput,
 } from '@bizcost/contracts'
 import { businesses, createIdempotent, expenses, type NewExpense, type Tx } from '@bizcost/db'
 import {
+  billPeriodOf,
   can,
   checkDecimal,
   computeExpense,
@@ -28,19 +35,22 @@ import {
   periodMonthAllowed,
   periodMonthClosed,
   vatInCost,
+  type BusinessMonth,
   type CurrencyCode,
   type ExpenseAction,
+  type ExpensePays,
   type ExpenseStatus,
   type Money,
   type Percent,
   type PurchaseDocumentType,
+  type RunningCostFrequency,
 } from '@bizcost/domain'
 import { and, eq, isNull, sql, type SQL } from 'drizzle-orm'
 import type { PgUpdateSetSource } from 'drizzle-orm/pg-core'
 import type { z } from 'zod'
 import type { BusinessCtx } from '../business-context'
 import { AppError } from '../errors'
-import { assertQueryable } from '../trpc'
+import { assertQueryable, passes } from '../trpc'
 import { detachAll, removeStoredFiles } from './attachments'
 import { containsPattern, decodeCursor, encodeCursor, requestHashOf } from './catalog'
 import { assertCategory, assertCategoryExists } from './cost-categories'
@@ -91,6 +101,16 @@ import {
 // touches stock. A posted expense is never edited: it is reversed ("as if never posted": it stops
 // counting), or corrected (reversed, and a copy opened as a new draft).
 //
+// What it pays (the owner's decision of 2026-10-01, D-216): in a category that has a running cost a
+// bill for its month can pay (billPeriodOf), an expense says which one it pays («فاتورة لـ…»: it takes
+// the place of that running cost's regular amount alone in the month's costs) or that it is an extra
+// («مصروف إضافي»: it counts as itself, on top). Said on a draft by a member who may see running costs
+// (their names only, expense.payableRunningCosts), or by the one who approves or finalizes it (for a
+// member who may not, the choice is hidden); required when it is finalized
+// (RUNNING_COST_CHOICE_REQUIRED), never before; kept by a correction's copy and by a reversal. With
+// Running Costs off nothing is asked and what an expense says stays as it is (running costs are not
+// counted then).
+//
 // Locks: every change locks the expense FOR UPDATE first, then (posting, reversing, sending for
 // approval) the business row FOR SHARE: the books-closed date and the approval setting cannot change
 // until it commits. A payment locks the expense the same way (payments.ts).
@@ -100,6 +120,8 @@ type UpdateInput = z.output<typeof updateExpenseInput>
 type Fields = Omit<CreateInput, 'id'>
 type IdInput = z.output<typeof expenseIdInput>
 type VersionInput = z.output<typeof expenseVersionInput>
+type ReviewInput = z.output<typeof expenseReviewInput>
+type PayableInput = z.output<typeof payableRunningCostsInput>
 type RejectInput = z.output<typeof rejectExpenseInput>
 type CorrectInput = z.output<typeof correctExpenseInput>
 type ListInput = z.output<typeof expenseListInput>
@@ -131,6 +153,174 @@ function assertMayChange(ctx: BusinessCtx, head: HeadRecord) {
   if (!ctx.access.visibleCategories.has('supplier_price') && !head.entered_by_me) {
     throw new AppError('forbidden')
   }
+}
+
+// ---------------------------------------------------------------------------------------------------
+// What it pays (D-216)
+// ---------------------------------------------------------------------------------------------------
+
+/**
+ * Whether the member may see running costs: Running Costs on and running_costs.items.view (as the
+ * Running Costs page). Only they say what an expense pays and read the running cost's name.
+ */
+function mayReadRunningCosts(ctx: BusinessCtx): boolean {
+  return passes(ctx, ['running_costs', 'running_costs.items.view'])
+}
+
+/** What an expense says it pays, as stored. */
+interface StoredPays {
+  readonly pays: ExpensePays | null
+  readonly runningCostId: string | null
+}
+
+const NOTHING_SAID: StoredPays = { pays: null, runningCostId: null }
+
+/**
+ * `pays` as the API returns it: the running cost's name only to a member who may see running costs
+ * (null for anyone else: "Bill for a running cost"), never an amount.
+ */
+export function paysDtoOf(
+  ctx: BusinessCtx,
+  row: {
+    pays: ExpensePays | null
+    running_cost_id: string | null
+    running_cost_name: string | null
+  },
+): ExpensePaysDto {
+  if (row.pays === null) return null
+  const shown =
+    row.pays === 'running_cost' && row.running_cost_id !== null && mayReadRunningCosts(ctx)
+  return {
+    kind: row.pays,
+    runningCost: shown ? { id: row.running_cost_id!, name: row.running_cost_name ?? '' } : null,
+  }
+}
+
+/**
+ * The live running costs of a category that a bill for `month` can pay (billPeriodOf: a weekly or
+ * monthly one that ran a day of it; a quarterly or yearly one whose quarter or year holding it began
+ * before it stopped), by name, with when each counts and the period a bill of each pays for. Names
+ * and days only, never amounts.
+ */
+async function payableOf(
+  tx: Tx,
+  businessId: string,
+  categoryId: string,
+  month: BusinessMonth,
+): Promise<PayableRunningCostDto[]> {
+  const rows = (await tx.execute(sql`
+    select r.id, r.name, r.frequency, r.starts_on::text as starts_on, r.ends_on::text as ends_on
+      from app.running_costs r
+     where r.business_id = ${businessId} and r.category_id = ${categoryId}
+       and r.deleted_at is null
+     order by lower(r.name), r.id
+  `)) as unknown as {
+    id: string
+    name: string
+    frequency: RunningCostFrequency
+    starts_on: string
+    ends_on: string | null
+  }[]
+  return rows.flatMap((row) => {
+    const period = billPeriodOf(
+      { frequency: row.frequency, startsOn: row.starts_on, endsOn: row.ends_on },
+      month,
+    )
+    return period
+      ? [
+          {
+            id: row.id,
+            name: row.name,
+            frequency: row.frequency,
+            startsOn: row.starts_on,
+            endsOn: row.ends_on,
+            period,
+          },
+        ]
+      : []
+  })
+}
+
+/**
+ * `expense.payableRunningCosts` (expenses.documents.view and running_costs.items.view, both modules
+ * on; the router checks them): the running costs an expense in this category for this month can pay,
+ * by name («فاتورة لـ…»). NOT_FOUND unless the category is the business's. Empty: the expense says
+ * nothing about what it pays.
+ */
+export function listPayableRunningCosts(
+  ctx: BusinessCtx,
+  input: PayableInput,
+): Promise<PayableRunningCostsDto> {
+  return ctx.tx(async (tx) => {
+    await assertCategoryExists(tx, ctx.businessId, input.categoryId)
+    return { items: await payableOf(tx, ctx.businessId, input.categoryId, input.periodMonth) }
+  })
+}
+
+/**
+ * What an expense pays once it is saved, approved or finalized (`final`), from what the caller says
+ * (`given`: left out, null or a choice) and what it says now for this category (`stored`: nothing
+ * once the category changes, prepareDraft; D-217):
+ *   - a member who may not see running costs says nothing: FORBIDDEN when `given` is not left out,
+ *     before anything is read (with Running Costs off, nobody may);
+ *   - a choice must fit: the bill of a running cost the category has for its month (NOT_FOUND unless
+ *     a live running cost of the business, VALIDATION otherwise), or an extra while the category has
+ *     one (VALIDATION when it has none: there is nothing to say);
+ *   - left out, what it says stays while it still fits its category and month; otherwise nothing is
+ *     said (it is asked again). Checked with Running Costs off too (D-217): a choice that no longer
+ *     fits never stays because nobody may change it then;
+ *   - finalized with Running Costs on, it must be said whenever the category has a running cost for
+ *     its month (RUNNING_COST_CHOICE_REQUIRED); with it off nothing is asked.
+ */
+async function resolvePays(
+  tx: Tx,
+  ctx: BusinessCtx,
+  expense: { categoryId: string; periodMonth: string },
+  given: ExpensePaysInput | null | undefined,
+  stored: StoredPays,
+  final: boolean,
+): Promise<StoredPays> {
+  if (given !== undefined && !mayReadRunningCosts(ctx)) throw new AppError('forbidden')
+  const asked = final && passes(ctx, ['running_costs'])
+  // Nothing said, nothing to check (unless it is required now).
+  if (given === undefined && stored.pays === null && !asked) return NOTHING_SAID
+  const payable = await payableOf(
+    tx,
+    ctx.businessId,
+    expense.categoryId,
+    monthOf(expense.periodMonth),
+  )
+  const fits = (said: StoredPays) =>
+    said.pays === 'extra'
+      ? payable.length > 0
+      : said.pays === 'running_cost' && payable.some((r) => r.id === said.runningCostId)
+  let result: StoredPays
+  if (given === undefined) {
+    result = fits(stored) ? stored : NOTHING_SAID
+  } else if (given === null) {
+    result = NOTHING_SAID
+  } else if (given.kind === 'extra') {
+    if (payable.length === 0) {
+      throw invalid('pays: its category has no running cost for its month: nothing to say')
+    }
+    result = { pays: 'extra', runningCostId: null }
+  } else {
+    const said: StoredPays = { pays: 'running_cost', runningCostId: given.runningCostId }
+    if (!fits(said)) {
+      const [live] = (await tx.execute(sql`
+        select r.id from app.running_costs r
+         where r.business_id = ${ctx.businessId} and r.id = ${given.runningCostId}
+           and r.deleted_at is null
+      `)) as unknown as { id: string }[]
+      if (!live) throw new AppError('not_found')
+      throw invalid('pays: not a running cost of its category that a bill for its month can pay')
+    }
+    result = said
+  }
+  if (asked && result.pays === null && payable.length > 0) {
+    throw new AppError('running_cost_choice_required')
+  }
+  return result
 }
 
 /** The member who holds `userColumn` (an auth user id) in the business, as `memberNameDto`. */
@@ -188,6 +378,9 @@ interface ExpenseRecord extends Record<string, unknown> {
   reversed_at: Date | string | null
   reversal_date: string | null
   copied_from_id: string | null
+  pays: ExpensePays | null
+  running_cost_id: string | null
+  running_cost_name: string | null
   created_at: Date | string
   version: number
 }
@@ -218,10 +411,12 @@ export async function readExpense(tx: Tx, ctx: BusinessCtx, id: string): Promise
            e.approved_at, ab.id as approved_by_id, ab.display_name as approved_by_name,
            e.rejected_at, rb.id as rejected_by_id, rb.display_name as rejected_by_name,
            e.rejection_reason, e.posted_at, e.reversed_at, e.reversal_date::text as reversal_date,
-           e.copied_from_id, e.created_at, e.version
+           e.copied_from_id, e.pays, e.running_cost_id, rc.name as running_cost_name, e.created_at,
+           e.version
       from app.expenses e
       join app.businesses b on b.id = e.business_id
       join app.cost_categories c on c.business_id = e.business_id and c.id = e.category_id
+      left join app.running_costs rc on rc.business_id = e.business_id and rc.id = e.running_cost_id
       left join app.suppliers s on s.business_id = e.business_id and s.id = e.supplier_id
       left join app.business_members pm
         on pm.business_id = e.business_id and pm.id = e.paid_by_member_id
@@ -277,6 +472,7 @@ export async function readExpense(tx: Tx, ctx: BusinessCtx, id: string): Promise
     reversedAt: isoOf(row.reversed_at),
     reversalDate: row.reversal_date,
     copiedFromId: row.copied_from_id,
+    pays: paysDtoOf(ctx, row),
     createdAt: isoOf(row.created_at),
     version: row.version,
   }
@@ -309,6 +505,9 @@ interface ListRecord extends Record<string, unknown> {
   total: string
   created_by_id: string | null
   created_by_name: string | null
+  pays: ExpensePays | null
+  running_cost_id: string | null
+  running_cost_name: string | null
   version: number
 }
 
@@ -351,10 +550,13 @@ export async function listExpenses(ctx: BusinessCtx, input: ListInput): Promise<
              c.name as category_name, e.supplier_id, s.name as supplier_name, e.description,
              e.reference, e.document_type, e.payment_method, trim(e.currency) as currency,
              trim_scale(e.total)::text as total, cb.id as created_by_id,
-             cb.display_name as created_by_name, e.version
+             cb.display_name as created_by_name, e.pays, e.running_cost_id,
+             rc.name as running_cost_name, e.version
         from app.expenses e
         join app.cost_categories c on c.business_id = e.business_id and c.id = e.category_id
         left join app.suppliers s on s.business_id = e.business_id and s.id = e.supplier_id
+        left join app.running_costs rc
+          on rc.business_id = e.business_id and rc.id = e.running_cost_id
         left join app.business_members cb
           on cb.business_id = e.business_id and cb.id = ${memberOf(sql.raw('e.created_by'))}
        where ${sql.join(conditions, sql` and `)}
@@ -381,6 +583,7 @@ export async function listExpenses(ctx: BusinessCtx, input: ListInput): Promise<
           currency: r.currency,
           total: r.total,
           createdBy: { memberId: r.created_by_id, name: r.created_by_name },
+          pays: paysDtoOf(ctx, r),
           version: r.version,
         })),
         nextCursor:
@@ -461,14 +664,20 @@ function assertPeriodOpen(business: PostingBusiness, periodMonth: string): void 
 
 /**
  * Checks a draft's category (a live one; an archived one only when it already has it), supplier,
- * who paid, location, month and VAT (none unless VAT-registered), and computes its amounts. Returns its columns. `current`: what the
- * expense being saved has (its category and month), null for a new one.
+ * who paid, location, month, VAT (none unless VAT-registered) and what it pays (resolvePays), and
+ * computes its amounts. Returns its columns. `current`: what the expense being saved has (its
+ * category, month, payment method and what it pays), null for a new one.
  */
 async function prepareDraft(
   tx: Tx,
   ctx: BusinessCtx,
   input: Fields,
-  current: { categoryId: string; periodMonth: string; paymentMethod: string } | null,
+  current: {
+    categoryId: string
+    periodMonth: string
+    paymentMethod: string
+    pays: StoredPays
+  } | null,
 ) {
   assertVatShown(ctx, {
     rates: [input.vatRate],
@@ -492,6 +701,16 @@ async function prepareDraft(
   await assertSupplier(tx, ctx.businessId, input.supplierId)
   await assertPaidBy(tx, ctx.businessId, input)
   const locationId = await resolveLocation(tx, ctx, input.locationId, defaultLocationId)
+  // What it pays was said for its category: a new category asks again (D-216), whoever moves it and
+  // with Running Costs off too (D-217).
+  const pays = await resolvePays(
+    tx,
+    ctx,
+    { categoryId: input.categoryId, periodMonth },
+    input.pays,
+    current !== null && current.categoryId === input.categoryId ? current.pays : NOTHING_SAID,
+    false,
+  )
   // A draft's document amounts do not depend on the VAT rule; what it costs is fixed at posting.
   const amounts = amountsOf(input, false, currency)
   return {
@@ -514,7 +733,17 @@ async function prepareDraft(
     vatTotal: amounts.vat,
     total: amounts.total,
     notes: input.notes,
+    pays: pays.pays,
+    runningCostId: pays.runningCostId,
   } satisfies Omit<NewExpense, 'id' | 'businessId'>
+}
+
+/**
+ * Only a member who may see running costs says what an expense pays (D-216): FORBIDDEN otherwise,
+ * before anything is read, whenever `pays` is not left out (null too).
+ */
+function assertMaySayPays(ctx: BusinessCtx, pays: ExpensePaysInput | null | undefined) {
+  if (pays !== undefined && !mayReadRunningCosts(ctx)) throw new AppError('forbidden')
 }
 
 /**
@@ -523,6 +752,7 @@ async function prepareDraft(
  */
 export function createExpense(ctx: BusinessCtx, input: CreateInput): Promise<ExpenseResultDto> {
   const { id, ...fields } = input
+  assertMaySayPays(ctx, input.pays)
   return ctx.tx(async (tx) => {
     const values = await prepareDraft(tx, ctx, fields, null)
     const { row } = await createIdempotent(tx, expenses, {
@@ -555,8 +785,15 @@ interface HeadRecord extends Record<string, unknown> {
   vat_rate: string
   approved_at: Date | string | null
   rejected_at: Date | string | null
+  pays: ExpensePays | null
+  running_cost_id: string | null
   /** The caller entered it (created_by). */
   entered_by_me: boolean
+}
+
+/** What the locked expense says it pays. */
+function storedPaysOf(head: HeadRecord): StoredPays {
+  return { pays: head.pays, runningCostId: head.running_cost_id }
 }
 
 /** The expense row, locked FOR UPDATE; NOT_FOUND when not live. */
@@ -567,7 +804,7 @@ async function lockExpense(tx: Tx, businessId: string, id: string): Promise<Head
            e.location_id, e.document_type, e.payment_method, e.paid_by_member_id,
            e.prices_include_vat, e.vat_not_reclaimable, trim(e.currency) as currency,
            trim_scale(e.amount)::text as amount, trim_scale(e.vat_rate)::text as vat_rate,
-           e.approved_at, e.rejected_at,
+           e.approved_at, e.rejected_at, e.pays, e.running_cost_id,
            coalesce(e.created_by = app.current_user_id(), false) as entered_by_me
       from app.expenses e
      where e.business_id = ${businessId} and e.id = ${id} and e.deleted_at is null
@@ -627,6 +864,7 @@ async function setColumns(
  */
 export function updateExpense(ctx: BusinessCtx, input: UpdateInput): Promise<ExpenseResultDto> {
   const { id, version, ...fields } = input
+  assertMaySayPays(ctx, input.pays)
   return ctx.tx(async (tx) => {
     const head = await lockExpense(tx, ctx.businessId, id)
     assertMayChange(ctx, head)
@@ -636,6 +874,7 @@ export function updateExpense(ctx: BusinessCtx, input: UpdateInput): Promise<Exp
       categoryId: head.category_id,
       periodMonth: head.period_month,
       paymentMethod: head.payment_method,
+      pays: storedPaysOf(head),
     })
     await setColumns(tx, ctx.businessId, id, { ...values, status: transition.to })
     return result(await readExpense(tx, ctx, id))
@@ -704,16 +943,31 @@ export function submitExpense(ctx: BusinessCtx, input: VersionInput): Promise<Ex
 
 /**
  * `expense.approve` (expenses.documents.approve): an expense sent for approval is approved, `version`
- * as read (what was sent is what is approved). EXPENSE_NOT_SUBMITTED for a draft or a rejected one;
- * FORBIDDEN for a member who may not see supplier prices (D-175). Idempotent.
+ * as read (what was sent is what is approved), with what it pays when the approver says it (D-216:
+ * resolvePays; left out, what it says stays). EXPENSE_NOT_SUBMITTED for a draft or a rejected one;
+ * FORBIDDEN for a member who may not see supplier prices (D-175), or who says what it pays without
+ * seeing running costs. Idempotent: an expense already approved is returned as it is (what it pays
+ * is then said when it is finalized).
  */
-export function approveExpense(ctx: BusinessCtx, input: VersionInput): Promise<ExpenseResultDto> {
+export function approveExpense(ctx: BusinessCtx, input: ReviewInput): Promise<ExpenseResultDto> {
   assertSeesWhatIsReviewed(ctx)
+  assertMaySayPays(ctx, input.pays)
   return ctx.tx(async (tx) => {
     const head = await lockExpense(tx, ctx.businessId, input.id)
     const transition = transitionOf(ctx, 'approve', head, false)
     if (transition.changes) {
       assertVersion(head, input.version)
+      const pays =
+        input.pays === undefined
+          ? storedPaysOf(head)
+          : await resolvePays(
+              tx,
+              ctx,
+              { categoryId: head.category_id, periodMonth: head.period_month },
+              input.pays,
+              storedPaysOf(head),
+              false,
+            )
       await setColumns(tx, ctx.businessId, input.id, {
         status: 'approved',
         approvedAt: sql`now()`,
@@ -721,6 +975,8 @@ export function approveExpense(ctx: BusinessCtx, input: VersionInput): Promise<E
         rejectedAt: null,
         rejectedBy: null,
         rejectionReason: null,
+        pays: pays.pays,
+        runningCostId: pays.runningCostId,
       })
     }
     return result(await readExpense(tx, ctx, input.id))
@@ -761,12 +1017,16 @@ export function rejectExpense(ctx: BusinessCtx, input: RejectInput): Promise<Exp
  * the business is fixed (net, and its VAT when it cannot be reclaimed; D-114 rule 4). With approval
  * required, an approved expense is posted by anyone who may post; a draft or a submitted one only by
  * a member who may also approve (their approval is recorded with it), APPROVAL_REQUIRED otherwise,
- * and who sees its amounts (FORBIDDEN otherwise, D-175). A rejection it had is cleared. Idempotent: an expense already posted (or reversed since) is returned as it is. Refused: a date
- * after today (FUTURE_DATE) or on or before the books-closed date, or for a month the books are closed
- * through (BOOKS_CLOSED, D-200), paid by a member
- * who is no longer an active member (NOT_FOUND), a location removed since it was saved (VALIDATION).
+ * and who sees its amounts (FORBIDDEN otherwise, D-175). A rejection it had is cleared. Idempotent:
+ * an expense already posted (or reversed since) is returned as it is. What it pays (D-216) is said
+ * with it or was said before: required whenever its category has a running cost a bill for its month
+ * can pay (RUNNING_COST_CHOICE_REQUIRED; resolvePays), and checked again (the running cost may have
+ * changed since). Refused: a date after today (FUTURE_DATE) or on or before the books-closed date, or
+ * for a month the books are closed through (BOOKS_CLOSED, D-200), paid by a member who is no longer
+ * an active member (NOT_FOUND), a location removed since it was saved (VALIDATION).
  */
-export function postExpense(ctx: BusinessCtx, input: VersionInput): Promise<ExpenseResultDto> {
+export function postExpense(ctx: BusinessCtx, input: ReviewInput): Promise<ExpenseResultDto> {
+  assertMaySayPays(ctx, input.pays)
   return ctx.tx(async (tx) => {
     const head = await lockExpense(tx, ctx.businessId, input.id)
     const setting = await lockApprovalSetting(tx, ctx.businessId)
@@ -789,6 +1049,14 @@ export function postExpense(ctx: BusinessCtx, input: VersionInput): Promise<Expe
          and l.deleted_at is null
     `)) as unknown as { id: string }[]
     if (!location) throw invalid('location: removed since the expense was saved')
+    const pays = await resolvePays(
+      tx,
+      ctx,
+      { categoryId: head.category_id, periodMonth: head.period_month },
+      input.pays,
+      storedPaysOf(head),
+      true,
+    )
     if (!isCurrencyCode(head.currency)) throw invalid(`currency: ${head.currency} is not supported`)
     const inCost = vatInCost({
       vatRegistered: business.vatRegistered,
@@ -806,6 +1074,8 @@ export function postExpense(ctx: BusinessCtx, input: VersionInput): Promise<Expe
       postedBy: sql`app.current_user_id()`,
       vatInCost: inCost,
       costTotal: amounts.cost,
+      pays: pays.pays,
+      runningCostId: pays.runningCostId,
       ...(approvedNow
         ? {
             approvedAt: sql`now()`,
@@ -941,6 +1211,9 @@ export function correctExpense(ctx: BusinessCtx, input: CorrectInput): Promise<E
       vatTotal: source.vatTotal,
       total: source.total,
       notes: source.notes,
+      // What it paid stays (D-216): checked again when the copy is finalized.
+      pays: source.pays,
+      runningCostId: source.runningCostId,
       copiedFromId: input.id,
       requestHash,
     })

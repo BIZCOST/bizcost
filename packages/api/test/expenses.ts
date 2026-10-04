@@ -3,6 +3,7 @@ import type {
   CostCategoryListDto,
   ExpenseDto,
   ExpensePaymentsDto,
+  ExpensePaysInput,
   RunningCostDto,
 } from '@bizcost/contracts'
 import { newId } from '@bizcost/domain'
@@ -55,18 +56,26 @@ export class ExpenseScope extends Scope {
     return ok(await this.run<Envelope<ExpenseDto>>('expense.create', input)).data
   }
 
-  async postExpense(expense: Pick<ExpenseDto, 'id' | 'version'>): Promise<ExpenseDto> {
+  /**
+   * Finalizes it, saying what it pays when given (D-216: needed when its category has a running cost
+   * for its month and the draft does not say it).
+   */
+  async postExpense(
+    expense: Pick<ExpenseDto, 'id' | 'version'>,
+    pays?: ExpensePaysInput,
+  ): Promise<ExpenseDto> {
     return ok(
       await this.run<Envelope<ExpenseDto>>('expense.post', {
         id: expense.id,
         version: expense.version,
+        ...(pays ? { pays } : {}),
       }),
     ).data
   }
 
-  /** A posted expense. */
-  async spend(input: object): Promise<ExpenseDto> {
-    return this.postExpense(await this.expenseDraft(input))
+  /** A posted expense (saying what it pays when given, D-216). */
+  async spend(input: object, pays?: ExpensePaysInput): Promise<ExpenseDto> {
+    return this.postExpense(await this.expenseDraft(input), pays)
   }
 
   async expensePayments(expenseId: string) {
@@ -79,3 +88,10 @@ export class ExpenseScope extends Scope {
     return ok(await this.run<Envelope<RunningCostDto>>('runningCost.create', input)).data
   }
 }
+
+/** What an expense pays (D-216): the bill of a running cost, or an extra. */
+export const billOf = (runningCost: { id: string }): ExpensePaysInput => ({
+  kind: 'running_cost',
+  runningCostId: runningCost.id,
+})
+export const EXTRA: ExpensePaysInput = { kind: 'extra' }

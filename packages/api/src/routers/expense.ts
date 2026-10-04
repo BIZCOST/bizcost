@@ -7,6 +7,7 @@ import {
   expensePaymentsDto,
   expensePaymentsInput,
   expenseResultDto,
+  expenseReviewInput,
   expenseSettingsDto,
   expenseVersionInput,
   mineExpenseGetInput,
@@ -14,6 +15,8 @@ import {
   mineExpenseListInput,
   mineExpenseResultDto,
   okDto,
+  payableRunningCostsDto,
+  payableRunningCostsInput,
   purchasePayersDto,
   recordExpensePaymentInput,
   rejectExpenseInput,
@@ -29,6 +32,7 @@ import {
   getExpense,
   getExpenseSettings,
   listExpenses,
+  listPayableRunningCosts,
   postExpense,
   rejectExpense,
   reverseExpense,
@@ -55,6 +59,9 @@ import {
  * Expenses (services/expenses.ts): module `expenses` (released in M2 Step 7), then expenses.documents.view to read, .manage for drafts and to send
  * them for approval (without supplier prices, only one's own: the service checks it, D-184), .approve to approve or reject, .post to finalize, .reverse to reverse, and
  * .reverse with .manage to correct; expenses.approval.manage (with a team) for the approval setting.
+ * What an expense pays (D-216) is said only by a member who may see running costs (module
+ * running_costs and running_costs.items.view): the service checks it on every save, approval and
+ * posting, and `expense.payableRunningCosts` needs both.
  * Outputs are withMeta(): amounts are removed for members without data.supplier_price.view (D-165).
  */
 export const expensesModule = businessProcedure.use(requireModule('expenses'))
@@ -88,6 +95,17 @@ export const expenseRouter = router({
     .input(mineExpenseGetInput)
     .output(mineExpenseResultDto)
     .query(({ ctx, input }) => getMineExpense(ctx, input)),
+  /**
+   * `expense.payableRunningCosts` (D-216): the running costs an expense in a category for a month can
+   * pay, by name (never amounts), for the choice «فاتورة لـ…» / "Bill for …"; with Running Costs on and
+   * running_costs.items.view.
+   */
+  payableRunningCosts: viewExpenses
+    .use(requireModule('running_costs'))
+    .use(requirePermission('running_costs.items.view'))
+    .input(payableRunningCostsInput)
+    .output(payableRunningCostsDto)
+    .query(({ ctx, input }) => listPayableRunningCosts(ctx, input)),
   /** `expense.payers`: the active members an expense may say paid from their own money. */
   payers: manageExpenses.output(purchasePayersDto).query(({ ctx }) => listPayers(ctx)),
   /** `expense.create`: a draft, idempotent on the client's id. */
@@ -110,9 +128,12 @@ export const expenseRouter = router({
     .input(expenseVersionInput)
     .output(expenseResultDto)
     .mutation(({ ctx, input }) => submitExpense(ctx, input)),
-  /** `expense.approve`: an expense sent for approval is approved. Idempotent. */
+  /**
+   * `expense.approve`: an expense sent for approval is approved, with what it pays when the approver
+   * says it (D-216). Idempotent.
+   */
   approve: approveExpenses
-    .input(expenseVersionInput)
+    .input(expenseReviewInput)
     .output(expenseResultDto)
     .mutation(({ ctx, input }) => approveExpense(ctx, input)),
   /** `expense.reject`: sent back, with an optional reason; it is then edited like a draft. */
@@ -120,9 +141,12 @@ export const expenseRouter = router({
     .input(rejectExpenseInput)
     .output(expenseResultDto)
     .mutation(({ ctx, input }) => rejectExpense(ctx, input)),
-  /** `expense.post` ("Finalize"): it counts from now. Idempotent. */
+  /**
+   * `expense.post` ("Finalize"): it counts from now; what it pays must be said by then whenever its
+   * category has a running cost for its month (D-216). Idempotent.
+   */
   post: postExpenses
-    .input(expenseVersionInput)
+    .input(expenseReviewInput)
     .output(expenseResultDto)
     .mutation(({ ctx, input }) => postExpense(ctx, input)),
   /** `expense.reverse`: as if never posted. Idempotent. */

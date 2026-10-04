@@ -49,14 +49,16 @@ import {
   type ExpenseFilters,
 } from './expense-filters'
 import { MineExpenses } from './mine-expenses'
+import { usePaysLabel } from './pays-choice'
 import { ExpenseStatusBadge } from './status-badge'
 
 // Expenses (M2 Step 5; PRODUCT.md §4 rule 13, D-164, D-168): the business's expenses, newest day
 // first, with filters kept in the address (status, category, days, a search in what it was for, the
 // number, the supplier's or the category's name). A row opens the expense: a draft in its editor,
-// anything else as it was recorded. To a member who sees costs, the page says in one line that final
-// expenses count in the business's costs in the month they are for, and, with Running Costs on and
-// seen, that a category's bills take the place of its regular running costs (D-202, D-203). With
+// anything else as it was recorded, each saying what it pays when it says it (D-216). To a member
+// who sees costs, the page says in one line that final expenses count in the business's costs in
+// the month they are for, and, with Running Costs on and seen, that a running cost's bill takes the
+// place of its regular amount and an extra expense counts on top (D-202, D-203, D-216). With
 // approval on, it says so, and an approver is told when expenses wait for them; with approval off, a
 // member who may finalize is told when drafts the team entered wait for them (D-184). Everyone with
 // expenses.documents.view sees the list;
@@ -352,7 +354,8 @@ function FilterBar({
 
 /**
  * One expense in the list: what it was for (or its category), its status, then its category, day,
- * number, supplier and, in a business with a team, who entered it; its total at the end.
+ * what it pays (D-216), number, supplier and, in a business with a team, who entered it; its total
+ * at the end.
  */
 function ExpenseRow({
   expense,
@@ -366,6 +369,8 @@ function ExpenseRow({
   const { t } = useTranslation()
   const businessDate = useBusinessDate()
   const monthName = useBusinessMonth()
+  const paysLabel = usePaysLabel()
+  const pays = paysLabel(expense.pays)
   const parts = [
     expense.description ? <bdi key="category">{expense.categoryName}</bdi> : null,
     <span key="date">{businessDate(expense.businessDate)}</span>,
@@ -375,9 +380,16 @@ function ExpenseRow({
         {t('expenses.list.forMonth', { month: monthName(expense.periodMonth) })}
       </span>
     ) : null,
+    pays ? (
+      // Kept whole on its line when it fits.
+      <span key="pays" data-pays={expense.pays?.kind} className="inline-block">
+        {pays}
+      </span>
+    ) : null,
     expense.supplierName ? <bdi key="supplier">{expense.supplierName}</bdi> : null,
     expense.reference ? (
-      <bdi key="reference" dir="auto">
+      // Kept whole on its line when it fits ("DEWA-118734", never "DEWA-" / "118734").
+      <bdi key="reference" dir="auto" className="inline-block">
         {expense.reference}
       </bdi>
     ) : null,
@@ -487,8 +499,9 @@ function ExpensesList() {
   // "Approval is on" is for those who send expenses, and for who may change it (with "Change"); an
   // approver hears only that expenses wait for them (a phone keeps room for the list).
   const showApprovalOn = approvalRequired && (!mayApprove || mayChangeApproval)
-  // How expenses reach costs (D-202, D-203): only for who sees costs; that bills take the place of
-  // the regular running costs only for who sees those, with Running Costs on.
+  // How expenses reach costs (D-202, D-203, D-216): only for who sees costs; that a running cost's
+  // bill takes the place of its regular amount, and an extra counts on top, only for who sees running
+  // costs, with Running Costs on.
   const costsNote = !context.visibleCategories.includes('cost')
     ? null
     : hasModule(context, 'running_costs') && can(context, 'running_costs.items.view')

@@ -53,6 +53,7 @@ describe('appRouter contract', () => {
       'expense.getMine',
       'expense.list',
       'expense.mine',
+      'expense.payableRunningCosts',
       'expense.payers',
       'expense.post',
       'expense.reject',

@@ -320,34 +320,36 @@ async function categoriesOf(page: Page, businessId: string): Promise<Map<string,
   return new Map(categories.items.map((category) => [category.name, category.id]))
 }
 
-/** Running costs paid from the first day of last month, each in its category. */
+/** Running costs paid from the first day of last month, each in its category; their ids by name. */
 async function runningCosts(
   page: Page,
   businessId: string,
   costs: { name: string; amount: string; frequency: string; category: string }[],
-) {
+): Promise<Map<string, string>> {
   const categories = await categoriesOf(page, businessId)
   const startsOn = `${monthBefore(await today(page, businessId))}-01`
+  const ids = new Map<string, string>()
   for (const { category, ...cost } of costs) {
     const categoryId = categories.get(category)
     if (!categoryId) throw new Error(`no category ${category}`)
+    const id = randomUUID()
+    ids.set(cost.name, id)
     await ok(
-      callApi(
-        page,
-        'runningCost.create',
-        { id: randomUUID(), categoryId, startsOn, ...cost },
-        { businessId },
-      ),
+      callApi(page, 'runningCost.create', { id, categoryId, startsOn, ...cost }, { businessId }),
       cost.name,
     )
   }
+  return ids
 }
 
-/** A final expense for last month (a no-invoice receipt paid in cash, dated today). */
+/**
+ * A final expense for last month (a no-invoice receipt paid in cash, dated today). `pays`: the id of
+ * the running cost whose bill it is (D-216: said when its category has one).
+ */
 async function lastMonthBill(
   page: Page,
   businessId: string,
-  bill: { category: string; amount: string; description: string },
+  bill: { category: string; amount: string; description: string; pays?: string },
 ) {
   const categoryId = (await categoriesOf(page, businessId)).get(bill.category)
   if (!categoryId) throw new Error(`no category ${bill.category}`)
@@ -373,7 +375,16 @@ async function lastMonthBill(
     'expense.create',
   )
   await ok(
-    callApi(page, 'expense.post', { id, version: draft.data.version }, { businessId }),
+    callApi(
+      page,
+      'expense.post',
+      {
+        id,
+        version: draft.data.version,
+        ...(bill.pays ? { pays: { kind: 'running_cost', runningCostId: bill.pays } } : {}),
+      },
+      { businessId },
+    ),
     'expense.post',
   )
 }
@@ -384,7 +395,19 @@ interface MonthCosts {
   month: string
   amountsShown: boolean
   total: string | null
-  categories: { name: string; source: string; amount: string; regular: string | null }[] | null
+  categories:
+    | {
+        name: string
+        amount: string
+        lines: {
+          kind: string
+          name: string | null
+          source: string
+          amount: string
+          regular: string | null
+        }[]
+      }[]
+    | null
 }
 
 interface Breakdown {
@@ -544,8 +567,8 @@ test('English, desktop: a café sees what the Spanish Latte costs before running
   await shot(page, 'en-1440-costs-not-entered')
 
   // Rent, salaries and electricity since the start of last month, and last month's bills: the
-  // electricity bill (3,150) takes the place of its regular 3,000; the repair counts as itself.
-  await runningCosts(page, businessId, [
+  // electricity's bill (3,150) takes the place of its regular 3,000; the repair counts as itself.
+  const cafeCosts = await runningCosts(page, businessId, [
     { name: 'Shop rent', amount: '12000', frequency: 'monthly', category: 'Rent' },
     { name: 'Staff salaries', amount: '8000', frequency: 'monthly', category: 'Salaries' },
     { name: 'Electricity', amount: '3000', frequency: 'monthly', category: 'Electricity' },
@@ -554,6 +577,7 @@ test('English, desktop: a café sees what the Spanish Latte costs before running
     category: 'Electricity',
     amount: '3150',
     description: 'DEWA bill',
+    pays: cafeCosts.get('Electricity'),
   })
   await lastMonthBill(page, businessId, {
     category: 'Maintenance',
@@ -571,16 +595,21 @@ test('English, desktop: a café sees what the Spanish Latte costs before running
       .locator('[data-month-category]')
       .evaluateAll((items) => items.map((item) => item.getAttribute('data-month-category'))),
   ).toEqual(['Rent', 'Salaries', 'Electricity', 'Maintenance'])
+  // Each category, then what is inside it: its running cost (named unless it has the category's
+  // name) and where its amount comes from (D-216).
   await expect(costs.locator('[data-month-category="Rent"]')).toHaveText(
-    /^Rent\s*Its regular amount\s*AED\s12,000\.00$/,
+    /^Rent\s*AED\s12,000\.00\s*Shop rent\s*Its regular amount$/,
   )
   await expect(costs.locator('[data-month-category="Electricity"]')).toHaveText(
-    /^Electricity\s*From its bills, in place of its regular AED\s3,000\.00\s*AED\s3,150\.00$/,
+    /^Electricity\s*AED\s3,150\.00\s*From its bills, in place of its regular AED\s3,000\.00$/,
   )
   await expect(costs.locator('[data-month-category="Maintenance"]')).toHaveText(
-    /^Maintenance\s*From its bills\s*AED\s450\.00$/,
+    /^Maintenance\s*AED\s450\.00\s*From its bills$/,
   )
-  await expect(costs).toContainText('Each category counts once')
+  await expect(
+    costs.locator('[data-month-category="Electricity"] [data-month-line="Electricity"]'),
+  ).toHaveAttribute('data-source', 'bills')
+  await expect(costs).toContainText('Each running cost counts once')
   // What it will be shared over, and that it is before the VAT the café gets back (D-203).
   await expect(costs.locator('[data-month-shared]')).toHaveText(
     `This is what will be shared over what you sold in ${monthName(month)} once your sales are recorded.`,
@@ -597,12 +626,16 @@ test('English, desktop: a café sees what the Spanish Latte costs before running
   const pool = await monthCostsOf(page, businessId)
   expect(plain(pool.total)).toBe('23600')
   expect(
-    pool.categories?.map((c) => [c.name, c.source, plain(c.amount), plain(c.regular)]),
+    pool.categories?.map((c) => [
+      c.name,
+      plain(c.amount),
+      c.lines.map((l) => [l.kind, l.name, l.source, plain(l.amount), plain(l.regular)]),
+    ]),
   ).toEqual([
-    ['Rent', 'regular', '12000', '12000'],
-    ['Salaries', 'regular', '8000', '8000'],
-    ['Electricity', 'bills', '3150', '3000'],
-    ['Maintenance', 'bills', '450', null],
+    ['Rent', '12000', [['running_cost', 'Shop rent', 'regular', '12000', '12000']]],
+    ['Salaries', '8000', [['running_cost', 'Staff salaries', 'regular', '8000', '8000']]],
+    ['Electricity', '3150', [['running_cost', 'Electricity', 'bills', '3150', '3000']]],
+    ['Maintenance', '450', [['extra', null, 'expenses', '450', null]]],
   ])
 
   // The list: a table, the latte's cost before running costs and its margin, said as such.
@@ -869,9 +902,9 @@ test('Arabic, phone and desktop: the café reads its product costs', async () =>
   await expect(costs).toContainText('تكاليف عملك في')
   await expect(costs).toContainText(loose('23,600.00 د.إ.'))
   await expect(costs.locator('[data-month-category="Electricity"]')).toContainText(
-    loose('من فواتيرها، بدل مبلغها المنتظم 3,000.00 د.إ.'),
+    loose('من الفواتير، بدل المبلغ المنتظم 3,000.00 د.إ.'),
   )
-  await expect(costs.locator('[data-month-category="Rent"]')).toContainText('مبلغها المنتظم')
+  await expect(costs.locator('[data-month-category="Rent"]')).toContainText('المبلغ المنتظم')
   await expect(costs.locator('[data-month-shared]')).toContainText('بعد تسجيل مبيعاتك')
   await expect(costs.locator('[data-month-note]')).toContainText(
     'المبالغ قبل الضريبة: الضريبة التي تستردّها ليست تكلفة.',
@@ -1313,7 +1346,7 @@ test('a designer who sells only services: asked for running costs, and her logo�
   // Her software and internet since last month, and her trade licence of 1,200 a year from last
   // month. Last month's Adobe bill came to 275 (its price went up): it replaces the regular 260;
   // the licence's bill of 1,200 pays for its whole year, 100 a month (D-203): 275 + 389 + 100 = 764.
-  await runningCosts(page, businessId, [
+  const designerCosts = await runningCosts(page, businessId, [
     {
       name: 'Adobe Creative Cloud',
       amount: '260',
@@ -1327,11 +1360,13 @@ test('a designer who sells only services: asked for running costs, and her logo�
     category: 'Software subscriptions',
     amount: '275',
     description: 'Adobe Creative Cloud',
+    pays: designerCosts.get('Adobe Creative Cloud'),
   })
   await lastMonthBill(page, businessId, {
     category: 'Licences',
     amount: '1200',
     description: 'Freelance licence renewal',
+    pays: designerCosts.get('Freelance licence'),
   })
   const month = monthBefore(await today(page, businessId))
   const yearEnd = monthBefore(`${String(Number(month.slice(0, 4)) + 1)}${month.slice(4)}-01`)
@@ -1345,11 +1380,11 @@ test('a designer who sells only services: asked for running costs, and her logo�
   const costs = how.locator('[data-month-costs]')
   await expect(costs).toContainText(/AED\s764\.00/)
   await expect(costs.locator('[data-month-category="Software subscriptions"]')).toHaveText(
-    /From its bills, in place of its regular AED\s260\.00\s*AED\s275\.00$/,
+    /^Software subscriptions\s*AED\s275\.00\s*Adobe Creative Cloud\s*From its bills, in place of its regular AED\s260\.00$/,
   )
   await expect(costs.locator('[data-month-category="Licences"]')).toHaveText(
     loose(
-      `LicencesIts bills for the year from ${monthName(month)} to ${monthName(yearEnd)} (AED 1,200.00), spread over its 12 months, in place of its regular AED 100.00AED 100.00`,
+      `LicencesAED 100.00Freelance licenceIts bills for the year from ${monthName(month)} to ${monthName(yearEnd)} (AED 1,200.00), spread over its 12 months, in place of its regular AED 100.00`,
     ),
   )
   // Not VAT-registered: nothing said about VAT.
@@ -1412,11 +1447,9 @@ test('a designer who sells only services: asked for running costs, and her logo�
   await shot(page, 'ar-390-designer-product-costs')
   await page.getByRole('button', { name: 'كيف؟' }).click()
   await expect(page.locator('[data-month-category="Software subscriptions"]')).toContainText(
-    loose('من فواتيرها، بدل مبلغها المنتظم 260.00 د.إ.'),
+    loose('من الفواتير، بدل المبلغ المنتظم 260.00 د.إ.'),
   )
-  await expect(page.locator('[data-month-category="Licences"]')).toContainText(
-    'فواتيرها عن السنة من',
-  )
+  await expect(page.locator('[data-month-category="Licences"]')).toContainText('فواتير السنة من')
   await expect(page.locator('[data-month-category="Licences"]')).toContainText(
     'موزّعة على أشهرها الاثني عشر',
   )

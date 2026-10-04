@@ -39,7 +39,9 @@ import { Totals } from '@/features/purchasing/totals'
 import { can } from '@/features/settings/sections'
 import { useLocale } from '@/lib/i18n/client'
 import { useBusinessContext } from '@/lib/trpc/client'
-import { mayReviewExpenses } from './data'
+import { mayChoosePays, mayReviewExpenses, usePayableRunningCosts } from './data'
+import { paysChoiceOf, paysInputOf } from './expense-draft'
+import { PaysChoice, usePaysLabel } from './pays-choice'
 import { ExpenseStatusBadge } from './status-badge'
 
 // An expense as it was recorded (M2 Step 5; D-164, D-166, D-168): one sent for approval, approved,
@@ -51,6 +53,9 @@ import { ExpenseStatusBadge } from './status-badge'
 // prices changes only what they entered, and only while it is a draft or rejected (D-184). A draft that nobody sends for
 // approval (approval off) says it waits for someone who may finalize it, to a member who may not
 // (D-180); a final expense the member paid themselves leads to what the business owes them (D-181).
+// What it pays shows with its details (D-216); in a category that has a running cost for its month,
+// "Approve" and "Finalize" ask it of a member who may see running costs (one who entered it without
+// seeing them could not say it): optional to approve, needed to finalize.
 
 type Confirm = 'submit' | 'approve' | 'reject' | 'finalize' | 'reverse' | 'correct' | 'discard'
 
@@ -105,6 +110,11 @@ export function ExpenseView({
   const [confirmError, setConfirmError] = useState<I18nKey | null>(null)
   const [busy, setBusy] = useState(false)
   const [reason, setReason] = useState('')
+  // What it pays, as chosen in the approve or finalize dialog (D-216), and whether Finalize was
+  // tapped without it.
+  const [paysChoice, setPaysChoice] = useState('')
+  const [paysAsked, setPaysAsked] = useState(false)
+  const paysLabel = usePaysLabel()
   const [correctionId] = useState(() => newId())
   // What is owed on it and its payments, for a final expense on credit or paid by a member.
   const showsPayments =
@@ -116,6 +126,16 @@ export function ExpenseView({
     ...trpc.expensePayment.list.queryOptions({ expenseId: expense.id }),
     enabled: showsPayments,
   })
+  // The running costs it can pay, while it may still be approved or finalized, for a member who may
+  // see running costs (they say what it pays then).
+  const choosesPays = context !== undefined && mayChoosePays(context)
+  const notFinal =
+    expense.status === 'draft' || expense.status === 'submitted' || expense.status === 'approved'
+  const payable = usePayableRunningCosts(
+    expense.categoryId,
+    expense.periodMonth,
+    choosesPays && notFinal,
+  )
   if (!context) return null
 
   const vatRegistered = context.capabilities.vat_registered === true
@@ -199,12 +219,22 @@ export function ExpenseView({
     if (code === 'not_found' && confirm === 'finalize' && expense.paidByMemberId !== null) {
       return 'expenses.confirm.payerLeft'
     }
+    if (code === 'running_cost_choice_required') {
+      // Said by someone who may see running costs (D-216); for them, its running costs are read
+      // again (one may have been added since) and the choice is asked.
+      if (!choosesPays) return 'expenses.pays.byOther'
+      setPaysAsked(true)
+      void payable.refetch()
+    }
     return apiErrorKey(error)
   }
 
   function ask(action: Confirm) {
     setConfirmError(null)
     setReason('')
+    // What it says it pays now, to keep or change.
+    setPaysChoice(paysChoiceOf(expense.pays))
+    setPaysAsked(false)
     setConfirm(action)
   }
 
@@ -238,13 +268,34 @@ export function ExpenseView({
       })
   }
   const version = { id: expense.id, version: expense.version }
+  // What it pays (D-216): asked in the approve and finalize dialogs while its category has a running
+  // cost a bill for its month can pay, of a member who may see running costs. Sent once chosen; to
+  // approve it may wait, to finalize it is needed.
+  const paysOptions = choosesPays && notFinal ? payable.data?.items : undefined
+  const paysAsks = paysOptions !== undefined && paysOptions.length > 0
+  const paysInput = paysInputOf(paysChoice, paysOptions)
+  const paysSaid = paysAsks && paysInput ? { pays: paysInput } : {}
+  const paysLoading = choosesPays && notFinal && payable.isPending && payable.fetchStatus !== 'idle'
   const doSubmit = change(() => submit.mutateAsync(version), 'expenses.confirm.submitted')
-  const doApprove = change(() => approve.mutateAsync(version), 'expenses.confirm.approved')
+  const doApprove = change(
+    () => approve.mutateAsync({ ...version, ...paysSaid }),
+    'expenses.confirm.approved',
+  )
   const doReject = change(
     () => reject.mutateAsync({ ...version, reason: reason.trim() || null }),
     'expenses.confirm.rejected',
   )
-  const doFinalize = change(() => post.mutateAsync(version), 'expenses.confirm.finalized')
+  const finalize = change(
+    () => post.mutateAsync({ ...version, ...paysSaid }),
+    'expenses.confirm.finalized',
+  )
+  const doFinalize = async () => {
+    if (paysAsks && !paysInput) {
+      setPaysAsked(true)
+      return false
+    }
+    return finalize()
+  }
   const doReverse = change(
     () => reverse.mutateAsync({ id: expense.id }),
     'expenses.confirm.reversed',
@@ -445,6 +496,18 @@ export function ExpenseView({
             <Detail label={t('expenses.view.periodMonth')}>
               <span data-period-month={expense.periodMonth}>{monthName(expense.periodMonth)}</span>
             </Detail>
+            {/* What it pays (D-216); "not said yet" to who may still say it. */}
+            {expense.pays ? (
+              <Detail label={t('expenses.pays.label')}>
+                <span data-pays={expense.pays.kind}>{paysLabel(expense.pays)}</span>
+              </Detail>
+            ) : paysAsks ? (
+              <Detail label={t('expenses.pays.label')}>
+                <span data-pays="none" className="font-normal text-muted-foreground">
+                  {t('expenses.pays.notSaid')}
+                </span>
+              </Detail>
+            ) : null}
             <Detail label={t('purchasing.editor.documentType')}>
               {t(`purchasing.documentTypes.${expense.documentType}`)}
             </Detail>
@@ -585,9 +648,19 @@ export function ExpenseView({
         busyLabel={t('expenses.confirm.approving')}
         busy={busy}
         error={confirmError}
+        disabled={paysLoading}
         onConfirm={() => void doApprove()}
         onClose={() => setConfirm(null)}
-      />
+      >
+        {paysOptions?.length ? (
+          <PaysChoice
+            options={paysOptions}
+            value={paysChoice}
+            onChange={setPaysChoice}
+            hint={t('expenses.pays.approveOptional')}
+          />
+        ) : null}
+      </ConfirmDialog>
       <ConfirmDialog
         open={confirm === 'reject'}
         icon={XIcon}
@@ -651,10 +724,23 @@ export function ExpenseView({
               ? 'errors.books_closed'
               : null)
         }
-        disabled={finalizeClosed !== null}
+        // Refused for a member who may not see running costs (someone who may must say what it
+        // pays first, D-216): tapping again would only say it again.
+        disabled={
+          finalizeClosed !== null || paysLoading || confirmError === 'expenses.pays.byOther'
+        }
         onConfirm={() => void doFinalize()}
         onClose={() => setConfirm(null)}
-      />
+      >
+        {paysOptions?.length ? (
+          <PaysChoice
+            options={paysOptions}
+            value={paysChoice}
+            onChange={setPaysChoice}
+            error={paysAsked && !paysInput ? t('expenses.pays.required') : undefined}
+          />
+        ) : null}
+      </ConfirmDialog>
       <ConfirmDialog
         open={confirm === 'reverse'}
         icon={Undo2Icon}

@@ -3,6 +3,9 @@ import { describe, expect, it } from 'vitest'
 import {
   checkExpense,
   expenseDraft,
+  EXTRA,
+  paysChoiceOf,
+  paysInputOf,
   periodMonthOptions,
   withDocumentType,
   withPeriodDefault,
@@ -16,6 +19,8 @@ const TODAY = '2026-09-29'
 const RENT = '0190a4f2-7b5c-7c3e-9b1a-2f3c4d5e6f70'
 const SUPPLIER = '0190a4f2-7b5c-7c3e-9b1a-2f3c4d5e6f71'
 const SALMA = '0190a4f2-7b5c-7c3e-9b1a-2f3c4d5e6f72'
+const STAFF_SALARIES = '0190a4f2-7b5c-7c3e-9b1a-2f3c4d5e6f73'
+const DEWA = '0190a4f2-7b5c-7c3e-9b1a-2f3c4d5e6f74'
 const REGISTERED = { currency: 'AED' as const, vatRegistered: true, today: TODAY }
 const NOT_REGISTERED = { ...REGISTERED, vatRegistered: false }
 
@@ -223,6 +228,7 @@ describe('the fields to save', () => {
       locationId: null,
       vatNotReclaimable: false,
       notes: '',
+      pays: '',
     })
   })
 })
@@ -319,5 +325,56 @@ describe('"For which month?" and the closed books (D-200)', () => {
     ])
     // A bill dated in the closed period: its months as before (its date says it cannot be finalized).
     expect(periodMonthOptions('2026-03', '2026-03', '2026-12-31')).toHaveLength(14)
+  })
+})
+
+describe('what it pays, in a category that has running costs (the owner’s "1أ", D-216)', () => {
+  const PAYABLE = [{ id: STAFF_SALARIES }]
+
+  it('a saved expense opens with what it says: the running cost, an extra, or nothing', () => {
+    expect(paysChoiceOf(null)).toBe('')
+    expect(paysChoiceOf(undefined)).toBe('')
+    expect(paysChoiceOf({ kind: 'extra', runningCost: null })).toBe(EXTRA)
+    expect(paysChoiceOf({ kind: 'running_cost', runningCost: { id: DEWA, name: 'DEWA' } })).toBe(
+      DEWA,
+    )
+    // Named only to a member who may see running costs: nothing to pick for anyone else.
+    expect(paysChoiceOf({ kind: 'running_cost', runningCost: null })).toBe('')
+  })
+
+  it('sends the bill of a running cost its category can pay, an extra, or nothing said', () => {
+    expect(paysInputOf(STAFF_SALARIES, PAYABLE)).toEqual({
+      kind: 'running_cost',
+      runningCostId: STAFF_SALARIES,
+    })
+    expect(paysInputOf(EXTRA, PAYABLE)).toEqual({ kind: 'extra' })
+    expect(paysInputOf('', PAYABLE)).toBeNull()
+    // A running cost of another category (the category was changed): nothing said.
+    expect(paysInputOf(DEWA, PAYABLE)).toBeNull()
+    // A category without running costs that month: nothing to say, not even "extra".
+    expect(paysInputOf(EXTRA, [])).toBeNull()
+    // Not known yet, or a member who may not say it: left out (the API keeps what it says).
+    expect(paysInputOf(STAFF_SALARIES, undefined)).toBeUndefined()
+  })
+
+  it('saves without it, but says it is missing until it is chosen (needed to finalize)', () => {
+    const asked = { ...REGISTERED, payable: PAYABLE }
+    const notChosen = checkExpense(filled(), asked)
+    expect(notChosen.fields).toMatchObject({ pays: null })
+    expect(notChosen.paysMissing).toBe(true)
+    const extra = checkExpense(filled({ pays: EXTRA }), asked)
+    expect(extra.fields?.pays).toEqual({ kind: 'extra' })
+    expect(extra.paysMissing).toBe(false)
+    const bill = checkExpense(filled({ pays: STAFF_SALARIES }), asked)
+    expect(bill.fields?.pays).toEqual({ kind: 'running_cost', runningCostId: STAFF_SALARIES })
+    expect(bill.paysMissing).toBe(false)
+    // Not asked: a category without running costs, or a member who may not see them.
+    expect(checkExpense(filled(), { ...REGISTERED, payable: [] })).toMatchObject({
+      fields: { pays: null },
+      paysMissing: false,
+    })
+    const hidden = checkExpense(filled({ pays: EXTRA }), REGISTERED)
+    expect(hidden.paysMissing).toBe(false)
+    expect(hidden.fields).not.toHaveProperty('pays')
   })
 })

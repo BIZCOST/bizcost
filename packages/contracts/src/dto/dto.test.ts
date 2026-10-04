@@ -2,6 +2,7 @@ import { newId } from '@bizcost/domain'
 import { describe, expect, it } from 'vitest'
 import { businessContextDto, locationScopeDto } from './business-context'
 import { dashboardChecklistDto } from './dashboard'
+import { createExpenseInput, expensePaysDto, expenseReviewInput } from './expenses'
 import { healthDto } from './health'
 import { meDto } from './me'
 
@@ -157,5 +158,59 @@ describe('dashboardChecklistDto', () => {
     expect(dashboardChecklistDto.safeParse({ items: [step], costSteps: [] }).success).toBe(false)
     const part = { id: 'profile', done: false, missing: ['email'] }
     expect(dashboardChecklistDto.safeParse({ items: [part], costSteps: [] }).success).toBe(false)
+  })
+})
+
+describe('what an expense pays (D-216)', () => {
+  const draft = {
+    id: newId(),
+    categoryId: newId(),
+    businessDate: '2026-10-04',
+    documentType: 'no_invoice',
+    paymentMethod: 'cash',
+    amount: '100',
+  }
+
+  it('left out, null, an extra, or the bill of a running cost named by its id', () => {
+    expect(createExpenseInput.parse(draft).pays).toBeUndefined()
+    expect(createExpenseInput.parse({ ...draft, pays: null }).pays).toBeNull()
+    expect(createExpenseInput.parse({ ...draft, pays: { kind: 'extra' } }).pays).toEqual({
+      kind: 'extra',
+    })
+    const runningCostId = newId()
+    expect(
+      expenseReviewInput.parse({
+        id: newId(),
+        version: 1,
+        pays: { kind: 'running_cost', runningCostId },
+      }).pays,
+    ).toEqual({ kind: 'running_cost', runningCostId })
+  })
+
+  it('a bill names its running cost; nothing else is a choice', () => {
+    for (const pays of [
+      { kind: 'running_cost' },
+      { kind: 'running_cost', runningCostId: 'not-a-uuid' },
+      { kind: 'salary' },
+      'extra',
+    ]) {
+      expect(createExpenseInput.safeParse({ ...draft, pays }).success, JSON.stringify(pays)).toBe(
+        false,
+      )
+    }
+  })
+
+  it('answers the kind, and the running cost only by id and name', () => {
+    const id = newId()
+    expect(
+      expensePaysDto.parse({ kind: 'running_cost', runningCost: { id, name: 'DEWA' } }),
+    ).toEqual({ kind: 'running_cost', runningCost: { id, name: 'DEWA' } })
+    expect(expensePaysDto.parse(null)).toBeNull()
+    expect(
+      expensePaysDto.safeParse({
+        kind: 'running_cost',
+        runningCost: { id, name: 'DEWA', amount: '1' },
+      }).data?.runningCost,
+    ).toEqual({ id, name: 'DEWA' })
   })
 })

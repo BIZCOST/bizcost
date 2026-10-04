@@ -15,11 +15,13 @@ import { Button } from '@/components/ui/button'
 import { ListEmpty, ListSkeleton } from '@/features/catalog/catalog-list'
 import { Money, useBusinessDate, useBusinessMonth, useMoney } from '@/features/purchasing/amounts'
 import { cn } from '@/lib/utils'
+import { usePaysLabel } from './pays-choice'
 import { ExpenseStatusBadge } from './status-badge'
 
 // "My expenses" (the owner's answers of 2026-09-29, A4; D-181): the expenses the member entered or
 // paid from their own money, with their amounts even when their role hides supplier prices
-// (expense.mine returns only their own), and, for one they paid themselves, whether it was paid back.
+// (expense.mine returns only their own), and, for one they paid themselves, whether it was paid back,
+// and what it pays (D-216).
 // What the business owes them in all sits on top ("Owed to you", with a link to Amounts owed).
 
 /**
@@ -68,6 +70,9 @@ function MineRow({ expense, href }: { expense: MineExpenseDto; href: string }) {
   const { t } = useTranslation()
   const businessDate = useBusinessDate()
   const monthName = useBusinessMonth()
+  const paysLabel = usePaysLabel()
+  // What it pays (D-216): the running cost's name only to a member who may see running costs.
+  const pays = paysLabel(expense.pays)
   const parts = [
     expense.description ? <bdi key="category">{expense.categoryName}</bdi> : null,
     <span key="date">{businessDate(expense.businessDate)}</span>,
@@ -77,8 +82,15 @@ function MineRow({ expense, href }: { expense: MineExpenseDto; href: string }) {
         {t('expenses.list.forMonth', { month: monthName(expense.periodMonth) })}
       </span>
     ) : null,
+    pays ? (
+      // Kept whole on its line when it fits.
+      <span key="pays" data-pays={expense.pays?.kind} className="inline-block">
+        {pays}
+      </span>
+    ) : null,
     expense.reference ? (
-      <bdi key="reference" dir="auto">
+      // Kept whole on its line when it fits ("DEWA-118734", never "DEWA-" / "118734").
+      <bdi key="reference" dir="auto" className="inline-block">
         {expense.reference}
       </bdi>
     ) : null,

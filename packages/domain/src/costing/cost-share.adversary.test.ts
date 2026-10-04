@@ -12,6 +12,8 @@ const LICENCE = 'cat-licences'
 const RENT = 'cat-rent'
 
 const running = (over: Partial<PoolRunningCost> = {}): PoolRunningCost => ({
+  id: 'rent',
+  name: over.id ?? 'rent',
   categoryId: RENT,
   amount: '12000',
   frequency: 'monthly',
@@ -19,8 +21,10 @@ const running = (over: Partial<PoolRunningCost> = {}): PoolRunningCost => ({
   endsOn: null,
   ...over,
 })
+/** A bill of the running cost `rent` (since D-216 a bill says which running cost it pays). */
 const bill = (over: Partial<PoolExpense> = {}): PoolExpense => ({
   categoryId: RENT,
+  runningCostId: 'rent',
   cost: '12000',
   month: '2026-09',
   reversedIn: null,
@@ -47,8 +51,18 @@ describe('D-202: a yearly or quarterly running cost and its bill count once', ()
     // month). In March the owner pays the renewal and enters it as an expense in the same category.
     // March's bill replaces March's 1 250, but the other 11 months still count 1 250 each: the
     // licence is counted 15 000 + 11 × 1 250 = 28 750 over the year, almost twice.
-    const licence = running({ categoryId: LICENCE, amount: '15000', frequency: 'yearly' })
-    const renewal = bill({ categoryId: LICENCE, cost: '15000', month: '2026-03' })
+    const licence = running({
+      id: 'licence',
+      categoryId: LICENCE,
+      amount: '15000',
+      frequency: 'yearly',
+    })
+    const renewal = bill({
+      categoryId: LICENCE,
+      runningCostId: 'licence',
+      cost: '15000',
+      month: '2026-03',
+    })
     expect(over('2026-01', 12, [licence], [renewal])).toBe('15000')
   })
 

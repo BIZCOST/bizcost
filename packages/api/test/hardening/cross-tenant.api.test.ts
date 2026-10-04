@@ -1168,6 +1168,18 @@ const PROBES: Record<string, Probe> = {
     variants: () => [{ input: {} }],
   },
   'expense.payers': { base: 'business', reason: `${NO_ROWS}: its own active members` },
+  'expense.payableRunningCosts': {
+    base: 'business',
+    reason:
+      'the category is looked up in the x-business-id business (NOT_FOUND), and only that ' +
+      'business’s running costs are listed (D-216)',
+    variants: (victim) => [
+      {
+        input: { categoryId: victim.category.id, periodMonth: victim.expense.periodMonth },
+        own: ['not_found'],
+      },
+    ],
+  },
   'expense.settings': { base: 'business', reason: NO_ROWS },
   'expense.updateSettings': {
     base: 'business',
@@ -1196,6 +1208,11 @@ const PROBES: Record<string, Probe> = {
         { input: draft({ locationId: victim.defaultLocationId }), own: ['not_found'] },
         {
           input: draft({ paymentMethod: 'paid_by_member', paidByMemberId: victim.adminMemberId }),
+          own: ['not_found'],
+        },
+        // What it pays names a running cost of the x-business-id business only (D-216).
+        {
+          input: draft({ pays: { kind: 'running_cost', runningCostId: victim.runningCost.id } }),
           own: ['not_found'],
         },
       ]
@@ -1228,6 +1245,7 @@ const PROBES: Record<string, Probe> = {
           { supplierId: victim.supplier.id },
           { locationId: victim.defaultLocationId },
           { paymentMethod: 'paid_by_member', paidByMemberId: victim.adminMemberId },
+          { pays: { kind: 'running_cost', runningCostId: victim.runningCost.id } },
         ].map((extra) => ({
           input: {
             id: attacker.draftExpense.id,
@@ -1261,10 +1279,20 @@ const PROBES: Record<string, Probe> = {
   },
   'expense.approve': {
     base: 'business',
-    reason: 'looked up (and locked) in the x-business-id business',
-    variants: (victim) => [
+    reason:
+      'looked up (and locked) in the x-business-id business, and so is the running cost it says ' +
+      'the expense pays (D-216)',
+    variants: (victim, attacker) => [
       {
         input: { id: victim.submittedExpense.id, version: victim.submittedExpense.version },
+        own: ['not_found'],
+      },
+      {
+        input: {
+          id: attacker.submittedExpense.id,
+          version: attacker.submittedExpense.version,
+          pays: { kind: 'running_cost', runningCostId: victim.runningCost.id },
+        },
         own: ['not_found'],
       },
     ],
@@ -1285,10 +1313,20 @@ const PROBES: Record<string, Probe> = {
   },
   'expense.post': {
     base: 'business',
-    reason: 'looked up (and locked) in the x-business-id business',
-    variants: (victim) => [
+    reason:
+      'looked up (and locked) in the x-business-id business, and so is the running cost it says ' +
+      'the expense pays (D-216)',
+    variants: (victim, attacker) => [
       {
         input: { id: victim.draftExpense.id, version: victim.draftExpense.version },
+        own: ['not_found'],
+      },
+      {
+        input: {
+          id: attacker.draftExpense.id,
+          version: attacker.draftExpense.version,
+          pays: { kind: 'running_cost', runningCostId: victim.runningCost.id },
+        },
         own: ['not_found'],
       },
     ],

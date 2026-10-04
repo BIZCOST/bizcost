@@ -95,20 +95,27 @@ describe.each(DEMO_PERSONAS.filter((p) => p.costing).map((p) => [p.title, p] as 
       }
     })
 
-    it('shares a category with a running cost only for that running cost’s bill (D-202, D-203)', () => {
-      // A category's bills take the place of its regular amount: an extra in it would undercount.
+    it('says what an expense pays exactly when its category has a running cost (D-216)', () => {
+      // The owner finalizes each one saying it: the bill of one of its category's running costs, or
+      // an extra on top of them; an expense in a category without running costs says nothing.
       const sameCategory = (a: DemoCategory, b: DemoCategory) =>
         typeof a === 'string' ? a === b : typeof b !== 'string' && a.name === b.name
       for (const e of data.expenses ?? []) {
         const running = (data.runningCosts ?? []).filter((r) =>
           sameCategory(r.category, e.category),
         )
-        if (e.billOf === undefined) expect(running, e.key).toEqual([])
-        else
+        if (running.length === 0) expect(e.pays, e.key).toBeUndefined()
+        else expect(e.pays, e.key).toBeDefined()
+        if (e.pays !== undefined && e.pays !== 'extra') {
           expect(
             running.map((r) => r.key),
             e.key,
-          ).toEqual([e.billOf])
+          ).toContain(e.pays.runningCost)
+        }
+        if (e.monthsBack !== undefined) {
+          expect(e.monthsBack, e.key).toBeGreaterThanOrEqual(0)
+          expect(e.monthsBack, e.key).toBeLessThanOrEqual(12)
+        }
       }
     })
 

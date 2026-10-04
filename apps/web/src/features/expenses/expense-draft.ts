@@ -4,6 +4,8 @@ import {
   EXPENSE_DESCRIPTION_MAX_LENGTH,
   type CreateExpenseInput,
   type ExpenseDto,
+  type ExpensePaysDto,
+  type ExpensePaysInput,
 } from '@bizcost/contracts'
 import {
   addMonths,
@@ -30,7 +32,13 @@ import { defaultVatRate, NO_VAT } from '../purchasing/purchase-draft'
 // document it came with (apart from how it was paid), how it was paid (required: on credit needs the
 // supplier, paid personally names who), and optional details. Checked as the API checks it; the
 // amounts shown as it is typed are the domain's (computeExpense: the purchase line's maths, as the
-// API stores them). What it costs the business (VAT in or out) is fixed when it is finalized.
+// API stores them). What it costs the business (VAT in or out) is fixed when it is finalized. In a
+// category that has a running cost a bill for its month can pay, it says what it pays (D-216): the
+// bill of one of them, or an extra; said only by a member who may see running costs, and needed to
+// finalize it.
+
+/** What an expense pays when it is an extra (`ExpenseDraft.pays`; a running cost's id otherwise). */
+export const EXTRA = 'extra'
 
 export interface ExpenseDraft {
   /** As typed: before VAT, or with its VAT (`pricesIncludeVat`). */
@@ -61,6 +69,11 @@ export interface ExpenseDraft {
   readonly locationId: string | null
   readonly vatNotReclaimable: boolean
   readonly notes: string
+  /**
+   * What it pays (D-216): the id of the running cost whose bill it is, EXTRA, or '' (not said). Asked
+   * only when its category has a running cost a bill for its month can pay.
+   */
+  readonly pays: string
 }
 
 export interface ExpenseErrors {
@@ -89,6 +102,12 @@ export interface ExpenseFormContext {
   readonly categories?: ReadonlySet<string>
   /** The members who may be said to have paid (expense.payers), once read. */
   readonly payers?: ReadonlySet<string>
+  /**
+   * The running costs a bill in its category for its month can pay (expense.payableRunningCosts), by
+   * id, once read, for a member who may see running costs. Undefined otherwise: what it pays is then
+   * not sent (the API keeps what the expense says while it still fits).
+   */
+  readonly payable?: readonly { readonly id: string }[]
 }
 
 export interface CheckedExpense {
@@ -97,6 +116,11 @@ export interface CheckedExpense {
   readonly fields: ExpenseFields | null
   /** Before VAT, the VAT and the total of what is typed (zero while the amount does not read). */
   readonly amounts: Pick<ExpenseAmounts, 'net' | 'vat' | 'total'>
+  /**
+   * Its category has a running cost for its month and nothing is said about what it pays: it can be
+   * saved or sent for approval, not finalized (RUNNING_COST_CHOICE_REQUIRED).
+   */
+  readonly paysMissing: boolean
 }
 
 /** Problems that only say something is missing: shown once the person tries to save. */
@@ -138,6 +162,7 @@ export function expenseDraft(
       locationId: null,
       vatNotReclaimable: false,
       notes: '',
+      pays: '',
     }
   }
   return {
@@ -156,7 +181,36 @@ export function expenseDraft(
     locationId: expense.locationId,
     vatNotReclaimable: expense.vatNotReclaimable,
     notes: expense.notes ?? '',
+    pays: paysChoiceOf(expense.pays),
   }
+}
+
+/**
+ * What a saved expense says it pays, as the form's choice: the running cost's id (named only to a
+ * member who may see running costs), EXTRA, or '' (nothing said, or a running cost not named).
+ */
+export function paysChoiceOf(pays: ExpensePaysDto | undefined): string {
+  if (!pays) return ''
+  if (pays.kind === 'extra') return EXTRA
+  return pays.runningCost?.id ?? ''
+}
+
+/**
+ * What to send for the choice, given the running costs its category can pay that month: the bill of
+ * one of them, an extra while there is one, null otherwise (nothing said). Undefined while they are
+ * not known, or for a member who may not say it: left out, the API keeps what the expense says while
+ * it still fits.
+ */
+export function paysInputOf(
+  choice: string,
+  payable: readonly { readonly id: string }[] | undefined,
+): ExpensePaysInput | null | undefined {
+  if (payable === undefined) return undefined
+  if (payable.length === 0) return null
+  if (choice === EXTRA) return { kind: 'extra' }
+  return payable.some((cost) => cost.id === choice)
+    ? { kind: 'running_cost', runningCostId: choice }
+    : null
 }
 
 /**
@@ -271,9 +325,11 @@ export function checkExpense(draft: ExpenseDraft, context: ExpenseFormContext): 
 
   const paymentMethod = draft.paymentMethod
   const valid = Object.keys(errors).length === 0 && amount.ok && paymentMethod !== ''
+  const pays = paysInputOf(draft.pays, context.payable)
   return {
     errors,
     amounts: { net: amounts.net, vat: amounts.vat, total: amounts.total },
+    paysMissing: pays === null && (context.payable?.length ?? 0) > 0,
     fields: valid
       ? {
           categoryId: draft.categoryId,
@@ -294,6 +350,7 @@ export function checkExpense(draft: ExpenseDraft, context: ExpenseFormContext): 
           amount: amount.value,
           vatRate,
           notes: notes || null,
+          ...(pays === undefined ? {} : { pays }),
         }
       : null,
   }

@@ -2,7 +2,7 @@ import { z } from 'zod'
 import { withMeta } from '../envelope'
 import { DOCUMENT_PAGE_SIZE, DOCUMENT_PAGE_SIZE_MAX } from '../purchasing'
 import { zBusinessDate, zBusinessMonth, zDecimal, zUuid } from '../primitives'
-import { expenseDto, expenseStatusDto } from './expenses'
+import { expenseDto, expensePaysDto, expenseStatusDto } from './expenses'
 import {
   documentStatusDto,
   payableKindDto,
@@ -52,6 +52,11 @@ export const mineExpenseDto = z.object({
   enteredByMe: z.boolean(),
   /** The caller paid it from their own money (`paid_by_member`). */
   paidByMe: z.boolean(),
+  /**
+   * What it pays in a category that has running costs (D-216), as expense.get says it: the running
+   * cost's name only to a member who may see running costs.
+   */
+  pays: expensePaysDto,
   currency: z.string(),
   /** What it came to, with its VAT (the caller's own record: not redacted). */
   total: zDecimal,

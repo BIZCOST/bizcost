@@ -32,9 +32,10 @@
       "year": "Its bills for the year from {{from}} to {{to}} ({{bills}}), spread over its 12 months",
       "yearInstead": "Its bills for the year from {{from}} to {{to}} ({{bills}}), spread over its 12 months, in place of its regular {{regular}}"
     },
+    "extra": "Extra expenses, on top of its running costs",
     "takenBackOnly": "An earlier month's bill, reversed in this month",
     "takenBack": "Less {{amount}}: an earlier month's bill, reversed in this month",
-    "note": "Each category counts once: its bills for the month, or else its regular amount. The bills of a running cost paid by the quarter or the year are spread over its months.",
+    "note": "Each running cost counts once: its own bills for the month, or else its regular amount. Extra expenses count on top, and the bills of a running cost paid by the quarter or the year are spread over its months.",
     "noPurchases": "Material purchases aren't here: they're in each item's materials.",
     "vat": "Amounts are before VAT: VAT you get back isn't a cost.",
     "none": "Nothing counted for {{month}}: no running costs and no final expenses for that month.",

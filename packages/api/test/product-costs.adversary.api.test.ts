@@ -5,6 +5,7 @@ import type {
 } from '@bizcost/contracts'
 import { addMonths, monthOf, newId } from '@bizcost/domain'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
+import { billOf } from './expenses'
 import { addMember } from './helpers'
 import { CostScope, ProductCostsApi, tag } from './product-costs'
 import { ok, purchaseInput } from './purchasing'
@@ -35,11 +36,12 @@ async function workshop() {
   const lastMonth = addMonths(monthOf(today), -1)
   const categories = await shop.categories()
   const byName = (name: string) => categories.find((c) => c.name === name)!.id
+  const running: Record<string, { id: string }> = {}
   for (const [name, amount] of [
     ['Rent', '3000'],
     ['Electricity', '900'],
   ] as const) {
-    await shop.runningCost({
+    running[name] = await shop.runningCost({
       id: newId(),
       name,
       categoryId: byName(name),
@@ -47,37 +49,38 @@ async function workshop() {
       startsOn: `${addMonths(lastMonth, -2)}-01`,
     })
   }
+  /** The bill of the running cost of that name (D-216). */
+  const paying = (name: string) => billOf(running[name]!)
   const bill = (name: string, amount: string) =>
     shop.expenseDraft(shop.expenseInput(byName(name), today, { amount, periodMonth: lastMonth }))
   const product = await shop.product({ name: `Shelf ${tag()}`, defaultPrice: '40' })
   const monthCosts = async () => (await shop.breakdown(product.id)).monthCosts
-  return { shop, today, lastMonth, byName, bill, product, monthCosts }
+  return { shop, today, lastMonth, byName, bill, paying, product, monthCosts }
 }
 
 describe('D-202: every running cost and expense counts once', () => {
-  it('a category’s bills replace its regular amount, never add to it', async () => {
+  it('a running cost’s bill replaces its regular amount, never adds to it (D-216: the bill of that running cost)', async () => {
     // Last month's electricity bill came to 950: that month's electricity is 950, not 900 + 950, and
     // the month's costs are 3 950, not 4 850.
-    const { shop, bill, monthCosts } = await workshop()
-    await shop.postExpense(await bill('Electricity', '950'))
+    const { shop, bill, paying, monthCosts } = await workshop()
+    await shop.postExpense(await bill('Electricity', '950'), paying('Electricity'))
     const costs = await monthCosts()
     expect(costs.total).toBe('3950')
     expect(costs.categories?.find((c) => c.name === 'Electricity')).toMatchObject({
-      source: 'bills',
       amount: '950',
-      regular: '900',
+      lines: [{ kind: 'running_cost', source: 'bills', amount: '950', regular: '900' }],
     })
   })
 
   it('a bill finalized by mistake and reversed is as if never posted: the regular amount counts again', async () => {
-    const { shop, bill, monthCosts } = await workshop()
-    const wrong = await shop.postExpense(await bill('Electricity', '9500'))
+    const { shop, bill, paying, monthCosts } = await workshop()
+    const wrong = await shop.postExpense(await bill('Electricity', '9500'), paying('Electricity'))
     ok(await shop.run('expense.reverse', { id: wrong.id }))
     const costs = await monthCosts()
     expect(costs.total).toBe('3900')
     expect(costs.categories?.find((c) => c.name === 'Electricity')).toMatchObject({
-      source: 'regular',
       amount: '900',
+      lines: [{ kind: 'running_cost', source: 'regular', amount: '900' }],
     })
   })
 

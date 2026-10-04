@@ -58,7 +58,8 @@ export function ConfirmDialog({
   const { t } = useTranslation()
   return (
     <AlertDialog open={open} onOpenChange={(next) => !next && !busy && onClose()}>
-      <AlertDialogContent className="data-[size=default]:max-w-sm data-[size=default]:sm:max-w-md">
+      {/* A tall one (a choice it takes, on a small phone) scrolls inside the screen. */}
+      <AlertDialogContent className="max-h-[calc(100dvh-2rem)] overflow-y-auto data-[size=default]:max-w-sm data-[size=default]:sm:max-w-md">
         <AlertDialogHeader>
           <AlertDialogMedia>
             <Icon />

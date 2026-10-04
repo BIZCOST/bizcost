@@ -2,6 +2,7 @@ import {
   checkDecimal,
   compareDecimal,
   INCOMPLETE_REASONS,
+  POOL_LINE_KINDS,
   POOL_SOURCES,
   PRODUCT_TYPES,
   type RunningShareState,
@@ -31,7 +32,8 @@ import { productCostKindDto } from './recipes'
 //     (`awaiting_sales`), and the total and the margin are before running costs
 //     (`beforeRunningCosts`); without a price no share can be worked out by it (`no_price`). The
 //     business's costs of the last full calendar month are shown with it (`monthCosts`): per
-//     category, its bills or its running costs' regular amount, counted once;
+//     category, what is inside it: each running cost (its own bills or its regular amount, D-216)
+//     and its extras, counted once;
 //   - the owner's time, for a business without a team: minutes × hourly rate ÷ 60;
 //   - the total (their exact sum), the price before VAT, and the margin on it (amount and %).
 // Never rounded here (12 decimals; screens round). Nothing missing is ever 0: its value is null and
@@ -61,25 +63,30 @@ export const runningShareStateDto = z.enum([
 /** The owner's time line: `team` (none with a team), `none` (no minutes), `rate_not_set`, `applied`. */
 export const ownerTimeStateDto = z.enum(['team', 'none', 'rate_not_set', 'applied'])
 
-/** One category of the month's costs (costPool in @bizcost/domain). */
-export const monthCostCategoryDto = z.object({
-  categoryId: zUuid,
-  /** The category's name (cost_categories.name). */
-  name: z.string(),
+/**
+ * One line of a category of the month's costs (costPool in @bizcost/domain, D-216): one of its
+ * running costs, or its extras (the expenses that count as themselves: extras, and expenses in a
+ * category without running costs).
+ */
+export const monthCostLineDto = z.object({
+  kind: z.enum(POOL_LINE_KINDS),
+  /** `running_cost`: which running cost, and its name as it is now; null for the extras. */
+  runningCostId: zUuid.nullable(),
+  name: z.string().nullable(),
   /**
-   * `bills`: its expenses for the period that holds the month (they replace its running costs'
-   * regular amount, never both); `regular`: its running costs' regular amount for the days they ran;
-   * `taken_back`: only a reversal of an earlier month's bill counts in it (D-203).
+   * A running cost: `bills` (its own bills for the period that holds the month, in place of its
+   * regular amount, never both), `regular` (its regular amount for the days it ran) or `taken_back`
+   * (only a reversal of an earlier month's bill of it counts in it, D-203). The extras: `expenses`
+   * (the month's) or `taken_back` (only a reversal of an earlier month's).
    */
   source: z.enum(POOL_SOURCES),
   /** What it counts in the month (12 decimals; zero or less after a reversal taken back in it). */
   amount: zDecimal,
-  /** Its running costs' regular amount for the month, when it had any (not counted beside bills). */
+  /** A running cost's regular amount for the month, when it ran in it (not counted beside bills). */
   regular: zDecimal.nullable(),
   /**
-   * With `bills`: the quarter or year of its quarterly or yearly running cost they pay for (its first
-   * and last month, 3 or 12 months, and what its bills come to), spread evenly over its months
-   * (D-203); null: the month's own bills.
+   * A running cost's bills of its quarter or year (`bills`): its first and last month, 3 or 12
+   * months, and what its bills come to, spread evenly over its months (D-203); null otherwise.
    */
   period: z
     .object({
@@ -89,17 +96,33 @@ export const monthCostCategoryDto = z.object({
       bills: zDecimal,
     })
     .nullable(),
-  /** What reversals of earlier months' bills take back in this month (already out of `amount`). */
+  /** What reversals of earlier months take back in this month (already out of `amount`). */
   takenBack: zDecimal.nullable(),
+})
+export type MonthCostLineDto = z.infer<typeof monthCostLineDto>
+
+/**
+ * One category of the month's costs: its amount (Σ of its lines) and what is inside it, the largest
+ * first ("Salaries: regular 16,000 + extra 300"; "Electricity: from its bill 3,150 in place of its
+ * regular 3,000").
+ */
+export const monthCostCategoryDto = z.object({
+  categoryId: zUuid,
+  /** The category's name (cost_categories.name). */
+  name: z.string(),
+  /** What it counts in the month (Σ of its lines, exact). */
+  amount: zDecimal,
+  /** Its running costs and its extras with something in the month, the largest first. */
+  lines: z.array(monthCostLineDto),
 })
 export type MonthCostCategoryDto = z.infer<typeof monthCostCategoryDto>
 
 /**
  * How the business's running costs reach what it sells (D-202), with its costs of the last full
  * calendar month: every running cost and finalized expense counted once (an expense in the month it
- * belongs to; a category's bills replace its regular amount, over the quarter or year they pay for
- * when its running cost is quarterly or yearly, D-203). Phase 3 divides them by the same month's
- * sales before VAT. Material purchases and the owner's time are not in them.
+ * belongs to; a running cost's own bills replace its regular amount, over the quarter or year they
+ * pay for when it is quarterly or yearly, D-203, D-216; extras count on top). Phase 3 divides them by
+ * the same month's sales before VAT. Material purchases and the owner's time are not in them.
  */
 export const monthCostsDto = z.object({
   /**

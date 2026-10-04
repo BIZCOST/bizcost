@@ -44,6 +44,16 @@ export const STARTER_COST_CATEGORIES = [
 ] as const
 export type StarterCostCategory = (typeof STARTER_COST_CATEGORIES)[number]
 
+/**
+ * `expenses.pays`: what an expense in a category that has running costs pays (the owner's decision of
+ * 2026-10-01, D-216): `running_cost`, the bill of one of them (`expenses.running_cost_id`), which takes
+ * the place of that running cost's regular amount alone over the period it pays for; `extra`, an
+ * expense on top of them, which counts as itself. Null: not said yet (a draft, or one sent for
+ * approval), or nothing to say (its category has no running cost for its month): it counts as itself.
+ */
+export const EXPENSE_PAYS = ['running_cost', 'extra'] as const
+export type ExpensePays = (typeof EXPENSE_PAYS)[number]
+
 /** `running_costs.frequency`: how often the regular amount is paid (monthly by default). */
 export const RUNNING_COST_FREQUENCIES = ['weekly', 'monthly', 'quarterly', 'yearly'] as const
 export type RunningCostFrequency = (typeof RUNNING_COST_FREQUENCIES)[number]

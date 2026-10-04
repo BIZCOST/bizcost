@@ -130,21 +130,26 @@ export {
   type RunningShareState,
   type SalePrice,
 } from './costing/product-cost'
-// The business's running costs of a month, counted once (a quarter's or a year's bills over its
-// months, D-203), and how they reach what it sells: by its price, the month's costs ÷ the month's
-// sales (D-202).
+// The business's running costs of a month, counted once per running cost (its own bills in place of
+// its regular amount, a quarter's or a year's over its months, D-203, D-216; extras on top), and how
+// they reach what it sells: by its price, the month's costs ÷ the month's sales (D-202).
 export {
+  billPeriodOf,
   COST_RATE_STATES,
   costPool,
   costRate,
   costShare,
   daysIn,
   daysRunIn,
+  POOL_LINE_KINDS,
   POOL_SOURCES,
+  type BillPeriod,
   type CostPool,
   type CostRateState,
   type PoolCategory,
   type PoolExpense,
+  type PoolLine,
+  type PoolLineKind,
   type PoolPeriod,
   type PoolRunningCost,
   type PoolSource,
@@ -187,12 +192,14 @@ export {
 } from './purchasing/keys'
 // Expenses and running costs (M2 Step 5): statuses and approval, amounts, monthly amounts.
 export {
+  EXPENSE_PAYS,
   EXPENSE_STATUSES,
   monthlyAmount,
   monthlyTotal,
   RUNNING_COST_FREQUENCIES,
   runningCostActiveOn,
   STARTER_COST_CATEGORIES,
+  type ExpensePays,
   type ExpenseStatus,
   type RunningCostFrequency,
   type StarterCostCategory,

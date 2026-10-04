@@ -1,9 +1,11 @@
 import {
+  EXPENSE_PAYS,
   EXPENSE_STATUSES,
   PAYMENT_METHODS,
   PURCHASE_DOCUMENT_TYPES,
   RUNNING_COST_FREQUENCIES,
   SETTLEMENT_METHODS,
+  type ExpensePays,
   type ExpenseStatus,
   type PaymentMethod,
   type PurchaseDocumentType,
@@ -62,6 +64,37 @@ export const costCategories = tenantTable(
       .on(t.businessId, sql`app.name_key(name)`)
       .where(sql`deleted_at is null`),
     check('cost_categories_name_check', sql`btrim(name) <> '' and char_length(name) <= 100`),
+  ],
+)
+
+/**
+ * A running cost ("What do you pay to run your business?", D-116): a regular amount per period in a
+ * category (rent, salaries, the licence…), from `starts_on` until `ends_on` (null: still paid). Its
+ * monthly amount (monthlyAmount in @bizcost/domain) is worked out on read; Step 6 shares the monthly
+ * total over product costs. Never posted: a change of amount ends one and starts another, or edits
+ * it. A running cost entered by mistake is removed (soft-deleted, audited).
+ */
+export const runningCosts = tenantTable(
+  'running_costs',
+  {
+    name: text('name').notNull(),
+    categoryId: uuid('category_id').notNull(),
+    // What it costs the business each period (for a VAT-registered business, without the VAT it
+    // reclaims), in the business's currency.
+    amount: money('amount').notNull(),
+    frequency: text('frequency').$type<RunningCostFrequency>().notNull().default('monthly'),
+    startsOn: date('starts_on', { mode: 'string' }).notNull(),
+    endsOn: date('ends_on', { mode: 'string' }),
+    notes: text('notes'),
+  },
+  (t) => [
+    tenantRef('running_costs_category_fk', [t.businessId, t.categoryId], costCategories),
+    index('running_costs_category_idx').on(t.businessId, t.categoryId),
+    check('running_costs_name_check', sql`btrim(name) <> '' and char_length(name) <= 100`),
+    check('running_costs_amount_check', sql`amount > 0`),
+    check('running_costs_frequency_check', sql`frequency in (${quoted(RUNNING_COST_FREQUENCIES)})`),
+    check('running_costs_dates_check', sql`ends_on >= starts_on`),
+    check('running_costs_notes_check', sql`char_length(notes) <= 1000`),
   ],
 )
 
@@ -126,12 +159,20 @@ export const expenses = tenantTable(
     reversalPeriodMonth: date('reversal_period_month', { mode: 'string' }),
     // A draft made by "correct": the reversed expense it replaces.
     copiedFromId: uuid('copied_from_id'),
+    // What it pays, in a category that has running costs (the owner's decision of 2026-10-01,
+    // D-216): `running_cost`, the bill of the running cost `running_cost_id` (it takes the place of
+    // that running cost's regular amount alone over the period it pays for), or `extra` (it counts
+    // as itself, on top). Null: not said yet, or its category has no running cost for its month.
+    // Said before it is finalized whenever its category has one (the API); kept by a correction.
+    pays: text('pays').$type<ExpensePays>(),
+    runningCostId: uuid('running_cost_id'),
   },
   (t) => [
     tenantRef('expenses_category_fk', [t.businessId, t.categoryId], costCategories),
     tenantRef('expenses_supplier_fk', [t.businessId, t.supplierId], suppliers),
     tenantRef('expenses_location_fk', [t.businessId, t.locationId], locations),
     tenantRef('expenses_paid_by_member_fk', [t.businessId, t.paidByMemberId], businessMembers),
+    tenantRef('expenses_running_cost_fk', [t.businessId, t.runningCostId], runningCosts),
     foreignKey({
       name: 'expenses_copied_from_fk',
       columns: [t.businessId, t.copiedFromId],
@@ -146,6 +187,8 @@ export const expenses = tenantTable(
     index('expenses_created_by_idx').on(t.businessId, t.createdBy),
     // Expenses by the month they are for.
     index('expenses_period_month_idx').on(t.businessId, t.periodMonth),
+    // The bills of a running cost (D-216).
+    index('expenses_running_cost_idx').on(t.businessId, t.runningCostId),
     check(
       'expenses_document_type_check',
       sql`document_type in (${quoted(PURCHASE_DOCUMENT_TYPES)})`,
@@ -204,6 +247,12 @@ export const expenses = tenantTable(
         and (status = 'reversed') = (reversal_date is not null)`,
     ),
     check('expenses_copied_from_check', sql`copied_from_id <> id`),
+    // `running_cost` names its running cost; `extra` and null name none (D-216).
+    check(
+      'expenses_pays_check',
+      sql`(pays is null or pays in (${quoted(EXPENSE_PAYS)}))
+        and (running_cost_id is null) = (pays is distinct from 'running_cost')`,
+    ),
     check(
       'expenses_period_month_check',
       sql`period_month = date_trunc('month', period_month)::date
@@ -250,37 +299,6 @@ export const expensePayments = tenantTable(
       sql`(reversed_at is null) = (reversed_by is null)
         and (reversed_at is null) = (reversal_date is null)`,
     ),
-  ],
-)
-
-/**
- * A running cost ("What do you pay to run your business?", D-116): a regular amount per period in a
- * category (rent, salaries, the licence…), from `starts_on` until `ends_on` (null: still paid). Its
- * monthly amount (monthlyAmount in @bizcost/domain) is worked out on read; Step 6 shares the monthly
- * total over product costs. Never posted: a change of amount ends one and starts another, or edits
- * it. A running cost entered by mistake is removed (soft-deleted, audited).
- */
-export const runningCosts = tenantTable(
-  'running_costs',
-  {
-    name: text('name').notNull(),
-    categoryId: uuid('category_id').notNull(),
-    // What it costs the business each period (for a VAT-registered business, without the VAT it
-    // reclaims), in the business's currency.
-    amount: money('amount').notNull(),
-    frequency: text('frequency').$type<RunningCostFrequency>().notNull().default('monthly'),
-    startsOn: date('starts_on', { mode: 'string' }).notNull(),
-    endsOn: date('ends_on', { mode: 'string' }),
-    notes: text('notes'),
-  },
-  (t) => [
-    tenantRef('running_costs_category_fk', [t.businessId, t.categoryId], costCategories),
-    index('running_costs_category_idx').on(t.businessId, t.categoryId),
-    check('running_costs_name_check', sql`btrim(name) <> '' and char_length(name) <= 100`),
-    check('running_costs_amount_check', sql`amount > 0`),
-    check('running_costs_frequency_check', sql`frequency in (${quoted(RUNNING_COST_FREQUENCIES)})`),
-    check('running_costs_dates_check', sql`ends_on >= starts_on`),
-    check('running_costs_notes_check', sql`char_length(notes) <= 1000`),
   ],
 )
 
