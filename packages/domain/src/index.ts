@@ -57,6 +57,32 @@ export {
   type PurchaseMaterialLineInput,
 } from './documents/purchase'
 export { proportionOf, splitByWeights, subtractDecimals, sumDecimals } from './documents/split'
+// Sales documents (M3 Step 1): VAT once per VAT rate, split back over the lines; prices before VAT or
+// including it; "Round the total" before VAT with a rounding difference; refunds as negative
+// quantities; each line as e-invoicing reads it (IBR-147-AE). D-220, D-221.
+export {
+  computeSale,
+  pintLineOf,
+  ROUNDING_DIFFERENCE_MINOR_UNITS,
+  roundTheTotalError,
+  SALE_LINE_KINDS,
+  saleError,
+  solveRoundAmount,
+  type PintLine,
+  type RoundTheTotal,
+  type RoundTheTotalErrorCode,
+  type SaleAmounts,
+  type SaleChargeLineInput,
+  type SaleDeliveryLineInput,
+  type SaleError,
+  type SaleErrorCode,
+  type SaleInput,
+  type SaleItemLineInput,
+  type SaleLineAmounts,
+  type SaleLineInput,
+  type SaleLineKind,
+  type SaleVatRate,
+} from './documents/sale'
 // Units: standard units per dimension, material packs and cross factors, conversions (D-034).
 export {
   BASE_UNITS,
@@ -155,6 +181,61 @@ export {
   type PoolSource,
   type RunningCostsPart,
 } from './costing/cost-share'
+// The cost of what was sold, frozen when a sale is finalized (M3 Step 1, D-222): the recipe ÷ its
+// yield at the 90-day average as of the sale's day, "no price yet" filled once, the owner's time.
+export {
+  averageAsOf,
+  fillSaleLineCost,
+  SALE_COST_BASES,
+  SALE_MATERIAL_BASES,
+  saleLineCost,
+  type DayAverage,
+  type PostedPurchaseLine,
+  type SaleCostBasis,
+  type SaleCostFill,
+  type SaleItemMaterials,
+  type SaleLineCost,
+  type SaleLineCostInput,
+  type SaleMaterialBasis,
+  type SaleMaterialCost,
+  type SaleTimeCost,
+} from './costing/sale-cost'
+// Real profit (M3 Step 1, D-223): sales before VAT − materials − channel fees − delivery cost − the
+// running-cost share at the price sold − the owner's time, part by part; which month's rate (Q6), the
+// month's costs so far, channel fees from statements, marked expenses or the commission %.
+export {
+  businessRealProfit,
+  channelFeesOf,
+  costsSpanOf,
+  FEE_STATES,
+  FIRST_MONTH_DAYS,
+  monthCostsSoFar,
+  RATE_BASES,
+  rateCostsOf,
+  rateSourceOf,
+  REAL_PROFIT_REASONS,
+  SALE_SHARE_STATES,
+  saleLineProfit,
+  saleRate,
+  statementParts,
+  sumRealProfit,
+  type BusinessRealProfit,
+  type ChannelFees,
+  type CostsSoFar,
+  type FeeState,
+  type FeeStatement,
+  type ProfitMaterialsState,
+  type RateBasis,
+  type RateSource,
+  type RealProfitReason,
+  type RealProfitSum,
+  type SaleDeliveryCost,
+  type SaleLineProfit,
+  type SaleLineProfitInput,
+  type SaleRate,
+  type SaleShareState,
+  type StatementPart,
+} from './costing/real-profit'
 export {
   MATERIAL_UNIT_KINDS,
   PRODUCT_TYPES,

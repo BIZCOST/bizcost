@@ -1,9 +1,10 @@
 import type Decimal from 'decimal.js'
-import { exactProduct, fixed, toDec } from '../numbers/decimal'
+import { fixed, toDec } from '../numbers/decimal'
 import type { Money, Percent, Quantity } from '../numbers/kinds'
 import { currencyMinorUnit, type CurrencyCode } from '../numbers/rounding'
 import { computeLine, lineError, type LineDiscount, type LineError } from './line'
 import { splitByWeights } from './split'
+import { beforeVat as vatFreePart } from './vat'
 
 // A purchase document's amounts and what its goods cost (D-114 rule 4; PRODUCT.md §4 rules 11–12):
 //   - each material line: qty × unit price = subtotal; its own discount (% or fixed) comes off first
@@ -170,12 +171,12 @@ export function computePurchase(input: PurchaseInput, currency: CurrencyCode): P
   const round = (value: Decimal) => toDec(fixed(value, digits))
   const print = (value: Decimal) => fixed(value, digits) as Money
   const includesVat = input.pricesIncludeVat === true
-  /** The part of an amount typed with its VAT that is before VAT (the amount itself otherwise). */
-  const beforeVat = (amount: Decimal, rate: string) => {
-    if (!includesVat) return amount
-    const r = toDec(rate)
-    return amount.minus(round(exactProduct([amount, r]).dividedBy(r.plus(100))))
-  }
+  /**
+   * The part of an amount typed with its VAT that is before VAT (the amount itself otherwise): taken
+   * out of each amount as it is computed (vat.ts), the supplier's per-line rounding (D-107).
+   */
+  const beforeVat = (amount: Decimal, rate: string) =>
+    includesVat ? vatFreePart(amount, rate, digits) : amount
 
   // Line subtotals, discounts and nets as typed (with VAT when prices include it), delivery lines as
   // they are.

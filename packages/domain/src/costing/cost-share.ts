@@ -163,8 +163,8 @@ export interface CostPool {
 const DAY = /^\d{4}-\d{2}-\d{2}$/
 const DAY_MS = 86_400_000
 
-/** A day as a number of days (YYYY-MM-DD, any year from 0001). */
-function dayNumber(day: string): number {
+/** A day as a number of days (YYYY-MM-DD, any year from 0001). Throws RangeError for anything else. */
+export function dayNumber(day: string): number {
   if (!DAY.test(day)) throw new RangeError(`Not a day: "${day}"`)
   const time = Date.parse(`${day}T00:00:00Z`)
   if (Number.isNaN(time)) throw new RangeError(`Not a day: "${day}"`)
@@ -362,9 +362,10 @@ const nameKey = (name: string) => name.trim().toLocaleLowerCase('en')
  * having run a day of the month, is that running cost changed: in that month they are one. Returns
  * each running cost's group (by id), the one that runs at the end of the month first (the latest to
  * start, then by id); a running cost not changed in the month is a group of its own. Quarterly and
- * yearly ones each keep their own quarter or year (D-216).
+ * yearly ones each keep their own quarter or year (D-216). monthCostsSoFar (real-profit.ts) reads the
+ * same groups.
  */
-function handoversOf(
+export function handoversOf(
   month: BusinessMonth,
   costs: ReadonlyMap<string, PoolRunningCost>,
 ): Map<string, readonly PoolRunningCost[]> {

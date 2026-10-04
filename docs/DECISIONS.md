@@ -3,7 +3,7 @@
 Purpose: a numbered record of every confirmed decision, why we made it, and what we rejected. The details live in the doc each entry links to.
 Last updated: 2026-10-04
 
-- **Status:** every entry is DECIDED. Implemented so far: the Step 0a repo scaffold, the Step 1 data foundation (D-047–D-053 and the data/tenancy entries they build on), the Step 2 API core (D-054–D-061), the Step 3 web auth (D-062–D-071), the owner's password rule (D-072), the "too soon" fix (D-073), Step 5 businesses & Smart Setup (D-074–D-079), Step 6 web settings (D-080–D-088), Step 7 the web shell (D-089–D-096) and the owner's answers after it (D-097, D-098), Step 9 hardening & docs (D-099–D-106), and M2 Step 1, the pure domain engines built as pre-approval groundwork (D-107–D-110). The owner's M2 answers of 2026-09-28 (D-111–D-120) are decided and built step by step in M2; M2 Step 2 has its data and API (D-121–D-125), its web screens (D-126–D-128) and the fixes of its review (D-129–D-132); M2 Step 3 has its data and API (D-133–D-140), its web screens (D-141) and the fixes of its reviews (D-142–D-145). M2 Step 4 has its data, API and web screens with the fixes of its reviews (D-146–D-156). The owner's purchasing requests of 2026-09-29 are built (D-157–D-163). M2 Step 5 has its data and API (D-164–D-169), its web screens (D-170–D-174) and the fixes of its review (D-175–D-177). The owner's answers of 2026-09-29 (A1–A5) and the local test-data cleanup (A6) are built (D-178–D-183), with the fixes of their review (D-184). The demo data of the Costing Core is built (D-185). M2 Step 6 has its data, API and web screens with the fixes of its review (D-186, D-187). M2 Step 7 has its release, API and data (D-188–D-194), its screens and the owner's requests of 2026-09-30 (D-195–D-199), and the fixes of its review (D-200, D-201). The owner's decision of 2026-09-30, running costs by price (D-202), is built: its domain, data, API and screens, with the fixes of its review (D-203). The owner's answers of 2026-10-01 after Step 7 keep what is built (D-204). M2 Step 8, hardening and docs, is built: its suites found three gaps (D-205–D-207), the adversary review that closed it six more (D-208–D-213), and the review of those fixes two more (D-214, D-215), each fixed. The owner's decision of 2026-10-01 ("1أ"), a bill pays one running cost, is built: its domain, data, API and screens (D-216), with the fixes of its review (D-217). Milestone 3 is approved with every question answered as recommended (D-218); its decisions follow from D-219. "Open:" marks a sub-choice that is still unsettled, tracked in ROADMAP.md §Open, with deadline. Proposals (P-0xx, §Proposals at the end) are NOT decided: once the owner confirms one, it becomes the next D-entry with the owner's changes, and the proposal stays for history (P-001 became D-114 and D-115). None is awaiting the owner.
+- **Status:** every entry is DECIDED. Implemented so far: the Step 0a repo scaffold, the Step 1 data foundation (D-047–D-053 and the data/tenancy entries they build on), the Step 2 API core (D-054–D-061), the Step 3 web auth (D-062–D-071), the owner's password rule (D-072), the "too soon" fix (D-073), Step 5 businesses & Smart Setup (D-074–D-079), Step 6 web settings (D-080–D-088), Step 7 the web shell (D-089–D-096) and the owner's answers after it (D-097, D-098), Step 9 hardening & docs (D-099–D-106), and M2 Step 1, the pure domain engines built as pre-approval groundwork (D-107–D-110). The owner's M2 answers of 2026-09-28 (D-111–D-120) are decided and built step by step in M2; M2 Step 2 has its data and API (D-121–D-125), its web screens (D-126–D-128) and the fixes of its review (D-129–D-132); M2 Step 3 has its data and API (D-133–D-140), its web screens (D-141) and the fixes of its reviews (D-142–D-145). M2 Step 4 has its data, API and web screens with the fixes of its reviews (D-146–D-156). The owner's purchasing requests of 2026-09-29 are built (D-157–D-163). M2 Step 5 has its data and API (D-164–D-169), its web screens (D-170–D-174) and the fixes of its review (D-175–D-177). The owner's answers of 2026-09-29 (A1–A5) and the local test-data cleanup (A6) are built (D-178–D-183), with the fixes of their review (D-184). The demo data of the Costing Core is built (D-185). M2 Step 6 has its data, API and web screens with the fixes of its review (D-186, D-187). M2 Step 7 has its release, API and data (D-188–D-194), its screens and the owner's requests of 2026-09-30 (D-195–D-199), and the fixes of its review (D-200, D-201). The owner's decision of 2026-09-30, running costs by price (D-202), is built: its domain, data, API and screens, with the fixes of its review (D-203). The owner's answers of 2026-10-01 after Step 7 keep what is built (D-204). M2 Step 8, hardening and docs, is built: its suites found three gaps (D-205–D-207), the adversary review that closed it six more (D-208–D-213), and the review of those fixes two more (D-214, D-215), each fixed. The owner's decision of 2026-10-01 ("1أ"), a bill pays one running cost, is built: its domain, data, API and screens (D-216), with the fixes of its review (D-217). Milestone 3 is approved with every question answered as recommended (D-218); its decisions follow from D-219. M3 Step 1 is built: the consequences of Q5 (D-219), sales documents and "Round the total" (D-220, D-221), the cost of what was sold (D-222) and real profit (D-223), each with the fixes of its review, and the PDF engine of its bake-off (D-224). "Open:" marks a sub-choice that is still unsettled, tracked in ROADMAP.md §Open, with deadline. Proposals (P-0xx, §Proposals at the end) are NOT decided: once the owner confirms one, it becomes the next D-entry with the owner's changes, and the proposal stays for history (P-001 became D-114 and D-115). None is awaiting the owner.
 - **Editing:** append new entries with the next number and never renumber. To change a decision, add a new entry and mark the old one "Superseded by D-0xx".
 - **Sources:** the owner's spec, the owner's confirmations (2026-09-24), and the architecture panel as corrected by its critique.
 
@@ -708,6 +708,7 @@ Refined by D-106: the secrets reach only the steps that need them, the actions a
 - **Decision:** All money, quantity and cost maths in `@bizcost/domain` (`numbers/`) works on decimal strings with decimal.js, never JS numbers. Each column has a branded kind: `Money` numeric(20,4), `Quantity` (24,6), `UnitCost` and `CostAmount` (28,12), `Percent` (9,6). `checkDecimal`/`asDecimal` check a value against its column at run time. The engines refuse input that does not fit its column with a RangeError, because Postgres would round it silently and a rebuild from the stored ledger would then differ. Arithmetic uses a private `Dec` (64 significant digits, truncating). A value that multiplies several numbers and then divides is an exact product (no digit limit) divided once and rounded once. Both rounding policies of D-033 round half away from zero, so a credit note mirrors its invoice and the result matches Postgres `round()`: document amounts use `roundDocument` with the ISO-4217 table (`CURRENCY_MINOR_UNITS`: AED, SAR, QAR, USD, EUR 2; KWD, BHD, OMR 3), cost values use `roundCost` (12 decimals), and screens use `roundForDisplay`. Signs are tested with `lt(0)`/`gt(0)`, so "-0" and "-0.00" are zero, never "negative". `parseNumber` reads a typed number in either language (Arabic-Indic digits, ٫ and ٬, groups of three only, the minus sign −, direction marks) into the canonical wire form that zDecimal accepts. Document lines (`computeLine`, `documentTotals`): the discount comes off before VAT, each amount is rounded to the minor unit as it is computed, and totals are sums of the printed lines. "Make Round Amount" (`solveRoundAmount`) was built with the line maths and then removed: it belongs to Quotations & Invoices (the owner's spec §27, Phase 3). Its open question is in ROADMAP.md §Open.
 - **Why:** The owner's examples need exact maths (D-032, D-033). The numeric review of Step 1 found three problems. A factor that is itself a quotient (1/60, 1/3600) and is multiplied afterwards rounds a half-way value the wrong way. Engines that check only the sign let out-of-column values through. And decimal.js reports "-0" as negative, while spreadsheets write "-0.00" and zDecimal passes it on.
 - **Rejected:** a global Decimal configuration (i18n formats with its own); canonicalizing "-0" only in zDecimal (imports and other callers reach the domain too); keeping Make Round Amount in M2 (CLAUDE.md: no future phases early).
+- **Since:** sales documents work VAT out once per VAT rate (D-220), and "Round the total" is rebuilt for them (D-221). Purchases keep this entry's per-line rounding.
 
 ### D-108 · 2026-09-27 · Units engine: base units, packs, cross factors, exact fractions
 
@@ -717,7 +718,7 @@ Refined by D-106: the secrets reach only the steps that need them, the actions a
 
 ### D-109 · 2026-09-27 · WAC engine: a receipt carries what was paid; a reversal is "as if never posted"
 
-Refined by D-114, D-115 and D-120: the owner confirmed the rules this engine follows (2026-09-28); the 90-day average and supplier returns and credit notes join it in M2 Step 3. Negative stock is still asked with Phase 3.
+Refined by D-114, D-115 and D-120: the owner confirmed the rules this engine follows (2026-09-28); the 90-day average and supplier returns and credit notes join it in M2 Step 3. Refined by D-219: sales take nothing out of stock before the first stock count (Phase 4), so Phase 3 posts no issue, and negative stock is decided with Phase 4.
 
 - **Decision:** `costing/wac.ts` keeps one cost state per (business, material): quantity, value and average (D-006).
   - `wacReceive` brings in exactly the purchase line's cost (`value`). Stock value therefore matches the purchases to the fils: 3 kg bought for AED 100 is worth 100, not 99.999999999. The average is value ÷ quantity, to 12 decimals.
@@ -764,7 +765,7 @@ The owner's answers to ROADMAP.md §Open "Close M1" and O1–O5, and to the four
 
 - **Decision:** Owner decision O2 = B, against the recommendation (a name plus an optional Arabic name). Materials, products & services, suppliers, customers, running costs and the expense and running-cost categories have one `name` (`text NOT NULL`) in whatever language the user types. There is no `name_ar` or `name_en` column. Both app languages show the name as typed, in its own direction (`dir="auto"`, as for person names, D-095). Records that BizCost creates (the starter categories, D-116) are created in the business's language (`default_locale`) and are then plain data, like the default location (PRODUCT.md §6.4). Businesses keep `legal_name` + `legal_name_ar` (D-097): a legal name, from the trade licence, for tax invoices.
 - **Consequences:** a member who reads the other language sees names as they were typed. Document lines copy the name into their own description (D-002), so an Arabic description on a document line needs no master column.
-- **Open (before Invoices, Phase 3):** whether UAE tax invoices need Arabic item descriptions. If they do, choose then between an Arabic description on the invoice line and an optional Arabic name on products & services (a migration). ROADMAP.md §Open.
+- **Open (before Invoices, Phase 3) — SETTLED by D-218 (the plan's default):** not required, per secondary sources (the tax agent confirms it at the Release B review); a document line's description can be typed in Arabic (D-002). The question was: whether UAE tax invoices need Arabic item descriptions. If they do, choose then between an Arabic description on the invoice line and an optional Arabic name on products & services (a migration). ROADMAP.md §Open.
 - **Why:** The owner's answer (O2 = B).
 - **Rejected:** a name plus an optional Arabic name (A, the recommendation); two required names (C).
 
@@ -778,7 +779,7 @@ The owner's answers to ROADMAP.md §Open "Close M1" and O1–O5, and to the four
   5. **Quantities per branch, one cost for the whole business.** Each branch has its own quantities (shown from Phase 4). Moving stock between branches never changes the average.
   6. **The "books closed up to" date:** optional and off by default, set by the Owner or an Admin (a new permission). Nothing dated on or before it can be posted or reversed. Moving it back is allowed and audited.
 - **Owner's changes to P-001:** none to the six rules. P-001's part for businesses that don't count their stock is D-115. Its "later" note on supplier returns and credit notes is replaced by D-120 (now in M2).
-- **Open (Phase 3 planning):** may stock go below zero? P-001 proposes yes: usage is costed at the current average and the next purchase revalues it. The engine supports both answers (D-109). ROADMAP.md §Open.
+- **Open (Phase 3 planning) — moved to Phase 4 planning by D-219** (M3 takes nothing out of stock): may stock go below zero? P-001 proposes yes: usage is costed at the current average and the next purchase revalues it. The engine supports both answers (D-109). ROADMAP.md §Open.
 - **Why:** Exact (no floats, no drift); history never shifts; no deadlocks (D-110); imported sales never fail; it matches the owner's examples and D-006.
 - **Rejected:** recomputing history for backdated or corrected documents; a WAC per location (D-006); FIFO; editing posted documents.
 
@@ -787,7 +788,7 @@ The owner's answers to ROADMAP.md §Open "Close M1" and O1–O5, and to the four
 - **Decision:** Owner decision O5 = B (P-001's recommendation). Until a business's first stock count (Phase 4, only with `keeps_stock`), the average used for each material (on the material page, in product costs and, from Phase 3, for usage) is the average of its purchases in the last 90 days: Σ value ÷ Σ base quantity of the material's posted purchase lines whose `business_date` is within the 90 days ending on the day it is read (the business's timezone). Reversed purchases drop out; returns and credit notes reduce their purchase line (D-120). With no purchase in the window, it is the unit cost of the last posted purchase; a material never bought shows "no price yet", never 0. After the first count, the stock-based average (D-109, D-114) applies. It is still one average per material for the whole business, and every purchase updates it (D-006).
   - Computed on read in SQL from the ledger's purchase rows, unrounded (D-033). Every posting keeps the stock-based cost row from day one (D-110), so neither Phase 3 nor the first count needs a reset or a rebuild. The first posted count sets `businesses.first_stock_count_at` (Phase 4), which switches the business to the stock-based average.
   - The material page (Step 3) says which average it shows and shows the last purchase price beside it; so does the product cost breakdown (Step 6).
-- **Open:** Phase 3 planning: how usage before the first count is posted to the ledger (it is costed at the 90-day average, and the stock value must stay exact). Phase 4 planning: whether the first count must cover every material. ROADMAP.md §Open.
+- **Open:** Phase 3 planning: how usage before the first count is posted to the ledger (it is costed at the 90-day average, and the stock value must stay exact) — SETTLED by D-219: no ledger movement, a frozen snapshot per sold line, and the first count starts the stock at that day's average (proposal for Phase 4). Phase 4 planning: whether the first count must cover every material. ROADMAP.md §Open.
 - **Why:** A business that never counts its stock never corrects its quantity on hand, so a stock-based average becomes a lifetime average that falls behind prices: flour at AED 5 for a year, then AED 7, averages 5.15, 26% below the real price.
 - **Rejected:** the stock-based average for everyone (A: Phase 3 would need an opening count or a reset); the last purchase price until the first count (C: one unusual purchase swings the cost).
 
@@ -823,7 +824,7 @@ Refined by D-186: the 3 months count only when each holds a posted purchase, and
 
 ### D-120 · 2026-09-28 · Supplier returns and credit notes are in M2 (against the recommendation)
 
-Built in M2 Step 3 as D-136. The owner did not object before Step 3 shipped, so the rules below stand. Rule 2 is refined by D-208: a run of receipts all sent back restores the state from before it.
+Built in M2 Step 3 as D-136. The owner did not object before Step 3 shipped, so the rules below stand. Rule 2 is refined by D-208: a run of receipts all sent back restores the state from before it. Refined by D-219: the part for goods already used never arises before the first stock count (sales issue nothing until then).
 
 - **Decision:** Owner decision (question 0d), against the recommendation (defer them; correct a purchase by reversing it). M2 Step 3 adds two documents, each linked to a posted purchase: a **return** (goods sent back to the supplier) and a **credit note** (a price reduction without goods). Their rules are proposed with this entry, following D-114 (posting order, no rewriting of past costs), and are the default unless the owner objects before Step 3 ships:
   1. **Like purchases:** draft → post → reverse; never edited once posted; a reversal is "as if never posted" (a replay of the material's ledger, D-109). Each posts on its own `business_date`, which must be open (D-114 rule 6; the purchase's own date may be closed), and changes the average from the moment it is posted. A purchase with posted returns or credit notes can be reversed only after they are.
@@ -1653,7 +1654,7 @@ Source: the owner, 2026-09-30, verbatim: «نحن ما نحطله خانه هو�
 - **Knock-on:** the Expenses page line of D-116/D-177 now says finalized expenses count in the month they are for, a category's bills in place of its regular amount; the Product costs page's notes "no share for services" and "running costs need materials" go; "Your product costs are ready" says the share comes once sales are recorded; the demo café's last month's electricity bill (entered on the seed day, D-194's month before) replaces its regular 2,400 that month. Smart Setup's `cost_engine` reasons never said "share of the material cost" and stay.
 - **Why:** the owner's decision: nothing to type in, everything counted, and one rule for products and services.
 - **Rejected:** keeping the material-cost share for products with materials (the owner: all products and services); an estimate of sales until Phase 3 (the owner: no estimates); counting bills on top of their category's regular amount (counted twice); counting a running cost's whole monthly amount in any month it ran a day of (a rent that changes mid-month counted twice); a negative share from a month whose costs come to less than zero.
-- **Open (Phase 3 planning):** one month or several for the rate (default above); a product sold without a list price (its share at the price it was sold for); the month's sales total and the withheld month's costs (D-203).
+- **Open (Phase 3 planning) — SETTLED by D-218 and D-223:** one month or several for the rate (Q6: a finished month its own, the running month the last full month's, a first month so far); a product sold without a list price (real profit carries its share at the price it was sold for; Product costs keep `no_price`); the month's sales total and the withheld month's costs (D-203, Q11).
 
 ### D-203 · 2026-10-01 · The month's costs over a quarter or a year, reversals that take back only themselves, and nothing to fix while a share awaits sales
 
@@ -1667,7 +1668,7 @@ Source: the costing, security and Arabic UX review of D-202 (19 findings, with f
 - **Why:** counted once over the year, not only month by month; nothing the owner cannot fix is called incomplete; words never claim more than the numbers.
 - **Rejected:** a bill replacing only its own month (a yearly or quarterly running cost counted up to twice); a year's bill kept whole in its own month with nothing in the year's other months (exact over the year, but that month's rate would carry the whole licence); a reversal of an earlier month as a bill of the month it counts in (it took that month's regular amount too); a service without materials as incomplete (nothing to fix).
 - **Open (the owner) — SETTLED by D-216 (his answer "1أ" of 2026-10-01: A, a bill says which running cost it pays, or that it is an extra):** one category, several things to pay. A bill replaces the whole category's regular amount, so a 300 bonus entered under Salaries (16,000 a month) makes that month's salaries 300, and a one-off repair under Maintenance drops the maintenance contract. Proposed: an expense in a category with running costs says which one it pays (one choice, only then), and replaces only that one; an extra counts as itself. Until the owner answers, the category rule stands, and the demo keeps extras in categories of their own.
-- **Open (Phase 3 planning):** once shares show, a member who sees costs reads the rate as a share ÷ its price before VAT; with the month's sales, rate × sales is the month's costs that `monthCosts` withholds without running costs and expenses. Phase 3 puts the month's sales total behind the same keys, or accepts the total as a residue (the categories stay hidden).
+- **Open (Phase 3 planning) — SETTLED by D-218 (Q11 A: profit reports show the month's running-cost total, accepted as a residue; the categories stay withheld):** once shares show, a member who sees costs reads the rate as a share ÷ its price before VAT; with the month's sales, rate × sales is the month's costs that `monthCosts` withholds without running costs and expenses. Phase 3 puts the month's sales total behind the same keys, or accepts the total as a residue (the categories stay hidden).
 
 ## The owner's answers of 2026-10-01 (after Step 7)
 
@@ -1724,7 +1725,7 @@ A last review of all of M2 (security, ledger and costing, completeness) wrote fa
 
 ### D-208 · 2026-10-01 · A run of purchases sent back whole is as if never bought; a replay never starts over
 
-Source: `packages/api/test/ledger.costing-adversary.api.test.ts` (a purchase with two lines of one material, all sent back, left the cost row an average of 0.008 for goods no longer there) and `packages/domain/src/costing/wac.scale-adversary.test.ts` (three years of two purchases a day, one in ten corrected: 2.7 s per replay, under the posting locks). Refines D-109, D-110 and D-120 rule 2.
+Source: `packages/api/test/ledger.costing-adversary.api.test.ts` (a purchase with two lines of one material, all sent back, left the cost row an average of 0.008 for goods no longer there) and `packages/domain/src/costing/wac.scale-adversary.test.ts` (three years of two purchases a day, one in ten corrected: 2.7 s per replay, under the posting locks). Refines D-109, D-110 and D-120 rule 2. Refined by D-219: before the first stock count a sale is no issue, so it never ends a run.
 
 - **Decision (returns):** besides a full return of a receipt with nothing else posted since it (D-120 rule 2), a return that leaves every receipt of a **run** fully returned restores the state from before the run. A run is the movements since the last one that was neither a receipt nor a return or credit of a receipt of the run (an issue, from Phase 3, or a return or credit of an older receipt). So a purchase with two lines of a material, or two purchases with nothing else in between, all sent back, leave the material as never bought (no average), in any order.
 - **Decision (replay):** `replayWac` keeps what undoes each movement; a reversal undoes the movements back to its target and applies the ones after it again, instead of rebuilding the book from the start. Whether a receipt is untouched is a counter, not a loop over every receipt. `purchaseReturn.post` replays the ledger once for a return (twice only for a credit note, which needs what each receipt's goods still carry).
@@ -1878,13 +1879,222 @@ Source: the owner, 2026-10-04: «الكل حسب التوصيه» (all as recomm
 - **Why:** the owner's answer; each recommendation's reason is in the plan.
 - **Owner actions it brings:** sample export files before Step 4, an invoice layout he likes before Step 7, a tax agent's look at the tax invoice PDFs before the first real user, a partner ASP by Dec 2026 (ROADMAP.md §Owner actions).
 
+## Sales & Profit, Step 1: domain engines (M3)
+
+Pure TypeScript in `@bizcost/domain`, decimal.js only, as M2 Step 1 (D-107–D-110): it stores no data and releases nothing. The PDF engine chosen by the bake-off of the same step is D-224.
+
+### D-219 · 2026-10-04 · Until the first stock count, a sale freezes its cost and takes nothing out of stock
+
+Source: the owner's answer Q5 = A (D-218), with the consequences its recommendation listed. Refines D-109, D-114 rule 3, D-115, D-120 and D-208, and P-001 (rule 3 and its negative-stock question).
+
+- **Decision:** until a business's first stock count (Phase 4, only with `keeps_stock`), a sale takes nothing out of stock: no stock movement, no change to any `material_costs` row, and `ledgerDrift` unchanged. Its cost is frozen when it is finalized (D-222): each material at the 90-day average as of the sale's day (D-115), from the purchases posted then. A material with no price yet is filled once by the purchase that prices it, also into a closed month (it only completes a cost shown as "no price yet"), and never changes after that. Nothing is ever refused for stock. Each sold line keeps what it used of each material (`sale_line_materials`): the expected usage Phase 4 reads, with no migration.
+- **Consequences for earlier entries:**
+  1. **D-109:** sales post no issue in Phase 3. `wacIssue` (and its `shortfall` for usage beyond the stock) stays in the engine for Phase 4: usage after the first count, and waste.
+  2. **D-114 rule 3 and P-001 rule 3:** reversing a purchase records no correction for sales, since nothing was issued. The costs recorded in between stay as frozen, and the replay changes only the stock-based cost row. "The difference is recorded once, as a correction on the reversal" applies from the first count.
+  3. **D-115:** the first count starts each material's stock at that day's 90-day average, so product costs don't jump when the business switches to the stock-based average (a proposal, decided with Phase 4). The stock-based cost row kept since the first posting (D-110) is then reset by the count, not continued.
+  4. **D-120:** the part of a return or credit note for "goods already used" (the correction when a return leaves zero or less on hand, and credit × (1 − s)) never arises before the first count: with no issue posted, s = 1, as in M2.
+  5. **D-208:** a sale never ends a run of receipts (a run ends at an issue, and a sale is none before the first count).
+  6. **P-001's negative-stock question** (D-114's Open) moves to Phase 4 planning: it arises only once sales take stock out. P-001's "allow" stays the proposal.
+- **Why:** the owner's answer: the cost of what was sold never moves once set, imports stay fast and never fail, and Phase 4 reads each sale's frozen recipe. The honest note that came with it stands: a past month's running-cost share, app fees and late bills can still change until its books are closed.
+- **Rejected:** B, sales issuing from the hidden stock at the running average and below zero when needed (a stock nobody counted would drive every cost); C, the cost worked out again on every read (past months would change with each purchase entered or corrected).
+
+### D-220 · 2026-10-04 · Sales documents: VAT once per rate, split back over the lines; refunds mirror their sale
+
+Source: ROADMAP.md M3 Step 1 and the owner's answer Q4 = A (D-218). Refines D-107 for sales; purchases keep D-107's per-line rounding and D-114 rule 4. The PINT-AE rules were read on 2026-10-04 (docs.peppol.eu, PINT AE): `aligned-ibrp-s-08` and `aligned-ibrp-s-09` compare each rate's taxable amount and VAT with a slack of 0.02, and `ibr-147-ae` compares a line's net with quantity × net price ÷ price base quantity, both rounded to 2 decimals.
+
+- **Decision (one engine):** `computeSale` (`documents/sale.ts`) works out a sale, an order, a quotation, an invoice and a credit note. A line is an `item` (a product or service), `delivery` charged to the customer (standard-rated for a VAT-registered business) or another `charge` (a service charge, with its own VAT category).
+  - **A line:** qty × unit price = subtotal, rounded half away from zero to the currency's minor unit. Its discount (% or an amount) comes off before VAT (`computeLine`). The price and the discount amount are typed with VAT when the product's price includes it (D-121).
+  - **The document discount** (% of the item lines' net, or an amount typed like their prices) comes off the item lines only, split by their net as typed with `splitByWeights` (D-114 rule 4). Delivery and charges keep their amounts.
+    - **One meaning:** with item prices before VAT the net falls by exactly the discount; with item prices that include VAT the total does (what the customer pays). A taxed charge priced before VAT in the same rate moves that rate's single VAT rounding by at most 0.01.
+    - **Prices of both kinds:** price_includes_vat is set per product (D-121), so one sale can hold both. A VAT-registered sale whose taxed item lines (5%) mix prices with VAT and prices before VAT refuses a document discount, % or amount (`document_discount_mixed_prices`). There it would mean neither: AED 10 off 100 before VAT + 105 with VAT took 9.76 off the net and 10.25 off the total. Each line takes its own discount instead. Zero-rated and exempt lines are the same either way and never make a sale mixed; nor do delivery and charges, which the discount does not touch.
+  - **VAT categories:** each line copies its category and rate from what it sells (`saleVatRate`). Zero-rated and exempt are both 0% and stay apart (`rates`: standard, zero-rated, exempt). For a business not registered for VAT no line carries a category, a rate or VAT, and "price includes VAT" is ignored, whatever the product says (D-121; drafts refuse it, D-206). The result says which registration the document was made under, for posting to freeze.
+- **Decision (VAT once per rate):** per VAT category, the exact VAT of its lines (net × rate ÷ 100 on a price before VAT, gross × rate ÷ (100 + rate) in a price that includes it) is rounded once, half away from zero.
+  - **Prices before VAT:** VAT = round(the rate's net × rate ÷ 100), so S-09 holds exactly.
+  - **Prices that include VAT:** the VAT in them is round(Σ gross × rate ÷ (100 + rate)), taken out once, so the rate's total is exactly what the customer was asked and each such line keeps its gross as its total. The net is the rest. S-09 then holds within 0.01, inside the 0.02 slack (1 gross in 21 at 5%: 0.10 is 0.10 + 0.00, where 0.10 × 5% would round to 0.01).
+  - **Split back** by largest remainder, so the printed line VAT adds up to the rate's: the VAT in the prices that include it over those lines by their gross, the rest over the others by their net. 7 lines of 10.10 at 5% are 70.70 with VAT 3.54 (four lines of 0.51 and three of 0.50; the earlier lines take a tie), total 74.24. The same lines bought stay 3.57 (per line).
+- **Decision (amounts):** a line keeps its subtotal, its discount and its share of the document discount as typed. Its `net` is before VAT and after every discount and rounding adjustment: what VAT is on, the line net amount (IBT-131), and its sales in real profit. Then its `vat` and `total`. The document gives `rates` (the VAT breakdown, ibg-23), `net`, `vat`, `total`, the `roundingDifference` (ibt-114) and `payable` (ibt-115).
+- **Decision (refunds and credits):** negative quantities, on every line of the document: it is the exact mirror of the sale it takes back (every amount negated; half away from zero makes round(−x) = −round(x)). A document with lines of both signs is refused (`mixed_signs`). Discounts are typed as positive numbers either way.
+- **Decision (IBR-147-AE):** `pintLineOf` gives each line's PINT-AE price fields, as positive numbers (a credit note's lines are).
+  - A line priced before VAT maps its own unit price for 1, with its discount, its share of the document discount and a rounding adjustment down as allowances (up: a charge).
+  - A line whose price includes VAT maps its net per unit when that is exact within 4 decimals (the price column), else its net for the line's quantity (IBT-149 = the quantity). Its discounts are inside that price.
+- **Decision (purchases unchanged):** the VAT taken out of an amount typed with it moves out of `computePurchase` into `documents/vat.ts` (`vatIn`, `beforeVat`), shared with sales. Purchase results are byte-identical: a frozen copy of the engine as it was is compared with it, string by string, over 2,000 generated purchases.
+- **Refusals** (`saleError`, for a form message; `computeSale` throws RangeError): `zero_quantity`, `mixed_signs`, the line errors (negative price or discount, over 100% or over the subtotal), `no_item_line` (a document discount without items), `document_discount_negative`, `document_discount_over_100_percent`, `document_discount_over_net`, `document_discount_mixed_prices`, `adjustment_over_net`, `too_many_decimals` (an adjustment or rounding difference beyond the currency's digits), `rounding_difference_too_large`, `no_line`.
+- **Why:** e-invoicing requires each rate's VAT to equal its taxable amount × the rate (Q4). A café whose prices include VAT must charge exactly its shelf prices. A credit note must give back exactly what its invoice charged.
+- **Rejected:**
+  - VAT per line, as on purchases (B): 3.57 where e-invoicing expects 3.54.
+  - Making S-09 exact for prices that include VAT by working the VAT out on the net and putting the fils left into a rounding difference: 1 sale in 21 would show a rounding difference, and PINT-AE accepts the 0.01.
+  - A document discount over delivery and charges: it is a discount on what was bought.
+  - A document with sold and returned lines together: an exchange is a sale and a refund.
+  - On a sale with prices of both kinds, converting each line's share of the document discount into its own price basis: an extra rounding per line, and a header discount that matches neither the lines nor the net.
+- **Tests:** `documents/sale.test.ts`:
+  - goldens: 7 × 10.10; Today's sales 945.00 + 47.25 = 992.25; 120 lattes at 18.90 with VAT = 2,160.00 + 108.00, mapped at 18 for 1; 3 × 10.00 with VAT (1.43 once, lines 0.48, 0.48, 0.47), mapped for the quantity; the fit-out company's 13,725.00 + 686.25 = 14,411.25; the home baker's 170 without VAT; the rates kept apart; discounts; refunds; every refusal;
+  - fast-check: VAT per rate = net × rate (within 0.01 where prices include VAT) and the lines add up to it; a line whose price includes VAT keeps its gross; a document discount means one thing (the net falls by it with prices before VAT, the total with prices that include VAT); a business not registered for VAT never gets a VAT amount; a refund mirrors its sale; every line maps (IBR-147-AE), refunds too.
+
+  `documents/sale.vat-adversary.test.ts`: the review's cases of a document discount on a sale with prices of both kinds.
+
+  `documents/purchase.shared-vat.test.ts`: the purchase guard.
+
+### D-221 · 2026-10-04 · "Round the total": an adjustment before VAT, a rounding difference of at most 0.02
+
+Source: the owner's answer Q4 = A (D-218). Settles ROADMAP.md §Open "Make Round Amount with several VAT rates"; D-107 had removed the first version. In the UI: "Round the total / تقريب الإجمالي".
+
+- **Decision:** the user types the total wanted, with VAT. `solveRoundAmount` finds the adjustment before VAT that brings the document's total to the largest total it can reach that is not above the one typed. The fils left over are the rounding difference (ibt-114): 0 to 2 minor units (`ROUNDING_DIFFERENCE_MINOR_UNITS`; BizCost's own cap, since PINT-AE only has the field). It sits outside every line and rate, so the amount to pay (`payable`) is exactly the total typed.
+  - **The split:** over the VAT rates by their net, then each rate's part over its lines by their net (largest remainder).
+  - **VAT after it:** a rate the adjustment changes works its VAT out again on its adjusted net, round(net × rate ÷ 100) (S-09 exact), split by the lines' new net. A rate it does not reach keeps its VAT.
+  - **Limits:** lowering never takes a line below zero (`adjustment_over_net`). Raising a total is allowed (an allowance becomes a charge on e-invoicing).
+  - **The search:** the exact adjustment is the difference ÷ what one unit before VAT adds with its VAT (the rates weighted by their net), rounded, then the fils around it are tried. Of two that reach the same total, the closer to the exact one, then the larger.
+  - **Refunds** round in their own sign. A business not registered for VAT reaches any total exactly.
+  - **Stored:** the sale keeps `adjustment` and `roundingDifference` as input, so posting works out the same document again.
+- **The owner's examples:**
+  - 1,120.00 → 1,100.00: −19.05 before VAT, VAT 52.38 (and the same with the price including VAT).
+  - Mixed rates, 2,000 (5%) + 500 (0%) = 2,600.00 → 2,500.00: −76.92 and −19.23 before VAT, VAT 96.15.
+  - 1,000.12 at 5% is unreachable: 1,000.11 + a rounding difference of 0.01.
+- **Refusals** (`roundTheTotalError`): every sale refusal, `no_line`, `wanted_too_many_decimals`, `wanted_opposite_sign`, and `unreachable` (no adjustment within the cap; never seen for a document with a line).
+- **Why:** Q4: VAT stays once per rate after rounding; the user gets the total typed; no line goes negative.
+- **Rejected:**
+  - Offering the two nearest totals (C).
+  - Putting the whole adjustment on one rate (the zero-rated part would carry the standard rate's discount).
+  - A rounding difference in either direction (the document's own total never exceeds the total typed).
+  - Taking it from the document discount (that one is typed like the prices and comes off items only).
+- **Tests:** `documents/sale.test.ts`:
+  - goldens: the examples above; a total raised; a refund (−1,000.12 → −1,000.11 − 0.01); without VAT registration; the refusals;
+  - fast-check: a typed total (0–200% of the document's) is reached within the rounding difference, also for refunds; no line goes below zero; the lines' adjustments add up to it; VAT per rate still = net × rate.
+
+### D-222 · 2026-10-04 · The cost of what was sold: frozen at the average as of the sale's day, filled once
+
+Source: ROADMAP.md M3 Step 1 and Q5 (D-219); applies D-115, D-117, D-119, D-178 and D-186 to sales.
+
+- **Decision:** `saleLineCost` (`costing/sale-cost.ts`) gives a sold line's cost, shaped as the snapshot its posting stores:
+  - **Line:** `sale_lines.cost_basis` (`recipe` | `resale` | `none`), `cost` and the time cost.
+  - **Each material:** a `sale_line_materials` row: `material_id`, `base_qty`, `unit_cost`, `cost` and `basis` (`purchases_90_days` | `last_purchase` | `first_purchase`).
+- **Decision (what a line uses):** one unit uses its recipe's base quantity ÷ what the recipe makes (D-178), or for an item bought ready to sell its material's base units in one unit (D-117). The line uses qty × that, rounded once to 6 decimals (a base quantity, D-108: 500 g of flour in a cake of 12 slices is 41.666667 g a slice). That stored quantity is what gets costed, so a later fill gives exactly what posting would have. Product costs divide the recipe's total by its yield instead; for a yield that doesn't divide, the two differ by less than 1e-8 a unit. A recipe without lines, Materials off, a service without a recipe, delivery and charges use nothing (`none`).
+- **Decision (the average as of the sale's day, `averageAsOf`):** from the purchases posted when the sale is finalized (each standing receipt line, net of its returns and credit notes):
+  1. the material's purchases dated in the 90 days ending the sale's day;
+  2. else its last purchase dated on or before that day (that purchase's lines of the material together; of two purchases on a day, the later posted);
+  3. else its first purchase dated after it.
+
+  The third is new: a sale dated before the material was first bought takes the purchase that prices it, as the fill does. A purchase posted after the sale is finalized never enters it, whatever its date.
+  - **The cost:** base quantity × Σ value ÷ Σ base quantity, an exact product divided once and rounded once to 12 decimals (D-107), never to the currency. The Spanish Latte is 1.17 + 1.2 + 0.257034632035 + 0.25 + 0.09 + 0.035 = 3.002034632035 a cup.
+  - **The unit cost** shown is Σ value ÷ Σ base quantity.
+
+- **Decision (no price yet, filled once):** a material with no purchase yet has no price: null, never 0 (D-186). The line's cost is the sum once every material has one, and null until then. `fillSaleLineCost` fills each missing price once, from the purchases posted when it runs, and the line's cost follows. A cost that is set never changes: the same object comes back when nothing is filled.
+- **Decision (the owner's time):** only without a team (D-119): minutes for one unit × qty × hourly rate ÷ 60, divided once. The line's minutes are kept (Step 2 stores them beside the time cost), so a sale entered before the rate is set gets its time once, when it is set.
+- **Decision (refunds):** a negative quantity mirrors its sale (usage, cost and time negated).
+- **Decision (nothing "too large"):** the cost columns are unbounded `numeric` with 12 decimals (the plan, D-209), so no hidden cost can make a posting fail differently.
+- **Why:** Q5: a cost frozen on its day, never 0 when unknown, filled once.
+- **Rejected:**
+  - Only the last purchase on or before the day: a sale dated before the material's first purchase would say "no price yet" while one was posted, and a fill could never price it.
+  - Storing exact fractions of usage (a quantity column keeps 6 decimals, D-108).
+  - A line cost made of the priced materials while one is missing (it would look complete).
+- **Tests:** `costing/sale-cost.test.ts`:
+  - goldens: the Spanish Latte (3.002034632035, each line; unchanged by a milk purchase dated 5 Oct); 40 lattes, each material divided once; the window, the last purchase, the first purchase after, the later of a day; a recipe of 12 slices; an item bought ready to sell; no materials; no price yet filled once by the first purchase, then never again; the owner's time with a rate, waiting for one and filled once; refusals;
+  - fast-check: a refund mirrors its sale; a cost once set never changes, and what was missing is filled as the purchases then price it.
+
+### D-223 · 2026-10-04 · Real profit: each part in its state, the share at the price sold, the month's costs so far, fees by channel
+
+Source: ROADMAP.md M3 Step 1 and the owner's answers Q6, Q7, Q8 and Q11 (D-218); applies D-202 and D-203 to sales. Settles D-202's and D-203's "Open (Phase 3 planning)".
+
+- **Decision (the formula, `costing/real-profit.ts`):** real profit = sales before VAT (the lines' net) − materials (the frozen snapshot) − channel fees − delivery cost − the running-cost share − the owner's time (without a team, Q7). It is worked out on read; nothing is stored.
+  - **Each part has a state:** materials `none` | `priced` | `no_price_yet`; fees `none` | `statement` | `expenses` | `commission` | `not_entered`; the share `off` | `awaiting_sales` | `before_running_costs` | `none` | `applied`, with its basis; the owner's time `team` | `none` | `rate_not_set` | `applied`.
+  - **Nothing missing is ever 0:** a part not known yet is null and gives a reason: `no_recipe` (a product sold without a recipe while Materials was on), `unpriced_materials`, `fees_not_entered`, `hourly_rate_not_set`, `delivery_cost_not_entered`. The profit is worked out on what is known.
+  - **Not a reason:** a share awaiting sales or before running costs is `beforeRunningCosts` instead (D-203).
+  - `saleLineProfit` gives a line's profit, `sumRealProfit` any set of lines (a sale, an order, a day, a product, a channel or a branch, with the deliveries' costs), and `businessRealProfit` the business's.
+- **Decision (the share at the price sold):** line net × the month's costs ÷ the month's item sales before VAT, one exact division rounded once to 12 decimals (`costShare`, D-202). A refund's share is the mirror.
+  - Only item lines carry a share and fees. Delivery charged meets its own cost (the sale's `delivery_cost`): delivery margin = charged − what it cost, counted per sale. A charge counts as a sale and carries neither.
+  - A month whose item sales are zero or less carries no share (`awaiting_sales`). Costs of zero or less give a share of 0 (`none`).
+  - A product sold without a list price carries its share at the price it was sold for (Product costs keep `no_price`).
+  - The rounding difference of a document (D-221) belongs to no line and is not in real profit.
+- **Decision (which month's rate, Q6, `rateSourceOf`):** one rate for the whole business.
+  - **A finished month** uses its own costs ÷ its own item sales (`month`).
+  - **The running month** uses the last full month's rate (`last_month`): that of the latest month before it whose item sales came to more than zero (`lastSoldMonth`, which the caller reads). That is the month before, unless it sold nothing: a home baker back from a month off carries July's rate in September, never "awaiting sales" for the whole month.
+  - **The month of the first finalized sale** uses its costs from that sale's day ÷ its item sales (`so_far`), while it runs and once it is over (a finished month stays exact, even a first month of 1 day).
+  - **The 7 days:** a rate worked out so far shows once 7 days of sales exist, its first day being the first. A sale on the 1st shows from the 7th; on the 4th it is "before running costs", never 800 ÷ 1,000 = 80%.
+  - **A rate shown while a month runs is never worked out from fewer than 7 days of sales:**
+    - A first month with fewer than 7 days of sales (a first sale in its last 6 days) gives no rate to another month. Its days run on into the month after it: that month's rate, while it runs, is the costs from the first sale ÷ the item sales from the first sale (`so_far` across the two months), shown once 7 days of sales exist. A café opening on 30 September with rent of 20,000 would otherwise price all of October at its opening day's 666.67 ÷ 500 = 133%: an AED 18 latte carrying 24.00.
+    - A running month that no earlier month gives a rate to (only a first month with fewer than 7 days of sales before it, or no month whose item sales came to more than zero) counts like a first month: its costs from its 1st ÷ its item sales so far, shown from its 7th.
+  - `rateCostsOf` gives the costs a source divides: a whole month's (`costPool`), or those of its days (`monthCostsSoFar`), month by month and added where they span two months. `saleRate` divides them by the item sales of the same days once (`costRate`).
+- **Decision (the month's costs so far, `monthCostsSoFar`, built on `costPool` and `daysRunIn`):** over some days of a month, each running cost counts for the days it ran in them (its regular amount × days ÷ the month's days, divided once; a rent changed mid-month, D-217, each part for its own days). The month's bills and expenses, and what reversals take back in it, are spread evenly over its days and counted for those days. Over the whole month it is `costPool`'s total exactly. `costsSpanOf` gives the days the business subtracts: the whole month once it is over, up to today while it runs, and from the first sale's day in the month of that sale.
+- **Decision (the business, `businessRealProfit`):** it subtracts the month's costs themselves (whole, so far, or from the first sale) in place of the shares its lines carry. The line "Running costs not carried by this month's sales" (`notCarried`) is the difference: zero in a finished month within the 12-decimal rounding of each share, and not zero in a first month or the running one. With the costs subtracted, the business's total is never `beforeRunningCosts`, even while its lines are (a first month's first days, or a month awaiting sales): the costs are in it, and `notCarried` says what the lines' shares do not carry yet. With Running Costs and Expenses off nothing is subtracted, and the result says so (`monthCosts: null`).
+- **Decision (channel fees, Q8):** a channel's fees for a period ÷ its item sales in that period × the line's net, one division.
+  - **Where the fees come from, in order (`channelFeesOf`):** the posted statement covering the line's day; else the expenses marked as that channel's fees for the month (Step 3); else the channel's commission % (net × % ÷ 100). Without any: `not_entered` ("before app fees") for a channel that keeps a part of each sale (a delivery app or marketplace), `none` otherwise (dine-in carries no app fees).
+  - **A statement over two months** is split between them by days, one division each, the last part taking the rest (`statementParts`): 2,480 for 16 Oct–15 Nov is 1,280 in October and 1,200 in November.
+  - **A line's fee** uses its statement's part in its month and the channel's item sales in the same days, so a month's fees add up to its parts. Statements of a channel never overlap (Step 4 refuses one that would).
+- **Why:** the owner's answers: a number from the first week, steady during the month, exact once each month ends; fees stay with their channel; the owner's time on its own line.
+- **Rejected:**
+  - Line shares in place of the month's costs in the business's total (a first month and the running month would hide what their sales don't carry yet).
+  - Fees on delivery or charges (the commission is on what was sold).
+  - A first month's rate before 7 days of sales.
+  - Its 7 days counted from the day after the first sale (the owner's wording: "7 days of sales").
+  - A short first month's own rate for the whole month after it (the review's case above). Also rejected: keeping the month after it "before running costs" until it has 7 days of its own, which hides a rate for up to 6 days after 7 days of sales exist.
+  - "Awaiting sales" for a whole running month because the month before sold nothing.
+- **Tests:** `costing/real-profit.test.ts`:
+  - goldens: the café's September (25%, the latte's 4.50 and 10.50 dine-in; Talabat's 3.60 by commission, then 18% by statement, 3.24 and 7.26; the business 34,200 at 42.75%); 20,000 ÷ 30,000 (shares within the tolerance, the business subtracting exactly 20,000); the running month (September's rate on 10 October, costs 1–10 October); a first month (6,000 × 15 ÷ 30 = 3,000 ÷ 12,000 = 25%; before running costs on the 4th, while the business takes off 800 and is not "before running costs"); a first month of 3 days running on into October (600 + 800 = 1,400 ÷ 5,600 = 25% on 4 October; September keeping its own 3 days; November at October's rate); a month off (July's rate in September; its own so far with no month that sold); off, awaiting sales, none; the home baker's order #1001 (35.10, then 20.10 after a refund of 20; incomplete without the delivery cost or the hourly rate); the parts not known yet; the statement split; costs so far with a rent changed mid-month;
+  - fast-check: a finished month's shares add up to its costs; a rate shown while its month runs is never worked out from fewer than 7 days of sales; a channel's fees add up to its statements, part by part; a refund mirrors its sale; costs so far over a whole month are `costPool`'s total, and over its two halves add up within the rounding.
+
+  `costing/real-profit.adversary.test.ts`: the review's cases (a short first month, the business total of a first month's first days, a month without sales).
+
+### D-224 · 2026-10-04 · PDF engine with correct Arabic: Typst compiled to WebAssembly, in a worker that is replaced
+
+Source: M3 Step 1 "PDF engine bake-off" ([plans/m3-sales-profit.md](plans/m3-sales-profit.md)), measured in the scratchpad on a bilingual 2-page tax invoice (44 lines) and a 200-line one, then corrected by its review (memory, the event loop, harakat in the text layer, rows taller than a page, copy and search in Chrome's viewer). Settles the PDF half of ROADMAP.md §Open "PDF engine with correct Arabic; gapless numbering design"; the numbering stays open for Steps 5 and 8. No dependency joins a package before Step 7.
+
+- **Decision:** quotations, invoices, credit notes and statements become PDFs through **Typst compiled to WebAssembly** (`@myriaddreamin/typst.ts` + `@myriaddreamin/typst-ts-web-compiler`, pinned exactly at 0.7.0 = Typst 0.14.2), server-only in `packages/api`, from Step 7.
+  - **Templates and data:** each document kind is a constant Typst template. The document's frozen values (already redacted, decimal strings, Latin digits) and its bilingual labels (the en + ar i18n strings) go in as JSON in the compiler's in-memory file system (`json("/data.json")`), never as markup.
+  - **Fonts and access:** the compiler gets only the four IBM Plex TTFs (Sans and Sans Arabic, Regular and Bold, OFL, shipped with the licence). It has no access model and no package registry, and the default CDN font assets are off.
+  - **Bidi:** names as typed sit in a first-strong-direction isolate; TRN, LPO, numbers and amounts in LTR isolates (`box(text(dir: ltr))`).
+  - **Deterministic:** the PDF's date is the document's frozen issue timestamp, so a re-render is byte-identical (Step 8).
+  - **Run model:** the compiler runs in a `worker_threads` worker of the existing `/api/trpc` function, never on its main thread. The worker is replaced after a number of renders (50 to start) or once its memory passes a limit (1 GB to start). Creating the compiler takes about 0.2 s and its first compile about 1.1 s more on 1 vCPU, so each new worker pays about 1.3 s once (less while the process still holds the compiled wasm).
+  - **Rows:** a table row stays on one page, unless it is taller than a page: then it breaks across pages, so no text is ever cut. A row that may never break (`breakable: false`, as in the bake-off) is moved to the next page and cut at its edge with no error: a 999-character description of 200 short lines, within today's 1,000-character limit, lost 120 of them, and the rest ran over the footer.
+  - **Fallback:** headless Chromium printing our own escaped HTML.
+- **Why (measured):**
+  - Arabic shaping, joining, harakat and bidi are drawn correctly (checked zoomed). A4 breaks repeat the header on every page (200 lines on 4 pages), with page x of y.
+  - **Speed:** warm 81 ms (p95 137 ms) and a first PDF in 0.5 s locally; on 1 vCPU / 2 GB Linux warm 0.19–0.21 s (p95 0.32–0.40 s) and a first PDF in 1.3–1.4 s. The targets are 1 s and 3 s.
+  - Byte-identical output across runs, processes, Windows and Linux.
+  - Zero file, network or process calls while rendering; hostile markup can't read files, fetch URLs or import packages.
+  - About 29 MB of pure wasm plus 0.8 MB of fonts; Apache-2.0; no paid service.
+  - **Memory, hence the replaced worker:** about 160 MB after the first render, then about 7.5–8 MB more for every distinct PDF. The growth is in the wasm memory and is never freed: typst.ts 0.7.0 has no way to evict its cache, and `reset()` does not help. That is 0.9 GB after 100 PDFs, 1.7 GB after 200, and a 2 GB container killed after about 250. A worker ended after 100 renders gives all of it back (about 930 MB to 70 MB, every round). The first reading, 287–356 MB, was taken after only 11 renders.
+  - **The event loop, hence the worker from the first PDF:** a render holds its thread for its whole length (locally about 70 ms warm for 2 pages, 200 ms for 200 lines, 330 ms for an instance's first). A trivial request to the same process waited as long. Under Fluid compute one instance serves several requests at once (ARCHITECTURE.md §Environments & deployment, "Serverless pooling"), so on the main thread every PDF would stall every other call on that instance.
+- **Rejected:**
+  - Headless Chromium (playwright-core + @sparticuz/chromium), kept as the fallback. It has the best text layer: the glyph-aware reader finds 16 of 17 Arabic phrases in its PDF (17 without harakat), and PDFium reads its codes in order. But on a function:
+    - a 67 MB binary inflates to 199 MB in `/tmp` on every cold start, 2.9–3.1 s to the first PDF on 1 vCPU;
+    - warm p95 of 1.5–1.9 s;
+    - `--no-sandbox --single-process` in the function that holds the secrets;
+    - bytes that change on every run (dates, DOM node ids).
+  - @react-pdf/renderer:
+    - harakat not positioned;
+    - a long typed token broken with an inserted hyphen and overflowing its cell;
+    - manual RTL layout and no tagging;
+    - warm 0.3–0.5 s.
+  - A paid PDF service.
+- **Consequences:**
+  - **No new route.** PDFs render inside the existing `/api/trpc` function, in its worker, so "the only API entry" is unchanged. At Step 7:
+    - ARCHITECTURE.md §API gains a "PDFs" bullet: the engine, the worker and when it is replaced, the data-as-JSON rule, the fonts, no I/O while rendering;
+    - `apps/web/next.config` traces the wasm and the TTFs into the function (`outputFileTracingIncludes`);
+    - PDFs stay rate-limited.
+  - **Dependency boundary:** only the documents' PDF service may import typst.ts (a lint allowlist, as for `storage-admin`).
+  - **Step 7 tests:**
+    - a hostile-name fixture (Typst markup, HTML, bidi controls, `#read`, `#import`) printed literally;
+    - a hook test that rendering makes no file, network or process call;
+    - byte goldens (sha256);
+    - text-layer goldens through a glyph-aware pdfjs helper that puts an ActualText span's text in place of the glyphs it covers (NFKC; LTR tokens exact), with a harakat and shadda fixture (المورّد, كَعْكَة);
+    - a description long enough to make a row taller than a page, printed whole;
+    - at least 500 distinct renders staying under 2 GB, the worker replaced along the way;
+    - the main thread free while a PDF renders;
+    - the budget: a 2-page PDF in under 1 s warm.
+  - **Known limits of the text layer.** They affect copy and search only: the drawn page is correct, and e-invoicing reads structured data, not the PDF's text. The tax agent's review in Step 10 re-checks them with copy and paste (Acrobat included) and a search for the invoice number in Chrome.
+    - **Every engine:** pdf.js, PDFium and MuPDF ignore `/ReversedChars` and reverse Plex Arabic's required ligatures (شر, ضر, بي, لا) when text is copied.
+    - **Typst, harakat:** a letter that carries harakat or shadda comes out twice in pdf.js, PDFium and MuPDF (المورّد as «الموّرّرد» in Chrome's viewer). The glyph's own text is the whole cluster, and an ActualText span repeats it. Labels are affected (the Arabic messages hold 343 shaddas and 450 tanweens). The glyph-aware reader finds 15 of 17 Arabic phrases in Typst's PDF, with or without harakat, so comparing without harakat does not hide it.
+    - **Typst, Latin in Arabic text:** PDFium, the viewer of Chrome and Edge, reverses every Latin run inside Arabic-language text when it is copied or searched, even on a line of its own. INV-2026-0042 reads «-2026-0042INV», LPO-7781/B «B-7781/LPO», "Al Waha Fit-Out LLC" «LLC Out-Fit Waha Al», so Ctrl+F for an invoice number finds nothing. A `lang: "en"` LTR isolate does not fix it; the text's Arabic language is the trigger (`dir: rtl` with `lang: "en"` reads right). Digits alone (TRN, dates) read right.
+    - Step 7 first tries a template fix for the two Typst limits (for example, Latin runs set as English text). If they remain and the tax agent's review finds them unacceptable, the fallback applies.
+  - **Load and hosting:** bundle size, cold start and memory are re-checked at the first hosted deploy.
+  - **If the fallback is ever needed,** it comes with its own D-entry and an ARCHITECTURE change: a separate function without secrets, JS off, every request and navigation blocked, CSP, escaping by React, one reused page.
+
 ## Proposals
 
 Proposals are kept for history once the owner confirms them, with the entries they became. None is awaiting the owner.
 
 ### P-001 · 2026-09-27 · Costing policy: the rules the owner sees (CONFIRMED 2026-09-28: became D-114 and D-115)
 
-- **Status:** CONFIRMED by the owner on 2026-09-28: rules 1–6 (O3 = A) became D-114, and the part for businesses that don't count their stock (O5 = B) became D-115. The note on supplier returns and credit notes is replaced by D-120 (in M2). Negative stock is still asked with Phase 3. The text below is the proposal as it was put to the owner. Before the answer: together with D-110 (the technical part), it answered D-006's "Open" (ROADMAP.md §Open, O3 and O5). The owner could answer rule by rule, e.g. "A, except rule 4". Until he answered, only the pure code of M2 Step 1 followed it (D-109), and no table stored data by it.
+- **Status:** CONFIRMED by the owner on 2026-09-28: rules 1–6 (O3 = A) became D-114, and the part for businesses that don't count their stock (O5 = B) became D-115. The note on supplier returns and credit notes is replaced by D-120 (in M2). Negative stock moves to Phase 4 planning (D-219). The text below is the proposal as it was put to the owner. Before the answer: together with D-110 (the technical part), it answered D-006's "Open" (ROADMAP.md §Open, O3 and O5). The owner could answer rule by rule, e.g. "A, except rule 4". Until he answered, only the pure code of M2 Step 1 followed it (D-109), and no table stored data by it.
 - **Proposal (O3):**
   1. **The average updates when a purchase is posted** (confirmed), not when it is saved as a draft. There is one weighted average per material for the whole business (D-006): (value on hand + what the purchase cost) ÷ (quantity on hand + quantity bought). The owner's example: 50 L at AED 6, then 100 L at AED 7, gives (300 + 700) ÷ 150 = 6.666666666667 per L, shown as 6.67.
   2. **Backdated purchases:** the order is the posting order, not the document date. A purchase dated in the past changes the average from the moment it is posted, and costs already recorded are never recomputed. The alternative is to recompute everything after that date: past costs and reports change, and it is slower.
