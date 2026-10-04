@@ -14,6 +14,7 @@ BizCost is a multi-tenant SaaS for cost intelligence, profit intelligence and us
 - `docs/DATA_MODEL.md` — tables, relationships, DB conventions.
 - `docs/ROADMAP.md` — phases, current milestone, step status. Update status when a step is done.
 - `docs/DECISIONS.md` — decision log. Add an entry for every new important product/technical decision.
+- `docs/plans/` — the detailed plan of a milestone (steps, owner decisions, definition of done); ROADMAP.md holds its status.
 - `docs/mockups/` — the owner's visual references.
 
 ## How we work
