@@ -1,6 +1,6 @@
-# Milestone 3 plan: Sales & Profit (PROPOSED)
+# Milestone 3 plan: Sales & Profit
 
-The full plan behind docs/ROADMAP.md §Milestone 3. Status: **PROPOSED, awaiting the owner's approval and his answers to Q1–Q27** (2026-10-04). Built from the owner's spec, the codebase, UAE VAT and e-invoicing texts (MoF, FTA; checked 2026-10-04) and sales-capture research, by three independent plans, a judge and two critics. Once a step is built, ROADMAP.md holds its status and DECISIONS.md its decisions; this file is the plan, not the record.
+The full plan behind docs/ROADMAP.md §Milestone 3. Status: **APPROVED** on 2026-10-04 with every question answered as recommended (D-218). Built from the owner's spec, the codebase, UAE VAT and e-invoicing texts (MoF, FTA; checked 2026-10-04) and sales-capture research, by three independent plans, a judge and two critics. Once a step is built, ROADMAP.md holds its status and DECISIONS.md its decisions; this file is the plan, not the record.
 
 ## Milestone 3 = Phase 3 Sales & Profit
 
@@ -38,7 +38,7 @@ Estimate: **~20–23 weeks solo**, on the same basis as M1 and M2 (each 9–11 w
 - **The tax agent's look at the PDFs** is needed before the first real user, not for Release B on the local web.
 - The e-invoicing connector is not in this estimate (Q24).
 
-Status (2026-10-04): **PROPOSED, awaiting the owner.**
+Status (2026-10-04): **APPROVED** (D-218: every question answered as recommended).
 
 - **He approves the milestone once and answers Q1–Q27 below.**
   - "All as recommended" is enough.
@@ -46,7 +46,7 @@ Status (2026-10-04): **PROPOSED, awaiting the owner.**
   - Nothing is built before that (CLAUDE.md).
 - **Deadlines:** Step 1 needs Q1–Q8; every other question is due before a later step, given with it.
 - **D-216 first.** M3 builds on D-216, the owner's answer «1أ» (a bill pays one running cost), built with its review fixes as D-216 and D-217 (on `main`, 312f9bc).
-- M3's decisions are recorded from D-218.
+- The owner's approval and answers are D-218; M3's decisions follow from D-219.
 - Web only: mobile and the hosted deploy stay DEFERRED by the owner.
 
 Release rule:
@@ -100,7 +100,7 @@ Release rule:
 | VAT charged twice after a deposit; sales or amounts owed counted twice                                    | Steps 5 and 8                                     | Properties: deposit VAT + final VAT = VAT on the work; one owed figure per obligation   |
 | The e-invoicing seam                                                                                      | Steps 1 and 8                                     | The domain's PINT-AE checks; the readiness test                                         |
 
-- [ ] **Step 1: Domain groundwork for sales documents and real profit** (PROPOSED; decisions Q3–Q8). Pure TypeScript in `@bizcost/domain`, decimal.js only, as in M2 Step 1 (D-107–D-110). It stores no data and releases nothing.
+- [ ] **Step 1: Domain groundwork for sales documents and real profit** (APPROVED; decisions Q3–Q8). Pure TypeScript in `@bizcost/domain`, decimal.js only, as in M2 Step 1 (D-107–D-110). It stores no data and releases nothing.
   - **Sales document maths** (`documents/sale.ts`, `computeSale`): one engine for a sale, an order, a quotation, an invoice and a credit note.
     - **Prices:**
       - Prices are before VAT, or include VAT when the product says so (D-121).
@@ -181,7 +181,7 @@ Release rule:
 
   - Depends on: M2; D-216's domain change merged.
 
-- [ ] **Step 2: Today's sales and One sale, finalized with their cost** (PROPOSED; decisions Q9–Q12).
+- [ ] **Step 2: Today's sales and One sale, finalized with their cost** (APPROVED; decisions Q9–Q12).
   - **Data** (migrations `sales_tables`, `sales_security`):
     - `sales_channels`: one table for every way a business sells.
       - `name`, one per business by `app.name_key`.
@@ -280,7 +280,7 @@ Release rule:
       - an employee who sees only their own sheet.
   - Depends on: Step 1.
 
-- [ ] **Step 3: Real profit: running costs switch on, the Dashboard's cards and Reports** (PROPOSED; decisions Q13, Q14). Real profit is worked out on read, and no profit is stored (as D-186). It is read from:
+- [ ] **Step 3: Real profit: running costs switch on, the Dashboard's cards and Reports** (APPROVED; decisions Q13, Q14). Real profit is worked out on read, and no profit is stored (as D-186). It is read from:
   - the posted sales and their snapshots;
   - the month's costs (`costPool`, D-202, D-203, D-216);
   - the channel fees;
@@ -361,7 +361,7 @@ Release rule:
     - `profit.spec.ts` on the preview: owner and employee, AR/EN, phone and desktop.
   - Depends on: Step 2; D-216's screen round merged (`month-costs.tsx`).
 
-- [ ] **Step 4: Import sales from a file, and app fees by channel** (PROPOSED; decision Q15). Files are read in the browser and never uploaded:
+- [ ] **Step 4: Import sales from a file, and app fees by channel** (APPROVED; decision Q15). Files are read in the browser and never uploaded:
   - the `business-files` bucket keeps its four file types (DATA_MODEL §1.8);
   - no background job is needed: rows reach the API in chunks of up to 1,000 (within the batch limit), and only day totals are posted.
   - **Domain** (pure, `sales/import/`; it runs in the browser):
@@ -460,7 +460,7 @@ Release rule:
     - `import.spec.ts` (AR/EN).
   - Depends on: Step 3.
 
-- [ ] **Step 5: Customers, Orders with delivery, customer payments, refunds and what customers owe** (PROPOSED; decisions Q2, Q16–Q20).
+- [ ] **Step 5: Customers, Orders with delivery, customer payments, refunds and what customers owe** (APPROVED; decisions Q2, Q16–Q20).
   - **Domain** (moved here from Step 1, S1):
     - `orderTransition` / `orderActions`: Pending → Delivered or Cancelled, and Undo delivery (Q16);
     - `paymentState`: paid, deposit, unpaid or overpaid, built from `outstandingOf` / `overpaidOf` (D-160);
@@ -563,7 +563,7 @@ Release rule:
     - `orders.spec.ts`: the baker in Arabic on a phone, the workshop in English on a desktop.
   - Depends on: Step 3. It does not need Step 4.
 
-- [ ] **Step 6: Release A: Sales & Profit** (PROPOSED; decision Q1; the owner reviews it, as after M2 Step 7).
+- [ ] **Step 6: Release A: Sales & Profit** (APPROVED; decision Q1; the owner reviews it, as after M2 Step 7).
   - **Manifests:** `sales`, `reports`, `customers`, `payments` and `orders` become `released`.
     - **Sidebar:** the group "Sales" holds Sales, Orders, Customers and What customers owe. "Reports" holds Real profit.
     - **The phone's tab bar,** through the D-189 claims (Q14): the owner gets Home | Sales | + | Costs | More. Orders takes the Sales place for an orders business, and Products moves to More.
@@ -600,7 +600,7 @@ Release rule:
 
   - Depends on: Steps 2–5.
 
-- [ ] **Step 7: Quotations, document numbers and PDFs** (PROPOSED; decisions Q21–Q25).
+- [ ] **Step 7: Quotations, document numbers and PDFs** (APPROVED; decisions Q21–Q25).
   - **Domain:**
     - `documents/billing.ts`: what an accepted quotation, or an order, has billed and has left, by % or by amount. Never above 100%; the last invoice bills exactly the rest (Q22).
     - **A typed line** counts in sales and carries its running-cost share, with no materials; profit says so (Q21).
@@ -667,7 +667,7 @@ Release rule:
       - a workshop in English on a desktop.
   - Depends on: Step 5 (customers, counters); the Step 1 bake-off.
 
-- [ ] **Step 8: Invoices, credit notes, payments on invoices and customer statements** (PROPOSED; decisions Q26, Q27). First, the e-invoicing and VAT rules are re-verified. They were last checked on 2026-10-04 against MoF and FTA texts (§Open below).
+- [ ] **Step 8: Invoices, credit notes, payments on invoices and customer statements** (APPROVED; decisions Q26, Q27). First, the e-invoicing and VAT rules are re-verified. They were last checked on 2026-10-04 against MoF and FTA texts (§Open below).
   - **Data:**
     - `invoices`:
       - **Kind:** `kind`: tax_invoice | invoice (plain). It is set by VAT registration at issue and frozen (Q26). A tax invoice needs the business currency AED (VAT DL Art. 69).
@@ -766,7 +766,7 @@ Release rule:
     - `invoices.spec.ts` on the preview: fit-out in Arabic on a desktop, the designer in English on a phone, the factory's statement.
   - Depends on: Step 7.
 
-- [ ] **Step 9: Release B: Quotations & Invoices** (PROPOSED; the owner reviews it).
+- [ ] **Step 9: Release B: Quotations & Invoices** (APPROVED; the owner reviews it).
   - `quotations` and `invoices` become `released`.
     - Their keys are backfilled, and they get their nav.
     - "+" gains New quotation and New invoice.
@@ -783,7 +783,7 @@ Release rule:
   - `release-documents.spec.ts` runs on the production build.
   - Depends on: Steps 7–8.
 
-- [ ] **Step 10: Hardening & docs** (PROPOSED; as M2 Step 8).
+- [ ] **Step 10: Hardening & docs** (APPROVED; as M2 Step 8).
   - **The suites cover every M3 procedure:**
     - cross-tenant, on every reference field;
     - direct-access: issued PDFs and signed quotes in Storage, signed URLs;
