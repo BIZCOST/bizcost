@@ -32,18 +32,19 @@ import { NativeSelect } from '@/components/ui/native-select'
 import { Switch } from '@/components/ui/switch'
 import { Textarea } from '@/components/ui/textarea'
 import type { FieldError } from '@/features/catalog/numbers'
-import { useBusinessDate, useBusinessMonth, useMoney } from '@/features/purchasing/amounts'
-import { closedFor, firstOpenDay } from '@/features/purchasing/books'
-import { ConfirmDialog } from '@/features/purchasing/confirm-dialog'
+import { useBusinessDate, useBusinessMonth, useMoney } from '@/features/documents/amounts'
+import { closedFor, firstOpenDay } from '@/features/documents/books'
+import { ConfirmDialog } from '@/features/documents/confirm-dialog'
+import { MoneyInput, VatModeChoice, VatSelect } from '@/features/documents/line-editor'
+import { Panel } from '@/features/documents/panel'
+import { Totals } from '@/features/documents/totals'
 import {
   hasModule,
   useLocationOptions,
   useRefreshOwnRecords,
   useSupplierOptions,
 } from '@/features/purchasing/data'
-import { Panel } from '@/features/purchasing/panel'
 import { paymentMethodsFor } from '@/features/purchasing/purchase-draft'
-import { MoneyInput, VatModeChoice, VatSelect } from '@/features/purchasing/purchase-lines'
 import {
   PendingReceipts,
   ReceiptError,
@@ -51,7 +52,6 @@ import {
   useUploadReceipt,
 } from '@/features/purchasing/receipts'
 import { SupplierSheet } from '@/features/purchasing/supplier-sheet'
-import { Totals } from '@/features/purchasing/totals'
 import { can } from '@/features/settings/sections'
 import { useBusinessContext } from '@/lib/trpc/client'
 import { CategoryField } from './category-field'

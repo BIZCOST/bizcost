@@ -23,8 +23,8 @@ import { LeaveBusinessDialog } from './member-dialogs'
 import { SECTION_ICONS } from './section-icons'
 import {
   isSectionVisible,
-  SECTION_DESCRIPTIONS,
   SECTION_TITLES,
+  sectionDescription,
   sectionOfPath,
   sectionPath,
   visibleSections,
@@ -208,7 +208,7 @@ export function SettingsHome({ businessId }: { businessId: string }) {
               href={sectionPath(businessId, section)}
               icon={SECTION_ICONS[section]}
               title={t(SECTION_TITLES[section])}
-              description={t(SECTION_DESCRIPTIONS[section])}
+              description={t(sectionDescription(context, section))}
             />
           ))}
         </ul>
@@ -301,7 +301,7 @@ export function SectionPage({
       <header className="mb-6 flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
         <div className="min-w-0">
           <h1 className="text-2xl font-semibold tracking-tight">{t(SECTION_TITLES[section])}</h1>
-          <p className="mt-1.5 text-muted-foreground">{t(SECTION_DESCRIPTIONS[section])}</p>
+          <p className="mt-1.5 text-muted-foreground">{t(sectionDescription(context, section))}</p>
         </div>
         {actions ? <div className="flex shrink-0 flex-wrap gap-2">{actions}</div> : null}
       </header>

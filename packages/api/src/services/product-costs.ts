@@ -53,6 +53,7 @@ import { assertQueryable, passes, type QueryField } from '../trpc'
 import { containsPattern } from './catalog'
 import { averageBasisOf, costRecordsOf, lastPurchaseOf } from './material-costs'
 import { basesOf, findRecipe, linesOf, materialCostsOf, type ProductMaterialCost } from './recipes'
+import { fillSaleTimeCosts } from './sale-costs'
 
 // Product costs (ROADMAP.md M2 Step 6; D-115, D-119, D-121, D-178, D-202): what one unit sold of each
 // product or service costs, line by line, and its margin. Module `cost_engine` (and `products`; the
@@ -847,7 +848,8 @@ export function getProductCostSettings(ctx: BusinessCtx): Promise<ProductCostSet
  * `productCost.updateSettings`: saves the owner's hourly rate (null clears it). Needs costs visible
  * (what it writes is a cost: FORBIDDEN otherwise, before anything is read), and a business without a
  * team (CAPABILITY_DISABLED; kept as it is with one). At most the currency's decimals (VALIDATION).
- * Audited (businesses).
+ * Audited (businesses). Setting it fills the owner's time of the sales finalized without it, once
+ * (M3 Step 2).
  */
 export function updateProductCostSettings(
   ctx: BusinessCtx,
@@ -869,6 +871,11 @@ export function updateProductCostSettings(
       .update(businesses)
       .set({ ownerHourlyRate: input.ownerHourlyRate })
       .where(eq(businesses.id, ctx.businessId))
+    // The finalized sales whose lines kept the owner's minutes without a rate take it, once (D-222,
+    // Q7), under the business row this update locked (sale-costs.ts).
+    if (input.ownerHourlyRate !== null) {
+      await fillSaleTimeCosts(tx, ctx.businessId, input.ownerHourlyRate)
+    }
     return readSettings(tx, ctx)
   })
 }

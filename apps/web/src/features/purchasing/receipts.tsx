@@ -34,8 +34,8 @@ import {
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog'
 import { Button } from '@/components/ui/button'
+import { Locked } from '@/features/documents/amounts'
 import { useLocale } from '@/lib/i18n/client'
-import { Locked } from './amounts'
 
 // A purchase's receipts (M2 Step 3; D-139), and an expense's (M2 Step 5): photos (PNG, JPEG, WebP) or
 // PDFs of up to 10 MB, uploaded straight to the private bucket with a signed URL the API issues

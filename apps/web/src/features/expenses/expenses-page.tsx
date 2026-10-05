@@ -9,15 +9,13 @@ import {
   InfoIcon,
   PlusIcon,
   ReceiptIcon,
-  SearchIcon,
   SearchXIcon,
   SlidersHorizontalIcon,
   TagsIcon,
-  XIcon,
 } from 'lucide-react'
 import Link from 'next/link'
 import { useParams, usePathname, useRouter, useSearchParams } from 'next/navigation'
-import { useEffect, useId, useRef, useState, type ReactNode } from 'react'
+import { useId, useState, type ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
 import { FormAlert } from '@/components/form/form-alert'
 import { isolate } from '@/components/form/use-message'
@@ -28,7 +26,8 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { NativeSelect } from '@/components/ui/native-select'
 import { ListEmpty, ListSkeleton } from '@/features/catalog/catalog-list'
-import { Money, useBusinessDate, useBusinessMonth } from '@/features/purchasing/amounts'
+import { Money, useBusinessDate, useBusinessMonth } from '@/features/documents/amounts'
+import { SearchBox } from '@/features/documents/search-box'
 import { hasModule } from '@/features/purchasing/data'
 import { can, isSectionVisible, sectionPath } from '@/features/settings/sections'
 import { useBusinessContext } from '@/lib/trpc/client'
@@ -66,8 +65,6 @@ import { ExpenseStatusBadge } from './status-badge'
 // may not see them sees a lock (redaction, D-165). In a business with a team, "My expenses" lists
 // the member's own with their amounts and what is owed to them (D-181); it is where a member who may
 // not see supplier prices lands.
-
-const SEARCH_DELAY_MS = 300
 
 /** The two lists: every expense, or the member's own (`?view=mine` / `?view=all`). */
 type ExpensesView = 'all' | 'mine'
@@ -146,67 +143,6 @@ function useFilters() {
   return { filters, set }
 }
 
-/** A search box that searches a moment after typing, and on Enter. */
-function SearchBox({ value, onChange }: { value: string; onChange: (search: string) => void }) {
-  const { t } = useTranslation()
-  const [text, setText] = useState(value)
-  const typed = useRef(value)
-  const change = useRef(onChange)
-  useEffect(() => {
-    change.current = onChange
-  })
-  // The address changed without typing (back, a link): show its search.
-  useEffect(() => {
-    if (value !== typed.current.trim()) {
-      typed.current = value
-      setText(value)
-    }
-  }, [value])
-  useEffect(() => {
-    if (text.trim() === value) return
-    const timer = setTimeout(() => change.current(text), SEARCH_DELAY_MS)
-    return () => clearTimeout(timer)
-  }, [text, value])
-  return (
-    <div role="search" className="relative min-w-0 flex-1">
-      <SearchIcon
-        aria-hidden
-        className="pointer-events-none absolute start-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground"
-      />
-      <Input
-        type="search"
-        aria-label={t('catalog.list.searchLabel')}
-        placeholder={t('expenses.list.searchPlaceholder')}
-        autoComplete="off"
-        enterKeyHint="search"
-        value={text}
-        onChange={(event) => {
-          typed.current = event.target.value
-          setText(event.target.value)
-        }}
-        onKeyDown={(event) => {
-          if (event.key === 'Enter') onChange(text)
-        }}
-        className="ps-9 pe-11 [unicode-bidi:plaintext] [&::-webkit-search-cancel-button]:hidden"
-      />
-      {text ? (
-        <button
-          type="button"
-          aria-label={t('catalog.list.clearSearch')}
-          onClick={() => {
-            typed.current = ''
-            setText('')
-            onChange('')
-          }}
-          className="absolute end-0 top-0 flex size-11 items-center justify-center rounded-lg text-muted-foreground outline-none hover:text-foreground focus-visible:ring-3 focus-visible:ring-ring"
-        >
-          <XIcon aria-hidden className="size-4" />
-        </button>
-      ) : null}
-    </div>
-  )
-}
-
 /** The filters: a search and the status, then (folded on a phone) the category and the days. */
 function FilterBar({
   filters,
@@ -233,7 +169,11 @@ function FilterBar({
   return (
     <div className="mb-4 space-y-3">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
-        <SearchBox value={filters.search} onChange={(search) => onChange({ search })} />
+        <SearchBox
+          value={filters.search}
+          placeholder={t('expenses.list.searchPlaceholder')}
+          onChange={(search) => onChange({ search })}
+        />
         <label className="flex min-w-0 items-center gap-2 text-sm text-muted-foreground sm:w-60">
           <span className="shrink-0">{t('expenses.list.filters.status')}</span>
           <NativeSelect

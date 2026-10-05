@@ -86,10 +86,10 @@ const KEY_CAPABILITY: Readonly<Partial<Record<PermissionKey, string>>> = {
 
 /**
  * Settings keys that only mean something with one of these modules on: hidden (and kept as they are)
- * without any. Closing the books: purchases and expenses obey the date (D-176, D-201).
+ * without any. Closing the books: purchases, expenses and sales obey the date (D-176, D-201, D-236).
  */
 const KEY_MODULES: Readonly<Partial<Record<PermissionKey, readonly string[]>>> = {
-  'settings.books.close': ['purchases', 'expenses'],
+  'settings.books.close': ['purchases', 'expenses', 'sales'],
 }
 
 /** Groups that belong to Dashboard and Settings, which every business has. */

@@ -281,6 +281,20 @@
       "when": 1791060944714,
       "tag": "20261003205544_expense_running_cost",
       "breakpoints": true
+    },
+    {
+      "idx": 40,
+      "version": "7",
+      "when": 1791120688346,
+      "tag": "20261004133128_sales_tables",
+      "breakpoints": true
+    },
+    {
+      "idx": 41,
+      "version": "7",
+      "when": 1791120753773,
+      "tag": "20261004133233_sales_security",
+      "breakpoints": true
     }
   ]
 }

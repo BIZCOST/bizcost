@@ -13,6 +13,8 @@ import type {
   RecipeResultDto,
   RoleDto,
   RunningCostDto,
+  SaleDto,
+  SalesChannelDto,
   SupplierDto,
 } from '@bizcost/contracts'
 import { newId } from '@bizcost/domain'
@@ -34,6 +36,7 @@ import {
   type ProcedureType,
   type Tenant,
 } from './fixture'
+import { updateFieldsOf } from '../sales'
 
 // Audit coverage (ROADMAP.md M1 definition of done: "every write of business data is in audit_log
 // with actor and request_id"; DATA_MODEL.md §1.6). For EVERY mutation of appRouter, walked from the
@@ -309,6 +312,48 @@ async function newRunningCost(): Promise<RunningCostDto> {
         'mutation',
         runningCostInput(),
       ),
+    )
+  ).data
+}
+
+/** A sale of the tenant's product in its channel, today (a draft; delivery without its cost). */
+function saleInput(extra: object = {}) {
+  return {
+    id: newId(),
+    source: 'single',
+    businessDate: tenant.sale.businessDate,
+    channelId: tenant.channel.id,
+    deliveryNeeded: true,
+    lines: [
+      { kind: 'item', id: newId(), productId: tenant.product.id, qty: '1', unitPrice: '15.5' },
+    ],
+    ...extra,
+  }
+}
+
+async function newSale(post = false): Promise<SaleDto> {
+  const draft = (
+    await ok(call<{ data: SaleDto }>(tenant.owner, 'sale.create', 'mutation', saleInput()))
+  ).data
+  if (!post) return draft
+  return (
+    await ok(
+      call<{ data: SaleDto }>(tenant.owner, 'sale.post', 'mutation', {
+        id: draft.id,
+        version: draft.version,
+      }),
+    )
+  ).data
+}
+
+async function newChannel(): Promise<SalesChannelDto> {
+  return (
+    await ok(
+      call<{ data: SalesChannelDto }>(tenant.owner, 'channel.create', 'mutation', {
+        id: newId(),
+        name: `Channel ${newId()}`,
+        kind: 'marketplace',
+      }),
     )
   ).data
 }
@@ -925,6 +970,74 @@ const AUDIT: Record<string, AuditProbe> = {
     run: async () => {
       const cost = await newRunningCost()
       return asOwner('runningCost.remove', { id: cost.id, version: cost.version })
+    },
+  },
+  // Sales (M3 Step 2, previewed: D-125).
+  'channel.create': {
+    run: () =>
+      asOwner('channel.create', { id: newId(), name: `Noon ${newId()}`, kind: 'marketplace' }),
+  },
+  'channel.update': {
+    run: async () => {
+      const channel = await newChannel()
+      return asOwner('channel.update', {
+        id: channel.id,
+        version: channel.version,
+        name: `Renamed ${newId()}`,
+        kind: 'delivery_app',
+        feePercent: '12.5',
+      })
+    },
+  },
+  'channel.archive': {
+    run: async () => asOwner('channel.archive', { id: (await newChannel()).id }),
+  },
+  'channel.unarchive': {
+    run: async () => {
+      const channel = await newChannel()
+      await ok(call(tenant.owner, 'channel.archive', 'mutation', { id: channel.id }))
+      return asOwner('channel.unarchive', { id: channel.id })
+    },
+  },
+  'sale.create': { run: () => asOwner('sale.create', saleInput()) },
+  'sale.update': {
+    run: async () => {
+      const draft = await newSale()
+      const fields = updateFieldsOf(saleInput({ deliveryCost: '4' }))
+      return asOwner('sale.update', { ...fields, id: draft.id, version: draft.version })
+    },
+  },
+  'sale.discard': {
+    run: async () => {
+      const draft = await newSale()
+      return asOwner('sale.discard', { id: draft.id, version: draft.version })
+    },
+  },
+  'sale.post': {
+    run: async () => {
+      const draft = await newSale()
+      return asOwner('sale.post', { id: draft.id, version: draft.version })
+    },
+  },
+  'sale.reverse': { run: async () => asOwner('sale.reverse', { id: (await newSale(true)).id }) },
+  'sale.correct': {
+    run: async () => asOwner('sale.correct', { id: (await newSale(true)).id, newId: newId() }),
+  },
+  'sale.fillDeliveryCost': {
+    run: async () =>
+      asOwner('sale.fillDeliveryCost', { id: (await newSale(true)).id, deliveryCost: '6' }),
+  },
+  'member.updateLocations': {
+    run: async () => {
+      const { memberId } = await newMember()
+      const { version } = await ok(
+        call<{ version: number }>(tenant.owner, 'member.locations', 'query', { memberId }),
+      )
+      return asOwner('member.updateLocations', {
+        memberId,
+        version,
+        locationIds: [tenant.branch.id],
+      })
     },
   },
   'books.close': {

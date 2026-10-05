@@ -13,8 +13,9 @@ import type {
 import { newId } from '@bizcost/domain'
 import {
   ALWAYS_ENABLED_MODULE_IDS,
-  MODULES,
+  MODULES as MANIFESTS,
   roleTemplateByKey,
+  withPreviewModules,
   type CapabilityKey,
   type ModuleId,
   type ModuleManifest,
@@ -23,11 +24,12 @@ import {
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { appRouter } from '../../src'
 import type { CallResult } from '../helpers'
-import { BAKER, setupBusiness, WORKSHOP } from '../settings'
+import { BAKER, join, setupBusiness, WORKSHOP } from '../settings'
 import {
   callProcedure,
   createTenant,
   openApi,
+  PREVIEW_MODULES,
   proceduresOf,
   tenantDigest,
   type Api,
@@ -35,6 +37,7 @@ import {
   type ProcedureInfo,
   type Tenant,
 } from './fixture'
+import { updateFieldsOf } from '../sales'
 import { inputLeaves, inputSchemaOf } from './schema'
 
 // What a business has switched off is refused by the API, not only hidden by the screens (ROADMAP.md
@@ -55,6 +58,12 @@ import { inputLeaves, inputSchemaOf } from './schema'
 //     input schemas and must be in HIDDEN_FIELDS: refused where its capability says it does not apply
 //     (nothing written), accepted where it does.
 
+/**
+ * The registry the suites' API serves: the manifests with the modules being built previewed (D-125;
+ * Sales since M3 Step 2), as a local server has them.
+ */
+const MODULES = withPreviewModules(PREVIEW_MODULES, MANIFESTS)
+
 /** Any of the groups, each with every module on; [] = no module gate. */
 type Gate = readonly (readonly ModuleId[])[]
 
@@ -73,14 +82,17 @@ const RECEIPTS: Gate = [
   ['files', 'purchases'],
   ['files', 'expenses'],
 ]
+const SALES: Gate = [['sales']]
+/** The books-closed date: purchases, expenses and sales obey it (D-227, D-236). */
+const BOOKS: Gate = [['purchases'], ['expenses'], ['sales']]
 
 const MODULE_GATES: Record<string, Gate> = {
   'attachment.add': RECEIPTS,
   'attachment.list': RECEIPTS,
   'attachment.remove': RECEIPTS,
   'attachment.uploadUrl': RECEIPTS,
-  'books.close': PURCHASES_OR_EXPENSES,
-  'books.get': PURCHASES_OR_EXPENSES,
+  'books.close': BOOKS,
+  'books.get': BOOKS,
   'business.context': NONE,
   'business.customization': NONE,
   'business.customize': NONE,
@@ -90,6 +102,11 @@ const MODULE_GATES: Record<string, Gate> = {
   'business.setDefaultLocale': NONE,
   'business.setLogo': NONE,
   'business.updateProfile': NONE,
+  'channel.archive': SALES,
+  'channel.create': SALES,
+  'channel.list': SALES,
+  'channel.unarchive': SALES,
+  'channel.update': SALES,
   'costCategory.archive': EXPENSES_OR_RUNNING_COSTS,
   'costCategory.create': EXPENSES_OR_RUNNING_COSTS,
   'costCategory.list': EXPENSES_OR_RUNNING_COSTS,
@@ -137,9 +154,12 @@ const MODULE_GATES: Record<string, Gate> = {
   'member.changeRole': NONE,
   'member.leave': NONE,
   'member.list': NONE,
+  // "Branches they work in": only while Sales is served (the module used per branch, Q12).
+  'member.locations': SALES,
   'member.permissions': NONE,
   'member.remove': NONE,
   'member.transferOwnership': NONE,
+  'member.updateLocations': SALES,
   'member.updatePermissions': NONE,
   'payable.list': PURCHASES_OR_EXPENSES,
   'payable.mine': PURCHASES_OR_EXPENSES,
@@ -182,6 +202,18 @@ const MODULE_GATES: Record<string, Gate> = {
   'runningCost.list': RUNNING_COSTS,
   'runningCost.remove': RUNNING_COSTS,
   'runningCost.update': RUNNING_COSTS,
+  // Sales depends on Products & Services: Customize turns it off with them (the handlers also check
+  // Products & Services before they read an item line's product).
+  'sale.correct': SALES,
+  'sale.create': SALES,
+  'sale.daySheet': [['sales', 'products']],
+  'sale.discard': SALES,
+  'sale.fillDeliveryCost': SALES,
+  'sale.get': SALES,
+  'sale.list': SALES,
+  'sale.post': SALES,
+  'sale.reverse': SALES,
+  'sale.update': SALES,
   'supplier.archive': SUPPLIERS,
   'supplier.create': SUPPLIERS,
   'supplier.get': SUPPLIERS,
@@ -207,9 +239,11 @@ const CAPABILITY_GATES: Record<string, CapabilityKey> = {
   'location.setDefault': 'multi_location',
   'member.changeRole': 'has_team',
   'member.list': 'has_team',
+  'member.locations': 'has_team',
   'member.permissions': 'has_team',
   'member.remove': 'has_team',
   'member.transferOwnership': 'has_team',
+  'member.updateLocations': 'has_team',
   'member.updatePermissions': 'has_team',
   'role.list': 'has_team',
   'role.updatePermissions': 'has_team',
@@ -768,6 +802,55 @@ const HIDDEN_FIELDS: Record<string, HiddenField | { notHidden: string }> = {
   'expense.update paidByMemberId': {
     notHidden: 'goes with paymentMethod paid_by_member (VALIDATION otherwise), refused with it',
   },
+  // Sales (M3 Step 2): a branch only with branches; a delivery priced with its VAT only with VAT.
+  'sale.create locationId': {
+    capability: 'multi_location',
+    input: (b) => create('sale.create', saleInput(b, { locationId: otherLocation(b) })),
+  },
+  'sale.update locationId': {
+    capability: 'multi_location',
+    input: (b) => saleUpdate(b, { locationId: otherLocation(b) }),
+  },
+  'sale.create lines.*.amountIncludesVat': {
+    capability: 'vat_registered',
+    input: (b) => create('sale.create', saleInput(b, deliveryWithVat())),
+  },
+  'sale.update lines.*.amountIncludesVat': {
+    capability: 'vat_registered',
+    input: (b) => saleUpdate(b, deliveryWithVat()),
+  },
+  'member.updateLocations locationIds.*': {
+    capability: 'multi_location',
+    input: async (b) => {
+      const person = await api.newPerson()
+      const memberId = await join(api.db, b.owner.user, b.id, person.user, 'employee')
+      const read = await as<{ version: number }>(b.owner, b.id, 'member.locations', { memberId })
+      return {
+        path: 'member.updateLocations',
+        input: { memberId, version: read.data?.version ?? 0, locationIds: [otherLocation(b)] },
+      }
+    },
+  },
+}
+
+/** A draft sale without lines (its only channel; the business's own default location). */
+function saleInput(b: Business, extra: object = {}) {
+  return { id: newId(), source: 'single', businessDate: b.today, lines: [], ...extra }
+}
+
+/** A delivery charged with its VAT. */
+const deliveryWithVat = () => ({
+  deliveryNeeded: true,
+  lines: [{ kind: 'delivery', id: newId(), amount: '5', amountIncludesVat: true }],
+})
+
+/** A draft sale saved without the field, then the whole draft with it. */
+async function saleUpdate(b: Business, extra: object) {
+  const draft = ok(
+    await as<{ data: { id: string; version: number } }>(b.owner, b.id, 'sale.create', saleInput(b)),
+  ).data
+  const fields = updateFieldsOf(saleInput(b, extra))
+  return { path: 'sale.update', input: { ...fields, id: draft.id, version: draft.version } }
 }
 
 /** Field names about what a capability turns on or off. */

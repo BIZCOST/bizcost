@@ -18,7 +18,7 @@ import {
 } from '@bizcost/i18n'
 import { useTranslation } from 'react-i18next'
 import { useUnitQuantity } from '@/features/catalog/unit-parts'
-import { useMoney, useUnitCost } from '@/features/purchasing/amounts'
+import { useMoney, useUnitCost } from '@/features/documents/amounts'
 import { useLocale, useTerminology } from '@/lib/i18n/client'
 import { useBusinessContext } from '@/lib/trpc/client'
 

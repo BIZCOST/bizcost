@@ -135,6 +135,35 @@ describe('settings sections', () => {
     expect(sectionOfPath(`/b/${id}/settings/costing`)).toBe('costing')
   })
 
+  it('offers sales channels only while Sales is on (served), with the key to change them (M3 Step 2)', () => {
+    const sales = { modules: [{ id: 'products' }, { id: 'sales' }] }
+    expect(isSectionVisible({ ...access('all'), ...sales }, 'channels')).toBe(true)
+    // A solo business sells too.
+    expect(isSectionVisible({ ...access('all', SOLO), ...sales }, 'channels')).toBe(true)
+    // Not served (planned, without the preview) or switched off: no section.
+    expect(isSectionVisible(access('all'), 'channels')).toBe(false)
+    // Entering or seeing sales is not changing the channels (Sales, Supervisor, Employee).
+    expect(
+      isSectionVisible(
+        { ...access(['sales.documents.view', 'sales.documents.manage']), ...sales },
+        'channels',
+      ),
+    ).toBe(false)
+    expect(isSectionVisible({ ...access(['sales.channels.manage']), ...sales }, 'channels')).toBe(
+      true,
+    )
+    // Sales obey the books-closed date too (D-227).
+    expect(visibleSections({ ...access('all', SOLO), ...sales })).toEqual([
+      'business',
+      'channels',
+      'modules',
+      'books',
+      'language',
+    ])
+    const id = '0190a4f2-7b5c-7c3e-9b1a-2f3c4d5e6f70'
+    expect(sectionOfPath(`/b/${id}/settings/channels`)).toBe('channels')
+  })
+
   it('reads the section from a settings path', () => {
     const id = '0190a4f2-7b5c-7c3e-9b1a-2f3c4d5e6f70'
     expect(sectionOfPath(`/b/${id}/settings`)).toBeNull()

@@ -6,7 +6,7 @@ import type { TerminologyProfile } from '@bizcost/domain'
 import { useQueries } from '@tanstack/react-query'
 import { useTranslation } from 'react-i18next'
 import { Badge } from '@/components/ui/badge'
-import { Locked, useMoney } from '@/features/purchasing/amounts'
+import { Locked, useMoney } from '@/features/documents/amounts'
 import { useTerminology } from '@/lib/i18n/client'
 import { NBSP } from './units'
 

@@ -13,6 +13,8 @@ import {
   type PurchaseDto,
   type PurchaseReturnDto,
   type RunningCostDto,
+  type SaleDto,
+  type SalesChannelDto,
   type SupplierDto,
 } from '@bizcost/contracts'
 import {
@@ -44,6 +46,7 @@ import {
   type Api,
   type Person,
 } from './fixture'
+import { updateFieldsOf } from '../sales'
 import { inputLeaves, inputSchemaOf, optionsOf } from './schema'
 
 // Redaction oracle over EVERY procedure whose output has sensitivity tags (ROADMAP.md Step 9; M1
@@ -232,6 +235,17 @@ let owedExpense: ExpenseDto
 let running: RunningCostDto
 const ownExpenses = new Map<Persona, string>()
 let costed: ProductDto
+let channel: SalesChannelDto
+let sold: SaleDto
+
+// Sales (M3 Step 2): a channel of its own with a commission of 17.25 % (`cost`), and the costed
+// product sold in it, 1 at its price: its cost frozen at posting is the beans' 18 g, 1.02834
+// (`cost`). A member who does not see every sale reads and changes their own sales only (D-181):
+// their cases use a sale they entered, with the same lines (the same cost). No case types a delivery
+// cost (one's own is read untagged in `ownDeliveryCost`, D-181; sales-visibility.api.test.ts), but
+// sale.fillDeliveryCost fills 11.47 once.
+const FEE_PERCENT = '17.25'
+const FILLED_DELIVERY = '11.47'
 
 // Product costs (M2 Step 6; D-202): a product of 18 g of the beans (1.02834 of materials) sold at
 // 99.99, its share of the running costs waiting for sales; the business's costs of last month: a
@@ -500,6 +514,82 @@ function runningInput(extra: object = {}) {
     startsOn: today,
     ...extra,
   }
+}
+
+function channelInput() {
+  return {
+    id: newId(),
+    name: `Oracle channel ${newId().slice(-8)}`,
+    kind: 'delivery_app',
+    feePercent: FEE_PERCENT,
+  }
+}
+
+async function newChannel(): Promise<SalesChannelDto> {
+  return (await asOwner<{ data: SalesChannelDto }>('channel.create', 'mutation', channelInput()))
+    .data
+}
+
+/** One of the costed product at its price, in the oracle's channel, today. */
+function saleInput(extra: object = {}) {
+  return {
+    id: newId(),
+    source: 'single',
+    businessDate: today,
+    channelId: channel.id,
+    lines: [
+      { kind: 'item', id: newId(), productId: costed.id, qty: '1', unitPrice: PRODUCT_PRICE },
+    ],
+    ...extra,
+  }
+}
+
+/** A member who does not see every sale changes and finalizes only their own (D-181, D-214). */
+function salesOnlyOwn(persona: Persona): boolean {
+  return persona !== 'owner' && !holds(persona, 'sales.documents.view')
+}
+
+/** A draft sale entered by `persona` when they may enter sales (their own), else by the owner. */
+async function ownSaleDraft(persona: Persona, extra: object = {}): Promise<SaleDto> {
+  if (persona === 'owner' || !holds(persona, 'sales.documents.manage')) {
+    return (await asOwner<{ data: SaleDto }>('sale.create', 'mutation', saleInput(extra))).data
+  }
+  const result = await callProcedure<{ data: SaleDto }>(
+    api.handler,
+    { path: 'sale.create', type: 'mutation' },
+    members.get(persona)!.token,
+    { businessId, input: saleInput(extra) },
+  )
+  expect(result.error, result.raw).toBeUndefined()
+  return result.data!.data
+}
+
+/** A finalized sale of the owner's. */
+async function newPostedSale(extra: object = {}): Promise<SaleDto> {
+  const draft = await ownSaleDraft('owner', extra)
+  return (
+    await asOwner<{ data: SaleDto }>('sale.post', 'mutation', {
+      id: draft.id,
+      version: draft.version,
+    })
+  ).data
+}
+
+/**
+ * A finalized sale `persona` may read: their own where they see only theirs, else the owner's (the
+ * fixture's, or a new one with `extra`).
+ */
+async function readableSale(persona: Persona, extra?: object): Promise<string> {
+  if (!salesOnlyOwn(persona)) return extra ? (await newPostedSale(extra)).id : sold.id
+  const draft = await ownSaleDraft(persona, extra)
+  const result = await callProcedure<{ data: SaleDto }>(
+    api.handler,
+    { path: 'sale.post', type: 'mutation' },
+    members.get(persona)!.token,
+    { businessId, input: { id: draft.id, version: draft.version } },
+  )
+  expect(result.error, result.raw).toBeUndefined()
+  return draft.id
 }
 
 /** Production procedures with sensitive output (M2 Step 3). */
@@ -800,6 +890,110 @@ const PRODUCTION_ORACLE: Record<string, OracleEntry> = {
     },
     valuesOf: { cost: [RUNNING, RUNNING_MONTHLY] },
   },
+  // Sales (M3 Step 2): every template holds a sales key (list and read); a channel's commission % is
+  // written only by a member who sees it (D-187).
+  'channel.list': { valuesOf: { cost: [FEE_PERCENT] } },
+  'channel.create': {
+    permission: 'sales.channels.manage',
+    prepare: () => Promise.resolve(channelInput()),
+    valuesOf: { cost: [FEE_PERCENT] },
+    needsVisible: 'cost',
+  },
+  'channel.update': {
+    permission: 'sales.channels.manage',
+    prepare: async () => {
+      const created = await newChannel()
+      return {
+        id: created.id,
+        version: created.version,
+        name: created.name,
+        kind: created.kind,
+        feePercent: FEE_PERCENT,
+      }
+    },
+    valuesOf: { cost: [FEE_PERCENT] },
+    needsVisible: 'cost',
+  },
+  'channel.archive': {
+    permission: 'sales.channels.manage',
+    prepare: async () => ({ id: (await newChannel()).id }),
+    valuesOf: { cost: [FEE_PERCENT] },
+  },
+  'channel.unarchive': {
+    permission: 'sales.channels.manage',
+    prepare: async () => {
+      const created = await newChannel()
+      await asOwner('channel.archive', 'mutation', { id: created.id })
+      return { id: created.id }
+    },
+    valuesOf: { cost: [FEE_PERCENT] },
+  },
+  'sale.get': {
+    prepare: async (persona) => ({ id: await readableSale(persona) }),
+    valuesOf: { cost: [RECIPE_COST] },
+  },
+  // A draft has no cost yet.
+  'sale.create': {
+    permission: 'sales.documents.manage',
+    prepare: () => Promise.resolve(saleInput()),
+    valuesOf: { cost: [] },
+  },
+  'sale.update': {
+    permission: 'sales.documents.manage',
+    prepare: async (persona) => {
+      const draft = await ownSaleDraft(persona)
+      const fields = updateFieldsOf(saleInput())
+      return { ...fields, id: draft.id, version: draft.version }
+    },
+    valuesOf: { cost: [] },
+  },
+  'sale.post': {
+    permission: 'sales.documents.post',
+    prepare: async (persona) => {
+      const draft = await ownSaleDraft(persona)
+      return { id: draft.id, version: draft.version }
+    },
+    valuesOf: { cost: [RECIPE_COST] },
+  },
+  'sale.reverse': {
+    permission: 'sales.documents.reverse',
+    prepare: async () => ({ id: (await newPostedSale()).id }),
+    valuesOf: { cost: [RECIPE_COST] },
+  },
+  // The copy is a draft: no cost (its delivery cost only for a member who sees costs, D-231).
+  'sale.correct': {
+    permission: 'sales.documents.reverse',
+    prepare: async () => ({ id: (await newPostedSale()).id, newId: newId() }),
+    valuesOf: { cost: [] },
+  },
+  // A sale the member may read: their own where they see only theirs.
+  'sale.fillDeliveryCost': {
+    permission: 'sales.documents.manage',
+    prepare: async (persona) => ({
+      id: await readableSale(persona, { deliveryNeeded: true }),
+      deliveryCost: FILLED_DELIVERY,
+    }),
+    valuesOf: { cost: [FILLED_DELIVERY, RECIPE_COST] },
+    needsVisible: 'cost',
+  },
+  // The caller's own sheet of the day: each member who enters sales finalizes one first.
+  'sale.daySheet': {
+    permission: 'sales.documents.manage',
+    prepare: async (persona) => {
+      if (holds(persona, 'sales.documents.manage') && holds(persona, 'sales.documents.post')) {
+        const draft = await ownSaleDraft(persona, { source: 'day_sheet' })
+        const result = await callProcedure(
+          api.handler,
+          { path: 'sale.post', type: 'mutation' },
+          members.get(persona)!.token,
+          { businessId, input: { id: draft.id, version: draft.version } },
+        )
+        expect(result.error, result.raw).toBeUndefined()
+      }
+      return { businessDate: today, channelId: channel.id }
+    },
+    valuesOf: { cost: [RECIPE_COST] },
+  },
   // Without supplier prices, only to one's own draft (D-184, D-200).
   'attachment.add': {
     permission: 'purchases.documents.manage',
@@ -1004,6 +1198,8 @@ beforeAll(async () => {
   spent = await newExpensePosted()
   owedExpense = await newOwedExpense()
   await asOwner('expensePayment.record', 'mutation', expensePaymentInput(owedExpense.id))
+  channel = await newChannel()
+  sold = await newPostedSale()
   running = (
     await asOwner<{ data: RunningCostDto }>('runningCost.create', 'mutation', runningInput())
   ).data
@@ -1261,6 +1457,37 @@ describe('each role template, and each changed by overrides, receives exactly th
   })
 })
 
+// The owner's minutes frozen on a sale (D-119: a `cost`). This business has a team, so its sales
+// freeze none; a sale finalized before the business took on a team keeps them. Each persona reads a
+// sale of theirs to which such minutes are written as that posting wrote them (past the guard of posted
+// rows, as a test may): they come back only with the costs switch (D-236).
+describe('the owner’s minutes a sale froze before the team are a `cost` (D-119, D-236)', () => {
+  // More than 59: never inside a timestamp's seconds.
+  const MINUTES = '83.47'
+
+  it.each(PERSONAS)('sale.get as %s: the minutes only with the costs switch', async (persona) => {
+    const id = await readableSale(persona, {})
+    await api.admin.begin(async (sql) => {
+      await sql`set local session_replication_role = replica`
+      await sql`
+        update app.sale_lines set time_minutes = ${MINUTES}
+         where business_id = ${businessId} and sale_id = ${id} and kind = 'item'`
+    })
+    const result = await callProcedure<{ meta: { redacted: string[] } }>(
+      api.handler,
+      { path: 'sale.get', type: 'query' },
+      members.get(persona)!.token,
+      { businessId, input: { id } },
+    )
+    expect(result.error, result.raw).toBeUndefined()
+    const seesCosts = visibleTo(persona).includes('cost')
+    expect(result.raw.includes(MINUTES), result.raw).toBe(seesCosts)
+    expect(result.data?.meta.redacted.some((p) => p.endsWith('lines.*.timeMinutes'))).toBe(
+      !seesCosts,
+    )
+  })
+})
+
 describe('the Dashboard cost steps count costs only for the members who see them (D-193)', () => {
   it.each(PERSONAS)('%s', async (persona) => {
     const person = members.get(persona)
@@ -1316,6 +1543,11 @@ const PLAIN_QUERY_FIELDS: Record<string, string> = {
   party: 'what is owed to suppliers or to members (the list itself needs supplier prices)',
   from: 'a business day',
   to: 'a business day',
+  businessDate: 'a business day',
+  periodFrom: 'a business day',
+  source: 'how a sale came in (Today’s sales or One sale)',
+  channelId: 'names a record (a filter on the sales channel)',
+  locationId: 'names a record (a filter on the branch)',
   periodMonth: 'the month an expense is for',
   order: 'the direction of a sort the member may use',
 }

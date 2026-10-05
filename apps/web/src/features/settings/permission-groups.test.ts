@@ -30,6 +30,7 @@ describe('permission groups of the Roles section', () => {
       'expenses',
       'running_costs',
       'cost_engine',
+      'sales',
       'data',
     ])
     expect(groups.flatMap((g) => g.keys).sort()).toEqual([...PERMISSION_CATALOG].sort())
@@ -53,6 +54,7 @@ describe('permission groups of the Roles section', () => {
       'expenses',
       'running_costs',
       'cost_engine',
+      'sales',
       'orders',
       'data',
     ])

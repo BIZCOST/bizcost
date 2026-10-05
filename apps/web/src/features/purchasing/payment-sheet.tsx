@@ -32,10 +32,10 @@ import {
 } from '@/components/ui/sheet'
 import { Textarea } from '@/components/ui/textarea'
 import type { FieldError } from '@/features/catalog/numbers'
-import { useMoney } from './amounts'
-import { firstOpenDay } from './books'
+import { useMoney } from '@/features/documents/amounts'
+import { firstOpenDay } from '@/features/documents/books'
+import { MoneyInput } from '@/features/documents/line-editor'
 import { checkPayment, PAYMENT_MISSING, paymentDraft, type PaymentDraft } from './payment-draft'
-import { MoneyInput } from './purchase-lines'
 
 // "Record a payment" of what is owed on a purchase (the owner's request of 2026-09-29) or an expense
 // (M2 Step 5, D-166), from the document or from Amounts owed: the day, how it was paid, how much (all

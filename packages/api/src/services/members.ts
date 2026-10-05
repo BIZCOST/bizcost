@@ -2,15 +2,19 @@ import type {
   ChangeMemberRoleInput,
   MemberDto,
   MemberIdInput,
+  MemberLocationsDto,
+  MemberLocationsInput,
   MemberPermissionsDto,
   MemberPermissionsInput,
   OkDto,
   PermissionOverrideDto,
+  UpdateMemberLocationsInput,
   UpdateMemberPermissionsInput,
 } from '@bizcost/contracts'
 import {
   businesses,
   businessMembers,
+  memberLocations,
   memberPermissionOverrides,
   rolePermissions,
   roles,
@@ -37,7 +41,8 @@ import type { BusinessCtx } from '../business-context'
 import { AppError } from '../errors'
 import { revokeInvitationsBeyondSenders, revokeInvitationsSentBy } from './invitations'
 import { assertRecentSignIn } from './reauth'
-import { canGrant, isOwner } from './team-rules'
+import { uuidArray } from './stock'
+import { canGrant, coversBranches, isOwner } from './team-rules'
 
 // Settings → Team, members (ROADMAP.md Step 6): list, change role, remove, transfer ownership. Only for
 // a business with a team (capability has_team, checked by the router). The owner is changed only by a
@@ -231,7 +236,8 @@ export async function listMembers(ctx: BusinessCtx): Promise<MemberDto[]> {
 /**
  * `member.changeRole` (settings.members.manage): any role except the Owner role, for anyone except the
  * owner (OWNER_TRANSFER_REQUIRED) and the caller. A non-owner may only move members whose access, now
- * and with the new role (their own changes stay with them), is nothing beyond their own (FORBIDDEN).
+ * and with the new role (their own changes stay with them), is nothing beyond their own, and a caller
+ * limited to some branches only members limited within them (FORBIDDEN, D-236).
  */
 export async function changeMemberRole(
   ctx: BusinessCtx,
@@ -261,6 +267,10 @@ export async function changeMemberRole(
     if (!canGrant(ctx.access, now.keys) || !canGrant(ctx.access, then.keys)) {
       throw new AppError('forbidden', { message: 'cannot grant access beyond your own' })
     }
+    // A caller limited to some branches moves only members limited within them (D-236).
+    if (!coversBranches(ctx.access, await locationIdsOf(tx, ctx.businessId, member.id))) {
+      throw new AppError('forbidden', { message: 'cannot change a member beyond your branches' })
+    }
     if (member.roleId !== role.id) {
       await tx
         .update(businessMembers)
@@ -282,7 +292,7 @@ export async function changeMemberRole(
  * `member.remove` (settings.members.manage): the membership becomes `removed` (never deleted) and the
  * member is refused on their next request. The owner cannot be removed (OWNER_TRANSFER_REQUIRED); a
  * non-owner may remove only members whose access (their role and their own changes) is nothing beyond
- * their own. Removing
+ * their own, and a caller limited to some branches only members limited within them (D-236). Removing
  * yourself (not the owner) leaves the business.
  */
 export async function removeMember(ctx: BusinessCtx, input: MemberIdInput): Promise<OkDto> {
@@ -291,7 +301,8 @@ export async function removeMember(ctx: BusinessCtx, input: MemberIdInput): Prom
     if (member.roleTemplateKey === OWNER_TEMPLATE_KEY) throw new AppError('owner_transfer_required')
     if (
       member.id !== ctx.access.memberId &&
-      !canGrant(ctx.access, (await memberAccess(tx, ctx.businessId, member)).keys)
+      (!canGrant(ctx.access, (await memberAccess(tx, ctx.businessId, member)).keys) ||
+        !coversBranches(ctx.access, await locationIdsOf(tx, ctx.businessId, member.id)))
     ) {
       throw new AppError('forbidden', { message: 'cannot remove a member with more access' })
     }
@@ -440,7 +451,11 @@ async function memberPermissionsOf(
     roleKeys: sortedKeys(keys.filter(isCatalogPermissionKey)),
     overrides: overrides.filter((o) => isCatalogPermissionKey(o.key)),
     effectiveKeys: sortedKeys(effective.keys),
-    editable: !owner && !isYou && canGrant(ctx.access, effective.keys),
+    editable:
+      !owner &&
+      !isYou &&
+      canGrant(ctx.access, effective.keys) &&
+      coversBranches(ctx.access, owner ? [] : await locationIdsOf(tx, ctx.businessId, member.id)),
     version: member.permissionsVersion,
   }
 }
@@ -490,7 +505,8 @@ function differences(
  * (PERMISSION_NEEDS: costs, supplier prices and margins only together; VALIDATION). Not the owner
  * (VALIDATION: they have every permission) and not the caller's own access (FORBIDDEN). "No access
  * beyond your own": a caller who is not the owner changes only a member who may do nothing beyond the
- * caller, only keys the caller holds, and leaves them nothing beyond the caller (FORBIDDEN). Saving
+ * caller (nor, for a caller limited to some branches, one who works beyond them: D-236), only keys the
+ * caller holds, and leaves them nothing beyond the caller (FORBIDDEN). Saving
  * bumps the member's permissions version (their apps reload their access) and revokes the pending
  * invitations they could no longer send.
  */
@@ -521,7 +537,10 @@ export function updateMemberPermissions(
     const current = await overridesOf(tx, ctx.businessId, member.id)
     const before = accessOf(member.roleTemplateKey, keys, current)
     // A member with more access than the caller's is left alone.
-    if (!canGrant(ctx.access, before.keys)) {
+    if (
+      !canGrant(ctx.access, before.keys) ||
+      !coversBranches(ctx.access, await locationIdsOf(tx, ctx.businessId, member.id))
+    ) {
       throw new AppError('forbidden', { message: 'cannot change a member with more access' })
     }
     const wanted = differences(input.overrides, new Set(keys))
@@ -591,5 +610,156 @@ export function updateMemberPermissions(
       await revokeInvitationsBeyondSenders(tx, ctx.businessId)
     }
     return memberPermissionsOf(tx, ctx, await lockMember(tx, ctx.businessId, member.id))
+  })
+}
+
+// ---------------------------------------------------------------------------------------------------
+// A member's branches (M3 Step 2, Q12; D-054, D-191)
+// ---------------------------------------------------------------------------------------------------
+
+/** The live member_locations of a member (empty: every branch, D-054), sorted. */
+async function locationIdsOf(tx: Tx, businessId: string, memberId: string): Promise<string[]> {
+  const rows = await tx
+    .select({ locationId: memberLocations.locationId })
+    .from(memberLocations)
+    .where(
+      and(
+        eq(memberLocations.businessId, businessId),
+        eq(memberLocations.memberId, memberId),
+        isNull(memberLocations.deletedAt),
+      ),
+    )
+  return rows.map((row) => row.locationId).sort()
+}
+
+async function memberLocationsOf(
+  tx: Tx,
+  ctx: BusinessCtx,
+  member: MemberRow,
+): Promise<MemberLocationsDto> {
+  const owner = member.roleTemplateKey === OWNER_TEMPLATE_KEY
+  const isYou = member.id === ctx.access.memberId
+  const ids = owner ? [] : await locationIdsOf(tx, ctx.businessId, member.id)
+  const access = owner ? null : await memberAccess(tx, ctx.businessId, member)
+  return {
+    memberId: member.id,
+    locationIds: ids,
+    editable:
+      !owner &&
+      !isYou &&
+      access !== null &&
+      canGrant(ctx.access, access.keys) &&
+      coversBranches(ctx.access, ids),
+    version: member.permissionsVersion,
+  }
+}
+
+/**
+ * `member.locations` ("Branches they work in", Q12; module sales, a team and branches): the branches
+ * a member (not removed; NOT_FOUND otherwise) works in, empty for all of them (the Owner always), and
+ * whether the caller may change it.
+ */
+export function getMemberLocations(
+  ctx: BusinessCtx,
+  input: MemberLocationsInput,
+): Promise<MemberLocationsDto> {
+  return ctx.tx(async (tx) => {
+    const [member] = await membersQuery(tx).where(
+      and(
+        eq(businessMembers.businessId, ctx.businessId),
+        eq(businessMembers.id, input.memberId),
+        isNull(businessMembers.deletedAt),
+        ne(businessMembers.status, 'removed'),
+      ),
+    )
+    if (!member) throw new AppError('not_found')
+    return memberLocationsOf(tx, ctx, member)
+  })
+}
+
+/**
+ * `member.updateLocations`: the branches a member works in, all of them (empty: every branch, those
+ * added later included), `version` as read (the member's permissions version: CONFLICT when their
+ * access moved on). Each a live location of the business (NOT_FOUND). Not the Owner (VALIDATION: they
+ * work everywhere) and not one's own (FORBIDDEN). "No access beyond your own": a caller who is not the
+ * owner changes only a member who may do nothing beyond the caller, and a caller limited to some
+ * branches only a member limited within them, and only to some of theirs (FORBIDDEN). Saving bumps the
+ * member's permissions version (their apps reload their access) and revokes the pending invitations
+ * they sent beyond their branches now (D-236); a member limited to a branch sees and enters only its
+ * sales (Q12).
+ */
+export function updateMemberLocations(
+  ctx: BusinessCtx,
+  input: UpdateMemberLocationsInput,
+): Promise<MemberLocationsDto> {
+  return ctx.tx(async (tx) => {
+    const member = await lockMember(tx, ctx.businessId, input.memberId)
+    if (member.roleTemplateKey === OWNER_TEMPLATE_KEY) {
+      throw new AppError('validation', { message: 'the owner works in every branch' })
+    }
+    if (member.id === ctx.access.memberId) {
+      throw new AppError('forbidden', { message: 'members cannot change their own branches' })
+    }
+    // The branches named first (a reference of another business is NOT_FOUND whatever the version).
+    const wanted = [...new Set(input.locationIds.map((id) => id.toLowerCase()))].sort()
+    if (wanted.length > 0) {
+      const found = await tx.execute(sql`
+        select l.id from app.locations l
+         where l.business_id = ${ctx.businessId} and l.deleted_at is null
+           and l.id = any(${uuidArray(wanted)})
+      `)
+      if ((found as unknown as unknown[]).length !== wanted.length) {
+        throw new AppError('not_found')
+      }
+    }
+    if (member.permissionsVersion !== input.version) throw new AppError('conflict')
+    const current = await locationIdsOf(tx, ctx.businessId, member.id)
+    const access = await memberAccess(tx, ctx.businessId, member)
+    if (
+      !canGrant(ctx.access, access.keys) ||
+      !coversBranches(ctx.access, current) ||
+      !coversBranches(ctx.access, wanted)
+    ) {
+      throw new AppError('forbidden', { message: 'cannot give branches beyond your own' })
+    }
+    const removed = current.filter((id) => !wanted.includes(id))
+    const added = wanted.filter((id) => !current.includes(id))
+    if (removed.length > 0 || added.length > 0) {
+      if (removed.length > 0) {
+        await tx
+          .update(memberLocations)
+          .set({ deletedAt: sql`now()` })
+          .where(
+            and(
+              eq(memberLocations.businessId, ctx.businessId),
+              eq(memberLocations.memberId, member.id),
+              inArray(memberLocations.locationId, removed),
+              isNull(memberLocations.deletedAt),
+            ),
+          )
+      }
+      for (const locationId of added) {
+        await tx
+          .insert(memberLocations)
+          .values({ id: newId(), businessId: ctx.businessId, memberId: member.id, locationId })
+          .onConflictDoUpdate({
+            target: [
+              memberLocations.businessId,
+              memberLocations.memberId,
+              memberLocations.locationId,
+            ],
+            set: { deletedAt: null },
+          })
+      }
+      await tx
+        .update(businessMembers)
+        .set({ permissionsVersion: sql`${businessMembers.permissionsVersion} + 1` })
+        .where(
+          and(eq(businessMembers.businessId, ctx.businessId), eq(businessMembers.id, member.id)),
+        )
+      // The invitations they sent that reach beyond their branches now stop working (D-236).
+      await revokeInvitationsBeyondSenders(tx, ctx.businessId)
+    }
+    return memberLocationsOf(tx, ctx, await lockMember(tx, ctx.businessId, member.id))
   })
 }

@@ -233,8 +233,8 @@ describe('the dev-only preview (D-125)', () => {
   const registry = MODULES.map((m) => (m.id === 'orders' ? building : m))
   const ordersOn = resolveEnabledModules([{ key: 'orders', enabled: true }])
 
-  it('may show only planned modules whose build started: none since the Costing Core was released', () => {
-    expect(PREVIEWABLE_MODULE_IDS).toEqual([])
+  it('may show only planned modules whose build started: Sales since M3 Step 2', () => {
+    expect(PREVIEWABLE_MODULE_IDS).toEqual(['sales'])
   })
 
   it('parses a comma or space separated list, ignores released modules, and names what it cannot preview', () => {
@@ -352,14 +352,14 @@ describe('the Costing Core, released (M2 Step 7)', () => {
     expect(tabs(canFor(OWNER_TEMPLATE_KEY))).toEqual([
       ['dashboard', 1],
       ['settings', null],
-      ['products', 3],
-      ['materials', 6],
+      ['products', 4],
+      ['materials', 7],
       ['suppliers', null],
-      ['purchases', 5],
+      ['purchases', 6],
       ['payables', null],
-      ['expenses', 4],
+      ['expenses', 5],
       ['running_costs', null],
-      ['product_costs', 2],
+      ['product_costs', 3],
     ])
   })
 })

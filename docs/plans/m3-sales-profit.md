@@ -181,7 +181,7 @@ Release rule:
 
   - Depends on: M2; D-216's domain change merged.
 
-- [ ] **Step 2: Today's sales and One sale, finalized with their cost** (APPROVED; decisions Q9–Q12).
+- [x] **Step 2: Today's sales and One sale, finalized with their cost** (DONE 2026-10-05; decisions Q9–Q12; built as D-225–D-235, review fixes D-236. Checks at the end: `pnpm check` 31/31 tasks with 1,620 unit tests, `pnpm db:test` 1,288 pgTAP + 59 database tests, `pnpm api:test` 2,117 tests in 73 files, `pnpm e2e` 136 passed; ROADMAP.md holds the status).
   - **Data** (migrations `sales_tables`, `sales_security`):
     - `sales_channels`: one table for every way a business sells.
       - `name`, one per business by `app.name_key`.

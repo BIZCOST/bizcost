@@ -102,6 +102,7 @@ export {
   type WorkSetup,
   type Workplace,
 } from './setup/answers'
+export { starterSalesChannels } from './setup/channels'
 export {
   isQuestionShown,
   isSetupQuestionId,

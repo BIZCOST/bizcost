@@ -170,7 +170,7 @@ const PRODUCTS = {
       path: 'products',
       icon: 'tag',
       group: 'main',
-      tab: 3,
+      tab: 4,
       permission: 'products.items.view',
     },
   ],
@@ -204,7 +204,7 @@ const MATERIALS = {
       path: 'materials',
       icon: 'package',
       group: 'main',
-      tab: 6,
+      tab: 7,
       permission: 'materials.items.view',
     },
   ],
@@ -264,7 +264,7 @@ const PURCHASES = {
       path: 'purchases',
       icon: 'shopping-cart',
       group: 'main',
-      tab: 5,
+      tab: 6,
       permission: 'purchases.documents.view',
     },
     {
@@ -320,7 +320,7 @@ const EXPENSES = {
       path: 'expenses',
       icon: 'receipt',
       group: 'main',
-      tab: 4,
+      tab: 5,
       permission: 'expenses.documents.view',
     },
     {
@@ -393,7 +393,7 @@ const COST_ENGINE = {
       path: 'product-costs',
       icon: 'calculator',
       group: 'main',
-      tab: 2,
+      tab: 3,
       permission: 'cost_engine.product_costs.view',
     },
   ],
@@ -417,6 +417,70 @@ const FILES = {
   nav: [],
   quickActions: [],
   sensitiveFields: ['supplier_price'],
+  requiresCapabilities: [],
+} as const satisfies ModuleManifest
+
+// Sales (M3 Step 2; planned until Release A in Step 6, served before that only under the dev-only
+// preview, D-125): Today's sales (one sheet per member, day and channel and branch, Q9, Q10) and One
+// sale, finalized with the cost of what was sold frozen on the sale's day (D-219, D-222), and the
+// business's sales channels. `sales.documents.view` sees every sale, and so the sales totals (H1);
+// without it a member who enters sales sees only their own (D-181, D-214). A member limited to some
+// branches sees and enters only theirs (Q12, member_locations). The cost snapshot, a delivery's cost
+// and a channel's commission are `cost`. Its page is reached with either "see every sale" or "enter
+// sales" (two entries of one page, listed once by buildModuleNav). Its screens (D-233): the phone's
+// tab bar of Q14 (Home | Sales | + | Costs | More: claim 2, before Product costs and Products, whose
+// claims keep their order, so a business without Sales keeps its tabs), and "+" for Today's sales
+// and a new sale, for those who enter sales.
+const SALES = {
+  id: 'sales',
+  kind: 'core',
+  availability: 'planned',
+  phase: 3,
+  deps: ['products'],
+  permissionKeys: [
+    'sales.documents.view',
+    'sales.documents.manage',
+    'sales.documents.post',
+    'sales.documents.reverse',
+    'sales.channels.manage',
+  ],
+  nav: [
+    {
+      id: 'sales',
+      labelKey: 'nav.sales',
+      path: 'sales',
+      icon: 'banknote',
+      group: 'main',
+      tab: 2,
+      permission: 'sales.documents.view',
+    },
+    {
+      id: 'sales',
+      labelKey: 'nav.sales',
+      path: 'sales',
+      icon: 'banknote',
+      group: 'main',
+      tab: 2,
+      permission: 'sales.documents.manage',
+    },
+  ],
+  quickActions: [
+    {
+      id: 'today_sales',
+      labelKey: 'nav.today_sales',
+      path: 'sales/today',
+      icon: 'calendar-check',
+      permission: 'sales.documents.manage',
+    },
+    {
+      id: 'new_sale',
+      labelKey: 'nav.new_sale',
+      path: 'sales/new',
+      icon: 'banknote',
+      permission: 'sales.documents.manage',
+    },
+  ],
+  sensitiveFields: ['cost'],
   requiresCapabilities: [],
 } as const satisfies ModuleManifest
 
@@ -464,7 +528,7 @@ export const MODULES = [
   FILES,
   COST_ENGINE,
   planned('customers', 'core', 3),
-  planned('sales', 'core', 3),
+  SALES,
   planned('payments', 'core', 3),
   planned('reports', 'core', 3),
   planned('orders', 'optional', 3, { deps: ['products', 'customers', 'payments'] }),

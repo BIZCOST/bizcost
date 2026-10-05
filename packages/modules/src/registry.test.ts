@@ -54,9 +54,17 @@ describe('module manifests', () => {
   })
 
   it('give planned modules no permission keys, nav or quick actions until their build starts (no stubs)', () => {
-    // None is being built between M2 Step 7 and Phase 3; a module gets its keys and nav when its
-    // build starts and stays planned (hidden) until it is released (D-124, D-125).
-    for (const m of MODULES.filter((x) => x.availability === 'planned')) {
+    // A module gets its keys and nav when its build starts and stays planned (hidden) until it is
+    // released (D-124, D-125). M3 Step 2 builds Sales (released with Release A, Step 6).
+    const started = MODULES.filter(
+      (m) => m.availability === 'planned' && (m.permissionKeys.length > 0 || m.nav.length > 0),
+    )
+    expect(started.map((m) => m.id)).toEqual(['sales'])
+    for (const m of started) {
+      expect(m.permissionKeys.length, m.id).toBeGreaterThan(0)
+      expect(m.nav.length, m.id).toBeGreaterThan(0)
+    }
+    for (const m of MODULES.filter((x) => x.availability === 'planned' && !started.includes(x))) {
       expect(m.permissionKeys, m.id).toEqual([])
       expect(m.nav, m.id).toEqual([])
       expect(m.quickActions, m.id).toEqual([])
@@ -79,22 +87,37 @@ describe('module manifests', () => {
   })
 
   it('give each main nav entry at most one claim to the phone tab bar, 1 first, never Settings', () => {
-    const claims = MODULES.flatMap((m) =>
-      m.nav.flatMap((entry) =>
-        'tab' in entry && entry.tab !== undefined ? [[entry.id, entry.tab]] : [],
-      ),
-    )
+    // A page reached by two keys (Sales: see every sale, or enter sales) has one entry per key, each
+    // with the same claim: it is one place in the tab bar.
+    const claims = [
+      ...new Map(
+        MODULES.flatMap((m) =>
+          m.nav.flatMap((entry) =>
+            'tab' in entry && entry.tab !== undefined
+              ? [[`${entry.id} ${entry.tab}`, [entry.id, entry.tab] as const] as const]
+              : [],
+          ),
+        ),
+      ).values(),
+    ]
     // M2 Step 7: Home, then Product costs, Products, Expenses, Purchases, Materials; an owner's phone
     // gets Home, Products, +, Product costs and More, and an employee's Home, Products, +,
-    // Expenses and More (the tabs keep the nav's order).
+    // Expenses and More (the tabs keep the nav's order). M3 Step 2 (D-233): Sales claims the place
+    // after Home (Q14: Home | Sales | + | Costs | More), the others keep their order, so a business
+    // without Sales keeps its tabs.
     expect(claims).toEqual([
       ['dashboard', 1],
-      ['products', 3],
-      ['materials', 6],
-      ['purchases', 5],
-      ['expenses', 4],
-      ['product_costs', 2],
+      ['products', 4],
+      ['materials', 7],
+      ['purchases', 6],
+      ['expenses', 5],
+      ['product_costs', 3],
+      ['sales', 2],
     ])
+    for (const m of MODULES) {
+      const ranks = new Set(m.nav.flatMap((entry) => ('tab' in entry ? [entry.tab] : [])))
+      expect(ranks.size, m.id).toBeLessThanOrEqual(1)
+    }
     const ranks = claims.map(([, rank]) => rank)
     expect(new Set(ranks).size).toBe(ranks.length)
     for (const m of MODULES) {
@@ -107,7 +130,7 @@ describe('module manifests', () => {
     }
   })
 
-  it('offer "+" for a new product or service, purchase and expense, each with the key to enter it', () => {
+  it('offer "+" for a new product or service, purchase, expense and sale, and Today\'s sales, each with the key to enter it', () => {
     const actions = MODULES.flatMap((m) =>
       m.quickActions.map((a) => [m.id, a.id, a.path, a.permission ?? null]),
     )
@@ -115,6 +138,9 @@ describe('module manifests', () => {
       ['products', 'new_product', 'products/new', 'products.items.manage'],
       ['purchases', 'new_purchase', 'purchases/new', 'purchases.documents.manage'],
       ['expenses', 'new_expense', 'expenses/new', 'expenses.documents.manage'],
+      // M3 Step 2 (planned: shown only under the dev-only preview until Release A).
+      ['sales', 'today_sales', 'sales/today', 'sales.documents.manage'],
+      ['sales', 'new_sale', 'sales/new', 'sales.documents.manage'],
     ])
   })
 
@@ -218,6 +244,9 @@ describe('module manifests', () => {
       ['payables', 'main'],
       ['running_costs', 'main'],
       ['product_costs', 'main'],
+      // Sales (M3 Step 2): one page, reached with "see every sale" or with "enter sales".
+      ['sales', 'main'],
+      ['sales', 'main'],
     ])
   })
 
@@ -231,7 +260,7 @@ describe('module manifests', () => {
 })
 
 describe('permission catalog', () => {
-  it('holds the keys of dashboard, settings, products, materials, suppliers, purchases, expenses and running costs, and one data key per sensitivity category', () => {
+  it('holds the keys of dashboard, settings, products, materials, suppliers, purchases, expenses, running costs, the cost engine and sales, and one data key per sensitivity category', () => {
     expect([...PERMISSION_CATALOG].sort()).toEqual(
       [
         'dashboard.home.view',
@@ -269,6 +298,11 @@ describe('permission catalog', () => {
         'running_costs.items.manage',
         'cost_engine.product_costs.view',
         'cost_engine.settings.manage',
+        'sales.documents.view',
+        'sales.documents.manage',
+        'sales.documents.post',
+        'sales.documents.reverse',
+        'sales.channels.manage',
         'data.cost.view',
         'data.profit_margin.view',
         'data.supplier_price.view',
@@ -381,6 +415,11 @@ describe('role templates', () => {
         'running_costs.items.manage',
         'cost_engine.product_costs.view',
         'cost_engine.settings.manage',
+        'sales.documents.view',
+        'sales.documents.manage',
+        'sales.documents.post',
+        'sales.documents.reverse',
+        'sales.channels.manage',
         'data.cost.view',
         'data.profit_margin.view',
         'data.supplier_price.view',
@@ -398,13 +437,23 @@ describe('role templates', () => {
         'expenses.documents.view',
         'running_costs.items.view',
         'cost_engine.product_costs.view',
+        'sales.documents.view',
         'data.cost.view',
         'data.profit_margin.view',
         'data.supplier_price.view',
         'data.payroll.view',
       ].sort(),
     )
-    expect(keysOf('sales')).toEqual(['dashboard.home.view', 'products.items.view'])
+    // M3 Step 2, the plan's Q10 table: Sales and Supervisor see every sale, enter and finalize.
+    expect(keysOf('sales')).toEqual(
+      [
+        'dashboard.home.view',
+        'products.items.view',
+        'sales.documents.view',
+        'sales.documents.manage',
+        'sales.documents.post',
+      ].sort(),
+    )
     expect(keysOf('supervisor')).toEqual(
       [
         'dashboard.home.view',
@@ -412,10 +461,14 @@ describe('role templates', () => {
         'products.items.view',
         'products.recipes.view',
         'materials.items.view',
+        'sales.documents.view',
+        'sales.documents.manage',
+        'sales.documents.post',
       ].sort(),
     )
     // The owner's answers of 2026-09-29 (D-179, D-180): what goes into each product (quantities) and
     // the materials it names, and entering expenses to send them for approval; nothing sensitive.
+    // M3 Step 2 (Q10): entering and finalizing sales, their own only (no "see every sale").
     expect(keysOf('employee')).toEqual(
       [
         'dashboard.home.view',
@@ -424,6 +477,8 @@ describe('role templates', () => {
         'materials.items.view',
         'expenses.documents.view',
         'expenses.documents.manage',
+        'sales.documents.manage',
+        'sales.documents.post',
       ].sort(),
     )
     expect(keysMissingNeeds(keysOf('employee'))).toEqual([])

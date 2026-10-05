@@ -271,6 +271,18 @@ export {
   type StockMovementKind,
   type VatInCostInput,
 } from './purchasing/keys'
+// Sales (M3 Step 2): channels, how a sale came in, the starter channels and the presets.
+export {
+  SALE_LINE_QTY_MAX,
+  SALE_SOURCES,
+  SALES_CHANNEL_KINDS,
+  SALES_CHANNEL_PRESETS,
+  STARTER_SALES_CHANNELS,
+  type SaleSource,
+  type SalesChannelKind,
+  type SalesChannelPreset,
+  type StarterSalesChannel,
+} from './sales/keys'
 // Expenses and running costs (M2 Step 5): statuses and approval, amounts, monthly amounts.
 export {
   EXPENSE_PAYS,

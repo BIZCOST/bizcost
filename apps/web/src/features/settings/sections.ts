@@ -10,6 +10,7 @@ import type { PermissionKey } from '@bizcost/modules'
 export const SETTINGS_SECTIONS = [
   'business',
   'locations',
+  'channels',
   'members',
   'roles',
   'modules',
@@ -34,6 +35,10 @@ function capability(access: Access, key: string): boolean {
   return access.capabilities[key] === true
 }
 
+function hasModule(access: Access, id: string): boolean {
+  return (access.modules ?? []).some((module) => module.id === id)
+}
+
 /** Whether the member may open `section` in this business. */
 export function isSectionVisible(access: Access, section: SettingsSection): boolean {
   switch (section) {
@@ -42,6 +47,10 @@ export function isSectionVisible(access: Access, section: SettingsSection): bool
       return can(access, 'settings.business.view')
     case 'locations':
       return capability(access, 'multi_location') && can(access, 'settings.locations.manage')
+    case 'channels':
+      // Sales channels (M3 Step 2; D-226): Sales on (served: released, or previewed on a local
+      // server), and the key to change them (Owner, Admin, Manager).
+      return hasModule(access, 'sales') && can(access, 'sales.channels.manage')
     case 'members':
       return capability(access, 'has_team') && can(access, 'settings.members.view')
     case 'roles':
@@ -49,12 +58,13 @@ export function isSectionVisible(access: Access, section: SettingsSection): bool
     case 'modules':
       return can(access, 'settings.modules.manage')
     case 'books':
-      // "Books closed up to": purchases and expenses obey it, so either module on shows it (D-137,
-      // D-176), with the Settings key to close them (D-201).
+      // "Books closed up to": purchases, expenses and sales obey it, so any of them on shows it
+      // (D-137, D-176, D-227), with the Settings key to close them (D-201).
       return (
-        (access.modules ?? []).some(
-          (module) => module.id === 'purchases' || module.id === 'expenses',
-        ) && can(access, 'settings.books.close')
+        (hasModule(access, 'purchases') ||
+          hasModule(access, 'expenses') ||
+          hasModule(access, 'sales')) &&
+        can(access, 'settings.books.close')
       )
     case 'approval':
       // Whether expenses need approval: Expenses on, a team (without one nothing is approved, D-164),
@@ -98,6 +108,7 @@ export function sectionPath(businessId: string, section?: SettingsSection): stri
 export const SECTION_TITLES: Readonly<Record<SettingsSection, I18nKey>> = {
   business: 'settings.business.title',
   locations: 'settings.locations.title',
+  channels: 'settings.channels.title',
   members: 'settings.members.title',
   roles: 'settings.roles.title',
   modules: 'settings.modules.title',
@@ -107,9 +118,19 @@ export const SECTION_TITLES: Readonly<Record<SettingsSection, I18nKey>> = {
   language: 'settings.language.title',
 }
 
+/**
+ * What a section is about, as its card and its page say it: "Closing the books" names sales too while
+ * Sales is on and served (D-236; released businesses keep their words until Release A).
+ */
+export function sectionDescription(access: Access, section: SettingsSection): I18nKey {
+  if (section === 'books' && hasModule(access, 'sales')) return 'settings.books.descriptionSales'
+  return SECTION_DESCRIPTIONS[section]
+}
+
 export const SECTION_DESCRIPTIONS: Readonly<Record<SettingsSection, I18nKey>> = {
   business: 'settings.business.description',
   locations: 'settings.locations.description',
+  channels: 'settings.channels.description',
   members: 'settings.members.description',
   roles: 'settings.roles.description',
   modules: 'settings.modules.description',

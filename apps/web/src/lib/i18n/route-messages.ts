@@ -88,12 +88,28 @@ export const RUNNING_COSTS_MESSAGES: readonly MessageSpec[] = [
  */
 export const PRODUCT_COSTS_MESSAGES: readonly MessageSpec[] = ['costing', 'catalog', 'units']
 
+/**
+ * Sales (M3 Step 2; its layout; shown only under the dev-only preview until Release A): the sales
+ * messages, the catalog's words and the unit names (a sale line names a product or service, and its
+ * quick-add opens the product form), and the purchasing words of the document parts they share (the
+ * line editor, the totals, a line's discount; features/documents).
+ */
+export const SALES_MESSAGES: readonly MessageSpec[] = [
+  'sales',
+  'catalog',
+  'units',
+  {
+    namespace: 'purchasing',
+    paths: ['editor', 'totals', 'view.discountPercent', 'view.discountAmount'],
+  },
+]
+
 /** Settings of a business (layout): the section list, the settings home and every section's frame. */
 export const SETTINGS_MESSAGES: readonly MessageSpec[] = ['settings']
 
 /**
  * A member's own permissions (Settings → Team → a member, M2 Step 7): the permission groups are named
- * after their modules.
+ * after their modules. "Branches they work in" (M3 Step 2, Q12) has its own words (settings).
  */
 export const MEMBER_ACCESS_MESSAGES: readonly MessageSpec[] = ['modules']
 
@@ -116,6 +132,12 @@ export const SETTINGS_SECTION_MESSAGES: Readonly<Record<SettingsSection, readonl
     books: [],
     // Whether expenses need approval: its own words (settings) only.
     approval: [],
+    // Sales channels (M3 Step 2): the presets' names and the commission's box are its own words
+    // (settings); the percentage box's placeholder is the purchasing one, and the numbers' messages.
+    channels: [
+      { namespace: 'purchasing', paths: ['editor.percentPlaceholder'] },
+      { namespace: 'catalog', paths: ['numbers'] },
+    ],
     // How product costs are worked out: how running costs reach products (costing), the money box's
     // placeholder and "per hour".
     costing: [

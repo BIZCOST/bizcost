@@ -11,7 +11,7 @@ import {
 } from '@bizcost/domain'
 import type { I18nKey } from '@bizcost/i18n'
 import { readAmount, type FieldError } from '../catalog/numbers'
-import { closedFor } from './books'
+import { closedFor } from '../documents/books'
 
 // Recording a payment of what is owed on a purchase (the owner's request of 2026-09-29) or an expense
 // (M2 Step 5, D-166): the day it was paid (the business's day; not after today, not before the

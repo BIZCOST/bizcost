@@ -3,21 +3,32 @@ import {
   memberDto,
   memberIdInput,
   memberListDto,
+  memberLocationsDto,
+  memberLocationsInput,
   memberPermissionsDto,
   memberPermissionsInput,
   okDto,
+  updateMemberLocationsInput,
   updateMemberPermissionsInput,
 } from '@bizcost/contracts'
 import {
   changeMemberRole,
+  getMemberLocations,
   getMemberPermissions,
   leaveBusiness,
   listMembers,
   removeMember,
   transferOwnership,
+  updateMemberLocations,
   updateMemberPermissions,
 } from '../services/members'
-import { businessProcedure, requireCapability, requirePermission, router } from '../trpc'
+import {
+  businessProcedure,
+  requireCapability,
+  requireModule,
+  requirePermission,
+  router,
+} from '../trpc'
 
 /** Settings → Team (services/members.ts): a business with a team only (CAPABILITY_DISABLED otherwise). */
 const team = businessProcedure.use(requireCapability('has_team'))
@@ -29,6 +40,15 @@ const team = businessProcedure.use(requireCapability('has_team'))
 const memberAccess = team
   .use(requirePermission('settings.members.view'))
   .use(requirePermission('settings.roles.manage'))
+
+/**
+ * A member's branches ("Branches they work in", M3 Step 2, Q12): with branches too, and only while
+ * Sales is served (the module used per branch, D-191; released businesses see no change before
+ * Release A, the plan's D3).
+ */
+const memberBranches = memberAccess
+  .use(requireCapability('multi_location'))
+  .use(requireModule('sales'))
 
 export const memberRouter = router({
   /** `member.list` (settings.members.view). */
@@ -74,4 +94,17 @@ export const memberRouter = router({
     .input(updateMemberPermissionsInput)
     .output(memberPermissionsDto)
     .mutation(({ ctx, input }) => updateMemberPermissions(ctx, input)),
+  /** `member.locations`: the branches a member works in (empty: every branch). */
+  locations: memberBranches
+    .input(memberLocationsInput)
+    .output(memberLocationsDto)
+    .query(({ ctx, input }) => getMemberLocations(ctx, input)),
+  /**
+   * `member.updateLocations`: the branches a member works in, saved whole; never beyond the caller's
+   * own access or branches.
+   */
+  updateLocations: memberBranches
+    .input(updateMemberLocationsInput)
+    .output(memberLocationsDto)
+    .mutation(({ ctx, input }) => updateMemberLocations(ctx, input)),
 })

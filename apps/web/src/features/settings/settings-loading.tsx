@@ -9,6 +9,7 @@ import { SectionPage, SettingsHome } from './settings-shell'
 const SKELETON_CARDS: Readonly<Record<SettingsSection, number>> = {
   business: 3,
   locations: 1,
+  channels: 1,
   members: 1,
   roles: 3,
   modules: 3,

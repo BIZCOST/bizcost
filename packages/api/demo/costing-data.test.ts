@@ -151,6 +151,38 @@ describe.each(DEMO_PERSONAS.filter((p) => p.costing).map((p) => [p.title, p] as 
       }
     })
 
+    it('sells only products it defines, in channels it has, on days in the past (M3 Step 2)', () => {
+      const added = new Set((data.channels ?? []).map((c) => c.key))
+      const starters = new Set(
+        (persona.answers.sales_channels ?? []).flatMap((answer) =>
+          answer === 'walk_in'
+            ? ['shop']
+            : answer === 'messages'
+              ? ['messages']
+              : answer === 'online'
+                ? ['website']
+                : [],
+        ),
+      )
+      if (starters.size === 0) starters.add('other')
+      expect(unique((data.sales ?? []).map((sale) => sale.key))).toBe(true)
+      expect(unique([...added])).toBe(true)
+      for (const sale of data.sales ?? []) {
+        expect(sale.daysAgo, sale.key).toBeGreaterThanOrEqual(0)
+        if (sale.channel) {
+          expect(added.has(sale.channel) || starters.has(sale.channel), sale.key).toBe(true)
+        }
+        if (sale.lastMonth || sale.delivery) {
+          // A sheet of last month is Today's sales; delivery goes with One sale.
+          expect(sale.source, sale.key).toBe(sale.lastMonth ? 'day_sheet' : 'single')
+        }
+        if (sale.branch) expect(persona.branches ?? [], sale.key).toContain(sale.branch)
+        expect(sale.lines.length, sale.key).toBeGreaterThan(0)
+        expect(unique(sale.lines.map(([product]) => product)), sale.key).toBe(true)
+        for (const [product] of sale.lines) expect(products.has(product), product).toBe(true)
+      }
+    })
+
     it('names only members who joined, and only with a team', () => {
       for (const e of data.expenses ?? []) {
         const approver = typeof e.approval === 'object' ? e.approval.by : undefined
@@ -160,6 +192,9 @@ describe.each(DEMO_PERSONAS.filter((p) => p.costing).map((p) => [p.title, p] as 
         expect(e.payment === 'paid_by_member').toBe(e.paidBy !== undefined)
         // Sent for approval by a member who entered it: approval needs a team (D-164).
         if (e.approval) expect(e.enteredBy, e.key).toBeDefined()
+      }
+      for (const sale of data.sales ?? []) {
+        if (sale.enteredBy) expect(joined.has(sale.enteredBy), sale.enteredBy).toBe(true)
       }
       // The owner's time counts only without a team (D-119).
       const timed =

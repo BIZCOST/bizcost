@@ -1462,6 +1462,231 @@ const PROBES: Record<string, Probe> = {
       },
     ],
   },
+  // Sales (M3 Step 2, previewed: D-125).
+  'channel.list': {
+    base: 'business',
+    reason: NO_ROWS,
+    variants: () => [{ input: { status: 'all' } }],
+  },
+  'channel.create': {
+    base: 'business',
+    reason: 'an id already used anywhere is CONFLICT (createIdempotent), the row is never read',
+    variants: (victim) => [
+      {
+        input: { id: victim.channel.id, name: 'Pwned', kind: 'other' },
+        own: ['conflict'],
+      },
+    ],
+  },
+  'channel.update': {
+    base: 'business',
+    reason: 'looked up in the x-business-id business (RLS and business_id filter)',
+    variants: (victim) => [
+      {
+        input: {
+          id: victim.channel.id,
+          version: victim.channel.version,
+          name: 'Pwned',
+          kind: 'other',
+        },
+        own: ['not_found'],
+      },
+    ],
+  },
+  'channel.archive': {
+    base: 'business',
+    reason: 'looked up in the x-business-id business',
+    variants: (victim) => [{ input: { id: victim.channel.id }, own: ['not_found'] }],
+  },
+  'channel.unarchive': {
+    base: 'business',
+    reason: 'looked up in the x-business-id business',
+    variants: (victim) => [{ input: { id: victim.channel.id }, own: ['not_found'] }],
+  },
+  'sale.list': {
+    base: 'business',
+    reason: `${NO_ROWS}; a channel or branch filter is looked up in that business (NOT_FOUND)`,
+    variants: (victim) => [
+      { input: { status: 'all' } },
+      { input: { channelId: victim.channel.id }, own: ['not_found'] },
+      { input: { locationId: victim.branch.id }, own: ['not_found'] },
+    ],
+  },
+  'sale.get': {
+    base: 'business',
+    reason: 'looked up in the x-business-id business',
+    variants: (victim) => [{ input: { id: victim.sale.id }, own: ['not_found'] }],
+  },
+  'sale.daySheet': {
+    base: 'business',
+    reason: 'its channel and branch are looked up in the x-business-id business',
+    variants: (victim, attacker) => [
+      {
+        input: { businessDate: attacker.sale.businessDate, channelId: victim.channel.id },
+        own: ['not_found'],
+      },
+      {
+        input: {
+          businessDate: attacker.sale.businessDate,
+          channelId: attacker.channel.id,
+          locationId: victim.branch.id,
+        },
+        own: ['not_found'],
+      },
+    ],
+  },
+  'sale.create': {
+    base: 'business',
+    reason:
+      'its channel, branch and products are looked up in the x-business-id business; an id used ' +
+      'anywhere is CONFLICT',
+    variants: (victim, attacker) => {
+      const fields = {
+        source: 'single',
+        businessDate: attacker.sale.businessDate,
+        channelId: attacker.channel.id,
+      }
+      return [
+        { input: { ...fields, id: victim.sale.id, lines: [] }, own: ['conflict'] },
+        { input: { ...fields, id: newId(), channelId: victim.channel.id }, own: ['not_found'] },
+        { input: { ...fields, id: newId(), locationId: victim.branch.id }, own: ['not_found'] },
+        {
+          input: {
+            ...fields,
+            id: newId(),
+            lines: [
+              { kind: 'item', id: newId(), productId: victim.product.id, qty: '1', unitPrice: '1' },
+            ],
+          },
+          own: ['not_found'],
+        },
+        {
+          input: {
+            ...fields,
+            id: newId(),
+            lines: [
+              {
+                kind: 'item',
+                id: victim.sale.lines[0]?.id,
+                productId: attacker.product.id,
+                qty: '1',
+                unitPrice: '1',
+              },
+            ],
+          },
+          own: ['conflict'],
+        },
+      ]
+    },
+  },
+  'sale.update': {
+    base: 'business',
+    reason:
+      'the sale (locked) and its channel, branch and products are looked up in the x-business-id ' +
+      'business; a line id used anywhere is CONFLICT',
+    variants: (victim, attacker) => {
+      const fields = {
+        businessDate: attacker.draftSale.businessDate,
+        channelId: attacker.channel.id,
+      }
+      const own = { id: attacker.draftSale.id, version: attacker.draftSale.version }
+      return [
+        {
+          input: { ...fields, id: victim.draftSale.id, version: victim.draftSale.version },
+          own: ['not_found'],
+        },
+        { input: { ...fields, ...own, channelId: victim.channel.id }, own: ['not_found'] },
+        { input: { ...fields, ...own, locationId: victim.branch.id }, own: ['not_found'] },
+        {
+          input: {
+            ...fields,
+            ...own,
+            lines: [
+              { kind: 'item', id: newId(), productId: victim.product.id, qty: '1', unitPrice: '1' },
+            ],
+          },
+          own: ['not_found'],
+        },
+        {
+          input: {
+            ...fields,
+            ...own,
+            lines: [
+              {
+                kind: 'item',
+                id: victim.draftSale.lines[0]?.id,
+                productId: attacker.product.id,
+                qty: '1',
+                unitPrice: '1',
+              },
+            ],
+          },
+          own: ['conflict'],
+        },
+      ]
+    },
+  },
+  'sale.discard': {
+    base: 'business',
+    reason: 'looked up (and locked) in the x-business-id business',
+    variants: (victim) => [
+      { input: { id: victim.draftSale.id, version: victim.draftSale.version }, own: ['not_found'] },
+    ],
+  },
+  'sale.post': {
+    base: 'business',
+    reason: 'looked up (and locked) in the x-business-id business',
+    variants: (victim) => [
+      { input: { id: victim.draftSale.id, version: victim.draftSale.version }, own: ['not_found'] },
+    ],
+  },
+  'sale.reverse': {
+    base: 'business',
+    reason: 'looked up (and locked) in the x-business-id business',
+    variants: (victim) => [{ input: { id: victim.sale.id }, own: ['not_found'] }],
+  },
+  'sale.correct': {
+    base: 'business',
+    reason:
+      'the sale is looked up in the x-business-id business; a new id used anywhere is CONFLICT ' +
+      'and the whole correction (its reversal too) is rolled back',
+    variants: (victim, attacker) => [
+      { input: { id: victim.sale.id, newId: newId() }, own: ['not_found'] },
+      { input: { id: attacker.sale.id, newId: victim.draftSale.id }, own: ['conflict'] },
+    ],
+  },
+  'sale.fillDeliveryCost': {
+    base: 'business',
+    reason: 'looked up (and locked) in the x-business-id business',
+    variants: (victim) => [
+      { input: { id: victim.sale.id, deliveryCost: '1' }, own: ['not_found'] },
+    ],
+  },
+  'member.locations': {
+    base: 'business',
+    reason: 'the member is looked up in the x-business-id business',
+    variants: (victim) => [{ input: { memberId: victim.employeeMemberId }, own: ['not_found'] }],
+  },
+  'member.updateLocations': {
+    base: 'business',
+    reason:
+      'the member (locked) and every branch are looked up in the x-business-id business, the ' +
+      'branches before the version',
+    variants: (victim, attacker) => [
+      {
+        input: { memberId: victim.employeeMemberId, version: 1, locationIds: [] },
+        own: ['not_found'],
+      },
+      {
+        input: {
+          memberId: attacker.employeeMemberId,
+          version: 1,
+          locationIds: [victim.branch.id],
+        },
+        own: ['not_found'],
+      },
+    ],
+  },
 }
 
 // A stand-in tenant for reading the probes' shape before the fixture exists (never sent).

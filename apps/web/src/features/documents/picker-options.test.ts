@@ -1,6 +1,6 @@
 import type { MaterialDto } from '@bizcost/contracts'
 import { describe, expect, it } from 'vitest'
-import { pickerOptions, typedName } from './material-options'
+import { pickerOptions, typedName } from './picker-options'
 
 function material(id: string, name: string): MaterialDto {
   return {
@@ -22,7 +22,7 @@ const MILK_EN = material('3', 'Milk')
 const PICKABLE = [MILK, CONDENSED, MILK_EN]
 
 const names = (options: ReturnType<typeof pickerOptions>) =>
-  options.map((option) => (option.kind === 'material' ? option.material.name : `+${option.name}`))
+  options.map((option) => (option.kind === 'item' ? option.item.name : `+${option.name}`))
 
 describe('pickerOptions', () => {
   it('lists every material by name while nothing is typed', () => {
@@ -52,7 +52,7 @@ describe('pickerOptions', () => {
     const sugar = { ...material('4', 'سكر'), archivedAt: '2026-09-01T00:00:00.000Z' }
     const all = [...PICKABLE, sugar]
     const options = pickerOptions('سُكّر', PICKABLE, 'ar', true, all)
-    expect(options).toEqual([{ kind: 'material', material: sugar, archived: true }])
+    expect(options).toEqual([{ kind: 'item', item: sugar, archived: true }])
     // Only the very name: a part of it offers Add, as before.
     expect(names(pickerOptions('سك', PICKABLE, 'ar', true, all))).toEqual(['+سك'])
     // Not in `all`: Add.

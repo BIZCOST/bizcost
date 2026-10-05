@@ -10,9 +10,9 @@ import { useEffect, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
 import { FormAlert } from '@/components/form/form-alert'
+import { TextField } from '@/components/form/text-field'
 import { sameData } from '@/components/form/unsaved'
 import { useUnsavedChanges } from '@/components/form/unsaved-changes'
-import { TextField } from '@/components/form/text-field'
 import { isolate } from '@/components/form/use-message'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -29,13 +29,14 @@ import { Textarea } from '@/components/ui/textarea'
 import { withLatinDigits, type FieldError } from '@/features/catalog/numbers'
 import { useFormatQuantity, useUnitQuantity } from '@/features/catalog/unit-parts'
 import { nameAfterQuantity, NBSP } from '@/features/catalog/units'
+import { Money, useBusinessDate, useMoney } from '@/features/documents/amounts'
+import { closedFor, firstOpenDay } from '@/features/documents/books'
+import { ConfirmDialog } from '@/features/documents/confirm-dialog'
+import { MoneyInput } from '@/features/documents/line-editor'
+import { StatusBadge } from '@/features/documents/status-badge'
 import { can } from '@/features/settings/sections'
 import { useLocale } from '@/lib/i18n/client'
 import { useBusinessContext } from '@/lib/trpc/client'
-import { Money, useBusinessDate, useMoney } from './amounts'
-import { closedFor, firstOpenDay } from './books'
-import { ConfirmDialog } from './confirm-dialog'
-import { MoneyInput } from './purchase-lines'
 import {
   checkReturn,
   creditTotal,
@@ -45,7 +46,6 @@ import {
   returnDraft,
   type ReturnDraft,
 } from './return-draft'
-import { StatusBadge } from './status-badge'
 
 // A supplier return or credit note of a final purchase (M2 Step 3; D-120, D-136), in a sheet on
 // phones and a side panel on a desktop. A return: how many of each line went back (at most what is

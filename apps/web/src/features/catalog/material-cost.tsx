@@ -6,7 +6,7 @@ import { BASE_UNITS, compareDecimal, type StandardUnit } from '@bizcost/domain'
 import { useQueries } from '@tanstack/react-query'
 import { Fragment, type ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
-import { Locked, useBusinessDate, useUnitCost } from '@/features/purchasing/amounts'
+import { Locked, useBusinessDate, useUnitCost } from '@/features/documents/amounts'
 import { NBSP } from './units'
 
 // A material's cost on the Materials page (M2 Step 3; D-115, D-138): its average cost, saying which

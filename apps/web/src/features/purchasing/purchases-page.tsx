@@ -7,14 +7,12 @@ import {
   ChevronDownIcon,
   PlusIcon,
   ReceiptTextIcon,
-  SearchIcon,
   SearchXIcon,
   SlidersHorizontalIcon,
-  XIcon,
 } from 'lucide-react'
 import Link from 'next/link'
 import { useParams, usePathname, useRouter, useSearchParams } from 'next/navigation'
-import { useEffect, useId, useRef, useState } from 'react'
+import { useId, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { FormAlert } from '@/components/form/form-alert'
 import { ModuleGate } from '@/components/shell/module-gate'
@@ -25,11 +23,13 @@ import { Input } from '@/components/ui/input'
 import { NativeSelect } from '@/components/ui/native-select'
 import { ListEmpty, ListSkeleton } from '@/features/catalog/catalog-list'
 import { NBSP } from '@/features/catalog/units'
+import { Money, useBusinessDate } from '@/features/documents/amounts'
+import { SearchBox } from '@/features/documents/search-box'
+import { StatusBadge } from '@/features/documents/status-badge'
 import { can } from '@/features/settings/sections'
 import { useTerminology } from '@/lib/i18n/client'
 import { useBusinessContext } from '@/lib/trpc/client'
 import { cn } from '@/lib/utils'
-import { Money, useBusinessDate } from './amounts'
 import { useSupplierOptions } from './data'
 import {
   isFiltered,
@@ -39,15 +39,12 @@ import {
   writePurchaseFilters,
   type PurchaseFilters,
 } from './purchase-filters'
-import { StatusBadge } from './status-badge'
 
 // Purchases (M2 Step 3; D-114, D-134): the business's purchases, newest day first, with filters kept
 // in the address (status, supplier, days, a search in the reference or the supplier's name). A row
 // opens the purchase: a draft in its editor, a final or reversed one as it was recorded. Everyone
 // with purchases.documents.view sees the list; purchases.documents.manage adds purchases. Totals are
 // supplier prices: a member who may not see them sees a lock (redaction).
-
-const SEARCH_DELAY_MS = 300
 
 function useFilters() {
   const router = useRouter()
@@ -59,67 +56,6 @@ function useFilters() {
     router.replace(query ? `${pathname}?${query}` : pathname, { scroll: false })
   }
   return { filters, set }
-}
-
-/** A search box that searches a moment after typing, and on Enter. */
-function SearchBox({ value, onChange }: { value: string; onChange: (search: string) => void }) {
-  const { t } = useTranslation()
-  const [text, setText] = useState(value)
-  const typed = useRef(value)
-  const change = useRef(onChange)
-  useEffect(() => {
-    change.current = onChange
-  })
-  // The address changed without typing (back, a link): show its search.
-  useEffect(() => {
-    if (value !== typed.current.trim()) {
-      typed.current = value
-      setText(value)
-    }
-  }, [value])
-  useEffect(() => {
-    if (text.trim() === value) return
-    const timer = setTimeout(() => change.current(text), SEARCH_DELAY_MS)
-    return () => clearTimeout(timer)
-  }, [text, value])
-  return (
-    <div role="search" className="relative min-w-0 flex-1">
-      <SearchIcon
-        aria-hidden
-        className="pointer-events-none absolute start-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground"
-      />
-      <Input
-        type="search"
-        aria-label={t('catalog.list.searchLabel')}
-        placeholder={t('purchasing.purchases.searchPlaceholder')}
-        autoComplete="off"
-        enterKeyHint="search"
-        value={text}
-        onChange={(event) => {
-          typed.current = event.target.value
-          setText(event.target.value)
-        }}
-        onKeyDown={(event) => {
-          if (event.key === 'Enter') onChange(text)
-        }}
-        className="ps-9 pe-11 [unicode-bidi:plaintext] [&::-webkit-search-cancel-button]:hidden"
-      />
-      {text ? (
-        <button
-          type="button"
-          aria-label={t('catalog.list.clearSearch')}
-          onClick={() => {
-            typed.current = ''
-            setText('')
-            onChange('')
-          }}
-          className="absolute end-0 top-0 flex size-11 items-center justify-center rounded-lg text-muted-foreground outline-none hover:text-foreground focus-visible:ring-3 focus-visible:ring-ring"
-        >
-          <XIcon aria-hidden className="size-4" />
-        </button>
-      ) : null}
-    </div>
-  )
 }
 
 /** The filters: a search, the status, the supplier (for members who see suppliers) and the days. */
@@ -140,7 +76,11 @@ function FilterBar({
   return (
     <div className="mb-4 space-y-3">
       <div className="flex flex-col gap-3 lg:flex-row lg:items-center">
-        <SearchBox value={filters.search} onChange={(search) => onChange({ search })} />
+        <SearchBox
+          value={filters.search}
+          placeholder={t('purchasing.purchases.searchPlaceholder')}
+          onChange={(search) => onChange({ search })}
+        />
         <fieldset className="flex shrink-0 rounded-lg bg-muted p-1">
           <legend className="sr-only">{t('purchasing.purchases.filters.status')}</legend>
           {PURCHASE_STATUS_FILTERS.map((value) => (

@@ -13,11 +13,11 @@ import { isolate } from '@/components/form/use-message'
 import { LoadError } from '@/components/states/query-state'
 import { Button } from '@/components/ui/button'
 import { ListEmpty, ListSkeleton } from '@/features/catalog/catalog-list'
+import { Money, useBusinessDate, useMoney } from '@/features/documents/amounts'
 import { can } from '@/features/settings/sections'
 import { useLocale } from '@/lib/i18n/client'
 import { useBusinessContext } from '@/lib/trpc/client'
 import { cn } from '@/lib/utils'
-import { Money, useBusinessDate, useMoney } from './amounts'
 import { hasModule } from './data'
 
 // "Owed to me" (the owner's answers of 2026-09-29, A4; D-181): what the business owes a member for

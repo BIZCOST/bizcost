@@ -1,4 +1,4 @@
-// The books-closed date on the purchasing screens (D-114 rule 6, D-137, D-143): nothing dated on or
+// The books-closed date on the document screens (D-114 rule 6, D-137, D-143, D-205): nothing dated on or
 // before it can be finalized or reversed, and nothing is ever dated after today. The screens say so
 // next to the date before the person taps Finalize, instead of after.
 

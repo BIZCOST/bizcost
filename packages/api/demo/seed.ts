@@ -23,7 +23,8 @@ import {
 // password is set back to the demo password. Each business is created by Smart Setup's real confirm
 // step (business.createFromSetup), and members join through real invitations. Then each business gets
 // its Costing Core data (demo/costing.ts): suppliers, materials, products, recipes, posted purchases,
-// returns, payments, running costs and expenses, through the same API.
+// returns, payments, running costs and expenses, and (M3 Step 2, previewed) its sales channels and
+// sales, through the same API.
 
 interface Row {
   business: string
@@ -229,6 +230,7 @@ const COSTING_COLUMNS: [keyof CostingSummary, string][] = [
   ['purchases', 'posted purchases'],
   ['runningCosts', 'running costs'],
   ['expenses', 'final expenses'],
+  ['sales', 'finalized sales'],
 ]
 
 async function main() {

@@ -7,8 +7,7 @@ import {
   type Quantity,
   type TerminologyProfile,
 } from '@bizcost/domain'
-import { currencySymbol } from '@bizcost/i18n'
-import { PercentIcon, PlusIcon, Trash2Icon, TruckIcon, XIcon } from 'lucide-react'
+import { PlusIcon, Trash2Icon, TruckIcon } from 'lucide-react'
 import { useId, type ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Button } from '@/components/ui/button'
@@ -22,11 +21,17 @@ import {
 } from '@/features/catalog/numbers'
 import { PackChainText, useUnitQuantity } from '@/features/catalog/unit-parts'
 import { NBSP, UNITS_BY_DIMENSION } from '@/features/catalog/units'
-import { useLocale, useTerminology } from '@/lib/i18n/client'
-import { useBusinessContext } from '@/lib/trpc/client'
+import { useMoney, useUnitCost } from '@/features/documents/amounts'
+import {
+  Caption,
+  DiscountRow,
+  LineMessages,
+  MoneyInput,
+  VatSelect,
+} from '@/features/documents/line-editor'
+import { NamePicker } from '@/features/documents/name-picker'
+import { useTerminology } from '@/lib/i18n/client'
 import { cn } from '@/lib/utils'
-import { useMoney, useUnitCost } from './amounts'
-import { MaterialPicker } from './material-picker'
 import {
   defaultUnitOf,
   dimensionsOf,
@@ -36,234 +41,16 @@ import {
   unitRefOf,
   type LineUnit,
 } from './line-units'
-import {
-  NO_VAT,
-  STANDARD_VAT_RATE,
-  type DeliveryLineDraft,
-  type DiscountKind,
-  type LineErrors,
-  type MaterialLineDraft,
-} from './purchase-draft'
+import type { DeliveryLineDraft, LineErrors, MaterialLineDraft } from './purchase-draft'
 
 // The lines of the purchase editor (M2 Step 3): a material bought in any unit of its kind of measure
 // or one of its packs, said in words as it is typed ("2 bags = 2 kg"), its price per the unit chosen
 // and what that makes per the unit it is counted in, an optional discount and, for a VAT-registered
 // business, its VAT; and delivery charged on the same invoice. The material is typed and picked from
 // a list that can add a new one (the owner's request of 2026-09-29); for a VAT-registered business
-// the price's caption says whether it is before VAT or includes it, as the purchase says.
-
-/** A small caption over a box (the box has its own accessible name). */
-function Caption({ children }: { children: ReactNode }) {
-  return (
-    <span aria-hidden className="mb-1 block text-xs font-medium text-muted-foreground">
-      {children}
-    </span>
-  )
-}
-
-/** A money box: the currency before the typed amount, as the lists write it. */
-export function MoneyInput({
-  value,
-  onChange,
-  invalid,
-  describedBy,
-  label,
-  id,
-  className,
-}: {
-  value: string
-  onChange: (value: string) => void
-  invalid: boolean
-  describedBy?: string
-  /** The box's accessible name (without an `id` a visible label points to). */
-  label?: string
-  id?: string
-  className?: string
-}) {
-  const { locale } = useLocale()
-  const { t } = useTranslation()
-  const { data: context } = useBusinessContext()
-  return (
-    <div className={cn('flex min-w-0', className)}>
-      <span
-        aria-hidden
-        className="flex h-11 shrink-0 items-center rounded-s-lg border border-e-0 border-input bg-muted px-2.5 text-sm font-medium text-muted-foreground"
-      >
-        {currencySymbol(locale, context?.currency ?? 'AED')}
-      </span>
-      <Input
-        id={id}
-        aria-label={label}
-        aria-invalid={invalid}
-        aria-describedby={describedBy}
-        inputMode="decimal"
-        dir="ltr"
-        autoComplete="off"
-        spellCheck={false}
-        placeholder={t('purchasing.editor.amountPlaceholder')}
-        value={value}
-        onChange={(event) => onChange(event.target.value)}
-        onBlur={() => onChange(withLatinDigits(value))}
-        className="min-w-0 rounded-s-none tabular-nums rtl:text-end"
-      />
-    </div>
-  )
-}
-
-/** A line's messages, under it, read out when they change. */
-function LineMessages({
-  id,
-  messages,
-  className,
-}: {
-  id: string
-  messages: readonly string[]
-  className?: string
-}) {
-  if (messages.length === 0) return null
-  return (
-    <div id={id} role="alert" className={cn('mt-2 space-y-1 text-sm text-destructive', className)}>
-      {/* The same words for two boxes ("Enter a number.") are said once; the boxes are marked. */}
-      {[...new Set(messages)].map((message) => (
-        <p key={message}>{message}</p>
-      ))}
-    </div>
-  )
-}
-
-/**
- * The VAT of a line (or of an expense): the standard rate or none (a stored other rate stays offered).
- * The options are short ("5%", "None"): the caption and the box's name say VAT, and a phone has no
- * room for more.
- */
-export function VatSelect({
-  value,
-  onChange,
-  id,
-}: {
-  value: string
-  onChange: (value: string) => void
-  /** With a visible label pointing at it (its name is then the label's). */
-  id?: string
-}) {
-  const { t } = useTranslation()
-  const rates = [STANDARD_VAT_RATE, NO_VAT]
-  return (
-    <NativeSelect
-      id={id}
-      aria-label={id ? undefined : t('purchasing.editor.vat')}
-      value={value}
-      onChange={(event) => onChange(event.target.value)}
-    >
-      {!rates.includes(value) ? (
-        <option value={value}>{t('purchasing.editor.vatOption', { rate: value })}</option>
-      ) : null}
-      <option value={STANDARD_VAT_RATE}>
-        {t('purchasing.editor.vatOption', { rate: STANDARD_VAT_RATE })}
-      </option>
-      <option value={NO_VAT}>{t('purchasing.editor.vatOptionNone')}</option>
-    </NativeSelect>
-  )
-}
-
-/**
- * A discount: a button to add one, or its caption over its kind (percentage or amount), its box
- * and ×.
- */
-export function DiscountRow({
-  kind,
-  value,
-  onChange,
-  invalid,
-  describedBy,
-  addLabel,
-  label,
-  className,
-}: {
-  kind: DiscountKind
-  value: string
-  onChange: (next: { kind: DiscountKind; value: string }) => void
-  invalid: boolean
-  describedBy?: string
-  addLabel: string
-  /** The caption over it and the box's accessible name. */
-  label: string
-  className?: string
-}) {
-  const { t } = useTranslation()
-  if (kind === 'none') {
-    return (
-      <Button
-        type="button"
-        variant="link"
-        className={cn('h-9 justify-start justify-self-start px-0', className)}
-        onClick={() => onChange({ kind: 'percent', value: '' })}
-      >
-        <PercentIcon aria-hidden />
-        {addLabel}
-      </Button>
-    )
-  }
-  return (
-    <div className={cn('min-w-0', className)}>
-      <Caption>{label}</Caption>
-      <div className="flex items-center gap-2">
-        <NativeSelect
-          aria-label={t('purchasing.editor.discountKind')}
-          value={kind}
-          onChange={(event) => onChange({ kind: event.target.value as DiscountKind, value })}
-          className="w-28 shrink-0"
-        >
-          <option value="percent">{t('purchasing.editor.discountPercent')}</option>
-          <option value="amount">{t('purchasing.editor.discountAmount')}</option>
-        </NativeSelect>
-        {kind === 'percent' ? (
-          <div className="flex min-w-0 flex-1">
-            <Input
-              aria-label={label}
-              aria-invalid={invalid}
-              aria-describedby={describedBy}
-              inputMode="decimal"
-              dir="ltr"
-              autoComplete="off"
-              spellCheck={false}
-              placeholder={t('purchasing.editor.percentPlaceholder')}
-              value={value}
-              onChange={(event) => onChange({ kind, value: event.target.value })}
-              onBlur={() => onChange({ kind, value: withLatinDigits(value) })}
-              className="min-w-0 rounded-e-none tabular-nums rtl:text-end"
-            />
-            <span
-              aria-hidden
-              className="flex h-11 shrink-0 items-center rounded-e-lg border border-s-0 border-input bg-muted px-2.5 text-sm font-medium text-muted-foreground"
-            >
-              %
-            </span>
-          </div>
-        ) : (
-          <MoneyInput
-            label={label}
-            value={value}
-            invalid={invalid}
-            describedBy={describedBy}
-            onChange={(next) => onChange({ kind, value: next })}
-            className="flex-1"
-          />
-        )}
-        <Button
-          type="button"
-          variant="ghost"
-          size="icon"
-          aria-label={t('purchasing.editor.removeDiscount')}
-          onClick={() => onChange({ kind: 'none', value: '' })}
-          className="shrink-0 text-muted-foreground"
-        >
-          <XIcon aria-hidden />
-        </Button>
-      </div>
-    </div>
-  )
-}
+// the price's caption says whether it is before VAT or includes it, as the purchase says. The parts
+// every document's lines share (the money box, the discount, the VAT, the picker) are in
+// features/documents.
 
 /** What a unit is called after "per": a pack's name, or the unit's short name. */
 function unitNameOf(
@@ -389,10 +176,10 @@ export function MaterialLineRow({
       <div className="flex items-end gap-2 lg:contents">
         <div className="min-w-0 flex-1 lg:col-start-1 lg:row-start-1">
           <Caption>{term('purchasing.editor.material', profile)}</Caption>
-          <MaterialPicker
+          <NamePicker
             label={term('purchasing.editor.material', profile)}
             value={line.materialId}
-            materials={materials}
+            items={materials}
             pickable={pickable}
             placeholder={
               material || !line.savedName ? t('purchasing.editor.pickMaterial') : line.savedName
@@ -677,74 +464,5 @@ export function AddLineButtons({
         {t('purchasing.editor.addDelivery')}
       </Button>
     </div>
-  )
-}
-
-/** The switch's words: a purchase's prices, or an expense's one amount (M2 Step 5). */
-const VAT_MODE_WORDS = {
-  prices: {
-    label: 'purchasing.editor.vatMode.label',
-    before: 'purchasing.editor.vatMode.before',
-    included: 'purchasing.editor.vatMode.included',
-    beforeHint: 'purchasing.editor.vatMode.beforeHint',
-    includedHint: 'purchasing.editor.vatMode.includedHint',
-  },
-  amount: {
-    label: 'purchasing.editor.vatModeAmount.label',
-    before: 'purchasing.editor.vatModeAmount.before',
-    included: 'purchasing.editor.vatModeAmount.included',
-    beforeHint: 'purchasing.editor.vatModeAmount.beforeHint',
-    includedHint: 'purchasing.editor.vatModeAmount.includedHint',
-  },
-} as const
-
-/**
- * Whether the purchase's prices (or the expense's amount) are typed before VAT or with it (a
- * VAT-registered business; the owner's request of 2026-09-29). The prices' captions follow it.
- */
-export function VatModeChoice({
-  value,
-  onChange,
-  wording = 'prices',
-  className = 'mb-4',
-}: {
-  value: boolean
-  onChange: (includesVat: boolean) => void
-  wording?: keyof typeof VAT_MODE_WORDS
-  className?: string
-}) {
-  const { t } = useTranslation()
-  const name = useId()
-  const words = VAT_MODE_WORDS[wording]
-  return (
-    <fieldset data-vat-mode className={className}>
-      <legend className="sr-only">{t(words.label)}</legend>
-      <div className="grid grid-cols-2 gap-1 rounded-lg bg-muted p-1">
-        {[false, true].map((includesVat) => (
-          <label key={String(includesVat)} className="relative min-w-0">
-            <input
-              type="radio"
-              name={name}
-              value={includesVat ? 'included' : 'before'}
-              checked={value === includesVat}
-              onChange={() => onChange(includesVat)}
-              className="peer sr-only"
-            />
-            <span
-              className={cn(
-                'flex min-h-11 cursor-pointer items-center justify-center rounded-md px-2 py-1.5 text-center text-sm font-medium text-muted-foreground transition-colors',
-                'peer-checked:bg-card peer-checked:text-foreground peer-checked:shadow-sm',
-                'peer-focus-visible:ring-3 peer-focus-visible:ring-ring',
-              )}
-            >
-              {t(includesVat ? words.included : words.before)}
-            </span>
-          </label>
-        ))}
-      </div>
-      <p className="mt-1.5 text-sm text-muted-foreground">
-        {t(value ? words.includedHint : words.beforeHint)}
-      </p>
-    </fieldset>
   )
 }

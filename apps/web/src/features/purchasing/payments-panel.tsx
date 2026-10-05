@@ -12,10 +12,10 @@ import { toast } from 'sonner'
 import { isolate } from '@/components/form/use-message'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
+import { Money, useBusinessDate, useMoney } from '@/features/documents/amounts'
+import { ConfirmDialog } from '@/features/documents/confirm-dialog'
+import { Panel } from '@/features/documents/panel'
 import { cn } from '@/lib/utils'
-import { Money, useBusinessDate, useMoney } from './amounts'
-import { ConfirmDialog } from './confirm-dialog'
-import { Panel } from './panel'
 import { PaymentSheet, type OwedAmounts, type OwedDocument } from './payment-sheet'
 
 // The payments of a purchase (the owner's request of 2026-09-29) or an expense (M2 Step 5, D-166)

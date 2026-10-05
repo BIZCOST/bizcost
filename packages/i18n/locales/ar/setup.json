@@ -457,5 +457,11 @@
     "equipment": "تكاليف المعدات",
     "maintenance": "الصيانة",
     "other": "أخرى"
+  },
+  "sales_channels": {
+    "shop": "المحل",
+    "messages": "واتساب والهاتف",
+    "online": "عبر الإنترنت",
+    "direct": "البيع المباشر"
   }
 }

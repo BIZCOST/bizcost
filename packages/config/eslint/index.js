@@ -140,6 +140,7 @@ export default tseslint.config(
       'packages/config/**',
       'packages/db/src/tenant.ts',
       'packages/api/demo/clean-test-data.ts',
+      'packages/api/demo/clean.ts',
       '**/*.test.ts',
       '**/*.test.tsx',
       '**/test/**',

@@ -172,6 +172,11 @@ describe('business.createFromSetup', () => {
       expect.arrayContaining(['الإيجار', 'الكهرباء', 'الماء', 'الرواتب', 'أخرى']),
     )
 
+    // The sales channels its answers name, in Arabic (M3 Step 2, D-226): messages only.
+    const channels = await admin<{ name: string; kind: string; fee_percent: string | null }[]>`
+      select name, kind, fee_percent from app.sales_channels where business_id = ${id}`
+    expect(channels).toEqual([{ name: 'واتساب والهاتف', kind: 'messages', fee_percent: null }])
+
     const [profile] = await admin<{ last_business_id: string | null }[]>`
       select last_business_id from app.profiles where id = ${user.id}`
     expect(profile?.last_business_id).toBe(id)
@@ -190,6 +195,7 @@ describe('business.createFromSetup', () => {
         'locations',
         'role_permissions',
         'cost_categories',
+        'sales_channels',
       ]),
     )
     for (const row of audit) {

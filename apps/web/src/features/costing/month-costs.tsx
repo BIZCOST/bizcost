@@ -3,7 +3,7 @@
 import type { MonthCostCategoryDto, MonthCostLineDto, MonthCostsDto } from '@bizcost/contracts'
 import { useTranslation } from 'react-i18next'
 import { NBSP } from '@/features/catalog/units'
-import { useBusinessMonth, useMoney } from '@/features/purchasing/amounts'
+import { useBusinessMonth, useMoney } from '@/features/documents/amounts'
 import { cn } from '@/lib/utils'
 
 // The business's costs of the last full calendar month (D-202, D-203, D-216), in "How your costs are

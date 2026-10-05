@@ -209,8 +209,14 @@ test('Customize BizCost: dependency warnings, Team and Branches appear, guards',
   await products.click()
   let confirm = page.getByRole('alertdialog', { name: /Turn off .*Products & Services/ })
   // Invoices came with VAT (the profile test above). True Cost needs Products & Services too (its
-  // product costs, M2 Step 6).
-  await expect(confirm.getByRole('listitem')).toHaveText(['True Cost', 'Orders', 'Invoices'])
+  // product costs, M2 Step 6), and so does Sales (a sale line names one, M3 Step 2, D-231): planned
+  // like Orders and Invoices, it is named as they are.
+  await expect(confirm.getByRole('listitem')).toHaveText([
+    'True Cost',
+    'Sales',
+    'Orders',
+    'Invoices',
+  ])
   await confirm.getByRole('button', { name: 'Cancel' }).click()
   await expect(products).toBeChecked()
   await products.click()

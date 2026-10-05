@@ -37,15 +37,16 @@ select tables_are(
     'suppliers', 'purchases', 'purchase_lines', 'purchase_returns', 'purchase_return_lines',
     'stock_movements', 'material_costs', 'stock_balances', 'attachments',
     'recipes', 'recipe_lines', 'purchase_payments',
-    'cost_categories', 'expenses', 'expense_payments', 'running_costs'
+    'cost_categories', 'expenses', 'expense_payments', 'running_costs',
+    'sales_channels', 'sales', 'sale_lines', 'sale_line_materials'
   ],
-  'app contains exactly the Milestone 1 tables and those of M2 so far'
+  'app contains exactly the Milestone 1 and M2 tables and those of M3 so far'
 );
 
 select is(
   (select count(*)::int from business_tables),
-  32,
-  'sanity: 32 app tables carry business_id (the checks below are not vacuous)'
+  36,
+  'sanity: 36 app tables carry business_id (the checks below are not vacuous)'
 );
 
 -- 2. Row level security ---------------------------------------------------------
@@ -276,7 +277,14 @@ select is_empty(
          ('recipe_lines', 'recipe_id', 'recipes'),
          ('recipe_lines', 'material_id', 'materials'),
          ('purchases', 'paid_by_member_id', 'business_members'),
-         ('purchase_payments', 'purchase_id', 'purchases')
+         ('purchase_payments', 'purchase_id', 'purchases'),
+         ('sales', 'location_id', 'locations'),
+         ('sales', 'channel_id', 'sales_channels'),
+         ('sales', 'copied_from_id', 'sales'),
+         ('sale_lines', 'sale_id', 'sales'),
+         ('sale_lines', 'product_id', 'products_services'),
+         ('sale_line_materials', 'sale_id', 'sales'),
+         ('sale_line_materials', 'material_id', 'materials')
        ) as v(child, col, parent)
       where not exists (
         select 1
@@ -479,7 +487,23 @@ select is_empty(
          ('purchase_payments', 'method'), ('purchase_payments', 'amount'),
          ('purchase_payments', 'currency'), ('purchase_payments', 'note'),
          ('purchase_payments', 'reversed_at'), ('purchase_payments', 'reversed_by'),
-         ('purchase_payments', 'reversal_date')
+         ('purchase_payments', 'reversal_date'),
+         ('sales_channels', 'name'), ('sales_channels', 'kind'), ('sales_channels', 'fee_percent'),
+         ('sales_channels', 'archived_at'),
+         ('sales', 'source'), ('sales', 'business_date'), ('sales', 'period_from'),
+         ('sales', 'location_id'), ('sales', 'channel_id'), ('sales', 'status'),
+         ('sales', 'vat_registered'), ('sales', 'currency'), ('sales', 'net_total'),
+         ('sales', 'vat_total'), ('sales', 'total'), ('sales', 'delivery_needed'),
+         ('sales', 'delivery_area'), ('sales', 'delivery_cost'), ('sales', 'posted_at'),
+         ('sales', 'reversed_at'), ('sales', 'reversal_business_date'), ('sales', 'copied_from_id'),
+         ('sale_lines', 'sale_id'), ('sale_lines', 'kind'), ('sale_lines', 'product_id'),
+         ('sale_lines', 'description'), ('sale_lines', 'qty'), ('sale_lines', 'unit_price'),
+         ('sale_lines', 'vat_category'), ('sale_lines', 'vat_rate'), ('sale_lines', 'net'),
+         ('sale_lines', 'cost_basis'), ('sale_lines', 'cost'), ('sale_lines', 'time_minutes'),
+         ('sale_lines', 'time_cost'),
+         ('sale_line_materials', 'sale_line_id'), ('sale_line_materials', 'material_id'),
+         ('sale_line_materials', 'base_qty'), ('sale_line_materials', 'unit_cost'),
+         ('sale_line_materials', 'cost'), ('sale_line_materials', 'basis')
        ) as v(tbl, col)
       where not exists (
         select 1 from pg_attribute a
@@ -487,7 +511,7 @@ select is_empty(
            and a.attname = v.col
            and a.attnum > 0
            and not a.attisdropped) $$,
-  'every documented column exists (Milestone 1 and M2 so far)'
+  'every documented column exists (Milestone 1, M2 and M3 so far)'
 );
 
 select hasnt_column('app', 'businesses', 'business_id', 'businesses is the tenant root and has no business_id');

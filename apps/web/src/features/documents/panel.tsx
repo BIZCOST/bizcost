@@ -1,7 +1,7 @@
 import { useId, type ReactNode } from 'react'
 import { cn } from '@/lib/utils'
 
-/** A part of a purchasing page: a card with its title, an optional line of help and an action. */
+/** A part of a document page: a card with its title, an optional line of help and an action. */
 export function Panel({
   title,
   hint,

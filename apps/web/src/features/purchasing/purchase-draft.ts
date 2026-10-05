@@ -3,7 +3,6 @@ import {
   DOCUMENT_REFERENCE_MAX_LENGTH,
   PURCHASE_LINE_DESCRIPTION_MAX_LENGTH,
   type CreatePurchaseInput,
-  type DiscountDto,
   type MaterialDto,
   type PurchaseDto,
 } from '@bizcost/contracts'
@@ -15,7 +14,6 @@ import {
   PAYMENT_METHODS,
   purchaseError,
   type CurrencyCode,
-  type LineDiscount,
   type Money,
   type PaymentMethod,
   type Percent,
@@ -27,13 +25,15 @@ import {
   type StandardUnit,
 } from '@bizcost/domain'
 import type { I18nKey } from '@bizcost/i18n'
+import { readAmount, readQuantity, type FieldError } from '../catalog/numbers'
 import {
-  readAmount,
-  readPercent,
-  readQuantity,
-  type FieldError,
-  type ReadNumber,
-} from '../catalog/numbers'
+  asDiscount,
+  discountDraft,
+  discountOf,
+  NO_VAT,
+  STANDARD_VAT_RATE,
+  type DiscountKind,
+} from '../documents/lines'
 import {
   baseQuantity,
   defaultUnitOf,
@@ -49,15 +49,6 @@ import {
 // line net, each amount rounded to the currency), and purchase.create / purchase.update's fields.
 // VAT is asked only of a VAT-registered business; any other business types what it paid, with no VAT
 // (it is part of its cost either way).
-
-/**
- * The UAE's standard VAT rate (D-121), the one a tax invoice line of a VAT-registered business
- * starts with; the person can pick "No VAT" on a line.
- */
-export const STANDARD_VAT_RATE = '5'
-export const NO_VAT = '0'
-
-export type DiscountKind = 'none' | 'percent' | 'amount'
 
 export interface MaterialLineDraft {
   readonly kind: 'material'
@@ -205,16 +196,6 @@ export function newDeliveryLine(vatRate: string): DeliveryLineDraft {
   return { kind: 'delivery', id: newId(), description: '', amount: '', vatRate }
 }
 
-function discountDraft(discount: DiscountDto | null | undefined): {
-  discountKind: DiscountKind
-  discount: string
-} {
-  if (!discount) return { discountKind: 'none', discount: '' }
-  return 'percent' in discount
-    ? { discountKind: 'percent', discount: discount.percent }
-    : { discountKind: 'amount', discount: discount.amount }
-}
-
 /**
  * The form's first state: a new purchase dated today (the document type a VAT-registered business
  * usually gets is a tax invoice; prices before VAT on a tax invoice, with VAT otherwise; no payment
@@ -278,16 +259,6 @@ export function purchaseDraft(
           },
     ),
   }
-}
-
-function discountOf(kind: DiscountKind, value: string): ReadNumber | null {
-  if (kind === 'none') return null
-  return kind === 'percent' ? readPercent(value) : readAmount(value)
-}
-
-function asDiscount(kind: DiscountKind, value: string): LineDiscount | null {
-  if (kind === 'none') return null
-  return kind === 'percent' ? { percent: value as Percent } : { amount: value as Money }
 }
 
 const BUSINESS_DAY = /^\d{4}-\d{2}-\d{2}$/

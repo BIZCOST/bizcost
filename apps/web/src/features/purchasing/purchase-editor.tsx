@@ -31,21 +31,18 @@ import { NativeSelect } from '@/components/ui/native-select'
 import { Switch } from '@/components/ui/switch'
 import { Textarea } from '@/components/ui/textarea'
 import type { FieldError } from '@/features/catalog/numbers'
+import { useBusinessDate, useMoney } from '@/features/documents/amounts'
+import { closedFor, firstOpenDay } from '@/features/documents/books'
+import { ConfirmDialog } from '@/features/documents/confirm-dialog'
+import { DiscountRow, VatModeChoice } from '@/features/documents/line-editor'
+import { Panel } from '@/features/documents/panel'
+import { StatusBadge } from '@/features/documents/status-badge'
+import { Totals } from '@/features/documents/totals'
 import { can } from '@/features/settings/sections'
 import { useLocale, useTerminology } from '@/lib/i18n/client'
 import { useBusinessContext } from '@/lib/trpc/client'
-import { useBusinessDate, useMoney } from './amounts'
-import { closedFor, firstOpenDay } from './books'
-import { ConfirmDialog } from './confirm-dialog'
 import { hasModule, useAllMaterials, useLocationOptions, useSupplierOptions } from './data'
 import { defaultUnitOf, isUnitOf } from './line-units'
-import {
-  AddLineButtons,
-  DeliveryLineRow,
-  DiscountRow,
-  MaterialLineRow,
-  VatModeChoice,
-} from './purchase-lines'
 import {
   checkPurchase,
   defaultVatRate,
@@ -59,12 +56,10 @@ import {
   type PurchaseDraft,
   type PurchaseFields,
 } from './purchase-draft'
-import { Panel } from './panel'
+import { AddLineButtons, DeliveryLineRow, MaterialLineRow } from './purchase-lines'
 import { QuickMaterialSheet } from './quick-material-sheet'
 import { PendingReceipts, ReceiptError, Receipts, useUploadReceipt } from './receipts'
-import { StatusBadge } from './status-badge'
 import { SupplierSheet } from './supplier-sheet'
-import { Totals } from './totals'
 
 // Enter a purchase (M2 Step 3; D-114, D-134): a new one or a saved draft. Fast on a phone: the
 // supplier, the day and what was bought, each line in the unit or pack it was bought in, said in

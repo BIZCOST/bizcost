@@ -301,7 +301,8 @@ describe('business.context', () => {
       permissions: {
         all: false,
         // The owner's answers of 2026-09-29 (D-179, D-180): recipes (quantities) and their
-        // materials, and entering expenses; nothing sensitive.
+        // materials, and entering expenses; nothing sensitive. Entering and finalizing their own
+        // sales (M3 Step 2, Q10): held already, served once Sales is (its module gate).
         keys: [
           'dashboard.home.view',
           'expenses.documents.manage',
@@ -309,6 +310,8 @@ describe('business.context', () => {
           'materials.items.view',
           'products.items.view',
           'products.recipes.view',
+          'sales.documents.manage',
+          'sales.documents.post',
         ],
       },
       locationScope: { all: false, ids: [branchId] },

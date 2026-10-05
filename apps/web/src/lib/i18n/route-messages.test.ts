@@ -15,10 +15,12 @@ import {
   CATALOG_MESSAGES,
   DASHBOARD_MESSAGES,
   EXPENSES_MESSAGES,
+  MEMBER_ACCESS_MESSAGES,
   PRODUCT_COSTS_MESSAGES,
   PURCHASES_MESSAGES,
   ROOT_MESSAGES,
   RUNNING_COSTS_MESSAGES,
+  SALES_MESSAGES,
   SETTINGS_MESSAGES,
   SETTINGS_SECTION_MESSAGES,
   SETUP_MESSAGES,
@@ -129,7 +131,10 @@ describe("each route's messages have the keys its code translates", () => {
   })
 
   it('Purchases, supplier returns and credit notes', () => {
-    expect(missing(['features/purchasing', 'components/ui'], PURCHASES_MESSAGES)).toEqual({})
+    // The document parts the purchase editor shares (features/documents, M3 Step 2) too.
+    expect(
+      missing(['features/purchasing', 'features/documents', 'components/ui'], PURCHASES_MESSAGES),
+    ).toEqual({})
   })
 
   it('Expenses: the list, the editor, the view, the categories and the shared parts', () => {
@@ -138,9 +143,12 @@ describe("each route's messages have the keys its code translates", () => {
       missing(
         [
           'features/expenses',
-          `${purchasing}/amounts.tsx`,
-          `${purchasing}/confirm-dialog.tsx`,
-          `${purchasing}/panel.tsx`,
+          'features/documents/amounts.tsx',
+          'features/documents/confirm-dialog.tsx',
+          'features/documents/line-editor.tsx',
+          'features/documents/panel.tsx',
+          'features/documents/search-box.tsx',
+          'features/documents/totals.tsx',
           `${purchasing}/payments-panel.tsx`,
           `${purchasing}/payment-sheet.tsx`,
           `${purchasing}/payment-draft.ts`,
@@ -148,7 +156,6 @@ describe("each route's messages have the keys its code translates", () => {
           `${purchasing}/receipts.tsx`,
           `${purchasing}/supplier-sheet.tsx`,
           `${purchasing}/supplier-draft.ts`,
-          `${purchasing}/totals.tsx`,
           'features/catalog/catalog-list.tsx',
           'features/catalog/catalog-loading.tsx',
           'components/ui',
@@ -169,9 +176,9 @@ describe("each route's messages have the keys its code translates", () => {
           `${expenses}/categories-sheet.tsx`,
           `${expenses}/category-field.tsx`,
           `${expenses}/data.ts`,
-          'features/purchasing/amounts.tsx',
-          'features/purchasing/confirm-dialog.tsx',
-          'features/purchasing/panel.tsx',
+          'features/documents/amounts.tsx',
+          'features/documents/confirm-dialog.tsx',
+          'features/documents/panel.tsx',
           'features/catalog/catalog-list.tsx',
           'features/catalog/catalog-loading.tsx',
         ],
@@ -186,11 +193,34 @@ describe("each route's messages have the keys its code translates", () => {
         [
           'features/costing',
           'features/catalog',
-          'features/purchasing/amounts.tsx',
-          'features/purchasing/panel.tsx',
+          'features/documents/amounts.tsx',
+          'features/documents/panel.tsx',
           'components/ui',
         ],
         PRODUCT_COSTS_MESSAGES,
+      ),
+    ).toEqual({})
+  })
+
+  it("Sales: the list, Today's sales, One sale and the sale as recorded (M3 Step 2)", () => {
+    expect(
+      missing(
+        ['features/sales', 'features/documents', 'features/catalog', 'components/ui'],
+        SALES_MESSAGES,
+      ),
+    ).toEqual({})
+  })
+
+  it("a member's page: their permissions and the branches they work in", () => {
+    expect(
+      missing(
+        [
+          'features/settings/member-access.tsx',
+          'features/settings/member-branches.tsx',
+          'features/settings/permission-switches.tsx',
+          'features/settings/role-picker.tsx',
+        ],
+        [...SETTINGS_MESSAGES, ...MEMBER_ACCESS_MESSAGES],
       ),
     ).toEqual({})
   })
@@ -200,6 +230,7 @@ describe("each route's messages have the keys its code translates", () => {
     const sections = {
       business: ['business-profile.tsx', 'logo-section.tsx', 'module-names.ts'],
       locations: ['locations-settings.tsx'],
+      channels: ['channels-settings.tsx'],
       members: ['members-settings.tsx', 'invitations.tsx', 'member-dialogs.tsx', 'role-picker.tsx'],
       roles: ['roles-settings.tsx', 'role-picker.tsx'],
       modules: ['customize-settings.tsx', '../setup/review-parts.tsx'],
@@ -242,7 +273,9 @@ describe("each route's messages have the keys its code translates", () => {
       EXPENSES_MESSAGES,
       RUNNING_COSTS_MESSAGES,
       PRODUCT_COSTS_MESSAGES,
+      SALES_MESSAGES,
       SETTINGS_MESSAGES,
+      MEMBER_ACCESS_MESSAGES,
       ...Object.values(SETTINGS_SECTION_MESSAGES),
     ].flat()
     expect(

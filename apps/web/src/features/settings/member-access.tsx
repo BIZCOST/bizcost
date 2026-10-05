@@ -35,6 +35,7 @@ import {
   type PermissionGroup,
 } from './permission-groups'
 import { PermissionSwitches } from './permission-switches'
+import { MemberBranches, showsMemberBranches } from './member-branches'
 import { changeCount, changedSwitches, overridesFor } from './member-overrides'
 import { canGrantKey } from './role-labels'
 import { useRoleName } from './role-picker'
@@ -47,7 +48,8 @@ import { NoAccess } from './settings-shell'
 // editor: a permission comes with what it needs (costs, supplier prices and margins as one switch), and
 // nobody gives access they don't have. Not the owner's (they can do everything) and not one's own.
 // The changes are saved whole (member.updatePermissions), with the member's permissions version.
-// "N changes from their role" names each switch that differs, and leads to it (D-200).
+// "N changes from their role" names each switch that differs, and leads to it (D-200). With a team,
+// branches and Sales served, "Branches they work in" comes first (M3 Step 2, Q12: member-branches.tsx).
 
 function Editor({
   data,
@@ -109,6 +111,10 @@ function Editor({
         result,
       )
       void queryClient.invalidateQueries({ queryKey: trpc.member.list.queryKey() })
+      // Their permissions version moved on: "Branches they work in" is read again (M3 Step 2).
+      void queryClient.invalidateQueries({
+        queryKey: trpc.member.locations.queryKey({ memberId: data.memberId }),
+      })
       toast.success(t('settings.memberAccess.saved', { name }))
       return true
     } catch (error) {
@@ -324,8 +330,20 @@ export function MemberAccess({ businessId, memberId }: { businessId: string; mem
                 </FormAlert>
               ) : !data.editable ? (
                 <FormAlert tone="info" className="mb-5">
-                  {t('settings.memberAccess.locked')}
+                  {/* A member limited to some branches changes only those within them (D-236). */}
+                  {context?.locationScope.all === false
+                    ? t('settings.memberAccess.lockedBranches')
+                    : t('settings.memberAccess.locked')}
                 </FormAlert>
+              ) : null}
+              {showsMemberBranches(context) ? (
+                <div className="mb-5">
+                  <MemberBranches
+                    memberId={data.memberId}
+                    name={data.displayName}
+                    isYou={data.isYou}
+                  />
+                </div>
               ) : null}
               <Editor key={data.memberId} data={data} groups={groups} sensitive={sensitive} />
             </>

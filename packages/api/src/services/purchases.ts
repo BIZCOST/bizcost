@@ -45,6 +45,7 @@ import { assertQueryable } from '../trpc'
 import { detachAll, removeStoredFiles } from './attachments'
 import { containsPattern, decodeCursor, encodeCursor, requestHashOf } from './catalog'
 import { baseQtyOf, loadMaterials, type MaterialInfo } from './purchase-materials'
+import { fillSaleMaterialCosts } from './sale-costs'
 import {
   assertPostable,
   insertMovement,
@@ -949,7 +950,8 @@ function asInputLine(line: DraftLineRecord): InputLine {
  * `purchase.post`: the draft (its `version` as read) becomes posted, and its goods come into stock:
  * each material line brings its base quantity and what its goods cost (after discounts, with its
  * delivery share, VAT when it cannot be reclaimed) into the ledger, and the material's average moves
- * (D-114 rule 1). Idempotent: a purchase already posted (or reversed since) is returned as it is.
+ * (D-114 rule 1). The finalized sales of its materials that have no price yet take it, once (M3 Step 2,
+ * D-222). Idempotent: a purchase already posted (or reversed since) is returned as it is.
  * Refused: a date after today (FUTURE_DATE) or on or before the books-closed date (BOOKS_CLOSED), no
  * payment method (PAYMENT_METHOD_REQUIRED: a draft saved before it was required), paid by a member
  * who is no longer an active member (NOT_FOUND, as when it is saved), no material line, a material or
@@ -1066,6 +1068,9 @@ export async function postPurchase(
         total: amounts.total,
       })
       .where(and(eq(purchases.businessId, ctx.businessId), eq(purchases.id, input.id)))
+    // After its own locks and its receipts: the finalized sales of its materials still without a
+    // price take it, once (D-222, D-228; the lock edge cost rows → sale lines, sale-costs.ts).
+    await fillSaleMaterialCosts(tx, ctx.businessId, materialIds)
     return result(await readPurchase(tx, ctx.businessId, input.id))
   })
 }

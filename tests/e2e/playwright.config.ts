@@ -1,5 +1,13 @@
 import { defineConfig, devices } from '@playwright/test'
-import { baseURL, port, repoRoot, stack } from './stack'
+import {
+  baseURL,
+  PREVIEW_MODULES,
+  port,
+  previewBaseURL,
+  previewPort,
+  repoRoot,
+  stack,
+} from './stack'
 
 // End-to-end tests of the web app against a production build (`next build` + `next start`) and the
 // local Supabase stack (Auth + Mailpit): `pnpm e2e` (docs/ARCHITECTURE.md §Testing & CI). The build
@@ -7,11 +15,12 @@ import { baseURL, port, repoRoot, stack } from './stack'
 // developer's `next dev`. One worker: the local Auth server limits sign-ins per IP, and every test
 // reads its codes from the shared Mailpit.
 //
-// Every spec runs on the production build: the Costing Core (Products & Services, Materials,
-// Suppliers, Purchases, Expenses, Running Costs, Files and the Cost Engine) is released since M2
-// Step 7 (D-188), so the development server with the dev-only preview that its specs used while it
-// was built (D-125, D-127) is gone. A module built next brings it back the same way: a `preview`
-// project on a `next dev` server with BIZCOST_PREVIEW_MODULES naming it.
+// The released screens (the Costing Core since M2 Step 7, D-188) run on the production build. The
+// modules being built are still `planned`, and a production build never shows a planned module
+// (D-125): their specs (`preview` project; M3 Step 2: Sales) run on a `next dev` server with the
+// dev-only preview, in its own folder (.next/e2e-preview) on E2E_PREVIEW_PORT (default E2E_PORT + 1),
+// as in M2 (D-127). When Release A (M3 Step 6) releases them, their specs move to the production
+// project and this server goes again.
 
 const { apiUrl, publishableKey, secretKey } = stack()
 const web = 'pnpm --filter @bizcost/web exec next'
@@ -33,6 +42,9 @@ function webEnv(origin: string): Record<string, string> {
   }
 }
 
+/** Specs of the modules shown only by the dev-only preview. */
+const PREVIEW_SPECS = /(?:sales)\.spec\.ts$/
+
 export default defineConfig({
   testDir: './specs',
   fullyParallel: false,
@@ -49,7 +61,21 @@ export default defineConfig({
     trace: 'retain-on-failure',
     screenshot: 'only-on-failure',
   },
-  projects: [{ name: 'chromium', use: { ...devices['Desktop Chrome'] } }],
+  projects: [
+    {
+      name: 'chromium',
+      use: { ...devices['Desktop Chrome'] },
+      testIgnore: PREVIEW_SPECS,
+    },
+    {
+      name: 'preview',
+      use: { ...devices['Desktop Chrome'], baseURL: previewBaseURL },
+      testMatch: PREVIEW_SPECS,
+      // A development server compiles each page the first time it is opened.
+      timeout: 240_000,
+      expect: { timeout: 30_000 },
+    },
+  ],
   webServer: [
     {
       command: `${web} build && ${web} start --port ${port}`,
@@ -59,6 +85,18 @@ export default defineConfig({
       reuseExistingServer: false,
       timeout: 300_000,
       env: { NEXT_DIST_DIR: '.next/e2e', ...webEnv(baseURL) },
+    },
+    {
+      command: `${web} dev --port ${previewPort}`,
+      cwd: repoRoot,
+      url: `${previewBaseURL}/login`,
+      reuseExistingServer: false,
+      timeout: 300_000,
+      env: {
+        NEXT_DIST_DIR: '.next/e2e-preview',
+        BIZCOST_PREVIEW_MODULES: PREVIEW_MODULES,
+        ...webEnv(previewBaseURL),
+      },
     },
   ],
 })

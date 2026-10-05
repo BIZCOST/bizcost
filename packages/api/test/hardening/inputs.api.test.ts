@@ -11,6 +11,8 @@ import type {
   RecipeDto,
   RoleDto,
   RunningCostDto,
+  SaleDto,
+  SalesChannelDto,
   SupplierDto,
 } from '@bizcost/contracts'
 import { newId } from '@bizcost/domain'
@@ -21,7 +23,8 @@ import { handlerFor, mutate, SECRET_KEY, type CallResult } from '../helpers'
 import { CostScope, ProductCostsApi, tag } from '../product-costs'
 import { codeOf, line, ok, purchaseInput } from '../purchasing'
 import { BAKER, CapturedEmails, WORKSHOP } from '../settings'
-import { businessDigest, proceduresOf } from './fixture'
+import { businessDigest, PREVIEW_MODULES, proceduresOf } from './fixture'
+import { updateFieldsOf } from '../sales'
 import {
   decimalsIn,
   inputLeaves,
@@ -52,7 +55,7 @@ class InputsApi extends ProductCostsApi {
   override readonly handler = handlerFor(
     this.db,
     undefined,
-    { supabaseSecretKey: SECRET_KEY },
+    { supabaseSecretKey: SECRET_KEY, previewModules: PREVIEW_MODULES },
     { emailSender: this.emails },
   )
 }
@@ -69,6 +72,9 @@ let category: CostCategoryDto
 let rentCategory: CostCategoryDto
 /** Bought once, for recipes (its average does not move in these tests). */
 let beans: MaterialDto
+/** Sold by the sales of these tests (M3 Step 2), in the channel Smart Setup gave the shop. */
+let latte: ProductDto
+let channelId: string
 
 type Where = 'shop' | 'alone'
 const scopeOf = (where: Where = 'shop') => (where === 'alone' ? alone : shop)
@@ -83,6 +89,9 @@ beforeAll(async () => {
   beans = await shop.newMaterial({ name: `Beans ${tag()}`, unit: 'kg' })
   await shop.buy(purchaseInput(today, [line(beans.id, '2', '48.5', { unit: 'kg' })]))
   ok(await shop.run('expense.updateSettings', { approval: true }))
+  latte = await shop.product({ name: `Latte ${tag()}`, defaultPrice: '18' })
+  channelId = ok(await shop.run<{ data: { items: SalesChannelDto[] } }>('channel.list')).data
+    .items[0]!.id
 }, 60_000)
 
 afterAll(() => api.close())
@@ -194,6 +203,64 @@ async function returnInput(kind: 'return' | 'credit_note', change: object = {}) 
     ],
     ...change,
   }
+}
+
+/** A sale with every decimal field (delivery charged, and what it cost). */
+function saleInput(extra: object = {}) {
+  return {
+    id: newId(),
+    source: 'single',
+    businessDate: today,
+    channelId,
+    deliveryNeeded: true,
+    deliveryCost: '4.75',
+    lines: [
+      {
+        kind: 'item',
+        id: newId(),
+        productId: latte.id,
+        qty: '2.5',
+        unitPrice: '12.25',
+        discount: { percent: '10' },
+      },
+      {
+        kind: 'item',
+        id: newId(),
+        productId: latte.id,
+        qty: '1',
+        unitPrice: '7.5',
+        discount: { amount: '0.5' },
+      },
+      { kind: 'delivery', id: newId(), amount: '3.5' },
+    ],
+    ...extra,
+  }
+}
+
+/** The fields of a sale's update (no id or source). */
+function saleFields(extra: object = {}) {
+  return updateFieldsOf(saleInput(extra))
+}
+
+async function saleDraft(extra: object = {}): Promise<SaleDto> {
+  return ok(await shop.run<{ data: SaleDto }>('sale.create', saleInput(extra))).data
+}
+
+async function postedSale(extra: object = {}): Promise<SaleDto> {
+  const draft = await saleDraft(extra)
+  return ok(
+    await shop.run<{ data: SaleDto }>('sale.post', { id: draft.id, version: draft.version }),
+  ).data
+}
+
+async function newChannel(): Promise<SalesChannelDto> {
+  return ok(
+    await shop.run<{ data: SalesChannelDto }>('channel.create', {
+      id: newId(),
+      name: `Channel ${tag()}`,
+      kind: 'delivery_app',
+    }),
+  ).data
 }
 
 // ---------------------------------------------------------------------------------------------------
@@ -333,6 +400,47 @@ const DIGITS: Record<string, Variant[]> = {
   ],
   'productCost.updateSettings': [
     { where: 'alone', input: async () => ({ ownerHourlyRate: '45.5' }) },
+  ],
+  'channel.create': [
+    {
+      input: async () => ({
+        id: newId(),
+        name: `Talabat ${tag()}`,
+        kind: 'delivery_app',
+        feePercent: '17.5',
+      }),
+    },
+  ],
+  'channel.update': [
+    {
+      input: async () => {
+        const channel = await newChannel()
+        return {
+          id: channel.id,
+          version: channel.version,
+          name: channel.name,
+          kind: channel.kind,
+          feePercent: '12.75',
+        }
+      },
+    },
+  ],
+  'sale.create': [{ input: async () => saleInput() }],
+  'sale.update': [
+    {
+      input: async () => {
+        const draft = await saleDraft({ deliveryCost: '1', lines: [] })
+        return { ...saleFields(), id: draft.id, version: draft.version }
+      },
+    },
+  ],
+  'sale.fillDeliveryCost': [
+    {
+      input: async () => ({
+        id: (await postedSale({ deliveryCost: undefined })).id,
+        deliveryCost: '6.25',
+      }),
+    },
   ],
   // A phone number is not a quantity, but it is typed with the same keyboard.
   'supplier.create': [
@@ -477,6 +585,18 @@ const CREATES: Record<string, Create> = {
     input: async () => runningCostInput(),
     other: async (input) => ({ ...input, amount: '999' }),
   },
+  'channel.create': {
+    input: async () => ({ id: newId(), name: `Channel ${tag()}`, kind: 'other' }),
+    other: renamed,
+  },
+  'sale.create': {
+    input: async () => saleInput(),
+    other: async (input) => ({ ...input, notes: `Other ${tag()}` }),
+  },
+  'sale.correct': {
+    input: async () => ({ id: (await postedSale()).id, newId: newId() }),
+    other: async (input) => ({ ...input, id: (await postedSale()).id }),
+  },
 }
 
 /** Not a create although its input names a row: why. */
@@ -484,6 +604,8 @@ const NOT_CREATES: Record<string, string> = {
   'account.setLastBusiness': 'names a business the caller already belongs to (FORBIDDEN otherwise)',
   'business.createFromSetup':
     'idempotent on businessId, proven below in its own business (setup.api.test.ts has the rest)',
+  'sale.fillDeliveryCost':
+    'fills a finalized sale’s missing delivery cost once (DOCUMENT_POSTED after), never makes a row',
 }
 
 function topLevelKeys(path: string): Set<string> {
@@ -734,6 +856,29 @@ const VERSIONED: Record<string, Versioned> = {
   'expense.reject': async () => {
     const sent = await submitted()
     return { id: sent.id, version: sent.version, reason: 'Not ours' }
+  },
+  'channel.update': async () => {
+    const channel = await newChannel()
+    return { id: channel.id, version: channel.version, name: `Renamed ${tag()}`, kind: 'other' }
+  },
+  'sale.update': async () => {
+    const draft = await saleDraft()
+    return { ...saleFields({ notes: 'Changed' }), id: draft.id, version: draft.version }
+  },
+  'sale.discard': async () => {
+    const draft = await saleDraft()
+    return { id: draft.id, version: draft.version }
+  },
+  'sale.post': async () => {
+    const draft = await saleDraft()
+    return { id: draft.id, version: draft.version }
+  },
+  'member.updateLocations': async () => {
+    const member = await api.member(shop, 'employee')
+    const { version } = ok(
+      await shop.run<{ version: number }>('member.locations', { memberId: member.memberId }),
+    )
+    return { memberId: member.memberId, version, locationIds: [] }
   },
 }
 

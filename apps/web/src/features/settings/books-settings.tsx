@@ -22,7 +22,7 @@ import { SectionPage } from './settings-shell'
 // day can be finalized or reversed any more (purchases and expenses; later documents too). Off by
 // default. The day is today at the latest; moving it back or opening the books again is allowed, and
 // every change is in the audit log. Only members with settings.books.close (Owner, Admin) see it,
-// with Purchases or Expenses on (D-176).
+// with Purchases, Expenses or Sales on (D-176, D-227).
 
 export function BooksSettings({ businessId }: { businessId: string }) {
   const { t } = useTranslation()
@@ -45,7 +45,11 @@ export function BooksSettings({ businessId }: { businessId: string }) {
     try {
       const saved = await close.mutateAsync({ closedThrough })
       queryClient.setQueryData(trpc.books.get.queryKey(), saved)
-      await queryClient.invalidateQueries({ queryKey: trpc.purchase.pathKey() })
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: trpc.purchase.pathKey() }),
+        // Today's sales says the books-closed date too (M3 Step 2).
+        queryClient.invalidateQueries({ queryKey: trpc.sale.pathKey() }),
+      ])
       setDay(null)
       toast.success(
         saved.closedThrough

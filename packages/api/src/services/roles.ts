@@ -18,7 +18,7 @@ import { and, eq, inArray, isNull, sql } from 'drizzle-orm'
 import type { BusinessCtx } from '../business-context'
 import { AppError } from '../errors'
 import { revokeInvitationsBeyondSenders } from './invitations'
-import { canGrant } from './team-rules'
+import { canGrant, coversBranches } from './team-rules'
 
 // Settings → Roles (ROADMAP.md Step 6): the business's roles (template copies from Smart Setup) and
 // editing which permissions a role grants. The Owner role is read-only (every permission, implicitly).
@@ -138,6 +138,31 @@ async function ownChangesWithinCaller(
 }
 
 /**
+ * A caller limited to some branches (Q12) edits only a role whose members, and whose pending
+ * invitations, are all limited within the caller's branches: a role is shared by every branch, and
+ * its keys reach every sale its members see (D-236). Anyone else: always.
+ */
+async function holdersWithinBranches(tx: Tx, ctx: BusinessCtx, roleId: string): Promise<boolean> {
+  if (ctx.access.locationScope.all) return true
+  const holders = (await tx.execute(sql`
+    select coalesce(array_agg(ml.location_id) filter (where ml.location_id is not null),
+                    '{}'::uuid[]) as location_ids
+      from app.business_members m
+      left join app.member_locations ml
+        on ml.business_id = m.business_id and ml.member_id = m.id and ml.deleted_at is null
+     where m.business_id = ${ctx.businessId} and m.role_id = ${roleId} and m.deleted_at is null
+       and m.status in ('active', 'suspended')
+     group by m.id
+    union all
+    select i.location_ids
+      from app.business_invitations i
+     where i.business_id = ${ctx.businessId} and i.role_id = ${roleId}
+       and i.status = 'pending' and i.deleted_at is null
+  `)) as unknown as { location_ids: string[] }[]
+  return holders.every((holder) => coversBranches(ctx.access, holder.location_ids))
+}
+
+/**
  * `role.updatePermissions` (settings.roles.manage): replaces the keys a role grants. Keys must be in
  * the permission catalog, and a key that needs another (PERMISSION_NEEDS: changing needs seeing) comes
  * with it (VALIDATION); the Owner role cannot be edited (VALIDATION); `version` must be the role's
@@ -145,7 +170,8 @@ async function ownChangesWithinCaller(
  * and add or remove only permissions they hold (FORBIDDEN), like assigning or removing members; nor a
  * role one of whose members may, through their own changes, do more than the caller, before the
  * change or after it (FORBIDDEN, D-200: a role edit never takes away, or brings back, what the owner
- * gave one person beyond the caller).
+ * gave one person beyond the caller); nor, for a caller limited to some branches, a role held or
+ * offered beyond them (FORBIDDEN, D-236).
  */
 export async function updateRolePermissions(
   ctx: BusinessCtx,
@@ -204,6 +230,11 @@ export async function updateRolePermissions(
       !(await ownChangesWithinCaller(tx, ctx, role, [...current], wanted))
     ) {
       throw new AppError('forbidden', { message: 'a member of this role has access beyond yours' })
+    }
+    if (!(await holdersWithinBranches(tx, ctx, role.id))) {
+      throw new AppError('forbidden', {
+        message: 'a member of this role works beyond your branches',
+      })
     }
 
     if (removed.length > 0) {

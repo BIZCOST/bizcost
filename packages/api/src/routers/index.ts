@@ -20,10 +20,11 @@ import { purchaseReturnRouter } from './purchase-return'
 import { recipeRouter } from './recipe'
 import { roleRouter } from './role'
 import { runningCostRouter } from './running-cost'
+import { channelRouter, saleRouter } from './sale'
 import { supplierRouter } from './supplier'
 
 /**
- * The API of M1 and of M2 so far. Routers of each module arrive with the module's build (no
+ * The API of M1, M2 and M3 so far. Routers of each module arrive with the module's build (no
  * placeholders); a planned module's procedures answer MODULE_DISABLED until it is released.
  */
 export const appRouter = router({
@@ -51,6 +52,8 @@ export const appRouter = router({
   expensePayment: expensePaymentRouter,
   runningCost: runningCostRouter,
   productCost: productCostRouter,
+  sale: saleRouter,
+  channel: channelRouter,
 })
 
 export type AppRouter = typeof appRouter

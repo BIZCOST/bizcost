@@ -2,6 +2,7 @@ import type {
   PaymentMethod,
   PurchaseDocumentType,
   RunningCostFrequency,
+  SalesChannelKind,
   SettlementMethod,
   StandardUnit,
   StarterCostCategory,
@@ -155,6 +156,36 @@ export interface DemoExpense {
   readonly monthsBack?: number
 }
 
+/** A sales channel the business adds (M3 Step 2): a delivery app with its commission %. */
+export interface DemoChannel {
+  readonly key: string
+  readonly name: string
+  readonly kind: SalesChannelKind
+  readonly feePercent?: string
+}
+
+/**
+ * A sale (M3 Step 2, previewed until Release A): Today's sales (`day_sheet`, a member's sheet of a
+ * day, or of the whole of last month with `lastMonth`) or One sale (`single`), finalized unless
+ * `draft`. `channel`: a channel the business adds (its key) or a starter channel by its kind;
+ * default: its first starter channel. Lines: a product's key, the quantity and the price (default its
+ * usual price). Delivery: the area, what the customer was charged and what it cost (missing: filled
+ * later, D-230).
+ */
+export interface DemoSale {
+  readonly key: string
+  readonly daysAgo: number
+  readonly source: 'day_sheet' | 'single'
+  readonly lastMonth?: true
+  readonly channel?: string
+  readonly branch?: string
+  /** The member who enters (and finalizes) it; default: the owner. */
+  readonly enteredBy?: string
+  readonly draft?: true
+  readonly delivery?: { readonly area: string; readonly charged: string; readonly cost?: string }
+  readonly lines: readonly (readonly [product: string, qty: string, price?: string])[]
+}
+
 export interface DemoCosting {
   readonly suppliers?: readonly DemoSupplier[]
   readonly materials?: readonly DemoMaterial[]
@@ -167,6 +198,10 @@ export interface DemoCosting {
   readonly expenses?: readonly DemoExpense[]
   /** A business without a team: the owner's hourly rate (D-119). */
   readonly ownerHourlyRate?: string
+  /** Channels it adds (M3 Step 2). */
+  readonly channels?: readonly DemoChannel[]
+  /** Its sales, entered after the purchases of their days (M3 Step 2). */
+  readonly sales?: readonly DemoSale[]
 }
 
 const pack = (key: string, name: string, qty: string, of: UnitOrPack): DemoPack => ({
@@ -674,6 +709,63 @@ export const CAFE_COSTING: DemoCosting = {
       approval: 'waiting',
     },
   ],
+  channels: [{ key: 'talabat', name: 'طلبات', kind: 'delivery_app', feePercent: '20' }],
+  sales: [
+    ...([3, 2, 1] as const).map((daysAgo): DemoSale => ({
+      key: `shop-${daysAgo}`,
+      daysAgo,
+      source: 'day_sheet',
+      channel: 'shop',
+      lines: [
+        ['spanish', String(30 + daysAgo * 4)],
+        ['americano', String(12 + daysAgo)],
+        ['cappuccino', String(18 + daysAgo * 2)],
+        ['croissant', String(15 + daysAgo)],
+      ],
+    })),
+    ...([2, 1] as const).map((daysAgo): DemoSale => ({
+      key: `barista-${daysAgo}`,
+      daysAgo,
+      source: 'day_sheet',
+      channel: 'shop',
+      enteredBy: 'cafe.barista@demo.bizcost.local',
+      lines: [
+        ['spanish', String(14 + daysAgo)],
+        ['iced', String(9 + daysAgo)],
+      ],
+    })),
+    ...([2, 1] as const).map((daysAgo): DemoSale => ({
+      key: `talabat-${daysAgo}`,
+      daysAgo,
+      source: 'day_sheet',
+      channel: 'talabat',
+      // Talabat's prices are higher than the shop's.
+      lines: [
+        ['spanish', String(11 + daysAgo), '21'],
+        ['macchiato', String(6 + daysAgo), '23'],
+      ],
+    })),
+    {
+      key: 'mirdif-1',
+      daysAgo: 1,
+      source: 'day_sheet',
+      channel: 'shop',
+      branch: 'فرع مردف',
+      lines: [
+        ['spanish', '22'],
+        ['americano', '9'],
+      ],
+    },
+    {
+      key: 'barista-today',
+      daysAgo: 0,
+      source: 'day_sheet',
+      channel: 'shop',
+      enteredBy: 'cafe.barista@demo.bizcost.local',
+      draft: true,
+      lines: [['spanish', '7']],
+    },
+  ],
 }
 
 // ---------------------------------------------------------------------------------------------------
@@ -918,6 +1010,34 @@ export const BAKER_COSTING: DemoCosting = {
     },
   ],
   ownerHourlyRate: '45',
+  // Last month typed in at once (one sale on its last day, Q9), then orders with delivery.
+  sales: [
+    {
+      key: 'last-month',
+      daysAgo: 0,
+      source: 'day_sheet',
+      lastMonth: true,
+      lines: [
+        ['slice', '64'],
+        ['cupcakes', '18'],
+        ['cake', '5'],
+      ],
+    },
+    {
+      key: 'cake-delivery',
+      daysAgo: 3,
+      source: 'single',
+      delivery: { area: 'البرشاء', charged: '20', cost: '25' },
+      lines: [['cake', '1', '150']],
+    },
+    {
+      key: 'cupcakes-delivery',
+      daysAgo: 1,
+      source: 'single',
+      delivery: { area: 'الجميرا', charged: '15' },
+      lines: [['cupcakes', '2']],
+    },
+  ],
 }
 
 // ---------------------------------------------------------------------------------------------------
@@ -1110,6 +1230,22 @@ export const PRINT3D_COSTING: DemoCosting = {
       payment: 'card',
     },
   ],
+  sales: [
+    {
+      key: 'holders',
+      daysAgo: 4,
+      source: 'single',
+      channel: 'website',
+      lines: [['holder', '6']],
+    },
+    {
+      key: 'helper-part',
+      daysAgo: 2,
+      source: 'single',
+      enteredBy: 'print3d.helper@demo.bizcost.local',
+      lines: [['part', '2', '95']],
+    },
+  ],
 }
 
 // ---------------------------------------------------------------------------------------------------
@@ -1228,6 +1364,22 @@ export const GROCERY_COSTING: DemoCosting = {
       amount: '350',
       payment: 'cash',
     },
+  ],
+  sales: [
+    ...([2, 1] as const).map((daysAgo): DemoSale => ({
+      key: `counter-${daysAgo}`,
+      daysAgo,
+      source: 'day_sheet',
+      channel: 'shop',
+      enteredBy: 'retail.cashier@demo.bizcost.local',
+      lines: [
+        ['water', String(40 + daysAgo * 6)],
+        ['juice', String(12 + daysAgo)],
+        ['milk', String(15 + daysAgo)],
+        ['rice', String(3 + daysAgo)],
+        ['tea', '6'],
+      ],
+    })),
   ],
 }
 
@@ -1368,6 +1520,7 @@ export const WORKSHOP_COSTING: DemoCosting = {
     amount,
     payment: 'card',
   })),
+  sales: [{ key: 'table', daysAgo: 3, source: 'single', lines: [['table', '1', '2350']] }],
 }
 
 // ---------------------------------------------------------------------------------------------------
@@ -1619,6 +1772,7 @@ export const FACTORY_COSTING: DemoCosting = {
       payment: 'card',
     },
   ],
+  sales: [{ key: 'floor-500', daysAgo: 4, source: 'single', lines: [['floor', '500', '7.25']] }],
 }
 
 // ---------------------------------------------------------------------------------------------------
@@ -1701,6 +1855,12 @@ export const DESIGNER_COSTING: DemoCosting = {
     },
   ],
   ownerHourlyRate: '100',
+  // One sale per job.
+  sales: [
+    { key: 'logo', daysAgo: 10, source: 'single', lines: [['logo', '1']] },
+    { key: 'identity', daysAgo: 5, source: 'single', lines: [['identity', '1', '4200']] },
+    { key: 'consultation', daysAgo: 2, source: 'single', lines: [['consultation', '3']] },
+  ],
 }
 
 // ---------------------------------------------------------------------------------------------------

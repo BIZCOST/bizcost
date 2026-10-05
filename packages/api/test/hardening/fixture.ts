@@ -19,6 +19,8 @@ import type {
   RecipeDto,
   RoleDto,
   RunningCostDto,
+  SaleDto,
+  SalesChannelDto,
   SupplierDto,
 } from '@bizcost/contracts'
 import type { Db } from '@bizcost/db'
@@ -58,6 +60,11 @@ import { CapturedEmails, join, setupBusiness, WORKSHOP } from '../settings'
 // M2 Step 5: expenses need approval in each business; each has a category of its own, an expense
 // bought on credit with a receipt and a payment, a draft expense, one sent for approval, and a
 // running cost. M2 Step 6: the Cost Engine is previewed too (product costs and their settings).
+//
+// M3 Step 2: Sales is planned until Release A, so the suites run with the dev-only preview of it
+// (D-125), as a local server does, and its procedures are attacked like the others. Each business
+// also has a sales channel of its own (with a commission %), a finalized sale with delivery charged and
+// its cost, and a draft of Today's sales.
 
 export type Handler = ReturnType<typeof handlerFor>
 
@@ -75,12 +82,23 @@ export interface Api {
   close: () => Promise<void>
 }
 
-/** The API as deployed (secret key for Storage, emails kept instead of sent), and its test users. */
+/** The modules still being built that the suites preview (D-125): Sales since M3 Step 2. */
+export const PREVIEW_MODULES = ['sales'] as const
+
+/**
+ * The API as deployed (secret key for Storage, emails kept instead of sent), with the modules still
+ * being built previewed, and its test users.
+ */
 export function openApi(router?: AnyRouter): Api {
   const db = connectApi()
   const admin = connectAdmin()
   const emails = new CapturedEmails()
-  const handler = handlerFor(db, router, { supabaseSecretKey: SECRET_KEY }, { emailSender: emails })
+  const handler = handlerFor(
+    db,
+    router,
+    { supabaseSecretKey: SECRET_KEY, previewModules: PREVIEW_MODULES },
+    { emailSender: emails },
+  )
   const users: TestUser[] = []
   return {
     db,
@@ -234,6 +252,12 @@ export interface Tenant {
   submittedExpense: ExpenseDto
   /** A running cost. */
   runningCost: RunningCostDto
+  /** A sales channel of its own (a delivery app with a commission %). */
+  channel: SalesChannelDto
+  /** A finalized sale of the product in the channel, with delivery charged and its cost. */
+  sale: SaleDto
+  /** A draft of Today's sales in the channel. */
+  draftSale: SaleDto
 }
 
 function ok<T>(result: CallResult<T>, what: string): T {
@@ -606,6 +630,56 @@ export async function createTenant(api: Api, label: string): Promise<Tenant> {
     ) as { data: RunningCostDto }
   ).data
 
+  const channel = (
+    ok(
+      await as('channel.create', 'mutation', {
+        id: newId(),
+        name: `Talabat ${label} ${tag}`,
+        kind: 'delivery_app',
+        feePercent: '18',
+      }),
+      'channel.create',
+    ) as { data: SalesChannelDto }
+  ).data
+  const saleDraft = (
+    ok(
+      await as('sale.create', 'mutation', {
+        id: newId(),
+        source: 'single',
+        businessDate: today,
+        locationId: branch.id,
+        channelId: channel.id,
+        deliveryNeeded: true,
+        deliveryArea: `Area ${label} ${tag}`,
+        deliveryCost: '7',
+        notes: `Sale ${label} ${tag}`,
+        lines: [
+          { kind: 'item', id: newId(), productId: product.id, qty: '2', unitPrice: '15.5' },
+          { kind: 'delivery', id: newId(), amount: '10' },
+        ],
+      }),
+      'sale.create',
+    ) as { data: SaleDto }
+  ).data
+  const sale = (
+    ok(
+      await as('sale.post', 'mutation', { id: saleDraft.id, version: saleDraft.version }),
+      'sale.post',
+    ) as { data: SaleDto }
+  ).data
+  const draftSale = (
+    ok(
+      await as('sale.create', 'mutation', {
+        id: newId(),
+        source: 'day_sheet',
+        businessDate: today,
+        channelId: channel.id,
+        lines: [{ kind: 'item', id: newId(), productId: product.id, qty: '3', unitPrice: '15.5' }],
+      }),
+      'sale.create (day sheet)',
+    ) as { data: SaleDto }
+  ).data
+
   return {
     id,
     label,
@@ -644,6 +718,9 @@ export async function createTenant(api: Api, label: string): Promise<Tenant> {
     draftExpense,
     submittedExpense,
     runningCost,
+    channel,
+    sale,
+    draftSale,
   }
 }
 
@@ -669,6 +746,11 @@ export function queryInputOf(path: string, tenant: Tenant): unknown {
   }
   if (path === 'productCost.get') return { productId: tenant.product.id }
   if (path === 'member.permissions') return { memberId: tenant.employeeMemberId }
+  if (path === 'member.locations') return { memberId: tenant.employeeMemberId }
+  if (path === 'sale.get') return { id: tenant.sale.id }
+  if (path === 'sale.daySheet') {
+    return { businessDate: tenant.sale.businessDate, channelId: tenant.channel.id }
+  }
   return undefined
 }
 
@@ -728,6 +810,13 @@ export function markersOf(tenant: Tenant): string[] {
     tenant.submittedExpense.id,
     tenant.runningCost.id,
     tenant.runningCost.name,
+    tenant.channel.id,
+    tenant.channel.name,
+    tenant.sale.id,
+    ...tenant.sale.lines.map((l) => l.id),
+    tenant.sale.deliveryArea ?? tenant.sale.id,
+    tenant.sale.notes ?? tenant.sale.id,
+    tenant.draftSale.id,
     ...Object.values(tenant.roles).map((role) => role.id),
     ...[tenant.owner, tenant.admin, tenant.employee].flatMap(({ user }) => [
       user.id,

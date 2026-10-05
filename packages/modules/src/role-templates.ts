@@ -10,7 +10,8 @@ import { PERMISSION_CATALOG, type PermissionKey } from './permissions'
 // recipe keys of M2 Step 4, purchasing_payments_security for the payment keys of 2026-09-29,
 // expenses_security for the expenses and running-costs keys of M2 Step 5, owners_answers_access for
 // the Employee keys of the owner's answers of 2026-09-29, product_costs_access for the product-cost
-// keys of M2 Step 6).
+// keys of M2 Step 6, sales_security for the sales keys of M3 Step 2, by the plan's Q10 table: an
+// Employee enters and finalizes their own sales only, D-218).
 
 export const ROLE_TEMPLATE_KEYS = [
   OWNER_TEMPLATE_KEY,
@@ -68,6 +69,11 @@ export const ROLE_TEMPLATES: readonly RoleTemplate[] = [
       'running_costs.items.manage',
       'cost_engine.product_costs.view',
       'cost_engine.settings.manage',
+      'sales.documents.view',
+      'sales.documents.manage',
+      'sales.documents.post',
+      'sales.documents.reverse',
+      'sales.channels.manage',
       'data.cost.view',
       'data.profit_margin.view',
       'data.supplier_price.view',
@@ -87,6 +93,7 @@ export const ROLE_TEMPLATES: readonly RoleTemplate[] = [
       'expenses.documents.view',
       'running_costs.items.view',
       'cost_engine.product_costs.view',
+      'sales.documents.view',
       'data.cost.view',
       'data.profit_margin.view',
       'data.supplier_price.view',
@@ -96,7 +103,13 @@ export const ROLE_TEMPLATES: readonly RoleTemplate[] = [
   {
     key: 'sales',
     allPermissions: false,
-    permissionKeys: ['dashboard.home.view', 'products.items.view'],
+    permissionKeys: [
+      'dashboard.home.view',
+      'products.items.view',
+      'sales.documents.view',
+      'sales.documents.manage',
+      'sales.documents.post',
+    ],
   },
   {
     key: 'supervisor',
@@ -107,11 +120,15 @@ export const ROLE_TEMPLATES: readonly RoleTemplate[] = [
       'products.items.view',
       'products.recipes.view',
       'materials.items.view',
+      'sales.documents.view',
+      'sales.documents.manage',
+      'sales.documents.post',
     ],
   },
   // The owner's answers of 2026-09-29 (D-179, D-180): an employee sees what goes into each product
   // (quantities; costs stay locked) and the materials it names, and enters expenses and sends them for
-  // approval. No sensitive key.
+  // approval. No sensitive key. M3 Step 2 (Q10): they enter and finalize sales, and see only their own
+  // (no "see every sale").
   {
     key: 'employee',
     allPermissions: false,
@@ -122,6 +139,8 @@ export const ROLE_TEMPLATES: readonly RoleTemplate[] = [
       'materials.items.view',
       'expenses.documents.view',
       'expenses.documents.manage',
+      'sales.documents.manage',
+      'sales.documents.post',
     ],
   },
 ]

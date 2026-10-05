@@ -46,6 +46,7 @@ const TRPC_CODE_OF: Record<AppErrorCode, TRPC_ERROR_CODE_KEY> = {
   approval_off: 'CONFLICT',
   expense_has_payments: 'CONFLICT',
   running_cost_choice_required: 'BAD_REQUEST',
+  last_channel: 'CONFLICT',
   internal: 'INTERNAL_SERVER_ERROR',
 }
 

@@ -99,6 +99,8 @@ export const APP_ERROR_CODES = [
    * it does not say what it pays: the bill of which running cost, or an extra (D-216).
    */
   'running_cost_choice_required',
+  /** Archiving the business's last active sales channel: a sale always names one (M3 Step 2). */
+  'last_channel',
   'internal',
 ] as const
 export type AppErrorCode = (typeof APP_ERROR_CODES)[number]

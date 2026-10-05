@@ -15,6 +15,8 @@ import type {
   PurchaseReturnDto,
   RecipeDto,
   RunningCostDto,
+  SaleDto,
+  SalesChannelDto,
   SupplierDto,
   WithMeta,
 } from '@bizcost/contracts'
@@ -30,6 +32,7 @@ import type {
   DemoPayment,
   DemoPurchase,
   DemoReturn,
+  DemoSale,
   UnitOrPack,
 } from './costing-data'
 
@@ -44,6 +47,10 @@ import type {
 // Documents are dated back from the business's today and entered in date order (as if on the day);
 // nothing is dated in the future and the books are never closed. A record that cannot be written (the
 // owner changed the business since) is reported and skipped; the rest goes on.
+//
+// M3 Step 2: the channels a business adds and its sales (Today's sales and One sale, previewed until
+// Release A like a local server, D-125), each entered after the purchases of its day and finalized as
+// the member who entered it, so its cost is frozen from the purchases posted by then (D-222).
 
 type Envelope<T> = WithMeta<T>
 
@@ -54,6 +61,7 @@ export interface CostingSummary {
   purchases: string
   runningCosts: string
   expenses: string
+  sales: string
 }
 
 export interface CostingResult {
@@ -129,6 +137,8 @@ class CostingSeed {
   private members = new Map<string, string>()
   private locations = new Map<string, string>()
   private categories = new Map<string, string>()
+  /** The business's channels: a demo channel's key → id, and a starter channel's kind → id. */
+  private channelIds = new Map<string, string>()
 
   constructor(
     private readonly ctx: CostingContext,
@@ -609,8 +619,125 @@ class CostingSeed {
         run: () => this.payment(pay),
       })
     }
+    // Sales last on their day: their cost is frozen from the purchases posted by then (D-222).
+    const sales = this.data.sales ?? []
+    if (!this.skipUnless('sales', sales.length, 'sales', 'products')) {
+      for (const sale of sales) {
+        events.push({
+          order: 4,
+          daysAgo: this.saleDaysAgo(sale),
+          label: `sale ${sale.key}`,
+          run: () => this.sale(sale),
+        })
+      }
+    }
     events.sort((a, b) => b.daysAgo - a.daysAgo || a.order - b.order)
     for (const event of events) await this.attempt(event.label, event.run)
+  }
+
+  // -------------------------------------------------------------------------------------------------
+  // Sales (M3 Step 2)
+  // -------------------------------------------------------------------------------------------------
+
+  /** The channels the business adds (with their commission, seen and set by the owner). */
+  private async channels(): Promise<void> {
+    const channels = this.data.channels ?? []
+    const sales = this.data.sales ?? []
+    if (this.skipUnless('sales channels and sales', channels.length + sales.length, 'sales')) {
+      return
+    }
+    const listed = async () =>
+      (await this.query<Envelope<{ items: SalesChannelDto[] }>>('channel.list', { status: 'all' }))
+        .data.items
+    let existing = await listed()
+    for (const c of channels) {
+      await this.attempt(`channel ${c.key}`, async () => {
+        const id = this.id(`channel:${c.key}`)
+        if (existing.some((e) => e.id === id)) return
+        await this.mutate('channel.create', {
+          id,
+          name: c.name,
+          kind: c.kind,
+          feePercent: c.feePercent ?? null,
+        })
+      })
+    }
+    existing = await listed()
+    for (const c of channels) this.channelIds.set(c.key, this.id(`channel:${c.key}`))
+    // The starter channels (by kind), the first of each.
+    for (const e of existing) {
+      if (!this.channelIds.has(e.kind) && e.archivedAt === null) this.channelIds.set(e.kind, e.id)
+    }
+  }
+
+  /** The first and last day of the month before the seed day's month. */
+  private lastMonth(): { from: string; to: string } {
+    const from = monthStart(this.today, -1)
+    return { from, to: addDays(monthStart(this.today, 0), -1) }
+  }
+
+  /** How many days before the seed day a sale is dated (a sheet of last month: its last day). */
+  private saleDaysAgo(sale: DemoSale): number {
+    if (!sale.lastMonth) return sale.daysAgo
+    const to = new Date(`${this.lastMonth().to}T00:00:00Z`).getTime()
+    return Math.round((new Date(`${this.today}T00:00:00Z`).getTime() - to) / 86_400_000)
+  }
+
+  private async sale(sale: DemoSale): Promise<void> {
+    const id = this.id(`sale:${sale.key}`)
+    const token = sale.enteredBy ? await this.ctx.tokenOf(sale.enteredBy) : this.ctx.token
+    let doc = (await this.find<Envelope<SaleDto>>('sale.get', { id }))?.data
+    if (!doc) {
+      const channelId = sale.channel
+        ? this.channelIds.get(sale.channel)
+        : [...this.channelIds.values()][0]
+      if (!channelId) throw new Error(`no channel "${sale.channel ?? 'first'}"`)
+      let locationId: string | null = null
+      if (sale.branch) {
+        locationId = this.locations.get(sale.branch) ?? null
+        if (!locationId) throw new Error(`no location "${sale.branch}"`)
+      }
+      const prices = new Map((this.data.products ?? []).map((product) => [product.key, product]))
+      const month = sale.lastMonth ? this.lastMonth() : undefined
+      doc = (
+        await this.mutate<Envelope<SaleDto>>(
+          'sale.create',
+          {
+            id,
+            source: sale.source,
+            businessDate: month ? month.to : this.day(sale.daysAgo),
+            periodFrom: month ? month.from : null,
+            locationId,
+            channelId,
+            deliveryNeeded: sale.delivery !== undefined,
+            deliveryArea: sale.delivery?.area ?? null,
+            ...(sale.delivery?.cost ? { deliveryCost: sale.delivery.cost } : {}),
+            lines: [
+              ...sale.lines.map(([product, qty, price]) => ({
+                kind: 'item',
+                id: this.id(`sale:${sale.key}:line:${product}`),
+                productId: this.id(`product:${product}`),
+                qty,
+                unitPrice: price ?? prices.get(product)?.price ?? '0',
+              })),
+              ...(sale.delivery
+                ? [
+                    {
+                      kind: 'delivery',
+                      id: this.id(`sale:${sale.key}:delivery`),
+                      amount: sale.delivery.charged,
+                    },
+                  ]
+                : []),
+            ],
+          },
+          token,
+        )
+      ).data
+    }
+    if (!sale.draft && doc.status === 'draft') {
+      await this.mutate('sale.post', { id, version: doc.version }, token)
+    }
   }
 
   // -------------------------------------------------------------------------------------------------
@@ -756,6 +883,7 @@ class CostingSeed {
       purchases: await counted('purchases', 'purchase.list', { status: 'posted' }, true),
       runningCosts: await counted('running_costs', 'runningCost.list', { state: 'all' }, true),
       expenses: await counted('expenses', 'expense.list', { status: 'posted' }, true),
+      sales: await counted('sales', 'sale.list', { status: 'posted' }, false),
     }
   }
 
@@ -767,6 +895,7 @@ class CostingSeed {
     await this.products()
     await this.recipes()
     await this.runningCosts()
+    await this.channels()
     await this.documents()
     await this.ownerTime()
     return { summary: await this.summary(), notes: this.notes, warnings: this.warnings }

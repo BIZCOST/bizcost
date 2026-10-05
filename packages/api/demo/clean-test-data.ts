@@ -1,5 +1,6 @@
 import { createClient } from '@supabase/supabase-js'
 import postgres from 'postgres'
+import { deleteBusinesses, tenantTables } from './clean'
 import { useLocalStack } from './local-stack'
 
 // `pnpm dev:clean-test-data` (docs/ARCHITECTURE.md §Local setup; D-182): removes what the test
@@ -105,17 +106,6 @@ async function identify(sql: Sql) {
     throw new Error('refusing: a chosen user has an address that is not a test one')
 }
 
-/** The tables of schema app with a business_id (the tenant tables and the audit log). */
-async function tenantTables(sql: Sql): Promise<string[]> {
-  const rows = await sql<{ name: string }[]>`
-    select c.relname as name from pg_class c
-      join pg_namespace n on n.oid = c.relnamespace
-      join pg_attribute a on a.attrelid = c.oid and a.attname = 'business_id' and not a.attisdropped
-     where n.nspname = 'app' and c.relkind = 'r'
-     order by c.relname`
-  return rows.map((r) => r.name)
-}
-
 async function report(sql: Sql, tables: string[]) {
   const [users] = await sql<{ all: number; live: number }[]>`
     select count(*)::int as all,
@@ -198,17 +188,8 @@ async function main() {
     for (let i = 0; i < ids.length; i += BATCH) {
       const batch = ids.slice(i, i + BATCH)
       objects += await removeObjects(sql, batch)
-      await sql.begin(async (tx) => {
-        // Local only: skips the append-only, audit and foreign-key triggers for this transaction.
-        await tx`set local session_replication_role = replica`
-        for (const table of tables) {
-          await tx`delete from ${tx('app')}.${tx(table)} where business_id = any(${batch}::uuid[])`
-        }
-        await tx`delete from app.businesses where id = any(${batch}::uuid[])`
-        await tx`
-          update app.profiles set last_business_id = null
-           where last_business_id = any(${batch}::uuid[])`
-      })
+      // Local only: skips the append-only, guard, audit and foreign-key triggers (clean.ts).
+      await deleteBusinesses(sql, batch, tables)
       process.stdout.write(`\rBusinesses removed: ${Math.min(i + BATCH, ids.length)}/${ids.length}`)
     }
     if (ids.length > 0) process.stdout.write('\n')

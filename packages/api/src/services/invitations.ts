@@ -39,7 +39,7 @@ import { invitationEmail } from '../email/invitation'
 import type { EmailMessage } from '../email/sender'
 import { AppError, constraintOf } from '../errors'
 import { ensureProfile } from './profile'
-import { canGrant } from './team-rules'
+import { canGrant, coversBranches, invitedBranches } from './team-rules'
 
 // Settings → Team, invitations (docs/ARCHITECTURE.md §Auth, docs/DATA_MODEL.md §4 business_invitations,
 // ROADMAP.md Step 6). A token is 32 random bytes (base64url, 43 characters) that exists only in the
@@ -341,6 +341,9 @@ export async function createInvitation(
         expiresAt: expiresAt(),
         status: 'pending',
         roleId: input.roleId,
+        // A caller limited to some branches invites into those only (D-236): the member who accepts
+        // works there (app.accept_invitation writes them), never in a branch the caller does not.
+        locationIds: invitedBranches(ctx.access),
         locale: input.locale,
         sendCount: 1,
         lastSentAt: sql`now()`,
@@ -491,8 +494,9 @@ export async function revokeInvitationsSentBy(
 
 /**
  * After a change of roles or members: revokes every pending invitation that its sender could not send
- * now (they are no longer an active member, may no longer invite, or its role grants more than they
- * hold). A removed or demoted member's invitations therefore stop working, like their own access.
+ * now (they are no longer an active member, may no longer invite, its role grants more than they
+ * hold, or it reaches branches beyond theirs: D-236). A removed or demoted member's invitations
+ * therefore stop working, like their own access.
  * app.accept_invitation checks the sender again when the invitation is accepted.
  */
 export async function revokeInvitationsBeyondSenders(tx: Tx, businessId: string): Promise<void> {
@@ -501,6 +505,7 @@ export async function revokeInvitationsBeyondSenders(tx: Tx, businessId: string)
       id: businessInvitations.id,
       createdBy: businessInvitations.createdBy,
       roleId: businessInvitations.roleId,
+      locationIds: businessInvitations.locationIds,
     })
     .from(businessInvitations)
     .where(
@@ -527,7 +532,12 @@ export async function revokeInvitationsBeyondSenders(tx: Tx, businessId: string)
       keys = await roleKeys(tx, businessId, invitation.roleId)
       keysOf.set(invitation.roleId, keys)
     }
-    if (!sender || !can(sender.effective, 'settings.members.manage') || !canGrant(sender, keys)) {
+    if (
+      !sender ||
+      !can(sender.effective, 'settings.members.manage') ||
+      !canGrant(sender, keys) ||
+      !coversBranches(sender, invitation.locationIds)
+    ) {
       beyond.push(invitation.id)
     }
   }

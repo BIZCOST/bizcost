@@ -18,7 +18,7 @@ import {
 import { Button } from '@/components/ui/button'
 
 /**
- * "Finalize this purchase?", "Reverse this purchase?"…: what will happen, in plain words, then the
+ * "Finalize this purchase?", "Reverse this sale?"…: what will happen, in plain words, then the
  * action or Cancel. Stays open while the action runs and shows its problem if it fails.
  */
 export function ConfirmDialog({

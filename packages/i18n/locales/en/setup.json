@@ -457,5 +457,11 @@
     "equipment": "Equipment costs",
     "maintenance": "Maintenance",
     "other": "Other"
+  },
+  "sales_channels": {
+    "shop": "Shop",
+    "messages": "WhatsApp & phone",
+    "online": "Online",
+    "direct": "Direct"
   }
 }

@@ -28,14 +28,40 @@ import { AppError } from '../errors'
 // then the movements are inserted (their `seq`, the posting order, is taken on insert, after the
 // locks) and the projections written. Receipts update the cost row with wacReceive; returns, credits
 // and reversals replay the material's ledger (replayWac), which is also what a rebuild does.
+//
+// Sales (M3 Step 2, D-228) take no stock and never change a cost row's values (D-219), but freeze
+// their cost from the purchases posted, in the same order: the sale FOR UPDATE, the business row FOR
+// SHARE, the materials' cost rows (missing ones inserted, ON CONFLICT DO NOTHING) FOR SHARE by
+// ascending material id (sale-costs.ts). After lock 5 a purchase posting, and a return's or credit
+// note's reversal (its goods stand again, D-236), take one more step: the lines of finalized sales
+// still without a price for its materials, FOR NO KEY UPDATE by ascending id, to fill them once (lock
+// 6, the edge cost rows → sale lines). Setting the owner's hourly rate locks
+// the business row, then those lines (business row → sale lines). Nothing locks a cost row or the
+// business row while holding a sale line, and a sale's reversal locks only its header, so none of
+// these wait in a cycle.
 
-/** A uuid[] of `ids` for raw SQL (drizzle expands a JS array into a list of parameters). */
+const UUID_TEXT = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+
+/**
+ * A uuid[] of `ids` for raw SQL, as ONE parameter (an array literal; drizzle would expand a JS array
+ * into a parameter each). No number of ids reaches the driver's limit of 65,534 parameters per
+ * statement (postgres.js MAX_PARAMETERS_EXCEEDED): a purchase may fill the material rows of thousands
+ * of sales (D-229). Each id is checked first, so the literal holds uuids only.
+ */
 export function uuidArray(ids: readonly string[]) {
-  if (ids.length === 0) return sql`'{}'::uuid[]`
-  return sql`array[${sql.join(
-    ids.map((id) => sql`${id}::uuid`),
-    sql`, `,
-  )}]`
+  for (const id of ids) {
+    if (!UUID_TEXT.test(id)) throw new AppError('validation', { message: 'invalid id' })
+  }
+  return sql`${`{${ids.join(',')}}`}::text::uuid[]`
+}
+
+/**
+ * Rows for raw SQL as ONE jsonb parameter, read with `jsonb_to_recordset(…) as v(col type, …)`: a
+ * set-based insert or update of any number of rows stays one statement under the driver's limit of
+ * parameters. Decimal strings stay strings (their exact text feeds `numeric`'s input, never a float).
+ */
+export function jsonRecords(rows: readonly Record<string, string | boolean | null>[]) {
+  return sql`${JSON.stringify(rows)}::text::jsonb`
 }
 
 /** An instant from raw SQL (the driver hands timestamps over as text) as an ISO string. */

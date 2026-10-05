@@ -54,8 +54,8 @@ import {
   SheetTitle,
 } from '@/components/ui/sheet'
 import { Skeleton } from '@/components/ui/skeleton'
+import { Locked, useMoney, useUnitCost } from '@/features/documents/amounts'
 import { useAllMaterials } from '@/features/purchasing/data'
-import { Locked, useMoney, useUnitCost } from '@/features/purchasing/amounts'
 import {
   dimensionsOf,
   isUnitOf,

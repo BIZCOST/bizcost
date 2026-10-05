@@ -5,7 +5,7 @@ import { CheckIcon } from 'lucide-react'
 import { useId, type Ref } from 'react'
 import { useTranslation } from 'react-i18next'
 import { isolate } from '@/components/form/use-message'
-import { useBusinessDate, useBusinessMonth } from '@/features/purchasing/amounts'
+import { useBusinessDate, useBusinessMonth } from '@/features/documents/amounts'
 import { cn } from '@/lib/utils'
 import { EXTRA } from './expense-draft'
 

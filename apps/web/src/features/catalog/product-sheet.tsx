@@ -228,16 +228,23 @@ function WhereSold({
 
 /**
  * The product form in a sheet (phones) or a side panel (desktop). `product` absent: a new one.
- * Closes itself after a save; the list refreshes.
+ * Closes itself after a save; the list refreshes. From a sale line (M3 Step 2), a new one starts
+ * with the name typed there and is handed back once saved.
  */
 export function ProductSheet({
   product,
   profile,
   resale: resaleMode = 'offered',
+  name,
+  onSaved,
   onClose,
 }: {
   product?: ProductDto
   profile: TerminologyProfile
+  /** A new one's name, as typed where it is added from (a sale line's picker). */
+  name?: string
+  /** Once saved (a sale line then names it). */
+  onSaved?: (saved: ProductDto) => void
   /**
    * A new product bought ready to sell: `offered` as a switch (on by default in the retail
    * wording), `only` (the Goods page: nothing else), or `none` (a business without Materials, or
@@ -256,12 +263,13 @@ export function ProductSheet({
   const update = useMutation(trpc.product.update.mutationOptions())
   const [newProductId] = useState(() => newId())
   // A business that sells only services adds a service unless it says otherwise (D-200).
-  const [initialDraft] = useState<ProductDraft>(() =>
-    productDraft(
+  const [initialDraft] = useState<ProductDraft>(() => {
+    const draft = productDraft(
       product,
       resaleMode !== 'only' && context?.sellsOnlyServices === true ? 'service' : 'product',
-    ),
-  )
+    )
+    return !product && name ? { ...draft, name } : draft
+  })
   const [draft, setDraft] = useState<ProductDraft>(initialDraft)
   const [newMaterialId] = useState(() => newId())
   // A new product bought ready to sell, and the packs it is bought in (its material's).
@@ -375,6 +383,7 @@ export function ProductSheet({
       toast.success(
         product ? t('catalog.list.saved') : t('catalog.list.added', { name: isolate(saved.name) }),
       )
+      onSaved?.(saved)
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: trpc.product.list.pathKey() }),
         queryClient.invalidateQueries({ queryKey: trpc.product.costs.pathKey() }),

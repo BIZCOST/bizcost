@@ -18,7 +18,7 @@ import { authedProcedure, businessProcedure, publicProcedure, router } from './t
 const costly = z.object({ name: z.string(), cost: sensitive(zDecimal, 'cost') })
 
 describe('appRouter contract', () => {
-  it('serves exactly the M1 procedures and those of M2 so far', () => {
+  it('serves exactly the M1 and M2 procedures and those of M3 so far', () => {
     expect(Object.keys(appRouter._def.procedures).sort()).toEqual([
       'account.delete',
       'account.setLastBusiness',
@@ -39,6 +39,11 @@ describe('appRouter contract', () => {
       'business.setDefaultLocale',
       'business.setLogo',
       'business.updateProfile',
+      'channel.archive',
+      'channel.create',
+      'channel.list',
+      'channel.unarchive',
+      'channel.update',
       'costCategory.archive',
       'costCategory.create',
       'costCategory.list',
@@ -89,9 +94,11 @@ describe('appRouter contract', () => {
       'member.changeRole',
       'member.leave',
       'member.list',
+      'member.locations',
       'member.permissions',
       'member.remove',
       'member.transferOwnership',
+      'member.updateLocations',
       'member.updatePermissions',
       'payable.list',
       'payable.mine',
@@ -134,6 +141,16 @@ describe('appRouter contract', () => {
       'runningCost.list',
       'runningCost.remove',
       'runningCost.update',
+      'sale.correct',
+      'sale.create',
+      'sale.daySheet',
+      'sale.discard',
+      'sale.fillDeliveryCost',
+      'sale.get',
+      'sale.list',
+      'sale.post',
+      'sale.reverse',
+      'sale.update',
       'supplier.archive',
       'supplier.create',
       'supplier.get',
@@ -187,6 +204,15 @@ describe('numbers a client sends', () => {
         'expensePayment.record amount',
         'runningCost.update amount',
         'productCost.updateSettings ownerHourlyRate',
+        'channel.create feePercent',
+        'channel.update feePercent',
+        'sale.create lines.*.qty',
+        'sale.create lines.*.unitPrice',
+        'sale.create lines.*.amount',
+        'sale.create lines.*.discount.percent',
+        'sale.update lines.*.discount.amount',
+        'sale.update deliveryCost',
+        'sale.fillDeliveryCost deliveryCost',
       ]),
     )
   })

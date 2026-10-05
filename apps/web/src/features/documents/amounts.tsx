@@ -8,10 +8,10 @@ import { useLocale } from '@/lib/i18n/client'
 import { useBusinessContext } from '@/lib/trpc/client'
 import { cn } from '@/lib/utils'
 
-// Amounts on the purchasing screens (M2 Step 3): money in the document's or the business's currency,
-// costs per unit with enough digits to read (AED 0.0067 per ml), business days, and the lock that
-// takes the place of a value the server removed for this member (redaction, D-026: a hidden field is
-// absent, never 0).
+// Amounts on the document screens (purchases since M2 Step 3, sales since M3 Step 2; shared from
+// features/documents): money in the document's or the business's currency, costs per unit with
+// enough digits to read (AED 0.0067 per ml), business days, and the lock that takes the place of a
+// value the server removed for this member (redaction, D-026: a hidden field is absent, never 0).
 
 /** A document amount in `currency` (the business's by default): "AED 1,250.00". */
 export function useMoney() {

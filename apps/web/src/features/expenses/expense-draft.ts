@@ -25,7 +25,8 @@ import {
 } from '@bizcost/domain'
 import type { I18nKey } from '@bizcost/i18n'
 import { readAmount, type FieldError } from '../catalog/numbers'
-import { defaultVatRate, NO_VAT } from '../purchasing/purchase-draft'
+import { NO_VAT } from '../documents/lines'
+import { defaultVatRate } from '../purchasing/purchase-draft'
 
 // The expense form (M2 Step 5; D-114, D-157, D-159, D-168): one amount in one category, typed before
 // VAT or with it (a VAT-registered business only; any other types what it paid, with no VAT), the

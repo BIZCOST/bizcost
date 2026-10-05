@@ -20,3 +20,24 @@ export function canGrant(access: BusinessAccess, keys: Iterable<string>): boolea
   for (const key of keys) if (!access.effective.keys.has(key)) return false
   return true
 }
+
+/**
+ * Whether the caller's own branches cover `ids` (an empty set: every branch, which only a member who
+ * works in every branch covers). "No access beyond your own" (D-084) for branches (Q12, D-231): a
+ * caller limited to some branches changes, removes or widens only members limited within them, and
+ * edits only a role whose members all are (D-236).
+ */
+export function coversBranches(access: BusinessAccess, ids: readonly string[]): boolean {
+  const scope = access.locationScope
+  if (scope.all) return true
+  return ids.length > 0 && ids.every((id) => scope.ids.has(id.toLowerCase()))
+}
+
+/**
+ * The branches a member invited by the caller works in: a caller limited to some branches invites
+ * into those only (D-236); empty (every branch) for anyone else.
+ */
+export function invitedBranches(access: BusinessAccess): string[] {
+  const scope = access.locationScope
+  return scope.all ? [] : [...scope.ids].sort()
+}

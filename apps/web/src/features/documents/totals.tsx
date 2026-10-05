@@ -6,10 +6,11 @@ import { cn } from '@/lib/utils'
 import { Locked } from './amounts'
 
 /**
- * The totals of a purchase: the subtotal and discounts when there are discounts, then for a
- * VAT-registered business always the total before VAT, the VAT and the total (whether its prices
- * were typed before VAT or with it: the owner's request of 2026-09-29), for any other business the
- * total it paid.
+ * The totals of a document (a purchase, an expense, a sale): the subtotal and discounts when there
+ * are discounts, then for a VAT-registered business always the total before VAT, the VAT and the
+ * total (whether its prices were typed before VAT or with it: the owner's request of 2026-09-29), for
+ * any other business the total. A value the server removed shows a lock (a purchase's amounts are
+ * supplier prices; a sale's are never hidden).
  */
 export function Totals({
   subtotal,

@@ -76,6 +76,9 @@ export const PERMISSION_NEEDS: Readonly<Partial<Record<PermissionKey, readonly P
     // Product costs (M2 Step 6): each product's breakdown names what goes into it (its recipe).
     'cost_engine.product_costs.view': ['products.recipes.view'],
     'cost_engine.settings.manage': ['cost_engine.product_costs.view'],
+    // Sales (M3 Step 2): entering and finalizing sales needs no "see every sale" (without it a member
+    // sees only their own, D-181); reversing one needs to see every sale.
+    'sales.documents.reverse': ['sales.documents.view'],
   }
 
 /** The keys of `keys` granted without a key they need (empty when the set is coherent). */

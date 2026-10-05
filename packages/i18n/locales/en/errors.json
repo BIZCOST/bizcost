@@ -40,5 +40,6 @@
   "expense_has_payments": "This expense has payments recorded on it. Reverse the payments first, then try again.",
   "running_cost_choice_required": "Say what this expense pays first: the bill of one of your running costs, or an extra expense. Then finalize it.",
   "internal": "Something went wrong on our side. Please try again.",
-  "network": "Can't connect. Check your internet and try again."
+  "network": "Can't connect. Check your internet and try again.",
+  "last_channel": "This is your only active sales channel. Add another channel first, then archive this one."
 }

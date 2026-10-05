@@ -40,6 +40,7 @@ import type { BusinessCtx } from '../business-context'
 import { AppError } from '../errors'
 import { assertQueryable } from '../trpc'
 import { decodeCursor, encodeCursor, requestHashOf } from './catalog'
+import { fillSaleMaterialCosts } from './sale-costs'
 import {
   assertPostable,
   insertMovement,
@@ -961,6 +962,10 @@ export async function reverseReturn(
         reversalDate,
       })
       .where(and(eq(purchaseReturns.businessId, ctx.businessId), eq(purchaseReturns.id, input.id)))
+    // Its goods stand again: a sale finalized while nothing of a material stood (the purchase fully
+    // returned) takes its price now, once, as from a purchase's posting (D-229, D-236). After this
+    // document's own locks, like a purchase's fill (lock 6 of D-228: cost rows → sale lines).
+    await fillSaleMaterialCosts(tx, ctx.businessId, materialIds)
     return result(await readReturn(tx, ctx.businessId, input.id))
   })
 }

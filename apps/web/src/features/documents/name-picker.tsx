@@ -1,25 +1,24 @@
 'use client'
 
-import type { MaterialDto } from '@bizcost/contracts'
 import { ChevronsUpDownIcon, PlusIcon } from 'lucide-react'
 import { useEffect, useId, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Input } from '@/components/ui/input'
 import { useLocale } from '@/lib/i18n/client'
 import { cn } from '@/lib/utils'
-import { pickerOptions } from './material-options'
+import { pickerOptions, type Pickable } from './picker-options'
 
-// The material of a purchase line (the owner's request of 2026-09-29): a box to type in, with the
-// materials whose names hold what is typed (compared the way people read them: case, Arabic letter
-// forms, marks and digits ignored), and, when none has that very name, the archived material that
-// has it (marked archived), or "+ Add «name» as a new material", which opens the quick-add sheet
-// (quick-material-sheet.tsx). A combobox with a list
-// (WAI-ARIA): arrows move through the list, Enter picks, Escape closes it.
+// The name of a document line: a purchase line's material (the owner's request of 2026-09-29), a sale
+// line's product or service (M3 Step 2). A box to type in, with the records whose names hold what is
+// typed (compared the way people read them: case, Arabic letter forms, marks and digits ignored),
+// and, when none has that very name, the archived record that has it (marked archived), or "+ Add
+// «name» as a new …", which opens the line's quick-add sheet. A combobox with a list (WAI-ARIA):
+// arrows move through the list, Enter picks, Escape closes it.
 
-export function MaterialPicker({
+export function NamePicker<T extends Pickable>({
   label,
   value,
-  materials,
+  items,
   pickable,
   placeholder,
   invalid,
@@ -30,19 +29,20 @@ export function MaterialPicker({
 }: {
   /** The box's accessible name. */
   label: string
-  /** The line's material id ('' for none). */
+  /** The line's record id ('' for none). */
   value: string
-  materials: ReadonlyMap<string, MaterialDto>
-  /** What the list offers (active materials, and the line's own). */
-  pickable: readonly MaterialDto[]
-  /** Shown while no material is picked ("Pick one", or the name of a material removed since). */
+  /** Every record the line may name, by id (archived ones too). */
+  items: ReadonlyMap<string, T>
+  /** What the list offers (active records, and the line's own). */
+  pickable: readonly T[]
+  /** Shown while nothing is picked ("Pick one", or the name of a record removed since). */
   placeholder: string
   invalid: boolean
   describedBy?: string
-  /** "Add «name» as a new material", in the business's wording. */
+  /** "Add «name» as a new material" (or product), in the business's wording. */
   addLabel: (name: string) => string
-  onPick: (material: MaterialDto) => void
-  /** Absent: the member may not add materials here. */
+  onPick: (item: T) => void
+  /** Absent: the member may not add one here. */
   onAdd?: (name: string) => void
 }) {
   const { t } = useTranslation()
@@ -52,12 +52,12 @@ export function MaterialPicker({
   const input = useRef<HTMLInputElement>(null)
   const list = useRef<HTMLUListElement>(null)
   const [open, setOpen] = useState(false)
-  // What is typed; null while nothing is (the box shows the picked material's name).
+  // What is typed; null while nothing is (the box shows the picked record's name).
   const [typed, setTyped] = useState<string | null>(null)
   const [active, setActive] = useState(0)
-  const selected = value ? materials.get(value) : undefined
+  const selected = value ? items.get(value) : undefined
   const options = pickerOptions(typed ?? '', pickable, locale, onAdd !== undefined, [
-    ...materials.values(),
+    ...items.values(),
   ])
   const activeIndex = Math.min(active, options.length - 1)
 
@@ -79,7 +79,7 @@ export function MaterialPicker({
     const option = options[index]
     if (!option) return
     close()
-    if (option.kind === 'material') onPick(option.material)
+    if (option.kind === 'item') onPick(option.item)
     else onAdd?.(option.name)
   }
 
@@ -162,10 +162,10 @@ export function MaterialPicker({
           ) : null}
           {options.map((option, index) => (
             <li
-              key={option.kind === 'material' ? option.material.id : 'add'}
+              key={option.kind === 'item' ? option.item.id : 'add'}
               id={`${optionId}-${index}`}
               role="option"
-              aria-selected={option.kind === 'material' && option.material.id === value}
+              aria-selected={option.kind === 'item' && option.item.id === value}
               data-index={index}
               data-add-option={option.kind === 'add' || undefined}
               onClick={() => choose(index)}
@@ -184,7 +184,7 @@ export function MaterialPicker({
               ) : (
                 <>
                   <span dir="auto" className="min-w-0 [overflow-wrap:anywhere]">
-                    {option.material.name}
+                    {option.item.name}
                   </span>
                   {option.archived ? (
                     <span className="shrink-0 text-xs text-muted-foreground">
