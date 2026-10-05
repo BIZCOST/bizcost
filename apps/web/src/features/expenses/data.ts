@@ -116,6 +116,29 @@ export function usePayableRunningCosts(categoryId: string, periodMonth: string, 
   })
 }
 
+/**
+ * Whether the member may say an expense pays a channel's app fees or delivery already on the sales
+ * (M3 Step 3, Q8): Sales on (served: the preview until Release A) and the costs switch (a channel's
+ * fees are a cost, D-187), with expenses seen. The API refuses anyone else.
+ */
+export function maySaySalesPays(context: BusinessContextDto): boolean {
+  return (
+    hasModule(context, 'sales') &&
+    context.visibleCategories.includes('cost') &&
+    can(context, 'expenses.documents.view')
+  )
+}
+
+/** The channels an expense may pay the app fees of (expense.payableChannels: names, never a %). */
+export function usePayableChannels(enabled: boolean) {
+  const trpc = useTRPC()
+  return useQuery({
+    ...trpc.expense.payableChannels.queryOptions(),
+    enabled,
+    staleTime: 30_000,
+  })
+}
+
 /** Whether expenses need approval now (expense.settings), for members who may see expenses. */
 export function useExpenseSettings(context: BusinessContextDto | undefined) {
   const trpc = useTRPC()

@@ -30,6 +30,7 @@ import {
   SheetTitle,
 } from '@/components/ui/sheet'
 import { useLocale, useTerminology } from '@/lib/i18n/client'
+import { invalidateProfit } from '@/features/reports/refresh'
 import {
   checkMaterial,
   draftUnits,
@@ -122,7 +123,7 @@ export function MaterialSheet({
         queryClient.invalidateQueries({ queryKey: trpc.material.list.pathKey() }),
         queryClient.invalidateQueries({ queryKey: trpc.material.costs.pathKey() }),
         queryClient.invalidateQueries({ queryKey: trpc.recipe.get.pathKey() }),
-        queryClient.invalidateQueries({ queryKey: trpc.productCost.pathKey() }),
+        invalidateProfit(queryClient, trpc),
         ...(saved.resaleProductId
           ? [queryClient.invalidateQueries({ queryKey: trpc.product.list.pathKey() })]
           : []),

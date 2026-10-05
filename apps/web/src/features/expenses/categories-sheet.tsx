@@ -32,6 +32,7 @@ import {
 import { Skeleton } from '@/components/ui/skeleton'
 import { Switch } from '@/components/ui/switch'
 import { formName } from '@/features/catalog/material-draft'
+import { invalidateProfit } from '@/features/reports/refresh'
 import { useCostCategories } from './data'
 
 // The categories expenses and running costs share (M2 Step 5; D-116, D-167), opened from Expenses and
@@ -86,7 +87,7 @@ function CategoryRow({
     Promise.all([
       queryClient.invalidateQueries({ queryKey: trpc.costCategory.list.pathKey() }),
       // The month's costs on Product costs are by category (its name, billed the month after).
-      queryClient.invalidateQueries({ queryKey: trpc.productCost.pathKey() }),
+      invalidateProfit(queryClient, trpc),
     ])
 
   async function rename(event: FormEvent) {

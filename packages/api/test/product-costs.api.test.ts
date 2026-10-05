@@ -157,7 +157,7 @@ describe('the Spanish Latte in a café with a team', () => {
     const cost = await cafe.breakdown(latte.id)
     expect(cost.cost).toEqual({
       materials: '3.002034632035',
-      runningCosts: { state: 'awaiting_sales' },
+      runningCosts: { state: 'awaiting_sales', amount: null },
       ownerTime: { state: 'team', minutes: null, amount: null },
       total: '3.002034632035',
       // Before running costs: never final, and nothing the owner can add for it now.
@@ -178,6 +178,13 @@ describe('the Spanish Latte in a café with a team', () => {
     // awaiting sales, never a reason on the product.
     expect(cost.monthCosts).toEqual({
       state: 'awaiting_sales',
+      basis: null,
+      from: null,
+      to: null,
+      showsOn: null,
+      rate: null,
+      sales: null,
+      materials: null,
       runningCostsEntered: false,
       month: lastMonthOf(today),
       amountsShown: true,
@@ -344,7 +351,7 @@ describe('the Spanish Latte in a café with a team', () => {
     ])
     expect(cost.cost).toMatchObject({
       materials: '1',
-      runningCosts: { state: 'awaiting_sales' },
+      runningCosts: { state: 'awaiting_sales', amount: null },
       total: '1',
       beforeRunningCosts: true,
       complete: true,
@@ -358,7 +365,7 @@ describe('the Spanish Latte in a café with a team', () => {
     const cost = await cafe.breakdown(cookie.id)
     expect(cost.cost).toEqual({
       materials: '0.325',
-      runningCosts: { state: 'no_price' },
+      runningCosts: { state: 'no_price', amount: null },
       ownerTime: { state: 'team', minutes: null, amount: null },
       total: '0.325',
       beforeRunningCosts: true,
@@ -372,7 +379,7 @@ describe('the Spanish Latte in a café with a team', () => {
     // With its price: awaiting sales like every other product, and complete.
     await cafe.updateProduct(cookie, { defaultPrice: '6' })
     expect((await cafe.breakdown(cookie.id)).cost).toMatchObject({
-      runningCosts: { state: 'awaiting_sales' },
+      runningCosts: { state: 'awaiting_sales', amount: null },
       reasons: [],
       complete: true,
     })
@@ -459,7 +466,7 @@ describe('the home baker’s cake slice: she works alone, her time counts', () =
     expect(cost.ownerTime).toEqual({ applies: true, hourlyRate: null })
     expect(cost.cost).toEqual({
       materials: '1.075',
-      runningCosts: { state: 'awaiting_sales' },
+      runningCosts: { state: 'awaiting_sales', amount: null },
       ownerTime: { state: 'rate_not_set', minutes: '10', amount: null },
       total: '1.075',
       beforeRunningCosts: true,
@@ -481,7 +488,7 @@ describe('the home baker’s cake slice: she works alone, her time counts', () =
     expect(cost.materials?.lines.map((l) => l.cost?.lineCost)).toEqual(['2.5', '1.6', '0.8', '8'])
     expect(cost.cost).toEqual({
       materials: '1.075',
-      runningCosts: { state: 'awaiting_sales' },
+      runningCosts: { state: 'awaiting_sales', amount: null },
       ownerTime: { state: 'applied', minutes: '10', amount: '7.5' },
       total: '8.575',
       beforeRunningCosts: true,
@@ -527,7 +534,7 @@ describe('the home baker’s cake slice: she works alone, her time counts', () =
     expect(cost.materials?.lines).toEqual([])
     expect(cost.cost).toEqual({
       materials: null,
-      runningCosts: { state: 'awaiting_sales' },
+      runningCosts: { state: 'awaiting_sales', amount: null },
       ownerTime: { state: 'applied', minutes: '60', amount: '45' },
       total: '45',
       beforeRunningCosts: true,
@@ -683,6 +690,13 @@ describe('the month’s costs: every running cost and expense counted once (D-20
     const line = (over: object) => ({ regular: null, period: null, takenBack: null, ...over })
     expect(cost.monthCosts).toEqual({
       state: 'awaiting_sales',
+      basis: null,
+      from: null,
+      to: null,
+      showsOn: null,
+      rate: null,
+      sales: null,
+      materials: null,
       runningCostsEntered: true,
       month: lastMonth,
       amountsShown: true,
@@ -740,7 +754,7 @@ describe('the month’s costs: every running cost and expense counted once (D-20
     // The product's share still waits for sales: its total is its materials.
     expect(cost.cost).toMatchObject({
       materials: '19',
-      runningCosts: { state: 'awaiting_sales' },
+      runningCosts: { state: 'awaiting_sales', amount: null },
       total: '19',
       beforeRunningCosts: true,
       complete: true,
@@ -776,6 +790,13 @@ describe('the month’s costs: every running cost and expense counted once (D-20
     const off = await shop.breakdown(stool.id)
     expect(off.monthCosts).toEqual({
       state: 'off',
+      basis: null,
+      from: null,
+      to: null,
+      showsOn: null,
+      rate: null,
+      sales: null,
+      materials: null,
       runningCostsEntered: true,
       month: lastMonth,
       amountsShown: true,
@@ -784,7 +805,7 @@ describe('the month’s costs: every running cost and expense counted once (D-20
     })
     // Nothing to share: the total is final.
     expect(off.cost).toMatchObject({
-      runningCosts: { state: 'off' },
+      runningCosts: { state: 'off', amount: null },
       total: '19',
       beforeRunningCosts: false,
       complete: true,
@@ -961,7 +982,7 @@ describe('the Product costs list: sorted, filtered and in pages', () => {
       lineCount: 0,
       price: { defaultPrice: null, beforeVat: null },
       cost: {
-        runningCosts: { state: 'no_price' },
+        runningCosts: { state: 'no_price', amount: null },
         total: null,
         reasons: ['no_recipe', 'no_price'],
         complete: false,
@@ -1021,13 +1042,16 @@ describe('modules off: no line for them, and nothing counted as 0', () => {
       shop.run('business.customize', { item: { kind: 'module', id }, enabled })
     ok(await customize('running_costs', false))
     // Expenses alone still hold costs to share.
-    expect((await shop.breakdown(bread.id)).cost.runningCosts).toEqual({ state: 'awaiting_sales' })
+    expect((await shop.breakdown(bread.id)).cost.runningCosts).toEqual({
+      state: 'awaiting_sales',
+      amount: null,
+    })
     ok(await customize('expenses', false))
     const off = await shop.breakdown(bread.id)
     expect(off.monthCosts).toMatchObject({ state: 'off', total: null, categories: null })
     expect(off.cost).toMatchObject({
       materials: '3',
-      runningCosts: { state: 'off' },
+      runningCosts: { state: 'off', amount: null },
       total: '3',
       beforeRunningCosts: false,
       complete: true,
@@ -1041,7 +1065,7 @@ describe('modules off: no line for them, and nothing counted as 0', () => {
     // (D-203).
     expect(noMaterials.cost).toMatchObject({
       materials: null,
-      runningCosts: { state: 'awaiting_sales' },
+      runningCosts: { state: 'awaiting_sales', amount: null },
       total: null,
       beforeRunningCosts: true,
       reasons: [],
@@ -1094,13 +1118,18 @@ const COST_PATHS = [
   'ownerTime.minutes',
   'ownerTime.state',
   'reasons',
+  'runningCosts.amount',
   'runningCosts.state',
   'tooLarge',
   'total',
 ]
 const MONTH_PATHS = [
+  'monthCosts.basis',
   'monthCosts.categories',
+  'monthCosts.materials',
+  'monthCosts.rate',
   'monthCosts.runningCostsEntered',
+  'monthCosts.sales',
   'monthCosts.state',
   'monthCosts.total',
   'ownerTime.hourlyRate',
@@ -1247,7 +1276,13 @@ describe('who sees and may do what', () => {
       expect(row?.margin.amount).toBeUndefined()
       expect(list.data.counts).toEqual({ all: 1 })
       // Without costs, the month's costs are withheld too (D-202).
-      expect(list.data.monthCosts).toEqual({ month: lastMonthOf(owner.today), amountsShown: false })
+      expect(list.data.monthCosts).toEqual({
+        month: lastMonthOf(owner.today),
+        from: null,
+        to: null,
+        showsOn: null,
+        amountsShown: false,
+      })
       for (const value of secrets) {
         expect(JSON.stringify(list.data).includes(`"${value}"`), value).toBe(false)
       }
@@ -1297,6 +1332,13 @@ describe('who sees and may do what', () => {
       expect(one.data.cost).toMatchObject({ materials: '23.31', total: '23.31' })
       expect(one.data.monthCosts).toEqual({
         state: 'awaiting_sales',
+        basis: null,
+        from: null,
+        to: null,
+        showsOn: null,
+        rate: null,
+        sales: null,
+        materials: null,
         runningCostsEntered: true,
         month: lastMonthOf(one.data.today),
         amountsShown: false,

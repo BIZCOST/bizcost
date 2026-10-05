@@ -2,7 +2,7 @@
 
 import type { CostStepDto } from '@bizcost/contracts'
 import type { TerminologyProfile } from '@bizcost/domain'
-import { CalculatorIcon, CheckIcon, ChevronRightIcon, XIcon } from 'lucide-react'
+import { CalculatorIcon, CheckIcon, ChevronRightIcon, TrendingUpIcon, XIcon } from 'lucide-react'
 import Link from 'next/link'
 import { useTranslation } from 'react-i18next'
 import { Button } from '@/components/ui/button'
@@ -135,19 +135,24 @@ export function CostChecklist({
   const { t } = useTranslation()
   const { done, total, next } = costProgress(steps)
   const percent = total === 0 ? 0 : Math.round((done / total) * 100)
+  // With the sales steps (M3 Step 3, while Sales and Reports are served) it is the way to the first
+  // real profit (PRODUCT.md §10).
+  const profit = steps.some((step) => step.id === 'real_profit')
   return (
     <section aria-labelledby="costs-title" className={cn(CARD, className)} data-cost-checklist>
       <div className="border-b px-5 pt-5 pb-4 sm:px-6">
         <div className="flex items-start justify-between gap-4">
           <div className="min-w-0">
             <h2 id="costs-title" className="text-lg font-semibold tracking-tight text-balance">
-              {t('dashboard.costs.title')}
+              {t(profit ? 'dashboard.costs.titleProfit' : 'dashboard.costs.title')}
             </h2>
             <p className="mt-1 text-sm text-muted-foreground">
               {t(
-                servicesOnly
-                  ? 'dashboard.costs.description_services'
-                  : 'dashboard.costs.description',
+                profit
+                  ? 'dashboard.costs.descriptionProfit'
+                  : servicesOnly
+                    ? 'dashboard.costs.description_services'
+                    : 'dashboard.costs.description',
               )}
             </p>
           </div>
@@ -184,29 +189,36 @@ export function CostChecklist({
   )
 }
 
-/** Every cost step is done: "Your product costs are ready", with the way to them; it can be hidden. */
+/**
+ * Every cost step is done: "Your product costs are ready", with the way to them, or, with the sales
+ * steps (M3 Step 3), "Your real profit is ready" with the way to Real profit; it can be hidden.
+ */
 export function CostsReady({
   businessId,
   onHide,
   servicesOnly = false,
   ownerTime,
+  profit = false,
 }: {
   businessId: string
   onHide: () => void
   servicesOnly?: boolean
   /** The business counts the owner's time (no team, D-119). */
   ownerTime: boolean
+  /** "See your real profit" was the last step (M3 Step 3). */
+  profit?: boolean
 }) {
   const { t } = useTranslation()
-  const keys = costsReadyKeys({ servicesOnly, ownerTime })
+  const keys = costsReadyKeys({ servicesOnly, ownerTime, profit })
+  const Icon = profit ? TrendingUpIcon : CalculatorIcon
   return (
     <section
       aria-labelledby="costs-ready-title"
       className={cn(CARD, 'flex flex-wrap items-center gap-4 px-5 py-4 sm:flex-nowrap sm:px-6')}
-      data-costs-ready
+      data-costs-ready={profit ? 'profit' : 'costs'}
     >
       <span className="flex size-11 shrink-0 items-center justify-center rounded-xl bg-success/10 text-success">
-        <CalculatorIcon aria-hidden className="size-5" />
+        <Icon aria-hidden className="size-5" />
       </span>
       <div className="min-w-0 flex-1">
         <h2 id="costs-ready-title" className="font-semibold">
@@ -216,7 +228,7 @@ export function CostsReady({
       </div>
       <div className="flex shrink-0 items-center gap-1 max-sm:w-full max-sm:justify-end">
         <Button asChild variant="outline">
-          <Link href={`/b/${businessId}/product-costs`}>{t(keys.action)}</Link>
+          <Link href={`/b/${businessId}/${keys.path}`}>{t(keys.action)}</Link>
         </Button>
         <Button
           variant="ghost"

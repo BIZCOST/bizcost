@@ -286,7 +286,8 @@ describe("changing what one cannot see: another member's purchase draft (D-184, 
       await scope.run<MemberPermissionsDto>('member.updatePermissions', {
         memberId: manager.memberId,
         version: read.version,
-        overrides: [...COSTS, ...NEED_SUPPLIER_PRICES].map((key) => ({
+        // M3 Step 3: profit reports need the costs switch (Q11), so they go with it.
+        overrides: [...COSTS, ...NEED_SUPPLIER_PRICES, 'reports.profit.view'].map((key) => ({
           key,
           effect: 'deny' as const,
         })),

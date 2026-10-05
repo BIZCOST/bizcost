@@ -41,6 +41,7 @@ import { Totals } from '@/features/documents/totals'
 import { can } from '@/features/settings/sections'
 import { useLocale, useTerminology } from '@/lib/i18n/client'
 import { useBusinessContext } from '@/lib/trpc/client'
+import { invalidateProfit } from '@/features/reports/refresh'
 import { hasModule, useAllMaterials, useLocationOptions, useSupplierOptions } from './data'
 import { defaultUnitOf, isUnitOf } from './line-units'
 import {
@@ -367,7 +368,7 @@ export function PurchaseEditor({
       void queryClient.invalidateQueries({ queryKey: trpc.purchase.list.pathKey() })
       void queryClient.invalidateQueries({ queryKey: trpc.material.costs.pathKey() })
       void queryClient.invalidateQueries({ queryKey: trpc.product.costs.pathKey() })
-      void queryClient.invalidateQueries({ queryKey: trpc.productCost.pathKey() })
+      void invalidateProfit(queryClient, trpc)
       void queryClient.invalidateQueries({ queryKey: trpc.recipe.get.pathKey() })
       void queryClient.invalidateQueries({ queryKey: trpc.payable.list.pathKey() })
       toast.success(t('purchasing.confirm.finalized', { names: names() }))

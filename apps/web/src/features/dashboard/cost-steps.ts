@@ -3,12 +3,14 @@ import type { SensitivityCategory, TerminologyProfile } from '@bizcost/domain'
 import type { I18nKey } from '@bizcost/i18n'
 import { costStepIds, type ModuleId } from '@bizcost/modules'
 import {
+  BanknoteIcon,
   CalculatorIcon,
   ClockIcon,
   RepeatIcon,
   ShoppingCartIcon,
   SoupIcon,
   TagIcon,
+  TrendingUpIcon,
   type LucideIcon,
 } from 'lucide-react'
 import { can, sectionPath } from '../settings/sections'
@@ -41,6 +43,8 @@ const ICONS: Readonly<Record<CostStepId, LucideIcon>> = {
   running_costs: RepeatIcon,
   owner_time: ClockIcon,
   product_costs: CalculatorIcon,
+  sales: BanknoteIcon,
+  real_profit: TrendingUpIcon,
 }
 
 export interface CostStepView {
@@ -80,6 +84,13 @@ function worded(key: I18nKey, servicesOnly: boolean): I18nKey {
   const part = key.replace('dashboard.costs.steps.', '')
   if (!servicesOnly || !SERVICES_WORDING.has(part)) return key
   return `${key}${part.endsWith('.remaining') ? 'Services' : '_services'}` as I18nKey
+}
+
+/** Where a step that is done leads (the products otherwise). */
+const DONE_PATHS: Partial<Record<CostStepId, string>> = {
+  product_costs: 'product-costs',
+  sales: 'sales',
+  real_profit: 'reports/profit',
 }
 
 /** A page of the business (`path` below its root). */
@@ -143,6 +154,21 @@ function open(
         actionKey: `${key}.action` as I18nKey,
         href: page(businessId, 'product-costs'),
       }
+    // M3 Step 3: shown only while Sales and Reports are served (the API's steps).
+    case 'sales':
+      return {
+        bodyKey: `${key}.todo` as I18nKey,
+        count: null,
+        actionKey: `${key}.action` as I18nKey,
+        href: page(businessId, 'sales/today'),
+      }
+    case 'real_profit':
+      return {
+        bodyKey: `${key}.todo` as I18nKey,
+        count: null,
+        actionKey: `${key}.action` as I18nKey,
+        href: page(businessId, 'reports/profit'),
+      }
   }
 }
 
@@ -165,7 +191,7 @@ export function costStepView(
         bodyKey: `${key}.done` as I18nKey,
         count: null,
         actionKey: `${key}.action` as I18nKey,
-        href: page(businessId, step.id === 'product_costs' ? 'product-costs' : 'products'),
+        href: page(businessId, DONE_PATHS[step.id] ?? 'products'),
       }
     : {
         ...shared,
@@ -181,7 +207,8 @@ export function costStepView(
 }
 
 /**
- * The words of "Your product costs are in, before running costs": what the costs come from, and that
+ * The words of "Your product costs are in, before running costs" (or, with the sales steps, "Your real
+ * profit is ready", which leads to Real profit): what the costs come from, and that
  * each item's share of running costs is added once sales are recorded (D-202). The owner's time
  * counts only without a team (D-119); a business that sells only services reads about its services
  * (D-200).
@@ -189,15 +216,29 @@ export function costStepView(
 export function costsReadyKeys({
   servicesOnly,
   ownerTime,
+  profit = false,
 }: {
   servicesOnly: boolean
   ownerTime: boolean
+  /** The steps end with "See your real profit" (M3 Step 3): "Your real profit is ready". */
+  profit?: boolean
 }) {
+  if (profit) {
+    return {
+      title: 'dashboard.costs.profitReady.title',
+      body: ownerTime
+        ? 'dashboard.costs.profitReady.body'
+        : 'dashboard.costs.profitReady.bodyWithoutTime',
+      action: 'dashboard.costs.profitReady.action',
+      path: 'reports/profit',
+    } as const
+  }
   const kind = servicesOnly ? 'Services' : ''
   return {
     title: servicesOnly ? 'dashboard.costs.ready.title_services' : 'dashboard.costs.ready.title',
     body: `dashboard.costs.ready.body${kind}${ownerTime ? '' : 'WithoutTime'}`,
     action: servicesOnly ? 'dashboard.costs.ready.action_services' : 'dashboard.costs.ready.action',
+    path: 'product-costs',
   } as const
 }
 

@@ -82,8 +82,10 @@ import { useHourlyRateSentence, usePercent, useRateWords, useReasonWords } from 
 // them sees a lock, and the page never offers to sort or filter by them (the API refuses it,
 // list-params.ts). A cost with something missing is marked incomplete and says why in a few words;
 // its margin is only "at most" (muted, never green); nothing missing is ever 0. Until sales are
-// recorded (Phase 3) the share of running costs waits for them (D-202): that is not "incomplete",
-// but the list says its costs and margins are before running costs.
+// recorded the share of running costs waits for them (D-202): that is not "incomplete", but the list
+// says its costs and margins are before running costs. Once they are (M3 Step 3, while Sales is
+// served), the share is live and margins are after running costs; "How your costs are worked out"
+// gives this month's rate and where it comes from (Q6).
 
 /** The page's order and filter, from and to the address. */
 function useListParams(visible: CostVisibility) {
@@ -159,7 +161,7 @@ function HowPanel({ data, context }: { data: ListData; context: BusinessContextD
   const wide = useMediaQuery('(min-width: 768px)')
   const [open, setOpen] = useState(false)
   const materialsOn = hasModule(context, 'materials')
-  const running = rateWords(data.monthCosts, hasModule(context, 'running_costs'))
+  const running = rateWords(data.monthCosts, hasModule(context, 'running_costs'), data.today)
   const time = data.ownerTime.applies ? hourly(data.ownerTime.hourlyRate) : null
   if (running === null && time === null) return null
   const canChange = isSectionVisible(context, 'costing')
@@ -252,9 +254,21 @@ function HowPanel({ data, context }: { data: ListData; context: BusinessContextD
         {running ? (
           <HowLine icon={RepeatIcon} data-how="running">
             <p data-rule>{running.rule}</p>
-            <p data-example className="mt-1 text-muted-foreground">
-              {running.example}
-            </p>
+            {running.live ? (
+              <p data-live className="mt-1 font-medium">
+                {running.live}
+              </p>
+            ) : null}
+            {running.basis ? (
+              <p data-basis className="mt-1 text-muted-foreground">
+                {running.basis}
+              </p>
+            ) : null}
+            {running.example ? (
+              <p data-example className="mt-1 text-muted-foreground">
+                {running.example}
+              </p>
+            ) : null}
             {running.awaiting ? (
               <p data-awaiting className="mt-1 font-medium">
                 {running.awaiting}
@@ -272,6 +286,7 @@ function HowPanel({ data, context }: { data: ListData; context: BusinessContextD
             <MonthCosts
               costs={data.monthCosts}
               materialsOn={materialsOn}
+              salesOn={hasModule(context, 'sales')}
               vatRegistered={context.capabilities.vat_registered === true}
             />
           </HowLine>
@@ -467,14 +482,18 @@ function CostValue({ row }: { row: ProductCostRowDto }) {
   const { total, complete, tooLarge } = row.cost
   if (total === undefined) return <Locked category="cost" />
   if (total === null) {
-    const awaiting = complete === true && row.cost.runningCosts.state === 'awaiting_sales'
+    const state = row.cost.runningCosts.state
+    const awaiting = complete === true && state === 'awaiting_sales'
+    const soon = complete === true && state === 'before_running_costs'
     return (
-      <span data-awaiting={awaiting || undefined} className="text-muted-foreground">
+      <span data-awaiting={awaiting || soon || undefined} className="text-muted-foreground">
         {tooLarge
           ? t('costing.list.row.tooLarge')
           : awaiting
             ? t('costing.list.row.awaiting')
-            : t('costing.list.row.notCounted')}
+            : soon
+              ? t('costing.list.row.soon')
+              : t('costing.list.row.notCounted')}
       </span>
     )
   }
@@ -826,6 +845,7 @@ function ProductCostsList() {
   const visible: CostVisibility = context?.visibleCategories ?? []
   const { params, set } = useListParams(visible)
   const wide = useMediaQuery('(min-width: 1280px)')
+  const businessDate = useBusinessDate()
   const list = useInfiniteQuery(
     trpc.productCost.list.infiniteQueryOptions(costListInput(params), {
       getNextPageParam: (page) => page.data.nextCursor,
@@ -844,8 +864,12 @@ function ProductCostsList() {
   // Costs, margins and supplier prices are visible only together (D-187).
   const seesCosts = visible.includes('cost')
   const canSeeProducts = hasModule(context, 'products') && can(context, 'products.items.view')
-  // Until sales are recorded every cost is before running costs (D-202): the list says so.
-  const beforeRunning = seesCosts && first?.monthCosts.state === 'awaiting_sales'
+  // Until sales are recorded every cost is before running costs (D-202), and so is it in a first
+  // month before 7 days of sales (Q6): the list says so. Once shared, costs and margins are after them.
+  const shareState = first?.monthCosts.state
+  const beforeRunning =
+    seesCosts && (shareState === 'awaiting_sales' || shareState === 'before_running_costs')
+  const showsOn = first?.monthCosts.showsOn ?? null
 
   return (
     <PageContainer>
@@ -889,7 +913,13 @@ function ProductCostsList() {
               className="mb-3 flex items-start gap-2 text-sm leading-relaxed text-muted-foreground"
             >
               <InfoIcon aria-hidden className="mt-0.5 size-4 shrink-0" />
-              <span className="min-w-0">{t('costing.list.beforeRunning')}</span>
+              <span className="min-w-0">
+                {shareState === 'before_running_costs' && showsOn
+                  ? t('costing.list.beforeRunningSoon', {
+                      day: businessDate(showsOn).replaceAll(' ', NBSP),
+                    })
+                  : t('costing.list.beforeRunning')}
+              </span>
             </p>
           ) : null}
           {list.isPending ? (

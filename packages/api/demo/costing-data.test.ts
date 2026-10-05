@@ -104,6 +104,14 @@ describe.each(DEMO_PERSONAS.filter((p) => p.costing).map((p) => [p.title, p] as 
         const running = (data.runningCosts ?? []).filter((r) =>
           sameCategory(r.category, e.category),
         )
+        // A channel's app fees (M3 Step 3, Q8) fit any category: a channel the business adds.
+        if (typeof e.pays === 'object' && 'channelFees' in e.pays) {
+          expect(
+            (data.channels ?? []).map((c) => c.key),
+            e.key,
+          ).toContain(e.pays.channelFees)
+          continue
+        }
         if (running.length === 0) expect(e.pays, e.key).toBeUndefined()
         else expect(e.pays, e.key).toBeDefined()
         if (e.pays !== undefined && e.pays !== 'extra') {

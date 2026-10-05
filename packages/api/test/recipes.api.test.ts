@@ -676,9 +676,13 @@ describe('a material’s units change under a recipe', () => {
       await cafe.run('role.updatePermissions', {
         id: manager.id,
         version: manager.version,
-        // Seeing product costs needs seeing recipes (M2 Step 6): they go off together.
+        // Seeing product costs needs seeing recipes (M2 Step 6), and profit reports product costs
+        // (M3 Step 3): they go off together.
         permissionKeys: manager.permissionKeys.filter(
-          (key) => !key.startsWith('products.recipes') && !key.startsWith('cost_engine.'),
+          (key) =>
+            !key.startsWith('products.recipes') &&
+            !key.startsWith('cost_engine.') &&
+            key !== 'reports.profit.view',
         ),
       }),
     )

@@ -2,8 +2,12 @@ import type { ExpenseDto } from '@bizcost/contracts'
 import { describe, expect, it } from 'vitest'
 import {
   checkExpense,
+  DELIVERY,
   expenseDraft,
   EXTRA,
+  FEES,
+  isSalesChoice,
+  ORDINARY,
   paysChoiceOf,
   paysInputOf,
   periodMonthOptions,
@@ -334,12 +338,16 @@ describe('what it pays, in a category that has running costs (the owner’s "1أ
   it('a saved expense opens with what it says: the running cost, an extra, or nothing', () => {
     expect(paysChoiceOf(null)).toBe('')
     expect(paysChoiceOf(undefined)).toBe('')
-    expect(paysChoiceOf({ kind: 'extra', runningCost: null })).toBe(EXTRA)
-    expect(paysChoiceOf({ kind: 'running_cost', runningCost: { id: DEWA, name: 'DEWA' } })).toBe(
-      DEWA,
-    )
+    expect(paysChoiceOf({ kind: 'extra', runningCost: null, channel: null })).toBe(EXTRA)
+    expect(
+      paysChoiceOf({
+        kind: 'running_cost',
+        runningCost: { id: DEWA, name: 'DEWA' },
+        channel: null,
+      }),
+    ).toBe(DEWA)
     // Named only to a member who may see running costs: nothing to pick for anyone else.
-    expect(paysChoiceOf({ kind: 'running_cost', runningCost: null })).toBe('')
+    expect(paysChoiceOf({ kind: 'running_cost', runningCost: null, channel: null })).toBe('')
   })
 
   it('sends the bill of a running cost its category can pay, an extra, or nothing said', () => {
@@ -376,5 +384,57 @@ describe('what it pays, in a category that has running costs (the owner’s "1أ
     const hidden = checkExpense(filled({ pays: EXTRA }), REGISTERED)
     expect(hidden.paysMissing).toBe(false)
     expect(hidden.fields).not.toHaveProperty('pays')
+  })
+})
+
+describe('what it pays, while Sales is served: a channel’s app fees or delivery (Q8, D-239)', () => {
+  const TALABAT = '0190a4f2-7b5c-7c3e-9b1a-2f3c4d5e6f75'
+  const ARCHIVED = '0190a4f2-7b5c-7c3e-9b1a-2f3c4d5e6f76'
+  const CHANNELS = [{ id: TALABAT }]
+  const PAYABLE = [{ id: STAFF_SALARIES }]
+
+  it('a saved expense opens with the channel whose fees it pays, or delivery', () => {
+    expect(
+      paysChoiceOf({
+        kind: 'channel_fees',
+        runningCost: null,
+        channel: { id: TALABAT, name: 'Talabat' },
+      }),
+    ).toBe(`${FEES}${TALABAT}`)
+    expect(paysChoiceOf({ kind: 'delivery', runningCost: null, channel: null })).toBe(DELIVERY)
+  })
+
+  it('sends them only for a member who sees the channels; for anyone else they are kept', () => {
+    expect(paysInputOf(`${FEES}${TALABAT}`, undefined, CHANNELS)).toEqual({
+      kind: 'channel_fees',
+      channelId: TALABAT,
+    })
+    expect(paysInputOf(DELIVERY, PAYABLE, CHANNELS)).toEqual({ kind: 'delivery' })
+    // Not read (no costs, or Sales not served): left out, the API keeps it.
+    expect(paysInputOf(`${FEES}${TALABAT}`, PAYABLE)).toBeUndefined()
+    expect(paysInputOf(DELIVERY, undefined)).toBeUndefined()
+    // An archived channel the expense already names: kept as it is.
+    expect(paysInputOf(`${FEES}${ARCHIVED}`, undefined, CHANNELS)).toBeUndefined()
+  })
+
+  it('an ordinary expense clears them, said by a member who may (never by anyone else)', () => {
+    expect(paysInputOf(ORDINARY, undefined, CHANNELS)).toBeNull()
+    expect(paysInputOf(ORDINARY, [], undefined)).toBeNull()
+    expect(paysInputOf(ORDINARY, undefined, undefined)).toBeUndefined()
+    // Untouched, for a member who sees channels but not running costs: nothing sent (a bill they
+    // cannot see stays).
+    expect(paysInputOf('', undefined, CHANNELS)).toBeUndefined()
+  })
+
+  it('a channel’s fees or delivery answers the question of a category with running costs', () => {
+    const asked = { ...REGISTERED, payable: PAYABLE, channels: CHANNELS }
+    const fees = checkExpense(filled({ pays: `${FEES}${TALABAT}` }), asked)
+    expect(fees.fields?.pays).toEqual({ kind: 'channel_fees', channelId: TALABAT })
+    expect(fees.paysMissing).toBe(false)
+    const delivery = checkExpense(filled({ pays: DELIVERY }), { ...REGISTERED, payable: PAYABLE })
+    expect(delivery.paysMissing).toBe(false)
+    expect(delivery.fields).not.toHaveProperty('pays')
+    expect(isSalesChoice(DELIVERY)).toBe(true)
+    expect(isSalesChoice(EXTRA)).toBe(false)
   })
 })

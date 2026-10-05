@@ -17,10 +17,14 @@ export const ACCOUNT_MESSAGES: readonly MessageSpec[] = ['account', 'auth']
 /** Smart Setup: the questions, the review and the module names. */
 export const SETUP_MESSAGES: readonly MessageSpec[] = ['setup', 'modules']
 
-/** The Dashboard: its checklist, and the setup's statements about the business. */
+/**
+ * The Dashboard: its checklist, the setup's statements about the business, and the units of the
+ * decision cards (M3 Step 3: what was sold, a cost per unit).
+ */
 export const DASHBOARD_MESSAGES: readonly MessageSpec[] = [
   'dashboard',
   { namespace: 'setup', paths: ['cap', 'review.groups.about'] },
+  { namespace: 'units', paths: ['qty', 'per'] },
 ]
 
 /**
@@ -103,6 +107,12 @@ export const SALES_MESSAGES: readonly MessageSpec[] = [
     paths: ['editor', 'totals', 'view.discountPercent', 'view.discountAmount'],
   },
 ]
+
+/**
+ * Reports → Real profit (M3 Step 3; its layout; shown only under the dev-only preview until Release
+ * A): its own words and the unit names (a product's quantity sold).
+ */
+export const REPORTS_MESSAGES: readonly MessageSpec[] = ['reports', 'units']
 
 /** Settings of a business (layout): the section list, the settings home and every section's frame. */
 export const SETTINGS_MESSAGES: readonly MessageSpec[] = ['settings']

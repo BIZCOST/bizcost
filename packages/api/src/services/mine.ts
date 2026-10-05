@@ -106,6 +106,8 @@ interface MineExpenseRecord extends Record<string, unknown> {
   pays: ExpensePays | null
   running_cost_id: string | null
   running_cost_name: string | null
+  channel_id: string | null
+  channel_name: string | null
 }
 
 /**
@@ -137,11 +139,14 @@ export function listMineExpenses(
                select sum(p.amount) from app.expense_payments p
                 where p.business_id = d.business_id and p.expense_id = d.id
                   and p.reversed_at is null and p.deleted_at is null), 0))::text as paid,
-             d.pays, d.running_cost_id, rc.name as running_cost_name
+             d.pays, d.running_cost_id, rc.name as running_cost_name, d.channel_id,
+             ch.name as channel_name
         from app.expenses d
         join app.cost_categories c on c.business_id = d.business_id and c.id = d.category_id
         left join app.running_costs rc
           on rc.business_id = d.business_id and rc.id = d.running_cost_id
+        left join app.sales_channels ch
+          on ch.business_id = d.business_id and ch.id = d.channel_id
        where d.business_id = ${ctx.businessId} and d.deleted_at is null and ${MY_EXPENSE}
              ${after}
        order by d.business_date desc, d.id desc

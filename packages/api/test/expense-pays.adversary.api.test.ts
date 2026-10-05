@@ -176,7 +176,7 @@ describe('D-216: what an expense pays is said for its own category ("a new categ
         wholeDraft(own, { amount: '3150', vatRate: '0', pays: EXTRA }),
       ),
     ).data
-    expect(said.pays).toEqual({ kind: 'extra', runningCost: null })
+    expect(said.pays).toEqual({ kind: 'extra', runningCost: null, channel: null })
     const moved = ok(
       await shop.as<Envelope<ExpenseDto>>(
         barista,

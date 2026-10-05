@@ -181,6 +181,8 @@ describe('member.updatePermissions', () => {
           'expenses.documents.approve',
           'expenses.payments.record',
           'purchases.payments.record',
+          // M3 Step 3: profit reports need the costs switch (Q11).
+          'reports.profit.view',
         ),
       ),
     )

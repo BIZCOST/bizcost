@@ -18,6 +18,7 @@ import {
   MEMBER_ACCESS_MESSAGES,
   PRODUCT_COSTS_MESSAGES,
   PURCHASES_MESSAGES,
+  REPORTS_MESSAGES,
   ROOT_MESSAGES,
   RUNNING_COSTS_MESSAGES,
   SALES_MESSAGES,
@@ -211,6 +212,21 @@ describe("each route's messages have the keys its code translates", () => {
     ).toEqual({})
   })
 
+  it('Reports → Real profit (M3 Step 3)', () => {
+    expect(
+      missing(
+        [
+          'features/reports',
+          'features/catalog/catalog-loading.tsx',
+          'features/documents/amounts.tsx',
+          'features/documents/panel.tsx',
+          'components/ui',
+        ],
+        REPORTS_MESSAGES,
+      ),
+    ).toEqual({})
+  })
+
   it("a member's page: their permissions and the branches they work in", () => {
     expect(
       missing(
@@ -274,6 +290,7 @@ describe("each route's messages have the keys its code translates", () => {
       RUNNING_COSTS_MESSAGES,
       PRODUCT_COSTS_MESSAGES,
       SALES_MESSAGES,
+      REPORTS_MESSAGES,
       SETTINGS_MESSAGES,
       MEMBER_ACCESS_MESSAGES,
       ...Object.values(SETTINGS_SECTION_MESSAGES),

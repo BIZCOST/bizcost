@@ -96,6 +96,7 @@ describe('the month’s costs, counted once per running cost (D-216)', () => {
     const bonus = extra({ categoryId: SALARIES, cost: '300' })
     expect(costPool(MONTH, [salaries], [bonus])).toEqual({
       month: MONTH,
+      materials: null,
       total: '16300',
       categories: [
         {
@@ -127,6 +128,7 @@ describe('the month’s costs, counted once per running cost (D-216)', () => {
     )
     expect(pool).toEqual({
       month: MONTH,
+      materials: null,
       // 12 000 + 3 150 (the bill, not 3 000 + 3 150) + 16 000 + 500.
       total: '31650',
       categories: [
@@ -325,7 +327,7 @@ describe('the month’s costs, counted once per running cost (D-216)', () => {
         ],
         [],
       ),
-    ).toEqual({ month: MONTH, total: '0', categories: [] })
+    ).toEqual({ month: MONTH, total: '0', categories: [], materials: null })
   })
 
   it('reversals count where D-200 says, and take back only themselves', () => {
@@ -522,7 +524,12 @@ describe('the month’s costs, counted once per running cost (D-216)', () => {
   })
 
   it('nothing in the month: 0, and no category', () => {
-    expect(costPool(MONTH, [], [])).toEqual({ month: MONTH, total: '0', categories: [] })
+    expect(costPool(MONTH, [], [])).toEqual({
+      month: MONTH,
+      total: '0',
+      categories: [],
+      materials: null,
+    })
     expect(costPool(MONTH, [], [bill({ month: '2026-08' })]).total).toBe('0')
   })
 

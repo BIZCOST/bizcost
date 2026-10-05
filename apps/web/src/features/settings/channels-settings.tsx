@@ -59,6 +59,7 @@ import { NativeSelect } from '@/components/ui/native-select'
 import { readPercent, withLatinDigits } from '@/features/catalog/numbers'
 import { useBusinessContext } from '@/lib/trpc/client'
 import { cn } from '@/lib/utils'
+import { invalidateProfit } from '@/features/reports/refresh'
 import { isSectionVisible } from './sections'
 import { SectionPage } from './settings-shell'
 
@@ -400,7 +401,12 @@ export function ChannelsSettings({ businessId }: { businessId: string }) {
   const unarchive = useMutation(trpc.channel.unarchive.mutationOptions())
   const [editing, setEditing] = useState<Editing | null>(null)
   const seesCosts = context?.visibleCategories.includes('cost') === true
-  const refresh = () => queryClient.invalidateQueries({ queryKey: trpc.channel.list.pathKey() })
+  // A channel's name, kind or commission changes real profit by channel and its fees (D-212).
+  const refresh = () =>
+    Promise.all([
+      queryClient.invalidateQueries({ queryKey: trpc.channel.list.pathKey() }),
+      invalidateProfit(queryClient, trpc),
+    ])
 
   async function toggleArchive(channel: SalesChannelDto) {
     try {

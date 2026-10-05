@@ -37,6 +37,7 @@ import { StatusBadge } from '@/features/documents/status-badge'
 import { can } from '@/features/settings/sections'
 import { useLocale } from '@/lib/i18n/client'
 import { useBusinessContext } from '@/lib/trpc/client'
+import { invalidateProfit } from '@/features/reports/refresh'
 import {
   checkReturn,
   creditTotal,
@@ -241,7 +242,7 @@ function ReturnForm({
       queryClient.invalidateQueries({ queryKey: trpc.purchase.list.pathKey() }),
       queryClient.invalidateQueries({ queryKey: trpc.material.costs.pathKey() }),
       queryClient.invalidateQueries({ queryKey: trpc.product.costs.pathKey() }),
-      queryClient.invalidateQueries({ queryKey: trpc.productCost.pathKey() }),
+      invalidateProfit(queryClient, trpc),
       queryClient.invalidateQueries({ queryKey: trpc.recipe.get.pathKey() }),
       // What is still owed on the purchase: its returns and credit notes take theirs off.
       queryClient.invalidateQueries({ queryKey: trpc.purchasePayment.list.pathKey() }),

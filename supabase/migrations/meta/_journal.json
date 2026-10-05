@@ -295,6 +295,20 @@
       "when": 1791120753773,
       "tag": "20261004133233_sales_security",
       "breakpoints": true
+    },
+    {
+      "idx": 42,
+      "version": "7",
+      "when": 1791185997386,
+      "tag": "20261005073957_expense_channel_fees",
+      "breakpoints": true
+    },
+    {
+      "idx": 43,
+      "version": "7",
+      "when": 1791186028057,
+      "tag": "20261005074028_reports_access",
+      "breakpoints": true
     }
   ]
 }

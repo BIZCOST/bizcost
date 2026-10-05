@@ -5,11 +5,13 @@ import {
   type AttachmentUploadUrlDto,
   type BooksDto,
   type CostCategoryDto,
+  type DashboardCardsDto,
   type ExpenseDto,
   type MaterialDto,
   type ProductCostBreakdownDto,
   type ProductCostSettingsDto,
   type ProductDto,
+  type ProfitSummaryDto,
   type PurchaseDto,
   type PurchaseReturnDto,
   type RunningCostDto,
@@ -19,6 +21,7 @@ import {
 } from '@bizcost/contracts'
 import {
   addMonths,
+  daysIn,
   monthOf,
   newId,
   SENSITIVITY_CATEGORIES,
@@ -100,6 +103,8 @@ const OVERRIDE_PERSONAS = {
       'expenses.documents.approve',
       'expenses.payments.record',
       'purchases.payments.record',
+      // M3 Step 3: profit reports need the costs switch (Q11, D-190): the switch takes them along.
+      'reports.profit.view',
     ].map((key) => ({ key: key as PermissionKey, effect: 'deny' as const })),
     visible: [],
   },
@@ -152,6 +157,12 @@ interface OracleEntry {
    * D-119): its output is the output of another entry, checked there.
    */
   refusedWith?: AppErrorCode
+  /**
+   * The service withholds the values from a member without this key even where they see the
+   * category (aggregates of hidden values are withheld, not only redacted: real profit needs "See
+   * profit reports", Q11, D-190): its values are then absent, its paths redacted as the category says.
+   */
+  withheldWithout?: PermissionKey
 }
 
 // The fixture's numbers: two purchases of a material (3 L at 41.17, then 1 L at 52.39) and a credit
@@ -265,6 +276,35 @@ const breakdownValues = {
   supplier_price: [BEANS_PRICE],
 }
 const settingsValues = { cost: [HOURLY_RATE] }
+// Real profit (M3 Step 3): last month's report (only the sale of its 1st: materials 1.02834, the
+// month's costs 8 734.76, and its profit), and the Dashboard's cards (read as the owner right before
+// each call: the cases add sales today).
+const profitValues = { cost: [] as string[], profit_margin: [] as string[] }
+const cardValues = { cost: [] as string[], profit_margin: [] as string[] }
+
+/** Last month's report as the owner (profitValues); its input. */
+async function readProfit() {
+  const lastMonth = addMonths(monthOf(today), -1)
+  const input = {
+    from: `${lastMonth}-01`,
+    to: `${lastMonth}-${String(daysIn(lastMonth)).padStart(2, '0')}`,
+    groupBy: 'product',
+  }
+  const { data } = await asOwner<ProfitSummaryDto>('profit.summary', 'query', input)
+  expect(data.total).toMatchObject({ materials: RECIPE_COST, monthCosts: POOL_TOTAL })
+  profitValues.cost = [data.total.materials!, data.total.monthCosts!]
+  profitValues.profit_margin = [data.total.profit!]
+  return input
+}
+
+/** The cards as the owner (cardValues). */
+async function readCards() {
+  const { data } = await asOwner<DashboardCardsDto>('dashboard.cards', 'query')
+  expect(data.moneyWent, JSON.stringify(data)).not.toBeNull()
+  cardValues.cost = [data.moneyWent!.materials!, data.moneyWent!.runningCosts!]
+  cardValues.profit_margin = [data.moneyWent!.profit!]
+  return undefined
+}
 
 /** Reads the costed product's numbers as the owner (costedValues); its search input for the list. */
 async function readCosted() {
@@ -715,6 +755,18 @@ const PRODUCTION_ORACLE: Record<string, OracleEntry> = {
     permission: 'cost_engine.product_costs.view',
     prepare: async () => ({ productId: (await readCosted()).productId }),
     valuesOf: breakdownValues,
+  },
+  'profit.summary': {
+    permission: 'reports.sales.view',
+    prepare: readProfit,
+    valuesOf: profitValues,
+    withheldWithout: 'reports.profit.view',
+  },
+  'dashboard.cards': {
+    permission: 'dashboard.home.view',
+    prepare: readCards,
+    valuesOf: cardValues,
+    withheldWithout: 'reports.profit.view',
   },
   'productCost.settings': {
     permission: 'cost_engine.settings.manage',
@@ -1218,6 +1270,10 @@ beforeAll(async () => {
     startsOn: `${addMonths(lastMonth, -1)}-01`,
   })
   await newExpensePosted({ amount: POOL_BILL, periodMonth: lastMonth })
+  // M3 Step 3: the costed product sold on the 1st of last month too, so the running month carries
+  // last month's rate (Q6): its whole costs, 8 734.76, ÷ its item sales, 99.99 (Product costs show
+  // them, and real profit reads them).
+  await newPostedSale({ businessDate: `${lastMonth}-01` })
   await api.admin`update app.businesses set owner_hourly_rate = ${HOURLY_RATE} where id = ${businessId}`
   // Each member's own record (D-181): an expense the owner entered, paid by the member from their own
   // money, final and owed to them, with an amount no one else has.
@@ -1440,9 +1496,12 @@ describe('each role template, and each changed by overrides, receives exactly th
     expect(result.error, result.raw).toBeUndefined()
     const hidden = paths.filter((p) => !visible.has(p.category)).map((p) => p.path)
     expect(result.data?.meta.redacted).toEqual([...hidden].sort())
+    const withheld = entry.withheldWithout !== undefined && !holds(persona, entry.withheldWithout)
     for (const category of SENSITIVITY_CATEGORIES) {
       for (const value of entry.valuesOf[category] ?? []) {
-        expect(result.raw.includes(value), `${category} ${value}`).toBe(visible.has(category))
+        expect(result.raw.includes(value), `${category} ${value}`).toBe(
+          visible.has(category) && !withheld,
+        )
       }
     }
 
@@ -1550,6 +1609,7 @@ const PLAIN_QUERY_FIELDS: Record<string, string> = {
   locationId: 'names a record (a filter on the branch)',
   periodMonth: 'the month an expense is for',
   order: 'the direction of a sort the member may use',
+  groupBy: 'how Real profit groups its sales: by time, product, channel or branch, never a value',
 }
 
 /** Each option of a field that sorts or filters by value: the category it orders on, or none. */
@@ -1561,6 +1621,15 @@ const QUERY_OPTIONS: Record<string, SensitivityCategory | 'none'> = {
   'productCost.list sort=margin_percent': 'profit_margin',
   'productCost.list filter=incomplete': 'cost',
   'productCost.list filter=loss': 'profit_margin',
+  // Real profit (M3 Step 3): sorted or shown by profit only for a member who sees it (Q11).
+  'profit.summary sort=key': 'none',
+  'profit.summary sort=sales': 'none',
+  'profit.summary sort=profit': 'profit_margin',
+  'profit.summary sort=margin_percent': 'profit_margin',
+  'profit.summary show=all': 'none',
+  'profit.summary show=loss': 'profit_margin',
+  'profit.summary show=low_margin': 'profit_margin',
+  'profit.summary show=incomplete': 'cost',
 }
 
 const BUSINESS_QUERIES = proceduresOf(appRouter).filter(
@@ -1608,10 +1677,12 @@ describe('filtering, sorting, searching or exporting on hidden values is FORBIDD
     const entry = ORACLE[path]
     const procedure = proceduresOf(oracleRouter).find((p) => p.path === path)
     if (!entry || !procedure || !category) throw new Error(`${path}: add it to the oracle first`)
-    const { search } = await readCosted()
+    // Real profit's options on last month's report by product; the lists' on the costed product.
+    const base =
+      path === 'profit.summary' ? await readProfit() : { search: (await readCosted()).search }
     const result = await callProcedure(api.handler, procedure, members.get(persona)!.token, {
       businessId,
-      input: { search, [field]: value },
+      input: { ...base, [field]: value },
     })
     const values = Object.values(entry.valuesOf).flat()
     const mayQuery = category === 'none' || visibleTo(persona).includes(category)

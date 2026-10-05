@@ -6,6 +6,8 @@
 export const ALL_SET_HIDDEN_COOKIE = 'bz_all_set_hidden'
 /** "Your product costs are ready" (M2 Step 7), hidden the same way. */
 export const COSTS_READY_HIDDEN_COOKIE = 'bz_costs_ready_hidden'
+/** "Your real profit is ready" (M3 Step 3): its own, so hiding the product costs' card keeps it. */
+export const PROFIT_READY_HIDDEN_COOKIE = 'bz_profit_ready_hidden'
 const MAX_AGE_SECONDS = 60 * 60 * 24 * 365
 /** Users of this browser who hid it here (a shared computer); the oldest go first. */
 const MAX_USERS = 5

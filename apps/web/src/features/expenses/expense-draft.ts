@@ -109,6 +109,11 @@ export interface ExpenseFormContext {
    * not sent (the API keeps what the expense says while it still fits).
    */
   readonly payable?: readonly { readonly id: string }[]
+  /**
+   * The channels whose app fees it may pay (expense.payableChannels), while Sales is served, for a
+   * member who sees costs (M3 Step 3). Undefined otherwise: a channel's fees or delivery is kept.
+   */
+  readonly channels?: readonly { readonly id: string }[]
 }
 
 export interface CheckedExpense {
@@ -187,25 +192,57 @@ export function expenseDraft(
 }
 
 /**
+ * While Sales is served (M3 Step 3, Q8), an expense may also pay a channel's app fees
+ * (`fees:<channel id>`) or delivery already on the sales (DELIVERY), said by a member who sees costs;
+ * or nothing of these (ORDINARY: it counts as itself, said only in a category without running costs).
+ * For a member who may not say them, a channel's fees or delivery already said is kept as it is: left
+ * out, the API keeps it, since it fits any category.
+ */
+export const FEES = 'fees:'
+export const DELIVERY = 'delivery'
+export const ORDINARY = 'ordinary'
+
+/** A channel's fees or delivery already on the sales (they stay when the category changes, D-239). */
+export function isSalesChoice(choice: string): boolean {
+  return choice === DELIVERY || choice.startsWith(FEES)
+}
+
+/**
  * What a saved expense says it pays, as the form's choice: the running cost's id (named only to a
- * member who may see running costs), EXTRA, or '' (nothing said, or a running cost not named).
+ * member who may see running costs), EXTRA, a channel's fees (`fees:<id>`) or DELIVERY, or ''
+ * (nothing said, or a running cost not named).
  */
 export function paysChoiceOf(pays: ExpensePaysDto | undefined): string {
   if (!pays) return ''
   if (pays.kind === 'extra') return EXTRA
+  if (pays.kind === 'channel_fees') return `${FEES}${pays.channel?.id ?? ''}`
+  if (pays.kind === 'delivery') return DELIVERY
   return pays.runningCost?.id ?? ''
 }
 
 /**
- * What to send for the choice, given the running costs its category can pay that month: the bill of
- * one of them, an extra while there is one, null otherwise (nothing said). Undefined while they are
- * not known, or for a member who may not say it: left out, the API keeps what the expense says while
- * it still fits.
+ * What to send for the choice, given the running costs its category can pay that month and (while
+ * Sales is served, for a member who sees costs) the channels: the bill of one of them, an extra while
+ * there is one, a channel's fees, delivery already on the sales, null otherwise (nothing said).
+ * Undefined while they are not known, or for a member who may not say it: left out, the API keeps
+ * what the expense says while it still fits (a channel's fees or delivery always does).
  */
 export function paysInputOf(
   choice: string,
   payable: readonly { readonly id: string }[] | undefined,
+  channels?: readonly { readonly id: string }[],
 ): ExpensePaysInput | null | undefined {
+  if (isSalesChoice(choice)) {
+    if (channels === undefined) return undefined
+    if (choice === DELIVERY) return { kind: 'delivery' }
+    const channelId = choice.slice(FEES.length)
+    // An archived channel the expense already names: kept as it is.
+    return channels.some((channel) => channel.id === channelId)
+      ? { kind: 'channel_fees', channelId }
+      : undefined
+  }
+  // Nothing of these, said by a member who may (a category without running costs).
+  if (choice === ORDINARY) return channels !== undefined || payable !== undefined ? null : undefined
   if (payable === undefined) return undefined
   if (payable.length === 0) return null
   if (choice === EXTRA) return { kind: 'extra' }
@@ -326,7 +363,7 @@ export function checkExpense(draft: ExpenseDraft, context: ExpenseFormContext): 
 
   const paymentMethod = draft.paymentMethod
   const valid = Object.keys(errors).length === 0 && amount.ok && paymentMethod !== ''
-  const pays = paysInputOf(draft.pays, context.payable)
+  const pays = paysInputOf(draft.pays, context.payable, context.channels)
   return {
     errors,
     amounts: { net: amounts.net, vat: amounts.vat, total: amounts.total },

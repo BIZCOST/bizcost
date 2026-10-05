@@ -39,8 +39,15 @@ import { Receipts } from '@/features/purchasing/receipts'
 import { can } from '@/features/settings/sections'
 import { useLocale } from '@/lib/i18n/client'
 import { useBusinessContext } from '@/lib/trpc/client'
-import { mayChoosePays, mayReviewExpenses, usePayableRunningCosts } from './data'
-import { paysChoiceOf, paysInputOf } from './expense-draft'
+import { invalidateProfit } from '@/features/reports/refresh'
+import {
+  mayChoosePays,
+  mayReviewExpenses,
+  maySaySalesPays,
+  usePayableChannels,
+  usePayableRunningCosts,
+} from './data'
+import { isSalesChoice, paysChoiceOf, paysInputOf } from './expense-draft'
 import { PaysChoice, usePaysLabel } from './pays-choice'
 import { ExpenseStatusBadge } from './status-badge'
 
@@ -203,7 +210,7 @@ export function ExpenseView({
       queryClient.invalidateQueries({ queryKey: trpc.expensePayment.list.pathKey() }),
       queryClient.invalidateQueries({ queryKey: trpc.payable.list.pathKey() }),
       // A final expense counts in its month's costs on Product costs.
-      queryClient.invalidateQueries({ queryKey: trpc.productCost.pathKey() }),
+      invalidateProfit(queryClient, trpc),
       refreshOwn(),
     ])
   }
@@ -273,7 +280,14 @@ export function ExpenseView({
   // approve it may wait, to finalize it is needed.
   const paysOptions = choosesPays && notFinal ? payable.data?.items : undefined
   const paysAsks = paysOptions !== undefined && paysOptions.length > 0
-  const paysInput = paysInputOf(paysChoice, paysOptions)
+  // While Sales is served (M3 Step 3): a channel's app fees or delivery already on the sales, offered
+  // with the running costs to a member who sees costs.
+  const saysSalesPays = context !== undefined && maySaySalesPays(context)
+  const channels = usePayableChannels(saysSalesPays && paysAsks)
+  const channelItems = saysSalesPays ? channels.data?.items : undefined
+  const paysInput = paysInputOf(paysChoice, paysOptions, channelItems)
+  // A channel's fees or delivery already said: it answers the question (kept when not read).
+  const paysKept = isSalesChoice(paysChoice)
   const paysSaid = paysAsks && paysInput ? { pays: paysInput } : {}
   const paysLoading = choosesPays && notFinal && payable.isPending && payable.fetchStatus !== 'idle'
   const doSubmit = change(() => submit.mutateAsync(version), 'expenses.confirm.submitted')
@@ -290,7 +304,7 @@ export function ExpenseView({
     'expenses.confirm.finalized',
   )
   const doFinalize = async () => {
-    if (paysAsks && !paysInput) {
+    if (paysAsks && !paysInput && !paysKept) {
       setPaysAsked(true)
       return false
     }
@@ -655,6 +669,7 @@ export function ExpenseView({
         {paysOptions?.length ? (
           <PaysChoice
             options={paysOptions}
+            channels={channelItems}
             value={paysChoice}
             onChange={setPaysChoice}
             hint={t('expenses.pays.approveOptional')}
@@ -735,9 +750,10 @@ export function ExpenseView({
         {paysOptions?.length ? (
           <PaysChoice
             options={paysOptions}
+            channels={channelItems}
             value={paysChoice}
             onChange={setPaysChoice}
-            error={paysAsked && !paysInput ? t('expenses.pays.required') : undefined}
+            error={paysAsked && !paysInput && !paysKept ? t('expenses.pays.required') : undefined}
           />
         ) : null}
       </ConfirmDialog>

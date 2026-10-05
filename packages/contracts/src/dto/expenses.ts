@@ -1,4 +1,9 @@
-import { EXPENSE_PAYS, EXPENSE_STATUSES, RUNNING_COST_FREQUENCIES } from '@bizcost/domain'
+import {
+  EXPENSE_PAYS,
+  EXPENSE_STATUSES,
+  RUNNING_COST_FREQUENCIES,
+  SALES_CHANNEL_KINDS,
+} from '@bizcost/domain'
 import { z } from 'zod'
 import { withMeta } from '../envelope'
 import {
@@ -109,6 +114,11 @@ export type ExpenseStatusDto = z.infer<typeof expenseStatusDto>
 // (RUNNING_COST_CHOICE_REQUIRED); a draft or an expense sent for approval may wait. Only a member who
 // may see running costs (running_costs.items.view, with Running Costs on) says it: for anyone else it
 // is said by the one who approves or finalizes the expense (expense.approve and expense.post take it).
+//
+// While Sales is served (M3 Step 3, Q8), any expense may also say it pays "App fees of [channel]"
+// (`channel_fees`: that channel's fees for its month when no statement covers it) or "Delivery already
+// on my sales and orders" (`delivery`), from `expense.payableChannels`. Neither counts in the month's
+// costs. Only a member who sees costs (the costs switch) says them, with Sales on.
 
 export const expensePaysKindDto = z.enum(EXPENSE_PAYS)
 export type ExpensePaysKindDto = z.infer<typeof expensePaysKindDto>
@@ -117,18 +127,24 @@ export type ExpensePaysKindDto = z.infer<typeof expensePaysKindDto>
  * What an expense pays, as said: `running_cost` names a running cost of its category that a bill for
  * its month can pay (NOT_FOUND unless a live running cost of the business; VALIDATION when it is of
  * another category or cannot be paid for that month); `extra` (VALIDATION when its category has no
- * running cost for its month: then there is nothing to say).
+ * running cost for its month: then there is nothing to say); `channel_fees` names a sales channel of
+ * the business (NOT_FOUND otherwise; an archived one only when the expense already names it);
+ * `delivery`.
  */
 export const expensePaysInput = z.discriminatedUnion('kind', [
   z.object({ kind: z.literal('running_cost'), runningCostId: zUuid }),
   z.object({ kind: z.literal('extra') }),
+  z.object({ kind: z.literal('channel_fees'), channelId: zUuid }),
+  z.object({ kind: z.literal('delivery') }),
 ])
 export type ExpensePaysInput = z.input<typeof expensePaysInput>
 
 /**
  * What it pays, said or left out. Left out: an update keeps what the expense says while it still fits
- * its category and month (else nothing is said: it is asked again); a new expense says nothing. Null:
- * nothing said. Only a member who may see running costs gives it (FORBIDDEN otherwise, even null).
+ * its category and month (else nothing is said: it is asked again; a channel's fees and delivery fit
+ * any category and month); a new expense says nothing. Null: nothing said. The bill of a running cost
+ * and an extra only from a member who may see running costs, a channel's fees and delivery only from
+ * one who sees costs with Sales on, null from either (FORBIDDEN otherwise).
  */
 const paysField = expensePaysInput.nullable().optional()
 
@@ -145,6 +161,8 @@ export const expensePaysDto = z
      * for a running cost") and for an extra. Never an amount.
      */
     runningCost: z.object({ id: zUuid, name: z.string() }).nullable(),
+    /** `channel_fees`: the channel whose app fees it pays, by its name as it is now; else null. */
+    channel: z.object({ id: zUuid, name: z.string() }).nullable(),
   })
   .nullable()
 export type ExpensePaysDto = z.infer<typeof expensePaysDto>
@@ -262,6 +280,17 @@ export type PayableRunningCostDto = z.infer<typeof payableRunningCostDto>
  */
 export const payableRunningCostsDto = z.object({ items: z.array(payableRunningCostDto) })
 export type PayableRunningCostsDto = z.infer<typeof payableRunningCostsDto>
+
+/**
+ * `expense.payableChannels` (Expenses and Sales on, expenses.documents.view and the costs switch; M3
+ * Step 3, Q8): the business's active sales channels by name, for "App fees of {name}"
+ * («عمولات تطبيق {name}»), with their kind (a delivery app or a marketplace first keeps a part of
+ * each sale). Never a commission %. With Sales off or not served the choice does not show.
+ */
+export const payableChannelsDto = z.object({
+  items: z.array(z.object({ id: zUuid, name: z.string(), kind: z.enum(SALES_CHANNEL_KINDS) })),
+})
+export type PayableChannelsDto = z.infer<typeof payableChannelsDto>
 
 /** `expense.reject`: the `version` as read, and why (optional; the one who entered it reads it). */
 export const rejectExpenseInput = z.object({

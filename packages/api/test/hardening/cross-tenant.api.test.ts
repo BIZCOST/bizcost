@@ -172,6 +172,31 @@ const PROBES: Record<string, Probe> = {
     },
   },
   'dashboard.checklist': { base: 'business', reason: NO_ROWS },
+  'dashboard.cards': {
+    base: 'business',
+    reason: `${NO_ROWS}: the x-business-id business's own sales, costs and names (M3 Step 3)`,
+  },
+  'profit.summary': {
+    base: 'business',
+    reason: `${NO_ROWS}: the x-business-id business's own sales, costs and names (M3 Step 3)`,
+    variants: (_victim, attacker) => [
+      {
+        input: {
+          from: `${attacker.sale.businessDate.slice(0, 7)}-01`,
+          to: attacker.sale.businessDate,
+          groupBy: 'product',
+        },
+      },
+      {
+        input: {
+          from: `${attacker.sale.businessDate.slice(0, 7)}-01`,
+          to: attacker.sale.businessDate,
+          groupBy: 'channel',
+          sort: 'profit',
+        },
+      },
+    ],
+  },
   'location.list': { base: 'business', reason: NO_ROWS },
   'location.create': {
     base: 'business',
@@ -1180,6 +1205,10 @@ const PROBES: Record<string, Probe> = {
       },
     ],
   },
+  'expense.payableChannels': {
+    base: 'business',
+    reason: `${NO_ROWS}: the x-business-id business's own channels (M3 Step 3)`,
+  },
   'expense.settings': { base: 'business', reason: NO_ROWS },
   'expense.updateSettings': {
     base: 'business',
@@ -1210,9 +1239,14 @@ const PROBES: Record<string, Probe> = {
           input: draft({ paymentMethod: 'paid_by_member', paidByMemberId: victim.adminMemberId }),
           own: ['not_found'],
         },
-        // What it pays names a running cost of the x-business-id business only (D-216).
+        // What it pays names a running cost of the x-business-id business only (D-216), and a
+        // channel of it only (M3 Step 3, Q8).
         {
           input: draft({ pays: { kind: 'running_cost', runningCostId: victim.runningCost.id } }),
+          own: ['not_found'],
+        },
+        {
+          input: draft({ pays: { kind: 'channel_fees', channelId: victim.channel.id } }),
           own: ['not_found'],
         },
       ]
@@ -1246,6 +1280,7 @@ const PROBES: Record<string, Probe> = {
           { locationId: victim.defaultLocationId },
           { paymentMethod: 'paid_by_member', paidByMemberId: victim.adminMemberId },
           { pays: { kind: 'running_cost', runningCostId: victim.runningCost.id } },
+          { pays: { kind: 'channel_fees', channelId: victim.channel.id } },
         ].map((extra) => ({
           input: {
             id: attacker.draftExpense.id,
@@ -1295,6 +1330,14 @@ const PROBES: Record<string, Probe> = {
         },
         own: ['not_found'],
       },
+      {
+        input: {
+          id: attacker.submittedExpense.id,
+          version: attacker.submittedExpense.version,
+          pays: { kind: 'channel_fees', channelId: victim.channel.id },
+        },
+        own: ['not_found'],
+      },
     ],
   },
   'expense.reject': {
@@ -1326,6 +1369,14 @@ const PROBES: Record<string, Probe> = {
           id: attacker.draftExpense.id,
           version: attacker.draftExpense.version,
           pays: { kind: 'running_cost', runningCostId: victim.runningCost.id },
+        },
+        own: ['not_found'],
+      },
+      {
+        input: {
+          id: attacker.draftExpense.id,
+          version: attacker.draftExpense.version,
+          pays: { kind: 'channel_fees', channelId: victim.channel.id },
         },
         own: ['not_found'],
       },

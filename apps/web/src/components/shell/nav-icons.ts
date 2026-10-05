@@ -2,6 +2,7 @@ import {
   BanknoteIcon,
   CalculatorIcon,
   CalendarCheckIcon,
+  ChartLineIcon,
   HandCoinsIcon,
   LayoutDashboardIcon,
   LayoutGridIcon,
@@ -41,6 +42,8 @@ const NAV_ICONS: Readonly<Record<string, LucideIcon>> = {
   // Sales, a new sale and Today's sales (M3 Step 2; the preview until Release A).
   banknote: BanknoteIcon,
   'calendar-check': CalendarCheckIcon,
+  // Reports → Real profit (M3 Step 3; the preview until Release A).
+  'chart-line': ChartLineIcon,
 }
 
 export const FALLBACK_NAV_ICON: LucideIcon = LayoutGridIcon

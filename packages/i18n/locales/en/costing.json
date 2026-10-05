@@ -18,7 +18,17 @@
     "example": "For example, if a month's costs are {{costs}} and its sales {{sales}}, that's {{costsNumber}} ÷ {{salesNumber}} = {{percent}}: something priced {{price}} carries {{share}}, and something priced {{small}} carries {{smallShare}}.",
     "awaiting": "Worked out automatically once you record your sales. Until then, your costs and margins are before running costs.",
     "short": "Running costs: worked out automatically once you record your sales.",
-    "not_entered": "Enter your running costs (rent, salaries…): they're what is shared over what you sell."
+    "not_entered": "Enter your running costs (rent, salaries…): they're what is shared over what you sell.",
+    "applied": "This month, each thing you sell carries {{percent}} of its price: your costs {{costs}} ÷ your sales {{sales}} in {{month}}.",
+    "appliedRate": "This month, each thing you sell carries {{percent}} of its price ({{month}}).",
+    "soFar": "This month, each thing you sell carries {{percent}} of its price: your costs {{costs}} ÷ your sales {{sales}} so far, from your first sale on {{day}}.",
+    "soFarRate": "This month, each thing you sell carries {{percent}} of its price: so far, from your first sale on {{day}}.",
+    "lastMonth": "At {{rateMonth}}'s rate until {{monthOnly}} ends.",
+    "none": "Your running costs come to zero, so nothing is shared.",
+    "before": "Your first sales are in. The percentage shows on {{day}}, once you have 7 days of sales. Until then, your costs and margins are before running costs.",
+    "shortApplied": "Running costs: {{percent}} of each price ({{month}}).",
+    "shortSoFar": "Running costs: {{percent}} of each price (so far this month).",
+    "shortBefore": "Running costs: shown from {{day}}, once you have 7 days of sales."
   },
   "pool": {
     "title": "Your business's costs in {{month}}",
@@ -37,9 +47,19 @@
     "takenBack": "Less {{amount}}: an earlier month's bill, reversed in this month",
     "note": "Each running cost counts once: its own bills for the month, or else its regular amount. Extra expenses count on top, and the bills of a running cost paid by the quarter or the year are spread over its months.",
     "noPurchases": "Material purchases aren't here: they're in each item's materials.",
+    "noPurchasesUsed": "Materials your products use aren't here: they're in each item's own cost.",
     "vat": "Amounts are before VAT: VAT you get back isn't a cost.",
     "none": "Nothing counted for {{month}}: no running costs and no final expenses for that month.",
-    "hidden": "Your business's costs in {{month}} show only to those who can see running costs and expenses."
+    "hidden": "Your business's costs in {{month}} show only to those who can see running costs and expenses.",
+    "titleDays": "Your business's costs from {{from}} to {{to}}",
+    "sharedApplied": "Shared over your sales of {{sales}} in {{month}}: {{percent}} of each price.",
+    "sharedAppliedRate": "Shared over what you sold in {{month}}: {{percent}} of each price.",
+    "sharedDays": "Shared over your sales of {{sales}} in those days: {{percent}} of each price.",
+    "sharedDaysRate": "Shared over what you sold in those days: {{percent}} of each price.",
+    "sharedNone": "They come to zero, so nothing is shared.",
+    "sharedBefore": "Shared over what you sell once you have 7 days of sales, on {{day}}.",
+    "materials": "Materials no product uses",
+    "materialsNote": "Materials that nothing you sell uses count here, in the month they were bought. Add them to a recipe to make them that item's own cost."
   },
   "time": {
     "rate": "Your time: {{amount}} an hour.",
@@ -91,7 +111,8 @@
       "tooLarge": "Too large to count",
       "none": "None",
       "atMost": "at most",
-      "timeMissing": "Your time not added"
+      "timeMissing": "Your time not added",
+      "soon": "Worked out once you have 7 days of sales"
     },
     "empty": {
       "title": "Nothing to work out yet",
@@ -101,7 +122,8 @@
       "incomplete": "Every cost here is complete.",
       "loss": "Nothing here is sold at a loss.",
       "hint": "Try another choice or search."
-    }
+    },
+    "beforeRunningSoon": "Costs and margins here are before running costs: those are added once you have 7 days of sales, on {{day}}."
   },
   "reasons": {
     "short": {
@@ -172,7 +194,13 @@
       "price": "Price",
       "priceBeforeVat": "Price before VAT",
       "margin": "Margin",
-      "marginBefore": "Margin before running costs"
+      "marginBefore": "Margin before running costs",
+      "share": "{{amount}} · {{percent}} of its price ({{month}})",
+      "shareBeforeVat": "{{amount}} · {{percent}} of its price before VAT ({{month}})",
+      "shareSoFar": "{{amount}} · {{percent}} of its price (so far this month)",
+      "shareSoFarBeforeVat": "{{amount}} · {{percent}} of its price before VAT (so far this month)",
+      "runningNone": "Your running costs come to zero, so it carries none.",
+      "runningBefore": "Worked out once you have 7 days of sales, on {{day}}."
     },
     "missing": {
       "title": "What's missing"
@@ -191,6 +219,7 @@
     "notFound": {
       "title": "This product isn't here",
       "body": "It may have been removed, or the link is wrong."
-    }
+    },
+    "beforeRunningSoon": "Its share of running costs is added once you have 7 days of sales, on {{day}}."
   }
 }

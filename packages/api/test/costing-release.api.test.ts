@@ -342,6 +342,8 @@ describe('"Let\'s find the real cost of what you sell" (dashboard.checklist)', (
           'expenses.documents.approve',
           'expenses.payments.record',
           'purchases.payments.record',
+          // M3 Step 3: profit reports need the costs switch (Q11).
+          'reports.profit.view',
         ].map((key) => ({ key, effect: 'deny' })),
       }),
     )
@@ -424,7 +426,7 @@ describe('"Let\'s find the real cost of what you sell" (dashboard.checklist)', (
     const page = await designer.costList()
     expect(page.counts).toMatchObject({ incomplete: 0 })
     expect(page.items[0]?.cost).toMatchObject({
-      runningCosts: { state: 'awaiting_sales' },
+      runningCosts: { state: 'awaiting_sales', amount: null },
       total: '450',
       beforeRunningCosts: true,
       complete: true,

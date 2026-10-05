@@ -10,7 +10,7 @@
 -- owned by postgres, callable only by bizcost_api. 00_catalog_coverage, 01_grants and 03_rls_initplan
 -- check the same rules generically for every table and function.
 begin;
-select plan(124);
+select plan(128);
 
 do $$
 begin
@@ -77,7 +77,7 @@ select '00000000-0000-0000-0000-000000000000', pg_temp.id(u.name), 'authenticate
        u.email, now(), '{}', '{}', now(), now()
   from (values ('user A', 'asma@example.test'), ('user B', 'basil@example.test')) as u(name, email);
 
--- 1. Fixtures: the same rows in A and B (2 + 2 × 18 = 38) -----------------------------------------
+-- 1. Fixtures: the same rows in A and B (2 + 2 × 19 = 40) -----------------------------------------
 
 select is(
   pg_temp.state_of(pg_temp.api_run('user ' || s.x, null, format(
@@ -177,11 +177,14 @@ select is(pg_temp.setup(s.x, f.stmt), 'ok 1', 'setup ' || s.x || ': ' || f.what)
       values (pg_temp.id('loc2 {x}'), pg_temp.id('{biz}'), 'Branch') $$),
     (18, 'a running cost', $$
       insert into app.running_costs (id, business_id, name, category_id, amount, starts_on)
-      values (pg_temp.id('run {x}'), pg_temp.id('{biz}'), 'Rent', pg_temp.id('cat {x}'), 1000, current_date) $$)
+      values (pg_temp.id('run {x}'), pg_temp.id('{biz}'), 'Rent', pg_temp.id('cat {x}'), 1000, current_date) $$),
+    (19, 'a sales channel (M3: an expense may pay its app fees)', $$
+      insert into app.sales_channels (id, business_id, name, kind)
+      values (pg_temp.id('chan {x}'), pg_temp.id('{biz}'), 'Talabat', 'delivery_app') $$)
   ) as f(n, what, stmt)
  order by s.x, f.n;
 
--- 2. Every link: A's own row is accepted, B's refused (2 × 40 = 80, then 1) ----------------------
+-- 2. Every link: A's own row is accepted, B's refused (2 × 41 = 82, then 1) ----------------------
 -- `:t` in a statement is the target: A's row named `<target> A`, or B's named `<target> B`.
 
 create temp table links (n integer, child text, cols text, target text, what text, stmt text);
@@ -326,7 +329,13 @@ insert into links values
                               payment_method, currency, amount, net_total, vat_total, total, pays,
                               running_cost_id)
     values (pg_temp.id('t'), pg_temp.id('biz A'), pg_temp.id('cat A'), pg_temp.id('loc A'), current_date,
-            'no_invoice', 'cash', 'AED', 10, 10, 0, 10, 'running_cost', :t) $$);
+            'no_invoice', 'cash', 'AED', 10, 10, 0, 10, 'running_cost', :t) $$),
+  (41, 'expenses', 'channel_id', 'chan', 'an expense and the channel whose app fees it pays (M3 Step 3)', $$
+    insert into app.expenses (id, business_id, category_id, location_id, business_date, document_type,
+                              payment_method, currency, amount, net_total, vat_total, total, pays,
+                              channel_id)
+    values (pg_temp.id('t'), pg_temp.id('biz A'), pg_temp.id('cat A'), pg_temp.id('loc A'), current_date,
+            'no_invoice', 'cash', 'AED', 10, 10, 0, 10, 'channel_fees', :t) $$);
 
 -- The target's id: `<target> A` / `<target> B` ('biz owner member' becomes 'biz A owner member').
 create function pg_temp.target(p_target text, p_side text)

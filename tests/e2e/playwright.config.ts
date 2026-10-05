@@ -17,9 +17,9 @@ import {
 //
 // The released screens (the Costing Core since M2 Step 7, D-188) run on the production build. The
 // modules being built are still `planned`, and a production build never shows a planned module
-// (D-125): their specs (`preview` project; M3 Step 2: Sales) run on a `next dev` server with the
-// dev-only preview, in its own folder (.next/e2e-preview) on E2E_PREVIEW_PORT (default E2E_PORT + 1),
-// as in M2 (D-127). When Release A (M3 Step 6) releases them, their specs move to the production
+// (D-125): their specs (`preview` project; M3 Step 2: Sales; M3 Step 3: Real profit) run on a
+// `next dev` server with the dev-only preview (Sales and Reports), in its own folder
+// (.next/e2e-preview) on E2E_PREVIEW_PORT (default E2E_PORT + 1), as in M2 (D-127). When Release A (M3 Step 6) releases them, their specs move to the production
 // project and this server goes again.
 
 const { apiUrl, publishableKey, secretKey } = stack()
@@ -43,7 +43,7 @@ function webEnv(origin: string): Record<string, string> {
 }
 
 /** Specs of the modules shown only by the dev-only preview. */
-const PREVIEW_SPECS = /(?:sales)\.spec\.ts$/
+const PREVIEW_SPECS = /(?:sales|profit)\.spec\.ts$/
 
 export default defineConfig({
   testDir: './specs',

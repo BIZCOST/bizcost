@@ -37,6 +37,7 @@ import { useMoney } from '@/features/documents/amounts'
 import { ConfirmDialog } from '@/features/documents/confirm-dialog'
 import { MoneyInput } from '@/features/documents/line-editor'
 import { useBusinessContext } from '@/lib/trpc/client'
+import { invalidateProfit } from '@/features/reports/refresh'
 import { CategoryField } from './category-field'
 import { canManageCategories, useCategoryOptions } from './data'
 import {
@@ -132,7 +133,7 @@ export function RunningCostSheet({
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: trpc.runningCost.list.pathKey() }),
         // The month's costs on Product costs count running costs.
-        queryClient.invalidateQueries({ queryKey: trpc.productCost.pathKey() }),
+        invalidateProfit(queryClient, trpc),
       ])
       return true
     } catch (error) {
@@ -160,7 +161,7 @@ export function RunningCostSheet({
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: trpc.runningCost.list.pathKey() }),
         // The month's costs on Product costs count running costs.
-        queryClient.invalidateQueries({ queryKey: trpc.productCost.pathKey() }),
+        invalidateProfit(queryClient, trpc),
       ])
       setRemoving(false)
       onClose()

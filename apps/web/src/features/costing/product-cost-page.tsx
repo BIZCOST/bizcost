@@ -28,14 +28,21 @@ import { ProductSheet } from '@/features/catalog/product-sheet'
 import { RecipeSheet } from '@/features/catalog/recipe-sheet'
 import { useFormatQuantity, useUnitQuantity } from '@/features/catalog/unit-parts'
 import { NBSP } from '@/features/catalog/units'
-import { Locked, useBusinessDate, useMoney, useUnitCost } from '@/features/documents/amounts'
+import {
+  Locked,
+  useBusinessDate,
+  useBusinessMonth,
+  useMoney,
+  useUnitCost,
+} from '@/features/documents/amounts'
 import { Panel } from '@/features/documents/panel'
 import { hasModule } from '@/features/purchasing/data'
 import { can, isSectionVisible, sectionPath } from '@/features/settings/sections'
 import { useLocale, useTerminology } from '@/lib/i18n/client'
 import { useBusinessContext } from '@/lib/trpc/client'
 import { cn } from '@/lib/utils'
-import { useDuration, usePercent, useRateWords, useReasonWords } from './words'
+import { invalidateProfit } from '@/features/reports/refresh'
+import { useDuration, usePercent, useRatePercent, useRateWords, useReasonWords } from './words'
 
 // One product's cost, line by line (ROADMAP.md M2 Step 6; D-115, D-119, D-178, D-202): what one unit
 // sold costs and what is left of its price; each part of the cost with how it was worked out, in
@@ -48,7 +55,9 @@ import { useDuration, usePercent, useRateWords, useReasonWords } from './words'
 // are recorded its share of running costs waits for them (D-202): its cost and margin say they are
 // before running costs, and the margin is never green; when that share is its only line, its cost is
 // worked out then, never "not worked out yet", and a service's optional materials are a hint on its
-// materials line, never "what's missing" (D-203).
+// materials line, never "what's missing" (D-203). Once sales are recorded (M3 Step 3, while Sales is
+// served) the share is live: "AED 4.50 · 25% of its price (September 2026)", with which month's rate
+// it is ("At September's rate until October ends"), and the margin is after running costs.
 
 type Breakdown = ProductCostBreakdownDto['data']
 
@@ -99,6 +108,7 @@ function Muted({ children }: { children: ReactNode }) {
 function Summary({ data, per }: { data: Breakdown; per: string }) {
   const { t } = useTranslation()
   const money = useMoney()
+  const businessDate = useBusinessDate()
   const percent = usePercent()
   const { cost, margin, price } = data
   const loss = typeof margin.amount === 'string' && compareDecimal(margin.amount, '0') < 0
@@ -107,6 +117,7 @@ function Summary({ data, per }: { data: Breakdown; per: string }) {
   const before = cost.beforeRunningCosts === true
   const stripped = compareDecimal(price.vatRate, '0') > 0 && price.beforeVat !== null
   const awaiting = cost.complete === true && cost.runningCosts.state === 'awaiting_sales'
+  const soon = cost.complete === true && cost.runningCosts.state === 'before_running_costs'
   const shownMargin =
     typeof margin.amount === 'string' && loss ? margin.amount.replace(/^-/, '') : margin.amount
   return (
@@ -129,7 +140,9 @@ function Summary({ data, per }: { data: Breakdown; per: string }) {
                     ? t('costing.list.row.tooLarge')
                     : awaiting
                       ? t('costing.list.row.awaiting')
-                      : t('costing.list.row.notCounted')}
+                      : soon
+                        ? t('costing.list.row.soon')
+                        : t('costing.list.row.notCounted')}
                 </span>
               </Muted>
             ) : (
@@ -206,6 +219,12 @@ function Summary({ data, per }: { data: Breakdown; per: string }) {
                   ? 'costing.detail.beforeRunningService'
                   : 'costing.detail.beforeRunning',
               )}
+            </p>
+          ) : cost.runningCosts.state === 'before_running_costs' && data.monthCosts.showsOn ? (
+            <p data-before-running className="mt-1 text-sm text-muted-foreground">
+              {t('costing.detail.beforeRunningSoon', {
+                day: businessDate(data.monthCosts.showsOn).replaceAll(' ', NBSP),
+              })}
             </p>
           ) : null}
         </div>
@@ -285,6 +304,9 @@ function CostLines({
   const unitQuantity = useUnitQuantity()
   const duration = useDuration()
   const rateWords = useRateWords()
+  const ratePercent = useRatePercent()
+  const monthName = useBusinessMonth()
+  const businessDate = useBusinessDate()
   const { data: context } = useBusinessContext()
   const runningCostsOn = context ? hasModule(context, 'running_costs') : false
   const { cost, margin, price, materials } = data
@@ -339,15 +361,33 @@ function CostLines({
 
   let runningLine: ReactNode = null
   if (running.state !== 'off') {
-    // By its price, worked out once sales are recorded (D-202); without a price, none can be worked
-    // out by it: said plainly, with the way to add it.
-    const words = rateWords(data.monthCosts, runningCostsOn)
+    // By its price (D-202): once sales are recorded, its share at this month's rate, live ("AED 4.50
+    // · 25% of its price (September 2026)", M3 Step 3); until then worked out once sales are
+    // recorded, or once 7 days of sales exist; without a price, none can be worked out by it: said
+    // plainly, with the way to add it.
+    const words = rateWords(data.monthCosts, runningCostsOn, data.today)
+    const share = typeof running.amount === 'string' ? running.amount : null
+    const rate = typeof data.monthCosts.rate === 'string' ? data.monthCosts.rate : null
+    const soFar = data.monthCosts.basis === 'so_far'
+    const shareKey = soFar
+      ? stripped
+        ? 'costing.detail.lines.shareSoFarBeforeVat'
+        : 'costing.detail.lines.shareSoFar'
+      : stripped
+        ? 'costing.detail.lines.shareBeforeVat'
+        : 'costing.detail.lines.share'
     runningLine = (
       <CostLine
         id="running"
         label={t('costing.detail.lines.running')}
         value={
-          running.state === undefined ? <Locked category="cost" /> : <Muted>{notCounted}</Muted>
+          running.state === undefined ? (
+            <Locked category="cost" />
+          ) : (running.state === 'applied' || running.state === 'none') && share !== null ? (
+            <Amount value={share} />
+          ) : (
+            <Muted>{notCounted}</Muted>
+          )
         }
       >
         {running.state === 'no_price' ? (
@@ -356,7 +396,26 @@ function CostLines({
           <p data-awaiting className="font-medium text-foreground">
             {t('costing.detail.lines.runningAwaiting')}
           </p>
+        ) : running.state === 'before_running_costs' ? (
+          <p data-awaiting className="font-medium text-foreground">
+            {t('costing.detail.lines.runningBefore', {
+              day: data.monthCosts.showsOn
+                ? businessDate(data.monthCosts.showsOn).replaceAll(' ', NBSP)
+                : '',
+            })}
+          </p>
+        ) : running.state === 'none' ? (
+          <p data-share>{t('costing.detail.lines.runningNone')}</p>
+        ) : running.state === 'applied' && share !== null && rate !== null ? (
+          <p data-share className="font-medium text-foreground">
+            {t(shareKey, {
+              amount: money(share).replaceAll(' ', NBSP),
+              percent: ratePercent(rate),
+              month: monthName(data.monthCosts.month).replaceAll(' ', NBSP),
+            })}
+          </p>
         ) : null}
+        {words?.basis ? <p data-basis>{words.basis}</p> : null}
         {words ? <p data-rate>{words.rule}</p> : null}
       </CostLine>
     )
@@ -442,7 +501,9 @@ function CostLines({
                   ? t('costing.list.row.tooLarge')
                   : cost.complete === true && running.state === 'awaiting_sales'
                     ? t('costing.list.row.awaiting')
-                    : t('costing.list.row.notCounted')}
+                    : cost.complete === true && running.state === 'before_running_costs'
+                      ? t('costing.list.row.soon')
+                      : t('costing.list.row.notCounted')}
               </Muted>
             ) : (
               <Amount value={cost.total} />
@@ -766,7 +827,7 @@ function Breakdown({ productId }: { productId: string }) {
   const recipeProduct = data.kind === 'recipe' && canOpenRecipe
   const close = () => {
     setOpen(null)
-    void queryClient.invalidateQueries({ queryKey: trpc.productCost.pathKey() })
+    void invalidateProfit(queryClient, trpc)
   }
   const settingsLink = (label: string) =>
     isSectionVisible(context, 'costing') ? (

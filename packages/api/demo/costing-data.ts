@@ -145,10 +145,11 @@ export interface DemoExpense {
   /**
    * What it pays (D-216), said exactly when its category has a running cost: the key of the running
    * cost it is the bill of (it takes the place of that running cost's regular amount alone), or
-   * 'extra' (it counts as itself, on top of the category's running costs). The owner says it when he
-   * finalizes it.
+   * 'extra' (it counts as itself, on top of the category's running costs). In any category (M3 Step
+   * 3, Q8): the app fees of a channel the business adds (its key), which never count in the month's
+   * costs. The owner says it when he finalizes it.
    */
-  readonly pays?: { readonly runningCost: string } | 'extra'
+  readonly pays?: { readonly runningCost: string } | { readonly channelFees: string } | 'extra'
   /**
    * The month it is for, as months before the seed day's month (default: the category's own default,
    * D-194): a bonus paid today for last month says 1.
@@ -177,6 +178,11 @@ export interface DemoSale {
   readonly daysAgo: number
   readonly source: 'day_sheet' | 'single'
   readonly lastMonth?: true
+  /**
+   * Dated that day of last month (M3 Step 3: a last full month with sales on its days, so real profit
+   * has a month's rate; the last day of a short month for a later day), in place of `daysAgo`.
+   */
+  readonly lastMonthDay?: number
   readonly channel?: string
   readonly branch?: string
   /** The member who enters (and finalizes) it; default: the owner. */
@@ -671,6 +677,19 @@ export const CAFE_COSTING: DemoCosting = {
       document: 'no_invoice',
       payment: 'bank_transfer',
     },
+    // Talabat's commission tax invoice for last month, marked as its app fees (M3 Step 3, Q8): the
+    // channel's fees for that month (in place of its 20 %), never a running cost.
+    {
+      key: 'talabat-fees',
+      daysAgo: 0,
+      monthsBack: 1,
+      category: 'other',
+      pays: { channelFees: 'talabat' },
+      description: 'عمولة طلبات للشهر الماضي',
+      amount: '1950',
+      payment: 'bank_transfer',
+      reference: 'TLB-INV-5521',
+    },
     // The barista bought ice with her own money and entered it herself (D-180).
     {
       key: 'ice',
@@ -711,6 +730,45 @@ export const CAFE_COSTING: DemoCosting = {
   ],
   channels: [{ key: 'talabat', name: 'طلبات', kind: 'delivery_app', feePercent: '20' }],
   sales: [
+    // Last month (M3 Step 3): a shop sheet every other day, Talabat and the Mirdif branch every few
+    // days, about AED 105 000 before VAT, so real profit has a month's rate (its running costs of about
+    // AED 33 000 ÷ its item sales: about 31 %).
+    ...[1, 3, 5, 7, 9, 11, 13, 15, 17, 19, 21, 23, 25, 27, 29].map((day): DemoSale => ({
+      key: `last-shop-${day}`,
+      daysAgo: 0,
+      lastMonthDay: day,
+      source: 'day_sheet',
+      channel: 'shop',
+      lines: [
+        ['spanish', String(140 + (day % 5) * 5)],
+        ['americano', String(75 + (day % 3) * 5)],
+        ['cappuccino', String(95 + (day % 4) * 5)],
+        ['croissant', String(65 + (day % 2) * 10)],
+      ],
+    })),
+    ...[2, 6, 10, 14, 18, 22, 26, 28].map((day): DemoSale => ({
+      key: `last-talabat-${day}`,
+      daysAgo: 0,
+      lastMonthDay: day,
+      source: 'day_sheet',
+      channel: 'talabat',
+      lines: [
+        ['spanish', String(38 + (day % 3) * 2), '21'],
+        ['macchiato', String(24 + (day % 2) * 2), '23'],
+      ],
+    })),
+    ...[4, 8, 12, 16, 20, 24, 27, 28].map((day): DemoSale => ({
+      key: `last-mirdif-${day}`,
+      daysAgo: 0,
+      lastMonthDay: day,
+      source: 'day_sheet',
+      channel: 'shop',
+      branch: 'فرع مردف',
+      lines: [
+        ['spanish', String(28 + (day % 4))],
+        ['americano', String(14 + (day % 3))],
+      ],
+    })),
     ...([3, 2, 1] as const).map((daysAgo): DemoSale => ({
       key: `shop-${daysAgo}`,
       daysAgo,
@@ -1010,8 +1068,18 @@ export const BAKER_COSTING: DemoCosting = {
     },
   ],
   ownerHourlyRate: '45',
-  // Last month typed in at once (one sale on its last day, Q9), then orders with delivery.
+  // Last month: whole cakes ordered on some of its days, the rest of the month typed in at once (one
+  // sale on its last day covering it from its 1st, Q9: real profit counts the month's costs from that
+  // 1st, D-250), then orders with delivery.
   sales: [
+    ...[4, 11, 18, 25].map((day): DemoSale => ({
+      key: `last-cake-${day}`,
+      daysAgo: 0,
+      lastMonthDay: day,
+      source: 'single',
+      delivery: { area: 'دبي هيلز', charged: '20', cost: '22' },
+      lines: [['cake', '1', '160']],
+    })),
     {
       key: 'last-month',
       daysAgo: 0,

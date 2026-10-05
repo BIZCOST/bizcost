@@ -10,6 +10,7 @@ import arErrors from '../locales/ar/errors.json'
 import arExpenses from '../locales/ar/expenses.json'
 import arModules from '../locales/ar/modules.json'
 import arPurchasing from '../locales/ar/purchasing.json'
+import arReports from '../locales/ar/reports.json'
 import arSales from '../locales/ar/sales.json'
 import arSettings from '../locales/ar/settings.json'
 import arSetup from '../locales/ar/setup.json'
@@ -25,6 +26,7 @@ import enErrors from '../locales/en/errors.json'
 import enExpenses from '../locales/en/expenses.json'
 import enModules from '../locales/en/modules.json'
 import enPurchasing from '../locales/en/purchasing.json'
+import enReports from '../locales/en/reports.json'
 import enSales from '../locales/en/sales.json'
 import enSettings from '../locales/en/settings.json'
 import enSetup from '../locales/en/setup.json'
@@ -68,6 +70,7 @@ export const en = {
   expenses: enExpenses,
   costing: enCosting,
   sales: enSales,
+  reports: enReports,
 } as const
 export type SourceMessages = typeof en
 
@@ -89,6 +92,7 @@ export const resources: Readonly<Record<Locale, Readonly<Record<Namespace, Messa
     expenses: arExpenses,
     costing: arCosting,
     sales: arSales,
+    reports: arReports,
   },
 }
 

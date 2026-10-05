@@ -552,7 +552,13 @@ class CostingSeed {
    * is on (otherwise nothing is asked, and the running costs were not entered).
    */
   private paysOf(e: DemoExpense): { pays?: object } {
-    if (e.pays === undefined || !this.active('running_costs')) return {}
+    if (e.pays === undefined) return {}
+    // A channel's app fees (M3 Step 3, Q8): in any category, while Sales is on.
+    if (typeof e.pays === 'object' && 'channelFees' in e.pays) {
+      const channelId = this.channelIds.get(e.pays.channelFees)
+      return this.active('sales') && channelId ? { pays: { kind: 'channel_fees', channelId } } : {}
+    }
+    if (!this.active('running_costs')) return {}
     return e.pays === 'extra'
       ? { pays: { kind: 'extra' } }
       : {
@@ -676,11 +682,24 @@ class CostingSeed {
     return { from, to: addDays(monthStart(this.today, 0), -1) }
   }
 
-  /** How many days before the seed day a sale is dated (a sheet of last month: its last day). */
+  /**
+   * The day a sale is dated: `daysAgo` before the seed day; a sheet of last month on its last day; a
+   * day of last month (`lastMonthDay`, the last day of a shorter month for a later day).
+   */
+  private saleDay(sale: DemoSale): string {
+    if (sale.lastMonth) return this.lastMonth().to
+    if (sale.lastMonthDay !== undefined) {
+      const { from, to } = this.lastMonth()
+      const day = Math.min(sale.lastMonthDay, Number(to.slice(8, 10)))
+      return `${from.slice(0, 8)}${String(day).padStart(2, '0')}`
+    }
+    return this.day(sale.daysAgo)
+  }
+
+  /** How many days before the seed day a sale is dated. */
   private saleDaysAgo(sale: DemoSale): number {
-    if (!sale.lastMonth) return sale.daysAgo
-    const to = new Date(`${this.lastMonth().to}T00:00:00Z`).getTime()
-    return Math.round((new Date(`${this.today}T00:00:00Z`).getTime() - to) / 86_400_000)
+    const at = new Date(`${this.saleDay(sale)}T00:00:00Z`).getTime()
+    return Math.round((new Date(`${this.today}T00:00:00Z`).getTime() - at) / 86_400_000)
   }
 
   private async sale(sale: DemoSale): Promise<void> {
@@ -705,7 +724,7 @@ class CostingSeed {
           {
             id,
             source: sale.source,
-            businessDate: month ? month.to : this.day(sale.daysAgo),
+            businessDate: this.saleDay(sale),
             periodFrom: month ? month.from : null,
             locationId,
             channelId,

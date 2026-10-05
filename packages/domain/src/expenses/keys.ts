@@ -45,14 +45,31 @@ export const STARTER_COST_CATEGORIES = [
 export type StarterCostCategory = (typeof STARTER_COST_CATEGORIES)[number]
 
 /**
- * `expenses.pays`: what an expense in a category that has running costs pays (the owner's decision of
- * 2026-10-01, D-216): `running_cost`, the bill of one of them (`expenses.running_cost_id`), which takes
- * the place of that running cost's regular amount alone over the period it pays for; `extra`, an
- * expense on top of them, which counts as itself. Null: not said yet (a draft, or one sent for
- * approval), or nothing to say (its category has no running cost for its month): it counts as itself.
+ * `expenses.pays`: what an expense pays.
+ *   - In a category that has running costs (the owner's decision of 2026-10-01, D-216):
+ *     `running_cost`, the bill of one of them (`expenses.running_cost_id`), which takes the place of
+ *     that running cost's regular amount alone over the period it pays for; `extra`, an expense on top
+ *     of them, which counts as itself.
+ *   - In any category, while Sales is served (M3 Step 3, Q8): `channel_fees`, "App fees of [channel]"
+ *     (`expenses.channel_id`): that channel's fees for its month when no statement covers it; and
+ *     `delivery`, "Delivery already on my sales and orders": a courier's bill whose deliveries the
+ *     sales already carry as their delivery cost. Neither ever counts in the month's costs
+ *     (paysCountInCosts): fees stay with their channel, delivery with its sale.
+ * Null: not said yet (a draft, or one sent for approval), or nothing to say: it counts as itself.
  */
-export const EXPENSE_PAYS = ['running_cost', 'extra'] as const
+export const EXPENSE_PAYS = ['running_cost', 'extra', 'channel_fees', 'delivery'] as const
 export type ExpensePays = (typeof EXPENSE_PAYS)[number]
+
+/** What an expense pays that keeps it out of the month's costs (Q8): a channel's fees, delivery. */
+export const EXPENSE_PAYS_OUTSIDE_COSTS = [
+  'channel_fees',
+  'delivery',
+] as const satisfies readonly ExpensePays[]
+
+/** Whether an expense that says it pays `pays` counts in the month's costs (null: it does, Q8). */
+export function paysCountInCosts(pays: ExpensePays | null | undefined): boolean {
+  return pays !== 'channel_fees' && pays !== 'delivery'
+}
 
 /** `running_costs.frequency`: how often the regular amount is paid (monthly by default). */
 export const RUNNING_COST_FREQUENCIES = ['weekly', 'monthly', 'quarterly', 'yearly'] as const

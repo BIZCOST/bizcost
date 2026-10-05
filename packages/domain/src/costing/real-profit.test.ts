@@ -529,11 +529,16 @@ describe('the month’s costs so far', () => {
     }
     const soFar = monthCostsSoFar('2026-09', '2026-09-01', '2026-09-10', [rent, licence], [power])
     // Rent 12,000 × 10 ÷ 30 = 4,000; licence 1,250 × 10 ÷ 30; electricity 3,000 × 10 ÷ 30 = 1,000.
-    expect(soFar.categories).toEqual([
+    expect(soFar.categories).toMatchObject([
       { categoryId: 'electricity', amount: '1000' },
       { categoryId: 'licences', amount: '416.666666666667' },
-      { categoryId: 'rent', amount: '4000' },
+      {
+        categoryId: 'rent',
+        amount: '4000',
+        lines: [{ kind: 'running_cost', runningCostId: 'rent', amount: '4000' }],
+      },
     ])
+    expect(soFar.materials).toBeNull()
     expect(soFar.total).toBe('5416.666666666667')
   })
 

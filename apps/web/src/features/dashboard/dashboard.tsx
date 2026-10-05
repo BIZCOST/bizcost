@@ -1,7 +1,11 @@
 'use client'
 
 import { useMe, useTRPC } from '@bizcost/app-core'
-import type { BusinessContextDto, DashboardChecklistDto } from '@bizcost/contracts'
+import type {
+  BusinessContextDto,
+  DashboardCardsDto,
+  DashboardChecklistDto,
+} from '@bizcost/contracts'
 import { businessDisplayName } from '@bizcost/domain'
 import {
   businessSummaryKeys,
@@ -24,7 +28,8 @@ import { STATEMENT_ICONS } from '@/features/setup/icons'
 import { useLocale, useTerminology } from '@/lib/i18n/client'
 import { useBusinessContext } from '@/lib/trpc/client'
 import { cn } from '@/lib/utils'
-import { COSTS_READY_HIDDEN_COOKIE } from './all-set-cookie'
+import { COSTS_READY_HIDDEN_COOKIE, PROFIT_READY_HIDDEN_COOKIE } from './all-set-cookie'
+import { DecisionCards, hasCards } from './cards'
 import { AllSet, Checklist, ChecklistSkeleton } from './checklist'
 import { progressOf } from './checklist-steps'
 import { CostChecklist, CostsReady } from './cost-checklist'
@@ -32,25 +37,36 @@ import { costProgress, costStepIdsFor } from './cost-steps'
 import { useAllSetHidden } from './hidden-all-set'
 
 // The Dashboard (ROADMAP.md Step 7, docs/PRODUCT.md §9–10): a welcome with the business's name (its
-// Arabic name in Arabic, D-097), its logo and the member's role; "Let's find the real cost of what you
-// sell" (M2 Step 7, D-193) and "Finish setting up" (M1), both from real data and only with the steps
-// the member can act on; and what the setup says about the business (§6.8). No cards for sections
-// that are not released yet: they arrive with their modules.
+// Arabic name in Arabic, D-097), its logo and the member's role; the decision cards of this month
+// (M3 Step 3, only while Sales is served and only the cards with data the member may see); "Let's
+// find the real cost of what you sell" (M2 Step 7, D-193; "Let's calculate your first real profit"
+// with the sales steps) and "Finish setting up" (M1), both from real data and only with the steps the
+// member can act on; and what the setup says about the business (§6.8). No cards for sections that
+// are not released yet: they arrive with their modules.
 
 /** What the server knows for the Dashboard's first render (its layout loads it, D-090, D-091). */
 interface DashboardServerData {
   /** The checklists, when the member has steps and the API answered. */
   readonly checklist: DashboardChecklistDto | null
+  /** The decision cards (M3 Step 3), when Sales is served and the API answered. */
+  readonly cards: DashboardCardsDto | null
+  /** Sales is served on this server: only then are the cards asked for (a released business: never). */
+  readonly cardsServed: boolean
   /** Whether this user hid "You're all set" here (the cookie). */
   readonly allSetHidden: boolean
   /** Whether this user hid "Your product costs are ready" here (its cookie). */
   readonly costsReadyHidden: boolean
+  /** Whether this user hid "Your real profit is ready" here (its cookie). */
+  readonly profitReadyHidden: boolean
 }
 
 const ServerData = createContext<DashboardServerData>({
   checklist: null,
+  cards: null,
+  cardsServed: false,
   allSetHidden: false,
   costsReadyHidden: false,
+  profitReadyHidden: false,
 })
 
 /**
@@ -58,12 +74,10 @@ const ServerData = createContext<DashboardServerData>({
  * alike: the first render is the page as it stays, with nothing waiting to arrive.
  */
 export function DashboardServerDataProvider({
-  checklist,
-  allSetHidden,
-  costsReadyHidden,
   children,
+  ...data
 }: DashboardServerData & { children: ReactNode }) {
-  return <ServerData value={{ checklist, allSetHidden, costsReadyHidden }}>{children}</ServerData>
+  return <ServerData value={data}>{children}</ServerData>
 }
 
 type SummaryKey = keyof typeof STATEMENT_ICONS
@@ -213,6 +227,18 @@ function DashboardView({ businessId }: { businessId: string }) {
     server.costsReadyHidden,
     COSTS_READY_HIDDEN_COOKIE,
   )
+  const [profitHidden, hideProfit] = useAllSetHidden(
+    userId,
+    businessId,
+    server.profitReadyHidden,
+    PROFIT_READY_HIDDEN_COOKIE,
+  )
+  // The decision cards (M3 Step 3): read only while Sales is served.
+  const cards = useQuery({
+    ...trpc.dashboard.cards.queryOptions(),
+    enabled: server.cardsServed,
+    initialData: server.cards ?? undefined,
+  })
   const membership = me?.memberships.find((m) => m.businessId === businessId)
   if (!membership || !context) return null
 
@@ -231,14 +257,20 @@ function DashboardView({ businessId }: { businessId: string }) {
   // ready" for a member who sees them (the last step), and nothing for the others.
   const costSteps = checklist.data?.costSteps ?? []
   const costs = costProgress(costSteps)
-  const readyOffered = costIds.includes('product_costs')
+  // With the sales steps (M3 Step 3) the last one is "See your real profit": "Your real profit is
+  // ready" takes the place of "Your product costs are ready", with a hide of its own.
+  const profitSteps = costIds.includes('real_profit')
+  const readyOffered = profitSteps || costIds.includes('product_costs')
+  const readyHidden = profitSteps ? profitHidden : costsHidden
   let costTop: 'checklist' | 'loading' | 'ready' | null = null
   if (costIds.length > 0 && !failed) {
-    if (checklist.isPending) costTop = readyOffered && costsHidden ? null : 'loading'
+    if (checklist.isPending) costTop = readyOffered && readyHidden ? null : 'loading'
     else if (costSteps.length === 0) costTop = null
     else if (!costs.complete) costTop = 'checklist'
-    else costTop = readyOffered && !costsHidden ? 'ready' : null
+    else costTop = readyOffered && !readyHidden ? 'ready' : null
   }
+  const cardsData = cards.data?.data
+  const showCards = server.cardsServed && hasCards(cardsData)
   const beside =
     top === 'checklist' || top === 'loading' || costTop === 'checklist' || costTop === 'loading'
 
@@ -264,12 +296,17 @@ function DashboardView({ businessId }: { businessId: string }) {
             businessId={businessId}
             servicesOnly={context.sellsOnlyServices}
             ownerTime={context.capabilities.has_team !== true}
+            profit={profitSteps}
             onHide={() => {
-              hideCosts()
+              if (profitSteps) hideProfit()
+              else hideCosts()
               // The Hide button goes away with the card: the focus goes to what follows it.
               aboutTitle.current?.focus()
             }}
           />
+        ) : null}
+        {showCards ? (
+          <DecisionCards cards={cardsData} businessId={businessId} context={context} />
         ) : null}
         {failed ? (
           <LoadError error={checklist.error} onRetry={() => void checklist.refetch()} />
@@ -287,7 +324,7 @@ function DashboardView({ businessId }: { businessId: string }) {
                 />
               ) : null}
               {costTop === 'loading' ? (
-                <ChecklistSkeleton steps={costIds.length} kind="costs" />
+                <ChecklistSkeleton steps={costIds.length} kind={profitSteps ? 'profit' : 'costs'} />
               ) : null}
               {top === 'checklist' ? <Checklist businessId={businessId} items={items} /> : null}
               {top === 'loading' ? <ChecklistSkeleton steps={steps.length} /> : null}

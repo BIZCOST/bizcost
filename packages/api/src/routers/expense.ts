@@ -15,6 +15,7 @@ import {
   mineExpenseListInput,
   mineExpenseResultDto,
   okDto,
+  payableChannelsDto,
   payableRunningCostsDto,
   payableRunningCostsInput,
   purchasePayersDto,
@@ -32,6 +33,7 @@ import {
   getExpense,
   getExpenseSettings,
   listExpenses,
+  listPayableChannels,
   listPayableRunningCosts,
   postExpense,
   rejectExpense,
@@ -61,7 +63,9 @@ import {
  * .reverse with .manage to correct; expenses.approval.manage (with a team) for the approval setting.
  * What an expense pays (D-216) is said only by a member who may see running costs (module
  * running_costs and running_costs.items.view): the service checks it on every save, approval and
- * posting, and `expense.payableRunningCosts` needs both.
+ * posting, and `expense.payableRunningCosts` needs both. A channel's app fees and delivery already
+ * on the sales (M3 Step 3, Q8) are said by a member who sees costs while Sales is on
+ * (`expense.payableChannels`).
  * Outputs are withMeta(): amounts are removed for members without data.supplier_price.view (D-165).
  */
 export const expensesModule = businessProcedure.use(requireModule('expenses'))
@@ -106,6 +110,14 @@ export const expenseRouter = router({
     .input(payableRunningCostsInput)
     .output(payableRunningCostsDto)
     .query(({ ctx, input }) => listPayableRunningCosts(ctx, input)),
+  /**
+   * `expense.payableChannels` (M3 Step 3, Q8): the active sales channels by name, for the choice
+   * "App fees of {name}"; with Sales on and the costs switch (the service checks it: FORBIDDEN).
+   */
+  payableChannels: viewExpenses
+    .use(requireModule('sales'))
+    .output(payableChannelsDto)
+    .query(({ ctx }) => listPayableChannels(ctx)),
   /** `expense.payers`: the active members an expense may say paid from their own money. */
   payers: manageExpenses.output(purchasePayersDto).query(({ ctx }) => listPayers(ctx)),
   /** `expense.create`: a draft, idempotent on the client's id. */

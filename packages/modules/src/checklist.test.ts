@@ -231,6 +231,8 @@ describe('cost steps', () => {
     hourlyRateSet: false,
     itemsWithMinutes: 0,
     incompleteCosts: 0,
+    finalizedSales: 0,
+    completeSales: 0,
   }
 
   it('lists every step, in order, for the owner of a business without a team; the time step goes with a team', () => {
@@ -242,16 +244,19 @@ describe('cost steps', () => {
       'purchases',
       'running_costs',
       'product_costs',
+      'sales',
+      'real_profit',
     ])
   })
 
   it('shows each template only what it can do and see', () => {
     expect(idsFor('admin', ALL_ON)).toEqual(idsFor(OWNER_TEMPLATE_KEY, ALL_ON))
     expect(idsFor('manager', ALL_ON)).toEqual(idsFor(OWNER_TEMPLATE_KEY, ALL_ON))
-    // The accountant sees product costs but changes nothing.
-    expect(idsFor('accountant', ALL_ON)).toEqual(['product_costs'])
+    // The accountant sees product costs and real profit but changes nothing.
+    expect(idsFor('accountant', ALL_ON)).toEqual(['product_costs', 'real_profit'])
+    // Staff who enter sales (M3 Step 3): "Add or import your sales" only.
     for (const key of ['sales', 'supervisor', 'employee'])
-      expect(idsFor(key, ALL_ON), key).toEqual([])
+      expect(idsFor(key, ALL_ON), key).toEqual(['sales'])
   })
 
   it('needs the modules of each step on (released and enabled)', () => {
@@ -264,6 +269,8 @@ describe('cost steps', () => {
       'recipes',
       'purchases',
       'running_costs',
+      'sales',
+      'real_profit',
     ])
     // A services business without Materials and Purchases.
     expect(idsFor(OWNER_TEMPLATE_KEY, ALL_OFF, without('materials', 'purchases'))).toEqual([
@@ -271,8 +278,23 @@ describe('cost steps', () => {
       'running_costs',
       'owner_time',
       'product_costs',
+      'sales',
+      'real_profit',
     ])
-    expect(idsFor(OWNER_TEMPLATE_KEY, ALL_OFF, without('products'))).toEqual(['running_costs'])
+    expect(idsFor(OWNER_TEMPLATE_KEY, ALL_OFF, without('products'))).toEqual([
+      'running_costs',
+      'sales',
+      'real_profit',
+    ])
+    // Sales and Reports not served (a released business before Release A): the M2 steps only.
+    expect(idsFor(OWNER_TEMPLATE_KEY, ALL_OFF, without('sales', 'reports'))).toEqual([
+      'products',
+      'recipes',
+      'purchases',
+      'running_costs',
+      'owner_time',
+      'product_costs',
+    ])
   })
 
   it('never shows the steps about costs to a member who cannot see them, whatever else they hold', () => {
@@ -282,7 +304,7 @@ describe('cost steps', () => {
       visible: new Set(),
       capabilities: ALL_OFF,
     })
-    expect(noCosts).toEqual(['products', 'recipes', 'purchases', 'running_costs'])
+    expect(noCosts).toEqual(['products', 'recipes', 'purchases', 'running_costs', 'sales'])
   })
 
   it('says what is done from the data, and what is left', () => {
@@ -295,6 +317,8 @@ describe('cost steps', () => {
       { id: 'running_costs', done: false, missing: ['runningCosts'], remaining: null },
       { id: 'owner_time', done: false, missing: ['hourlyRate', 'minutes'], remaining: null },
       { id: 'product_costs', done: false, missing: [], remaining: null },
+      { id: 'sales', done: false, missing: [], remaining: null },
+      { id: 'real_profit', done: false, missing: [], remaining: null },
     ])
     // A café: 3 drinks made here, one without its recipe; 5 materials, 2 never bought; running
     // costs entered: that step is done (no estimate of purchases is ever asked, D-202).
@@ -317,6 +341,13 @@ describe('cost steps', () => {
       { id: 'running_costs', done: true, missing: [], remaining: null },
       { id: 'owner_time', done: true, missing: [], remaining: null },
       { id: 'product_costs', done: false, missing: [], remaining: 3 },
+      { id: 'sales', done: false, missing: [], remaining: null },
+      { id: 'real_profit', done: false, missing: [], remaining: null },
+    ])
+    // A finalized sale adds its step; one whose cost is complete shows its real profit.
+    expect(costSteps(['sales', 'real_profit'], { ...cafe, finalizedSales: 2 })).toEqual([
+      { id: 'sales', done: true, missing: [], remaining: null },
+      { id: 'real_profit', done: false, missing: [], remaining: null },
     ])
     // Everything in: every step done.
     const done: CostFacts = {
@@ -324,6 +355,8 @@ describe('cost steps', () => {
       madeWithoutRecipe: 0,
       unpricedMaterials: 0,
       incompleteCosts: 0,
+      finalizedSales: 2,
+      completeSales: 1,
     }
     expect(costSteps(ids, done).every((step) => step.done)).toBe(true)
   })
@@ -337,6 +370,8 @@ describe('cost steps', () => {
       'running_costs',
       'owner_time',
       'product_costs',
+      'sales',
+      'real_profit',
     ])
     const services: CostFacts = { ...EMPTY, items: 2 }
     expect(costSteps(ids, services).map((s) => s.id)).toEqual([
@@ -344,6 +379,8 @@ describe('cost steps', () => {
       'running_costs',
       'owner_time',
       'product_costs',
+      'sales',
+      'real_profit',
     ])
     // Services that use materials: their prices are asked.
     expect(costSteps(ids, { ...services, usedMaterials: 1 }).map((s) => s.id)).toContain(
@@ -361,6 +398,8 @@ describe('cost steps', () => {
       { id: 'running_costs', done: false, missing: ['runningCosts'], remaining: null },
       { id: 'owner_time', done: false, missing: ['hourlyRate', 'minutes'], remaining: null },
       { id: 'product_costs', done: true, missing: [], remaining: 0 },
+      { id: 'sales', done: false, missing: [], remaining: null },
+      { id: 'real_profit', done: false, missing: [], remaining: null },
     ])
     expect(costSteps(['running_costs'], { ...designer, runningCostsEntered: true })).toEqual([
       { id: 'running_costs', done: true, missing: [], remaining: null },

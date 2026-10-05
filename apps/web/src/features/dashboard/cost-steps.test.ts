@@ -121,6 +121,8 @@ describe('costStepView', () => {
       step({ id: 'owner_time', missing: ['hourlyRate', 'minutes'] }),
       step({ id: 'product_costs', remaining: 1 }),
       step({ id: 'product_costs' }),
+      step({ id: 'sales' }),
+      step({ id: 'real_profit' }),
       ...(
         [
           'products',
@@ -129,6 +131,8 @@ describe('costStepView', () => {
           'running_costs',
           'owner_time',
           'product_costs',
+          'sales',
+          'real_profit',
         ] as const
       ).map((id) => step({ id, done: true })),
     ]
@@ -199,17 +203,41 @@ describe('a business that sells only services (D-200)', () => {
       title: 'dashboard.costs.ready.title_services',
       body: 'dashboard.costs.ready.bodyServices',
       action: 'dashboard.costs.ready.action_services',
+      path: 'product-costs',
     })
     for (const locale of LOCALES) {
       for (const servicesOnly of [false, true]) {
         for (const ownerTime of [false, true]) {
-          for (const key of Object.values(costsReadyKeys({ servicesOnly, ownerTime })))
+          const keys = costsReadyKeys({ servicesOnly, ownerTime })
+          for (const key of [keys.title, keys.body, keys.action])
             expect(hasMessage(locale, key), `${locale} ${key}`).toBe(true)
         }
       }
       for (const key of ['dashboard.costs.description', 'dashboard.costs.description_services'])
         expect(hasMessage(locale, key), `${locale} ${key}`).toBe(true)
     }
+  })
+
+  it('with the sales steps: "Your real profit is ready", which leads to Real profit (M3 Step 3)', () => {
+    expect(costsReadyKeys({ servicesOnly: false, ownerTime: true, profit: true })).toEqual({
+      title: 'dashboard.costs.profitReady.title',
+      body: 'dashboard.costs.profitReady.body',
+      action: 'dashboard.costs.profitReady.action',
+      path: 'reports/profit',
+    })
+    expect(costsReadyKeys({ servicesOnly: true, ownerTime: false, profit: true }).body).toBe(
+      'dashboard.costs.profitReady.bodyWithoutTime',
+    )
+    for (const locale of LOCALES) {
+      for (const ownerTime of [false, true]) {
+        const keys = costsReadyKeys({ servicesOnly: false, ownerTime, profit: true })
+        for (const key of [keys.title, keys.body, keys.action])
+          expect(hasMessage(locale, key), `${locale} ${key}`).toBe(true)
+      }
+      for (const key of ['dashboard.costs.titleProfit', 'dashboard.costs.descriptionProfit'])
+        expect(hasMessage(locale, key), `${locale} ${key}`).toBe(true)
+    }
+    expect(hasMessage('ar', 'dashboard.costs.titleProfit')).toBe(true)
   })
 })
 

@@ -313,7 +313,10 @@
       "month": "It takes the place of its regular amount for {{month}}.",
       "quarter": "It takes the place of its regular amount for the quarter from {{from}} to {{to}}.",
       "year": "It takes the place of its regular amount for the year from {{from}} to {{to}}.",
-      "extra": "It's added to the month's costs, like a bonus or a one-off repair."
+      "extra": "It's added to the month's costs, like a bonus or a one-off repair.",
+      "channelFees": "That channel's fees for the month it's for. It isn't added to your running costs.",
+      "delivery": "What deliveries cost you, already entered on each sale. It isn't counted again.",
+      "ordinary": "It's added to the month's costs."
     },
     "when": {
       "from": "From {{from}}.",
@@ -321,6 +324,9 @@
     },
     "required": "Choose what this expense pays for.",
     "approveOptional": "You can say it now or when it's finalized.",
-    "byOther": "This category has running costs. Ask someone who can see running costs to say what this expense pays for, then finalize it."
+    "byOther": "This category has running costs. Ask someone who can see running costs to say what this expense pays for, then finalize it.",
+    "channelFees": "App fees of {{name}}",
+    "delivery": "Delivery already on my sales and orders",
+    "ordinary": "An ordinary expense"
   }
 }

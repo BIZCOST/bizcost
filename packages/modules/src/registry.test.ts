@@ -55,11 +55,12 @@ describe('module manifests', () => {
 
   it('give planned modules no permission keys, nav or quick actions until their build starts (no stubs)', () => {
     // A module gets its keys and nav when its build starts and stays planned (hidden) until it is
-    // released (D-124, D-125). M3 Step 2 builds Sales (released with Release A, Step 6).
+    // released (D-124, D-125). M3 Step 2 builds Sales and Step 3 Reports (released with Release A,
+    // Step 6).
     const started = MODULES.filter(
       (m) => m.availability === 'planned' && (m.permissionKeys.length > 0 || m.nav.length > 0),
     )
-    expect(started.map((m) => m.id)).toEqual(['sales'])
+    expect(started.map((m) => m.id)).toEqual(['sales', 'reports'])
     for (const m of started) {
       expect(m.permissionKeys.length, m.id).toBeGreaterThan(0)
       expect(m.nav.length, m.id).toBeGreaterThan(0)
@@ -247,6 +248,8 @@ describe('module manifests', () => {
       // Sales (M3 Step 2): one page, reached with "see every sale" or with "enter sales".
       ['sales', 'main'],
       ['sales', 'main'],
+      // Reports (M3 Step 3): Real profit.
+      ['real_profit', 'main'],
     ])
   })
 
@@ -260,7 +263,7 @@ describe('module manifests', () => {
 })
 
 describe('permission catalog', () => {
-  it('holds the keys of dashboard, settings, products, materials, suppliers, purchases, expenses, running costs, the cost engine and sales, and one data key per sensitivity category', () => {
+  it('holds the keys of dashboard, settings, products, materials, suppliers, purchases, expenses, running costs, the cost engine, sales and reports, and one data key per sensitivity category', () => {
     expect([...PERMISSION_CATALOG].sort()).toEqual(
       [
         'dashboard.home.view',
@@ -303,6 +306,8 @@ describe('permission catalog', () => {
         'sales.documents.post',
         'sales.documents.reverse',
         'sales.channels.manage',
+        'reports.sales.view',
+        'reports.profit.view',
         'data.cost.view',
         'data.profit_margin.view',
         'data.supplier_price.view',
@@ -420,6 +425,8 @@ describe('role templates', () => {
         'sales.documents.post',
         'sales.documents.reverse',
         'sales.channels.manage',
+        'reports.sales.view',
+        'reports.profit.view',
         'data.cost.view',
         'data.profit_margin.view',
         'data.supplier_price.view',
@@ -438,13 +445,16 @@ describe('role templates', () => {
         'running_costs.items.view',
         'cost_engine.product_costs.view',
         'sales.documents.view',
+        'reports.sales.view',
+        'reports.profit.view',
         'data.cost.view',
         'data.profit_margin.view',
         'data.supplier_price.view',
         'data.payroll.view',
       ].sort(),
     )
-    // M3 Step 2, the plan's Q10 table: Sales and Supervisor see every sale, enter and finalize.
+    // M3 Step 2, the plan's Q10 table: Sales and Supervisor see every sale, enter and finalize; Step 3:
+    // they see Real profit's sales figures, never its profit.
     expect(keysOf('sales')).toEqual(
       [
         'dashboard.home.view',
@@ -452,6 +462,7 @@ describe('role templates', () => {
         'sales.documents.view',
         'sales.documents.manage',
         'sales.documents.post',
+        'reports.sales.view',
       ].sort(),
     )
     expect(keysOf('supervisor')).toEqual(
@@ -464,6 +475,7 @@ describe('role templates', () => {
         'sales.documents.view',
         'sales.documents.manage',
         'sales.documents.post',
+        'reports.sales.view',
       ].sort(),
     )
     // The owner's answers of 2026-09-29 (D-179, D-180): what goes into each product (quantities) and

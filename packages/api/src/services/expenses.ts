@@ -12,6 +12,7 @@ import type {
   ExpenseSettingsDto,
   expenseVersionInput,
   OkDto,
+  PayableChannelsDto,
   PayableRunningCostDto,
   payableRunningCostsInput,
   PayableRunningCostsDto,
@@ -161,23 +162,38 @@ function assertMayChange(ctx: BusinessCtx, head: HeadRecord) {
 
 /**
  * Whether the member may see running costs: Running Costs on and running_costs.items.view (as the
- * Running Costs page). Only they say what an expense pays and read the running cost's name.
+ * Running Costs page). Only they say an expense is the bill of a running cost or an extra, and read
+ * the running cost's name.
  */
 function mayReadRunningCosts(ctx: BusinessCtx): boolean {
   return passes(ctx, ['running_costs', 'running_costs.items.view'])
+}
+
+/**
+ * Whether the member may say an expense pays a channel's app fees or delivery already on the sales
+ * (M3 Step 3, Q8): Sales on (served, the plan's D3) and costs seen (a channel's fees are a cost, as its
+ * commission %, D-187).
+ */
+function maySayFees(ctx: BusinessCtx): boolean {
+  return passes(ctx, ['sales']) && ctx.access.visibleCategories.has('cost')
 }
 
 /** What an expense says it pays, as stored. */
 interface StoredPays {
   readonly pays: ExpensePays | null
   readonly runningCostId: string | null
+  readonly channelId: string | null
 }
 
-const NOTHING_SAID: StoredPays = { pays: null, runningCostId: null }
+const NOTHING_SAID: StoredPays = { pays: null, runningCostId: null, channelId: null }
+
+/** A channel's fees or delivery already on the sales: what fits any category and month (Q8). */
+const outsideCosts = (pays: ExpensePays | null) => pays === 'channel_fees' || pays === 'delivery'
 
 /**
  * `pays` as the API returns it: the running cost's name only to a member who may see running costs
- * (null for anyone else: "Bill for a running cost"), never an amount.
+ * (null for anyone else: "Bill for a running cost"), the channel's name for a channel's fees; never an
+ * amount.
  */
 export function paysDtoOf(
   ctx: BusinessCtx,
@@ -185,6 +201,8 @@ export function paysDtoOf(
     pays: ExpensePays | null
     running_cost_id: string | null
     running_cost_name: string | null
+    channel_id: string | null
+    channel_name: string | null
   },
 ): ExpensePaysDto {
   if (row.pays === null) return null
@@ -193,7 +211,28 @@ export function paysDtoOf(
   return {
     kind: row.pays,
     runningCost: shown ? { id: row.running_cost_id!, name: row.running_cost_name ?? '' } : null,
+    channel:
+      row.pays === 'channel_fees' && row.channel_id !== null
+        ? { id: row.channel_id, name: row.channel_name ?? '' }
+        : null,
   }
+}
+
+/**
+ * `expense.payableChannels` (Expenses and Sales on, expenses.documents.view; the router checks them):
+ * the business's active sales channels by name, for "App fees of {name}" (Q8). Needs costs seen
+ * (FORBIDDEN otherwise, before anything is read): only such a member says it.
+ */
+export function listPayableChannels(ctx: BusinessCtx): Promise<PayableChannelsDto> {
+  assertQueryable(ctx, [{ name: 'pays', category: 'cost' }])
+  return ctx.tx(async (tx) => {
+    const rows = (await tx.execute(sql`
+      select c.id, c.name, c.kind from app.sales_channels c
+       where c.business_id = ${ctx.businessId} and c.deleted_at is null and c.archived_at is null
+       order by lower(c.name), c.id
+    `)) as unknown as PayableChannelsDto['items']
+    return { items: rows.map((r) => ({ id: r.id, name: r.name, kind: r.kind })) }
+  })
 }
 
 /**
@@ -271,6 +310,10 @@ export function listPayableRunningCosts(
  *     fits never stays because nobody may change it then;
  *   - finalized with Running Costs on, it must be said whenever the category has a running cost for
  *     its month (RUNNING_COST_CHOICE_REQUIRED); with it off nothing is asked.
+ *   - A channel's app fees or delivery already on the sales (M3 Step 3, Q8) fit any category and
+ *     month: said only by a member who sees costs while Sales is on (maySayFees), the channel one of
+ *     the business (NOT_FOUND; an archived one only when the expense already names it: VALIDATION).
+ *     They satisfy RUNNING_COST_CHOICE_REQUIRED too: such an expense is neither a bill nor an extra.
  */
 async function resolvePays(
   tx: Tx,
@@ -280,33 +323,56 @@ async function resolvePays(
   stored: StoredPays,
   final: boolean,
 ): Promise<StoredPays> {
-  if (given !== undefined && !mayReadRunningCosts(ctx)) throw new AppError('forbidden')
+  assertMaySayPays(ctx, given)
   const asked = final && passes(ctx, ['running_costs'])
   // Nothing said, nothing to check (unless it is required now).
   if (given === undefined && stored.pays === null && !asked) return NOTHING_SAID
-  const payable = await payableOf(
-    tx,
-    ctx.businessId,
-    expense.categoryId,
-    monthOf(expense.periodMonth),
-  )
-  const fits = (said: StoredPays) =>
-    said.pays === 'extra'
-      ? payable.length > 0
-      : said.pays === 'running_cost' && payable.some((r) => r.id === said.runningCostId)
+  let payableRead: PayableRunningCostDto[] | null = null
+  const payable = async () =>
+    (payableRead ??= await payableOf(
+      tx,
+      ctx.businessId,
+      expense.categoryId,
+      monthOf(expense.periodMonth),
+    ))
+  const channelOf = async (id: string) => {
+    const [row] = (await tx.execute(sql`
+      select c.id, c.archived_at is not null as archived from app.sales_channels c
+       where c.business_id = ${ctx.businessId} and c.id = ${id} and c.deleted_at is null
+    `)) as unknown as { id: string; archived: boolean }[]
+    return row
+  }
+  const fits = async (said: StoredPays): Promise<boolean> => {
+    switch (said.pays) {
+      case 'extra':
+        return (await payable()).length > 0
+      case 'running_cost':
+        return (await payable()).some((r) => r.id === said.runningCostId)
+      case 'channel_fees':
+        return said.channelId !== null && (await channelOf(said.channelId)) !== undefined
+      case 'delivery':
+        return true
+      default:
+        return false
+    }
+  }
   let result: StoredPays
   if (given === undefined) {
-    result = fits(stored) ? stored : NOTHING_SAID
+    result = (await fits(stored)) ? stored : NOTHING_SAID
   } else if (given === null) {
     result = NOTHING_SAID
   } else if (given.kind === 'extra') {
-    if (payable.length === 0) {
+    if ((await payable()).length === 0) {
       throw invalid('pays: its category has no running cost for its month: nothing to say')
     }
-    result = { pays: 'extra', runningCostId: null }
-  } else {
-    const said: StoredPays = { pays: 'running_cost', runningCostId: given.runningCostId }
-    if (!fits(said)) {
+    result = { pays: 'extra', runningCostId: null, channelId: null }
+  } else if (given.kind === 'running_cost') {
+    const said: StoredPays = {
+      pays: 'running_cost',
+      runningCostId: given.runningCostId,
+      channelId: null,
+    }
+    if (!(await fits(said))) {
       const [live] = (await tx.execute(sql`
         select r.id from app.running_costs r
          where r.business_id = ${ctx.businessId} and r.id = ${given.runningCostId}
@@ -316,8 +382,17 @@ async function resolvePays(
       throw invalid('pays: not a running cost of its category that a bill for its month can pay')
     }
     result = said
+  } else if (given.kind === 'channel_fees') {
+    const channel = await channelOf(given.channelId)
+    if (!channel) throw new AppError('not_found')
+    if (channel.archived && stored.channelId !== given.channelId) {
+      throw invalid('pays: an archived channel')
+    }
+    result = { pays: 'channel_fees', runningCostId: null, channelId: given.channelId }
+  } else {
+    result = { pays: 'delivery', runningCostId: null, channelId: null }
   }
-  if (asked && result.pays === null && payable.length > 0) {
+  if (asked && result.pays === null && (await payable()).length > 0) {
     throw new AppError('running_cost_choice_required')
   }
   return result
@@ -381,6 +456,8 @@ interface ExpenseRecord extends Record<string, unknown> {
   pays: ExpensePays | null
   running_cost_id: string | null
   running_cost_name: string | null
+  channel_id: string | null
+  channel_name: string | null
   created_at: Date | string
   version: number
 }
@@ -411,12 +488,13 @@ export async function readExpense(tx: Tx, ctx: BusinessCtx, id: string): Promise
            e.approved_at, ab.id as approved_by_id, ab.display_name as approved_by_name,
            e.rejected_at, rb.id as rejected_by_id, rb.display_name as rejected_by_name,
            e.rejection_reason, e.posted_at, e.reversed_at, e.reversal_date::text as reversal_date,
-           e.copied_from_id, e.pays, e.running_cost_id, rc.name as running_cost_name, e.created_at,
-           e.version
+           e.copied_from_id, e.pays, e.running_cost_id, rc.name as running_cost_name,
+           e.channel_id, ch.name as channel_name, e.created_at, e.version
       from app.expenses e
       join app.businesses b on b.id = e.business_id
       join app.cost_categories c on c.business_id = e.business_id and c.id = e.category_id
       left join app.running_costs rc on rc.business_id = e.business_id and rc.id = e.running_cost_id
+      left join app.sales_channels ch on ch.business_id = e.business_id and ch.id = e.channel_id
       left join app.suppliers s on s.business_id = e.business_id and s.id = e.supplier_id
       left join app.business_members pm
         on pm.business_id = e.business_id and pm.id = e.paid_by_member_id
@@ -508,6 +586,8 @@ interface ListRecord extends Record<string, unknown> {
   pays: ExpensePays | null
   running_cost_id: string | null
   running_cost_name: string | null
+  channel_id: string | null
+  channel_name: string | null
   version: number
 }
 
@@ -551,12 +631,14 @@ export async function listExpenses(ctx: BusinessCtx, input: ListInput): Promise<
              e.reference, e.document_type, e.payment_method, trim(e.currency) as currency,
              trim_scale(e.total)::text as total, cb.id as created_by_id,
              cb.display_name as created_by_name, e.pays, e.running_cost_id,
-             rc.name as running_cost_name, e.version
+             rc.name as running_cost_name, e.channel_id, ch.name as channel_name, e.version
         from app.expenses e
         join app.cost_categories c on c.business_id = e.business_id and c.id = e.category_id
         left join app.suppliers s on s.business_id = e.business_id and s.id = e.supplier_id
         left join app.running_costs rc
           on rc.business_id = e.business_id and rc.id = e.running_cost_id
+        left join app.sales_channels ch
+          on ch.business_id = e.business_id and ch.id = e.channel_id
         left join app.business_members cb
           on cb.business_id = e.business_id and cb.id = ${memberOf(sql.raw('e.created_by'))}
        where ${sql.join(conditions, sql` and `)}
@@ -708,7 +790,9 @@ async function prepareDraft(
     ctx,
     { categoryId: input.categoryId, periodMonth },
     input.pays,
-    current !== null && current.categoryId === input.categoryId ? current.pays : NOTHING_SAID,
+    current !== null && (current.categoryId === input.categoryId || outsideCosts(current.pays.pays))
+      ? current.pays
+      : NOTHING_SAID,
     false,
   )
   // A draft's document amounts do not depend on the VAT rule; what it costs is fixed at posting.
@@ -735,15 +819,25 @@ async function prepareDraft(
     notes: input.notes,
     pays: pays.pays,
     runningCostId: pays.runningCostId,
+    channelId: pays.channelId,
   } satisfies Omit<NewExpense, 'id' | 'businessId'>
 }
 
 /**
- * Only a member who may see running costs says what an expense pays (D-216): FORBIDDEN otherwise,
- * before anything is read, whenever `pays` is not left out (null too).
+ * Who says what an expense pays (FORBIDDEN otherwise, before anything is read, whenever `pays` is not
+ * left out): the bill of a running cost or an extra, a member who may see running costs (D-216); a
+ * channel's app fees or delivery already on the sales, a member who sees costs while Sales is on (Q8);
+ * null (nothing said), either of them.
  */
 function assertMaySayPays(ctx: BusinessCtx, pays: ExpensePaysInput | null | undefined) {
-  if (pays !== undefined && !mayReadRunningCosts(ctx)) throw new AppError('forbidden')
+  if (pays === undefined) return
+  const allowed =
+    pays === null
+      ? mayReadRunningCosts(ctx) || maySayFees(ctx)
+      : pays.kind === 'running_cost' || pays.kind === 'extra'
+        ? mayReadRunningCosts(ctx)
+        : maySayFees(ctx)
+  if (!allowed) throw new AppError('forbidden')
 }
 
 /**
@@ -787,13 +881,14 @@ interface HeadRecord extends Record<string, unknown> {
   rejected_at: Date | string | null
   pays: ExpensePays | null
   running_cost_id: string | null
+  channel_id: string | null
   /** The caller entered it (created_by). */
   entered_by_me: boolean
 }
 
 /** What the locked expense says it pays. */
 function storedPaysOf(head: HeadRecord): StoredPays {
-  return { pays: head.pays, runningCostId: head.running_cost_id }
+  return { pays: head.pays, runningCostId: head.running_cost_id, channelId: head.channel_id }
 }
 
 /** The expense row, locked FOR UPDATE; NOT_FOUND when not live. */
@@ -804,7 +899,7 @@ async function lockExpense(tx: Tx, businessId: string, id: string): Promise<Head
            e.location_id, e.document_type, e.payment_method, e.paid_by_member_id,
            e.prices_include_vat, e.vat_not_reclaimable, trim(e.currency) as currency,
            trim_scale(e.amount)::text as amount, trim_scale(e.vat_rate)::text as vat_rate,
-           e.approved_at, e.rejected_at, e.pays, e.running_cost_id,
+           e.approved_at, e.rejected_at, e.pays, e.running_cost_id, e.channel_id,
            coalesce(e.created_by = app.current_user_id(), false) as entered_by_me
       from app.expenses e
      where e.business_id = ${businessId} and e.id = ${id} and e.deleted_at is null
@@ -977,6 +1072,7 @@ export function approveExpense(ctx: BusinessCtx, input: ReviewInput): Promise<Ex
         rejectionReason: null,
         pays: pays.pays,
         runningCostId: pays.runningCostId,
+        channelId: pays.channelId,
       })
     }
     return result(await readExpense(tx, ctx, input.id))
@@ -1076,6 +1172,7 @@ export function postExpense(ctx: BusinessCtx, input: ReviewInput): Promise<Expen
       costTotal: amounts.cost,
       pays: pays.pays,
       runningCostId: pays.runningCostId,
+      channelId: pays.channelId,
       ...(approvedNow
         ? {
             approvedAt: sql`now()`,
@@ -1214,6 +1311,7 @@ export function correctExpense(ctx: BusinessCtx, input: CorrectInput): Promise<E
       // What it paid stays (D-216): checked again when the copy is finalized.
       pays: source.pays,
       runningCostId: source.runningCostId,
+      channelId: source.channelId,
       copiedFromId: input.id,
       requestHash,
     })

@@ -233,8 +233,8 @@ describe('the dev-only preview (D-125)', () => {
   const registry = MODULES.map((m) => (m.id === 'orders' ? building : m))
   const ordersOn = resolveEnabledModules([{ key: 'orders', enabled: true }])
 
-  it('may show only planned modules whose build started: Sales since M3 Step 2', () => {
-    expect(PREVIEWABLE_MODULE_IDS).toEqual(['sales'])
+  it('may show only planned modules whose build started: Sales since M3 Step 2, Reports since Step 3', () => {
+    expect(PREVIEWABLE_MODULE_IDS).toEqual(['sales', 'reports'])
   })
 
   it('parses a comma or space separated list, ignores released modules, and names what it cannot preview', () => {

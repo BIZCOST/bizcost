@@ -22,6 +22,7 @@ import { MoneyInput } from '@/features/documents/line-editor'
 import { hasModule } from '@/features/purchasing/data'
 import { useLocale } from '@/lib/i18n/client'
 import { useBusinessContext } from '@/lib/trpc/client'
+import { invalidateProfit } from '@/features/reports/refresh'
 import { settingsChange } from './costing-draft'
 import { can, isSectionVisible } from './sections'
 import { SectionPage } from './settings-shell'
@@ -149,9 +150,8 @@ export function CostingSettings({ businessId }: { businessId: string }) {
 
   async function saved(result: ProductCostSettingsDto) {
     queryClient.setQueryData(trpc.productCost.settings.queryKey(), result)
-    // Every product's cost moves with them.
-    await queryClient.invalidateQueries({ queryKey: trpc.productCost.list.pathKey() })
-    await queryClient.invalidateQueries({ queryKey: trpc.productCost.get.pathKey() })
+    // Every product's cost moves with them, and real profit with the owner's time (D-212).
+    await invalidateProfit(queryClient, trpc)
   }
 
   if (settings.isPending || settings.isError) {

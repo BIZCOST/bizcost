@@ -1,4 +1,9 @@
-import { PER_YEAR, type RunningCostFrequency } from '../expenses/keys'
+import {
+  PER_YEAR,
+  paysCountInCosts,
+  type ExpensePays,
+  type RunningCostFrequency,
+} from '../expenses/keys'
 import {
   addMonths,
   BUSINESS_MONTH_PATTERN,
@@ -46,9 +51,15 @@ import { COST_SCALE, type CostAmount } from '../numbers/kinds'
 //     expense where it counted and takes its amount back in the month the reversal counts in, on top
 //     of what that month counts (the running cost's bills or regular amount, or the extras): it never
 //     replaces anything.
-// Material purchases are not in it (materials are each product's own line) and neither is the
-// owner's time (D-119). Sales arrive in Phase 3: until then there is nothing to divide by and every
-// share is "awaiting sales".
+//   - an expense marked as a channel's app fees, or as delivery already on the sales (Q8, M3 Step 3),
+//     never counts in it: fees stay with their channel (real-profit.ts), delivery with its sale;
+//   - the materials that no product or service uses (Q13 A, M3 Step 3: gypsum bought for one job)
+//     count in it, by their purchase month, at what their goods cost the business; a return or credit
+//     note takes its part off in its own month, and a reversal of either counts like an expense's:
+//     within its own month as if never posted, later taken back in the month it is dated in.
+// Materials in a recipe (or bought ready to sell) are not in it (each product's own line), and neither
+// is the owner's time (D-119). Without sales there is nothing to divide by: every share is "awaiting
+// sales".
 
 /** A running cost as the month's costs read it (`running_costs`, D-169). */
 export interface PoolRunningCost {
@@ -88,6 +99,42 @@ export interface PoolExpense {
    * own month when that is null), never before its own month.
    */
   readonly reversedIn: BusinessMonth | null
+  /**
+   * What it says it pays (`expenses.pays`): a channel's fees or delivery already on the sales never
+   * count here (Q8, paysCountInCosts). Left out or null: as `runningCostId` says.
+   */
+  readonly pays?: ExpensePays | null
+}
+
+/**
+ * A finalized purchase line, return or credit note of a material that no product or service uses (Q13
+ * A): what its goods cost the business (a purchase line's `cost`; what a return or credit note took
+ * off, negative), in the month of its business day, and the month its reversal is dated in.
+ */
+export interface PoolMaterialPurchase {
+  readonly materialId: string
+  /** What it brought in (zero or more) or took off (less than zero). */
+  readonly cost: string
+  /** The month of its business day (YYYY-MM). */
+  readonly month: BusinessMonth
+  /** Null while it stands; reversed: the month of its reversal's business day, never before. */
+  readonly reversedIn: BusinessMonth | null
+}
+
+/** A material no product uses, in a month (Q13 A). */
+export interface PoolMaterialLine {
+  readonly materialId: string
+  /** What it counts in the month (exact; less than zero after a return or a reversal taken back). */
+  readonly amount: CostAmount
+  /** What reversals of earlier months take back in this month (already out of `amount`); null: none. */
+  readonly takenBack: CostAmount | null
+}
+
+/** The materials no product uses, in a month (Q13 A): each one, and their exact sum. */
+export interface PoolMaterials {
+  readonly amount: CostAmount
+  /** Each material with something in the month, by id. */
+  readonly lines: readonly PoolMaterialLine[]
 }
 
 /** What a line of a category is: one of its running costs, or the expenses that count as themselves. */
@@ -154,10 +201,12 @@ export interface PoolCategory {
 
 export interface CostPool {
   readonly month: BusinessMonth
-  /** Σ of the categories' amounts, exact. */
+  /** Σ of the categories' amounts and of the materials no product uses, exact. */
   readonly total: CostAmount
   /** Each category with something in the month, by id. */
   readonly categories: readonly PoolCategory[]
+  /** The materials no product uses (Q13 A); null when none counts in the month. */
+  readonly materials: PoolMaterials | null
 }
 
 const DAY = /^\d{4}-\d{2}-\d{2}$/
@@ -447,21 +496,79 @@ function extraLine(month: BusinessMonth, expenses: readonly PoolExpense[]): Pool
 }
 
 /**
+ * The materials no product uses, in `month` (Q13 A): each purchase, return or credit note counts in
+ * its own month (reversed within it: as if never posted), and a reversal dated in a later month takes
+ * its amount back there, on top. Null when nothing counts in the month. Throws RangeError for a
+ * malformed month or a reversal dated before its document's month.
+ */
+function materialsOf(
+  month: BusinessMonth,
+  purchases: readonly PoolMaterialPurchase[],
+): PoolMaterials | null {
+  type Sums = { counted: ReturnType<typeof toDec>; takenBack: ReturnType<typeof toDec> }
+  const byMaterial = new Map<string, Sums & { tookBack: boolean }>()
+  for (const purchase of purchases) {
+    checkMonth(purchase.month)
+    if (purchase.reversedIn !== null) {
+      checkMonth(purchase.reversedIn)
+      if (purchase.reversedIn < purchase.month) {
+        throw new RangeError(
+          `A reversal is dated in its document's month or later: "${purchase.reversedIn}"`,
+        )
+      }
+    }
+    // Reversed within its own month: as if never posted.
+    if (purchase.reversedIn !== null && purchase.reversedIn <= purchase.month) continue
+    const counts = purchase.month === month
+    const back = purchase.reversedIn === month
+    if (!counts && !back) continue
+    const entry = byMaterial.get(purchase.materialId) ?? {
+      counted: toDec('0'),
+      takenBack: toDec('0'),
+      tookBack: false,
+    }
+    if (counts) entry.counted = entry.counted.plus(toDec(purchase.cost))
+    if (back) {
+      entry.takenBack = entry.takenBack.plus(toDec(purchase.cost))
+      entry.tookBack = true
+    }
+    byMaterial.set(purchase.materialId, entry)
+  }
+  if (byMaterial.size === 0) return null
+  let amount = toDec('0')
+  const lines = [...byMaterial.keys()].sort(byId).map((materialId): PoolMaterialLine => {
+    const entry = byMaterial.get(materialId)!
+    const own = entry.counted.minus(entry.takenBack)
+    amount = amount.plus(own)
+    return {
+      materialId,
+      amount: plain(own) as CostAmount,
+      takenBack: entry.tookBack ? (plain(entry.takenBack) as CostAmount) : null,
+    }
+  })
+  return { amount: plain(amount) as CostAmount, lines }
+}
+
+/**
  * The business's costs of `month` (YYYY-MM), counted once (see above): per running cost its own bills
  * for the period that holds the month when it has any (a quarter's or a year's spread over its
  * months), else its regular amount (divided once and rounded once to 12 decimals), less what
  * reversals of its earlier bills take back in it (a running cost changed in the month: one line for
- * both, D-217); every other expense as itself; grouped by category
- * (a running cost's line under its own category), each category and the total their exact sums.
- * Pure: the caller reads the running costs and the finalized expenses, those of the months around it
- * (a year's bills may be in any month of that year) and the reversals counted in it. Throws RangeError
- * for a malformed month or day, a running cost given twice or not more than zero, a negative expense,
- * or a reversal counted before its expense's month.
+ * both, D-217); every other expense as itself, but never one marked as a channel's fees or as
+ * delivery already on the sales (Q8); grouped by category (a running cost's line under its own
+ * category), each category its exact sum; and the materials no product uses (Q13 A, `materials`).
+ * The total is the exact sum of both. Pure: the caller reads the running costs and the finalized
+ * expenses, those of the months around it (a year's bills may be in any month of that year) and the
+ * reversals counted in it, and the purchases, returns and credit notes of materials no product uses
+ * dated in the month or reversed in it. Throws RangeError for a malformed month or day, a running cost
+ * given twice or not more than zero, a negative expense, or a reversal counted before its expense's
+ * (or document's) month.
  */
 export function costPool(
   month: BusinessMonth,
   runningCosts: readonly PoolRunningCost[],
   expenses: readonly PoolExpense[],
+  materialPurchases: readonly PoolMaterialPurchase[] = [],
 ): CostPool {
   checkMonth(month)
   const costs = new Map<string, PoolRunningCost>()
@@ -492,6 +599,8 @@ export function costPool(
         `A reversal counts in its expense's month or later: "${expense.reversedIn}"`,
       )
     }
+    // A channel's fees or delivery already on the sales: never in the month's costs (Q8).
+    if (!paysCountInCosts(expense.pays)) continue
     // The bill of a running cost that is counted; anything else counts as itself.
     if (expense.runningCostId !== null && costs.has(expense.runningCostId)) {
       push(bills, expense.runningCostId, expense)
@@ -526,7 +635,9 @@ export function costPool(
     total = total.plus(amount)
     categories.push({ categoryId, amount: plain(amount) as CostAmount, lines: list })
   }
-  return { month, total: plain(total) as CostAmount, categories }
+  const materials = materialsOf(month, materialPurchases)
+  if (materials !== null) total = total.plus(toDec(materials.amount))
+  return { month, total: plain(total) as CostAmount, categories, materials }
 }
 
 // ---------------------------------------------------------------------------------------------------
@@ -543,19 +654,28 @@ function divideOnce(numerators: readonly string[], divisor: string): CostAmount 
 /**
  * What the running costs are shared by (D-202):
  * - `off`: neither Running Costs nor Expenses is on: there is nothing to share;
- * - `on`: the month's costs (costPool's total) and the same month's sales before VAT (null until
- *   sales are recorded, Phase 3).
+ * - `before_running_costs`: a rate worked out so far that does not show yet (a first month's first
+ *   days: fewer than 7 days of sales, Q6, rateSourceOf in real-profit.ts);
+ * - `on`: the costs (costPool's total, or so far: rateCostsOf) and the item sales before VAT of the
+ *   same days (null without sales).
  */
 export type RunningCostsPart =
   | { readonly state: 'off' }
+  | { readonly state: 'before_running_costs' }
   | { readonly state: 'on'; readonly costs: string; readonly sales: string | null }
 
 /**
  * The business's cost rate: `off`; `awaiting_sales` (no sales to divide by: none recorded, or they
- * come to zero or less); `none` (the costs come to zero or less: nothing to share, the rate is 0);
- * `ready` (costs ÷ sales).
+ * come to zero or less); `before_running_costs` (fewer than 7 days of sales, Q6); `none` (the costs
+ * come to zero or less: nothing to share, the rate is 0); `ready` (costs ÷ sales).
  */
-export const COST_RATE_STATES = ['off', 'awaiting_sales', 'none', 'ready'] as const
+export const COST_RATE_STATES = [
+  'off',
+  'awaiting_sales',
+  'before_running_costs',
+  'none',
+  'ready',
+] as const
 export type CostRateState = (typeof COST_RATE_STATES)[number]
 
 /**
@@ -569,6 +689,7 @@ export function costRate(part: RunningCostsPart): {
   readonly rate: CostAmount | null
 } {
   if (part.state === 'off') return { state: 'off', rate: null }
+  if (part.state === 'before_running_costs') return { state: 'before_running_costs', rate: null }
   if (part.sales === null || !toDec(part.sales).gt(0)) {
     return { state: 'awaiting_sales', rate: null }
   }

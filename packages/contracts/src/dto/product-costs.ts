@@ -5,7 +5,9 @@ import {
   POOL_LINE_KINDS,
   POOL_SOURCES,
   PRODUCT_TYPES,
-  type RunningShareState,
+  RATE_BASES,
+  RUNNING_SHARE_STATES,
+  SALE_SHARE_STATES,
 } from '@bizcost/domain'
 import { z } from 'zod'
 import { CATALOG_SEARCH_MAX_LENGTH } from '../catalog'
@@ -27,13 +29,15 @@ import { productCostKindDto } from './recipes'
 //   - materials: its recipe at the materials' averages ÷ what the recipe makes, or, bought ready to
 //     sell, its material's average;
 //   - running costs, by its price (D-202, the owner's decision of 2026-09-30, which replaces D-116's
-//     share of the material cost): its price before VAT × the month's costs ÷ the month's sales. Sales
-//     arrive in Phase 3, so in M2 the line says it is worked out once sales are recorded
-//     (`awaiting_sales`), and the total and the margin are before running costs
-//     (`beforeRunningCosts`); without a price no share can be worked out by it (`no_price`). The
-//     business's costs of the last full calendar month are shown with it (`monthCosts`): per
-//     category, what is inside it: each running cost (its own bills or its regular amount, D-216)
-//     and its extras, counted once;
+//     share of the material cost): its price before VAT × the month's costs ÷ the month's item sales
+//     before VAT, at the rate the running month's sales carry (M3 Step 3, Q6: the last full month's,
+//     or a first month's so far). Without sales the line says it is worked out once sales are
+//     recorded (`awaiting_sales`), and the total and the margin are before running costs
+//     (`beforeRunningCosts`); without a price no share can be worked out by it (`no_price`, though in
+//     real profit it carries its share at the price it was sold for, D-202). The costs divided are
+//     shown with it (`monthCosts`): per category, what is inside it: each running cost (its own bills
+//     or its regular amount, D-216) and its extras, counted once, and the materials no product uses
+//     (Q13 A);
 //   - the owner's time, for a business without a team: minutes × hourly rate ÷ 60;
 //   - the total (their exact sum), the price before VAT, and the margin on it (amount and %).
 // Never rounded here (12 decimals; screens round). Nothing missing is ever 0: its value is null and
@@ -49,16 +53,14 @@ import { productCostKindDto } from './recipes'
 export const incompleteReasonDto = z.enum(INCOMPLETE_REASONS)
 
 /**
- * The running-cost line of a product (RUNNING_SHARE_STATES in @bizcost/domain, as M2 gives them):
- * `off` (neither Running Costs nor Expenses is on: nothing to share), `no_price` (no price, so no
- * share by it: an incomplete reason, "add its price"), `awaiting_sales` (worked out automatically once
- * sales are recorded: Phase 3 turns the share on, with its states `none` and `applied`).
+ * The running-cost line of a product (RUNNING_SHARE_STATES in @bizcost/domain): `off` (neither Running
+ * Costs nor Expenses is on: nothing to share), `no_price` (no price, so no share by it: an incomplete
+ * reason, "add its price"), `awaiting_sales` (worked out automatically once sales are recorded),
+ * `before_running_costs` (sales are recorded, and the rate shows once 7 days of sales exist: a first
+ * month's first days, Q6), `none` (the costs come to zero or less: a share of 0), `applied` (M3 Step 3:
+ * its price before VAT × the rate of `monthCosts`).
  */
-export const runningShareStateDto = z.enum([
-  'off',
-  'no_price',
-  'awaiting_sales',
-] as const satisfies readonly RunningShareState[])
+export const runningShareStateDto = z.enum(RUNNING_SHARE_STATES)
 
 /** The owner's time line: `team` (none with a team), `none` (no minutes), `rate_not_set`, `applied`. */
 export const ownerTimeStateDto = z.enum(['team', 'none', 'rate_not_set', 'applied'])
@@ -80,7 +82,10 @@ export const monthCostLineDto = z.object({
    * (the month's) or `taken_back` (only a reversal of an earlier month's).
    */
   source: z.enum(POOL_SOURCES),
-  /** What it counts in the month (12 decimals; zero or less after a reversal taken back in it). */
+  /**
+   * What it counts in the month (12 decimals; zero or less after a reversal taken back in it); over
+   * the days `from`…`to` of a rate worked out so far, what it counts in those days.
+   */
   amount: zDecimal,
   /** A running cost's regular amount for the month, when it ran in it (not counted beside bills). */
   regular: zDecimal.nullable(),
@@ -117,32 +122,81 @@ export const monthCostCategoryDto = z.object({
 })
 export type MonthCostCategoryDto = z.infer<typeof monthCostCategoryDto>
 
+/** A material no product or service uses, bought in the month (Q13 A): it counts with the costs. */
+export const monthCostMaterialDto = z.object({
+  materialId: zUuid,
+  /** Its name as it is now. */
+  name: z.string(),
+  /** What its purchases, returns and reversals count in the month (12 decimals; less than 0 too). */
+  amount: zDecimal,
+})
+export type MonthCostMaterialDto = z.infer<typeof monthCostMaterialDto>
+
 /**
- * How the business's running costs reach what it sells (D-202), with its costs of the last full
- * calendar month: every running cost and finalized expense counted once (an expense in the month it
- * belongs to; a running cost's own bills replace its regular amount, over the quarter or year they
- * pay for when it is quarterly or yearly, D-203, D-216; extras count on top). Phase 3 divides them by
- * the same month's sales before VAT. Material purchases and the owner's time are not in them.
+ * How the business's running costs reach what it sells (D-202), with the costs the rate divides: every
+ * running cost and finalized expense counted once (an expense in the month it belongs to; a running
+ * cost's own bills replace its regular amount, over the quarter or year they pay for when it is
+ * quarterly or yearly, D-203, D-216; extras count on top; expenses marked as a channel's fees or as
+ * delivery never, Q8), and the materials no product uses bought in it (Q13 A). Divided by the item
+ * sales before VAT of the same days (M3 Step 3): which month's, by Q6 (`basis`). Materials in recipes
+ * and the owner's time are not in them.
  */
 export const monthCostsDto = z.object({
   /**
-   * `off`: neither Running Costs nor Expenses is on; `awaiting_sales`: shared once sales are
-   * recorded (Phase 3).
+   * The rate the running month's sales carry, which Product costs use (Q6; SALE_SHARE_STATES):
+   * `off`: neither Running Costs nor Expenses is on; `awaiting_sales`: no sales yet (shared once
+   * they are recorded); `before_running_costs`: a first month before 7 days of sales (it shows on
+   * `showsOn`); `none`: the costs come to zero or less (a share of 0); `applied`: costs ÷ sales.
    */
-  state: sensitive(z.enum(['off', 'awaiting_sales']), 'cost'),
+  state: sensitive(z.enum(SALE_SHARE_STATES), 'cost'),
+  /**
+   * Where the rate comes from (Q6): `last_month` (the last full month that sold: "At September's rate
+   * until October ends"), `so_far` (a first month: its costs from the first sale ÷ its sales so far),
+   * `month` (a finished month's own). Null without sales or with both modules off.
+   */
+  basis: sensitive(z.enum(RATE_BASES).nullable(), 'cost'),
   /** A running cost was ever entered (removed ones aside): without any, the page asks for them. */
   runningCostsEntered: sensitive(z.boolean(), 'cost'),
-  /** The month shown: the last full calendar month (YYYY-MM). */
+  /**
+   * The month whose costs are shown and divided: the source month of the rate (with `from`/`to`, the
+   * month of `to`); without sales, the last full calendar month (YYYY-MM).
+   */
   month: zBusinessMonth,
+  /**
+   * The days the costs and sales are counted over (`so_far`: from the first sale, or the month's 1st,
+   * up to today or the month's end; a short first month runs on into the next); null: the whole month.
+   */
+  from: zBusinessDate.nullable(),
+  to: zBusinessDate.nullable(),
+  /** `before_running_costs`: the day the rate shows (7 days of sales); null otherwise. */
+  showsOn: zBusinessDate.nullable(),
+  /**
+   * costs ÷ item sales, rounded once to 12 decimals (0.25: each thing sold carries 25 % of its price
+   * before VAT); null unless `applied` or `none`. A member who sees costs reads it from any share ÷
+   * its price anyway (D-203).
+   */
+  rate: sensitive(zDecimal.nullable(), 'cost'),
   /**
    * The amounts below are shown: the member may see costs, running costs
    * (running_costs.items.view) and expenses (expenses.documents.view). Otherwise they are null.
    */
   amountsShown: z.boolean(),
-  /** The month's costs (Σ of the categories, exact); null when off or not shown. */
+  /** The costs divided (Σ of the categories and materials, exact); null when off or not shown. */
   total: sensitive(zDecimal.nullable(), 'cost'),
+  /**
+   * The item sales before VAT they are divided by (every branch); null when not shown or without
+   * sales. They go with the costs: `total` ÷ `rate` gives them, so whoever sees the month's costs sees
+   * them, every branch and whether or not they see every sale (an accepted residue, D-250).
+   */
+  sales: sensitive(zDecimal.nullable(), 'cost'),
   /** Each category with something in the month, the largest first; null when off or not shown. */
   categories: sensitive(z.array(monthCostCategoryDto).nullable(), 'cost'),
+  /**
+   * The materials no product uses bought in the month, the largest first (Q13 A); null when none, off
+   * or not shown (each one's name and amount also need purchases.documents.view, else the total only
+   * is in `total`).
+   */
+  materials: sensitive(z.array(monthCostMaterialDto).nullable(), 'cost'),
 })
 export type MonthCostsDto = z.infer<typeof monthCostsDto>
 
@@ -165,6 +219,11 @@ export const unitCostDto = z.object({
   materials: sensitive(zDecimal.nullable(), 'cost'),
   runningCosts: z.object({
     state: sensitive(runningShareStateDto, 'cost'),
+    /**
+     * The share (`applied`: price before VAT × the month's costs ÷ its item sales, 12 decimals; `none`:
+     * 0); null otherwise.
+     */
+    amount: sensitive(zDecimal.nullable(), 'cost'),
   }),
   ownerTime: z.object({
     state: sensitive(ownerTimeStateDto, 'cost'),

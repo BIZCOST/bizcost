@@ -3,6 +3,7 @@
 import { useTRPC } from '@bizcost/app-core'
 import type { BusinessProfileDto } from '@bizcost/contracts'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
+import { invalidateProfit } from '@/features/reports/refresh'
 
 /** `business.profile` (settings.business.view); `enabled` false until the section is open. */
 export function useProfile(enabled = true) {
@@ -24,7 +25,7 @@ export function useProfileSaved() {
     void queryClient.invalidateQueries({ queryKey: trpc.me.queryKey() })
     void queryClient.invalidateQueries({ queryKey: trpc.business.context.queryKey() })
     if (before?.vatRegistered !== profile.vatRegistered) {
-      void queryClient.invalidateQueries({ queryKey: trpc.productCost.pathKey() })
+      void invalidateProfit(queryClient, trpc)
     }
   }
 }

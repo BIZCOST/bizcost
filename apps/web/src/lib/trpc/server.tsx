@@ -7,7 +7,12 @@ import {
   moduleRegistry,
   type ApiDeps,
 } from '@bizcost/api'
-import type { BusinessContextDto, DashboardChecklistDto, MeDto } from '@bizcost/contracts'
+import type {
+  BusinessContextDto,
+  DashboardCardsDto,
+  DashboardChecklistDto,
+  MeDto,
+} from '@bizcost/contracts'
 import { createDb } from '@bizcost/db'
 import type { ModuleManifest } from '@bizcost/modules'
 import { TRPCError } from '@trpc/server'
@@ -125,6 +130,19 @@ export async function getDashboardChecklist(
 ): Promise<DashboardChecklistDto | null> {
   try {
     return await (await businessCaller(businessId)).dashboard.checklist()
+  } catch (error) {
+    if (error instanceof TRPCError) return null
+    throw error
+  }
+}
+
+/**
+ * `dashboard.cards` for the Dashboard's page (M3 Step 3), so its first render has the decision cards;
+ * null when the API refuses or fails (the page then reads them itself).
+ */
+export async function getDashboardCards(businessId: string): Promise<DashboardCardsDto | null> {
+  try {
+    return await (await businessCaller(businessId)).dashboard.cards()
   } catch (error) {
     if (error instanceof TRPCError) return null
     throw error

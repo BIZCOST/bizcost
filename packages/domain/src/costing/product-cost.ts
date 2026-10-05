@@ -136,8 +136,10 @@ export interface ProductCostInput {
  * The running-cost line (D-202):
  * - `off`: neither Running Costs nor Expenses is on (no line: nothing to share);
  * - `no_price`: it has no price, so no share can be worked out by it ("add its price");
- * - `awaiting_sales`: worked out automatically once sales are recorded (Phase 3); until then the
- *   total and the margin are before running costs;
+ * - `awaiting_sales`: worked out automatically once sales are recorded; until then the total and the
+ *   margin are before running costs;
+ * - `before_running_costs`: sales are recorded, but the rate worked out so far shows only once 7 days
+ *   of sales exist (a first month's first days, Q6, M3 Step 3); until then, as awaiting sales;
  * - `none`: the month's costs come to zero or less: the share is 0;
  * - `applied`: the share is worked out.
  */
@@ -145,6 +147,7 @@ export const RUNNING_SHARE_STATES = [
   'off',
   'no_price',
   'awaiting_sales',
+  'before_running_costs',
   'none',
   'applied',
 ] as const
@@ -221,6 +224,9 @@ function runningShareOf(
 ): ProductCost['runningCosts'] {
   if (running.state === 'off') return { state: 'off', rate: null, share: null }
   if (beforeVat === null) return { state: 'no_price', rate: null, share: null }
+  if (running.state === 'before_running_costs') {
+    return { state: 'before_running_costs', rate: null, share: null }
+  }
   const { state, rate } = costRate(running)
   if (state === 'awaiting_sales') return { state: 'awaiting_sales', rate: null, share: null }
   if (state === 'none') return { state: 'none', rate: '0' as CostAmount, share: '0' as CostAmount }
@@ -229,6 +235,11 @@ function runningShareOf(
     rate: rate === null ? null : fitting(rate),
     share: costShare(beforeVat, running.costs, running.sales),
   }
+}
+
+/** The share applies and is not worked out yet: awaiting sales, or before 7 days of sales (Q6). */
+function sharePending(state: RunningShareState): boolean {
+  return state === 'awaiting_sales' || state === 'before_running_costs'
 }
 
 function ownerTimeOf(time: OwnerTimePart): ProductCost['ownerTime'] {
@@ -277,14 +288,9 @@ export function productCost(input: ProductCostInput): ProductCost {
   const tooLarge =
     (part.state === 'on' && part.tooLarge) || !partsFit || (sum !== null && fitting(sum) === null)
   const total = tooLarge ? null : sum
-  // Nothing counted and nothing to add: incomplete, unless its share awaits sales (D-203), the line
-  // that will count once sales are recorded (with a team and without materials it is the only one).
-  if (
-    total === null &&
-    !tooLarge &&
-    reasons.size === 0 &&
-    runningCosts.state !== 'awaiting_sales'
-  ) {
+  // Nothing counted and nothing to add: incomplete, unless its share awaits sales (D-203) or 7 days of
+  // sales (Q6), the line that will count (with a team and without materials it is the only one).
+  if (total === null && !tooLarge && reasons.size === 0 && !sharePending(runningCosts.state)) {
     reasons.add('nothing_counted')
   }
 
@@ -311,8 +317,7 @@ export function productCost(input: ProductCostInput): ProductCost {
     runningCosts,
     ownerTime,
     total,
-    beforeRunningCosts:
-      runningCosts.state === 'no_price' || runningCosts.state === 'awaiting_sales',
+    beforeRunningCosts: runningCosts.state === 'no_price' || sharePending(runningCosts.state),
     tooLarge,
     reasons: ordered,
     complete: ordered.length === 0 && !tooLarge,
@@ -332,7 +337,7 @@ export function missesOnlyOptionalMaterials(type: ProductType, cost: ProductCost
   return (
     type === 'service' &&
     cost.materials === null &&
-    (cost.total !== null || cost.runningCosts.state === 'awaiting_sales') &&
+    (cost.total !== null || sharePending(cost.runningCosts.state)) &&
     cost.reasons.length === 1 &&
     cost.reasons[0] === 'no_recipe'
   )

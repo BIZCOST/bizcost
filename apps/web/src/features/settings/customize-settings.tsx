@@ -43,6 +43,7 @@ import { Chips, Group, ShowHide } from '@/features/setup/review-parts'
 import { useTerminology } from '@/lib/i18n/client'
 import { useBusinessContext } from '@/lib/trpc/client'
 import { cn } from '@/lib/utils'
+import { invalidateProfit } from '@/features/reports/refresh'
 import { isModuleId } from './module-names'
 import { LoadError, SectionSkeleton } from '@/components/states/query-state'
 import { can, isSectionVisible, sectionPath } from './sections'
@@ -199,7 +200,7 @@ export function CustomizeSettings({ businessId }: { businessId: string }) {
       // The settings menu and other screens follow the capabilities and modules; so do the costs
       // (the owner's time counts only without a team; D-212, D-215).
       void queryClient.invalidateQueries({ queryKey: trpc.business.context.queryKey() })
-      void queryClient.invalidateQueries({ queryKey: trpc.productCost.pathKey() })
+      void invalidateProfit(queryClient, trpc)
       void queryClient.invalidateQueries({ queryKey: trpc.product.costs.pathKey() })
       toast.success(t('settings.modules.saved'))
     } catch (error) {

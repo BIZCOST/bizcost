@@ -1,14 +1,17 @@
 -- pgTAP: what an expense pays (the owner's decision of 2026-10-01, D-216; migration
--- expense_running_cost). As bizcost_api, like the API: `expenses.pays` is 'running_cost' (with the
+-- expense_running_cost; M3 Step 3, Q8: migrations expense_channel_fees and reports_access). As bizcost_api, like the API: `expenses.pays` is 'running_cost' (with the
 -- running cost it pays, `running_cost_id`, a composite foreign key to a running cost of the same
 -- business) or 'extra' (naming none), or null (not said: naming none) (expenses_pays_check); what it
 -- pays may be said while the expense is a draft, or by its review while it is sent for approval or
 -- approved, and is kept once it is final: a posted expense never changes it, and its reversal keeps
 -- it (guard_expense). Every change is in the audit log. The cross-business link is also tried by
 -- 21_m2_links; the backfill of the expenses already final is run on its own fixtures by
--- packages/db/test/expense-pays.db.test.ts (it executes the migration's own statement).
+-- packages/db/test/expense-pays.db.test.ts (it executes the migration's own statement). M3 Step 3:
+-- 'channel_fees' names a sales channel of the same business (`channel_id`, a composite foreign key)
+-- and 'delivery' names nothing; the channel goes with what it pays through the review and is kept
+-- once final.
 begin;
-select plan(28);
+select plan(40);
 
 do $$
 begin
@@ -97,7 +100,7 @@ select col_type_is('app', 'expenses', 'running_cost_id', 'uuid',
                    'expenses.running_cost_id is a uuid (the running cost it pays)');
 select has_index('app', 'expenses', 'expenses_running_cost_idx', array['business_id', 'running_cost_id'],
                  'the bills of a running cost are found by (business_id, running_cost_id)');
-select col_has_check('app', 'expenses', array['pays', 'running_cost_id'],
+select col_has_check('app', 'expenses', array['pays', 'running_cost_id', 'channel_id'],
                      'what an expense pays is checked (expenses_pays_check)');
 
 -- 2. Fixtures (7) -------------------------------------------------------------------------------
@@ -208,6 +211,63 @@ select is(
   '-,extra,-,running_cost,extra,extra',
   'every change of what it pays is in the audit log'
 );
+
+-- 6. A channel's app fees and delivery already on the sales (M3 Step 3, Q8) (12) ----------------
+
+select col_type_is('app', 'expenses', 'channel_id', 'uuid',
+                   'expenses.channel_id is a uuid (the channel whose app fees it pays)');
+select has_index('app', 'expenses', 'expenses_channel_idx', array['business_id', 'channel_id'],
+                 'the fees expenses of a channel are found by (business_id, channel_id)');
+
+select is(pg_temp.api_exec(v.u, v.b, v.stmt), 'ok 1', 'setup: ' || v.what)
+  from (values
+    ('user A', 'biz A', 'Talabat, a channel of A', $$
+      insert into app.sales_channels (id, business_id, name, kind)
+      values (pg_temp.id('chan A'), pg_temp.id('biz A'), 'Talabat', 'delivery_app') $$),
+    ('user B', 'biz B', 'Talabat, a channel of B', $$
+      insert into app.sales_channels (id, business_id, name, kind)
+      values (pg_temp.id('chan B'), pg_temp.id('biz B'), 'Talabat', 'delivery_app') $$)
+  ) as v(u, b, what, stmt);
+
+create function pg_temp.fees_sql(p_id text, p_pays text, p_channel text, p_run text)
+returns text language sql immutable
+as $$
+  select format($f$
+    insert into app.expenses (id, business_id, category_id, location_id, business_date,
+                              document_type, payment_method, currency, amount, vat_rate, net_total,
+                              vat_total, total, pays, channel_id, running_cost_id)
+    values (pg_temp.id(%L), pg_temp.id('biz A'), pg_temp.id('cat A'), pg_temp.id('loc A'),
+            current_date, 'no_invoice', 'cash', 'AED', 100, 0, 100, 0, 100, %s, %s, %s) $f$,
+    p_id, p_pays, p_channel, p_run)
+$$;
+
+select is(
+  pg_temp.state_of(pg_temp.api_exec('user A', 'biz A',
+    pg_temp.fees_sql(v.id, v.pays, v.chan, v.run))),
+  v.state,
+  v.what
+)
+  from (values
+    ('f fees', $$'channel_fees'$$, $$pg_temp.id('chan A')$$, 'null', 'ok 1',
+     'the app fees of a channel of its business'),
+    ('f delivery', $$'delivery'$$, 'null', 'null', 'ok 1', 'delivery names no channel'),
+    ('f no chan', $$'channel_fees'$$, 'null', 'null', '23514', 'app fees name their channel'),
+    ('f del chan', $$'delivery'$$, $$pg_temp.id('chan A')$$, 'null', '23514',
+     'delivery names no channel'),
+    ('f run chan', $$'running_cost'$$, $$pg_temp.id('chan A')$$, $$pg_temp.id('run A')$$, '23514',
+     'a bill names no channel'),
+    ('f theirs', $$'channel_fees'$$, $$pg_temp.id('chan B')$$, 'null', '23503',
+     'never the channel of another business (the composite foreign key)')
+  ) as v(id, pays, chan, run, state, what);
+
+select is(pg_temp.state_of(pg_temp.api_exec('user A', 'biz A', $$
+  update app.expenses set status = 'posted', posted_at = now(), posted_by = pg_temp.id('user A'),
+                          vat_in_cost = false, cost_total = 100
+   where id = pg_temp.id('f fees') $$)), 'ok 1', 'setup: the fees expense is finalized');
+
+select is(pg_temp.state_of(pg_temp.api_exec('user A', 'biz A', $$
+  update app.expenses set pays = 'delivery', channel_id = null where id = pg_temp.id('f fees') $$)),
+  '23001', 'a final expense keeps the channel whose app fees it pays');
 
 select * from finish();
 rollback;

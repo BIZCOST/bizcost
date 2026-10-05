@@ -6,6 +6,7 @@ import { useInfiniteQuery, useQuery, useQueryClient } from '@tanstack/react-quer
 import { useCallback, useEffect, useMemo } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useMoney } from '@/features/documents/amounts'
+import { profitQueryKeys } from '@/features/reports/refresh'
 import { can } from '@/features/settings/sections'
 
 // What the sales screens read besides a sale (M3 Step 2): the business's channels, its products and
@@ -113,16 +114,22 @@ export function useSaleLocations(
   return enabled ? (query.data?.data.locations ?? null) : null
 }
 
-/** After a sale is saved, finalized, reversed or corrected: the lists and sheets are read again. */
+/**
+ * After a sale is saved, finalized, reversed or corrected: the lists and sheets are read again, and
+ * what real profit shows (Product costs, Reports, the Dashboard's cards and checklist; D-212).
+ */
 export function useRefreshSales() {
   const trpc = useTRPC()
   const queryClient = useQueryClient()
   return useCallback(
     () =>
       Promise.all(
-        [trpc.sale.list.pathKey(), trpc.sale.get.pathKey(), trpc.sale.daySheet.pathKey()].map(
-          (queryKey) => queryClient.invalidateQueries({ queryKey }),
-        ),
+        [
+          trpc.sale.list.pathKey(),
+          trpc.sale.get.pathKey(),
+          trpc.sale.daySheet.pathKey(),
+          ...profitQueryKeys(trpc),
+        ].map((queryKey) => queryClient.invalidateQueries({ queryKey })),
       ),
     [trpc, queryClient],
   )

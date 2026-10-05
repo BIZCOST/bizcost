@@ -29,6 +29,7 @@ import { timestamptz } from './_app'
 import { tenantRef, tenantTable } from './_helpers'
 import { businessMembers } from './access'
 import { locations } from './locations'
+import { salesChannels } from './sales'
 import { suppliers } from './suppliers'
 
 // Expenses and Running Costs (M2 Step 5; docs/DATA_MODEL.md §6; D-114, D-116, D-164–D-170). One
@@ -164,8 +165,12 @@ export const expenses = tenantTable(
     // that running cost's regular amount alone over the period it pays for), or `extra` (it counts
     // as itself, on top). Null: not said yet, or its category has no running cost for its month.
     // Said before it is finalized whenever its category has one (the API); kept by a correction.
+    // While Sales is served (M3 Step 3, Q8) any expense may also say `channel_fees` ("App fees of
+    // [channel]", `channel_id`: that channel's fees for its month when no statement covers it) or
+    // `delivery` ("Delivery already on my sales and orders"); neither counts in the month's costs.
     pays: text('pays').$type<ExpensePays>(),
     runningCostId: uuid('running_cost_id'),
+    channelId: uuid('channel_id'),
   },
   (t) => [
     tenantRef('expenses_category_fk', [t.businessId, t.categoryId], costCategories),
@@ -173,6 +178,7 @@ export const expenses = tenantTable(
     tenantRef('expenses_location_fk', [t.businessId, t.locationId], locations),
     tenantRef('expenses_paid_by_member_fk', [t.businessId, t.paidByMemberId], businessMembers),
     tenantRef('expenses_running_cost_fk', [t.businessId, t.runningCostId], runningCosts),
+    tenantRef('expenses_channel_fk', [t.businessId, t.channelId], salesChannels),
     foreignKey({
       name: 'expenses_copied_from_fk',
       columns: [t.businessId, t.copiedFromId],
@@ -189,6 +195,8 @@ export const expenses = tenantTable(
     index('expenses_period_month_idx').on(t.businessId, t.periodMonth),
     // The bills of a running cost (D-216).
     index('expenses_running_cost_idx').on(t.businessId, t.runningCostId),
+    // The fees of a channel (Q8).
+    index('expenses_channel_idx').on(t.businessId, t.channelId),
     check(
       'expenses_document_type_check',
       sql`document_type in (${quoted(PURCHASE_DOCUMENT_TYPES)})`,
@@ -247,11 +255,13 @@ export const expenses = tenantTable(
         and (status = 'reversed') = (reversal_date is not null)`,
     ),
     check('expenses_copied_from_check', sql`copied_from_id <> id`),
-    // `running_cost` names its running cost; `extra` and null name none (D-216).
+    // `running_cost` names its running cost and `channel_fees` its channel; the others name
+    // neither (D-216, M3 Step 3).
     check(
       'expenses_pays_check',
       sql`(pays is null or pays in (${quoted(EXPENSE_PAYS)}))
-        and (running_cost_id is null) = (pays is distinct from 'running_cost')`,
+        and (running_cost_id is null) = (pays is distinct from 'running_cost')
+        and (channel_id is null) = (pays is distinct from 'channel_fees')`,
     ),
     check(
       'expenses_period_month_check',

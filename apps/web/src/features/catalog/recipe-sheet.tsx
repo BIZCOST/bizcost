@@ -68,6 +68,7 @@ import { can } from '@/features/settings/sections'
 import { useLocale, useTerminology } from '@/lib/i18n/client'
 import { useBusinessContext } from '@/lib/trpc/client'
 import { cn } from '@/lib/utils'
+import { invalidateProfit } from '@/features/reports/refresh'
 import { listOfNames } from './names'
 import { readQuantity, withLatinDigits, type FieldError } from './numbers'
 import {
@@ -616,7 +617,7 @@ export function RecipeSheet({
       setYieldEdited(null)
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: trpc.product.costs.pathKey() }),
-        queryClient.invalidateQueries({ queryKey: trpc.productCost.pathKey() }),
+        invalidateProfit(queryClient, trpc),
       ])
       toast.success(t('catalog.recipes.saved'))
       return true

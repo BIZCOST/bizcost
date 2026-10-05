@@ -10,6 +10,7 @@ import {
   type TerminologyProfile,
 } from '@bizcost/domain'
 import {
+  formatDate,
   formatDecimal,
   formatList,
   formatPercent,
@@ -18,7 +19,13 @@ import {
 } from '@bizcost/i18n'
 import { useTranslation } from 'react-i18next'
 import { useUnitQuantity } from '@/features/catalog/unit-parts'
-import { useMoney, useUnitCost } from '@/features/documents/amounts'
+import { NBSP } from '@/features/catalog/units'
+import {
+  useBusinessDate,
+  useBusinessMonth,
+  useMoney,
+  useUnitCost,
+} from '@/features/documents/amounts'
 import { useLocale, useTerminology } from '@/lib/i18n/client'
 import { useBusinessContext } from '@/lib/trpc/client'
 
@@ -78,9 +85,16 @@ export function useRuleExample() {
 export interface RateWords {
   /** The rule (one sentence). */
   readonly rule: string
-  /** The owner's example of it. */
-  readonly example: string
-  /** Worked out once sales are recorded, and what the costs shown are until then (none once shared). */
+  /** The owner's example of it, while nothing is shared yet (none once the business has its own). */
+  readonly example: string | null
+  /**
+   * The business's own rate this month, once shared (M3 Step 3): "This month, each thing you sell
+   * carries 25% of its price: your costs AED 20,000 ÷ your sales AED 80,000 in September 2026."
+   */
+  readonly live: string | null
+  /** Which month's rate the running month uses: "At September's rate until October ends." */
+  readonly basis: string | null
+  /** Worked out once sales are recorded (or once 7 days of sales exist), and what the costs are until then. */
   readonly awaiting: string | null
   /** No running cost was ever entered: they are what will be shared, so the page asks for them. */
   readonly nudge: string | null
@@ -90,24 +104,92 @@ export interface RateWords {
   readonly action: 'runningCosts' | null
 }
 
+/** A rate (0.25) as a percentage: whole when it is one, else with one decimal ("25%", "18.5%"). */
+export function useRatePercent() {
+  const { locale } = useLocale()
+  return (rate: string) => formatPercent(locale, rate, { ratio: true, minDigits: 0, maxDigits: 1 })
+}
+
+/** A month's name alone ("September"), for "at September's rate until October ends". */
+export function useMonthOnly() {
+  const { locale } = useLocale()
+  return (month: string) =>
+    formatDate(locale, `${month}-01T00:00:00Z`, { month: 'long', timeZone: 'UTC' })
+}
+
 /**
  * How running costs reach what the business sells (D-202): by its price, worked out once sales are
- * recorded. None when neither Running Costs nor Expenses is on, or the member may not see costs.
- * `runningCostsOn`: the Running Costs module is on (only then are running costs asked for; never
- * entered is not a product's reason, D-202).
+ * recorded; once they are (M3 Step 3), the rate this month's sales carry, with where it comes from
+ * (Q6: the last full month's, "at September's rate until October ends", or a first month's so far,
+ * "from your first sale on 1 Nov"; before 7 days of sales, the day it shows). None when neither
+ * Running Costs nor Expenses is on, or the member may not see costs. `runningCostsOn`: the Running
+ * Costs module is on (only then are running costs asked for; never entered is not a product's reason,
+ * D-202). `today`: the business's today (the running month).
  */
 export function useRateWords() {
   const { t } = useTranslation()
   const example = useRuleExample()
-  return (costs: MonthCostsDto | undefined, runningCostsOn: boolean): RateWords | null => {
+  const money = useMoney()
+  const monthName = useBusinessMonth()
+  const monthOnly = useMonthOnly()
+  const businessDate = useBusinessDate()
+  const ratePercent = useRatePercent()
+  return (
+    costs: MonthCostsDto | undefined,
+    runningCostsOn: boolean,
+    today: string,
+  ): RateWords | null => {
     if (!costs || costs.state === undefined || costs.state === 'off') return null
     const missing = runningCostsOn && costs.runningCostsEntered === false
+    const said = (value: string) => money(value).replaceAll(' ', NBSP)
+    const month = monthName(costs.month).replaceAll(' ', NBSP)
+    const rate = typeof costs.rate === 'string' ? costs.rate : null
+    const percent = rate === null ? '' : ratePercent(rate)
+    const amounts = typeof costs.total === 'string' && typeof costs.sales === 'string'
+    const soFar = costs.basis === 'so_far' && costs.from !== null
+    const day = (value: string | null) => (value ? businessDate(value).replaceAll(' ', NBSP) : '')
+    let live: string | null = null
+    let short = t('costing.rate.short')
+    if (costs.state === 'applied' && rate !== null) {
+      const values = {
+        percent,
+        month,
+        costs: amounts ? said(costs.total!) : '',
+        sales: amounts ? said(costs.sales!) : '',
+        day: day(costs.from),
+      }
+      live = soFar
+        ? t(amounts ? 'costing.rate.soFar' : 'costing.rate.soFarRate', values)
+        : t(amounts ? 'costing.rate.applied' : 'costing.rate.appliedRate', values)
+      short = soFar
+        ? t('costing.rate.shortSoFar', { percent })
+        : t('costing.rate.shortApplied', { percent, month })
+    } else if (costs.state === 'none') {
+      live = t('costing.rate.none')
+    } else if (costs.state === 'before_running_costs') {
+      short = t('costing.rate.shortBefore', { day: day(costs.showsOn) })
+    }
+    const running = today.slice(0, 7)
     return {
       rule: t('costing.rate.byPrice'),
-      example: example(),
-      awaiting: costs.state === 'awaiting_sales' ? t('costing.rate.awaiting') : null,
+      // The owner's example, until the business has a rate of its own.
+      example: live === null ? example() : null,
+      live,
+      basis:
+        costs.state === 'applied' && costs.basis === 'last_month' && costs.month !== running
+          ? t('costing.rate.lastMonth', {
+              rateMonth: monthOnly(costs.month),
+              monthOnly: monthOnly(running),
+            })
+          : null,
+      awaiting:
+        costs.state === 'awaiting_sales'
+          ? t('costing.rate.awaiting')
+          : costs.state === 'before_running_costs'
+            ? t('costing.rate.before', { day: day(costs.showsOn) })
+            : null,
       nudge: missing ? t('costing.rate.not_entered') : null,
-      short: t('costing.rate.short'),
+      short,
       action: missing ? 'runningCosts' : null,
     }
   }

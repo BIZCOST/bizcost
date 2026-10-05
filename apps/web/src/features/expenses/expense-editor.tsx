@@ -54,10 +54,13 @@ import {
 import { SupplierSheet } from '@/features/purchasing/supplier-sheet'
 import { can } from '@/features/settings/sections'
 import { useBusinessContext } from '@/lib/trpc/client'
+import { invalidateProfit } from '@/features/reports/refresh'
 import { CategoryField } from './category-field'
 import {
   canManageCategories,
   mayChoosePays,
+  maySaySalesPays,
+  usePayableChannels,
   mayReviewExpenses,
   useCategoryOptions,
   useExpenseSettings,
@@ -67,6 +70,7 @@ import {
   checkExpense,
   EXPENSE_MISSING,
   expenseDraft,
+  isSalesChoice,
   withDocumentType,
   periodMonthOptions,
   withPeriodDefault,
@@ -189,6 +193,11 @@ export function ExpenseEditor({
   const choosesPays = context ? mayChoosePays(context) : false
   const payable = usePayableRunningCosts(draft.categoryId, draft.periodMonth, choosesPays)
   const payableItems = choosesPays ? payable.data?.items : undefined
+  // While Sales is served (M3 Step 3, Q8): a channel's app fees or delivery already on the sales, said
+  // by a member who sees costs.
+  const saysSalesPays = context ? maySaySalesPays(context) : false
+  const channels = usePayableChannels(saysSalesPays)
+  const channelItems = saysSalesPays ? channels.data?.items : undefined
 
   const payerItems = payers.data?.items
   const payerIds = useMemo(
@@ -220,8 +229,9 @@ export function ExpenseEditor({
         categories: categoryIds,
         payers: payerIds,
         payable: payableItems,
+        channels: channelItems,
       }),
-    [draft, currency, vatRegistered, today, categoryIds, payerIds, payableItems],
+    [draft, currency, vatRegistered, today, categoryIds, payerIds, payableItems, channelItems],
   )
   const paysError = paysAsked && check.paysMissing ? t('expenses.pays.required') : undefined
   const shown = (error: FieldError | undefined): string | undefined =>
@@ -260,7 +270,10 @@ export function ExpenseEditor({
       const next = {
         ...d,
         ...patch,
-        ...(patch.categoryId !== undefined && patch.categoryId !== d.categoryId
+        // A channel's fees and delivery fit any category (D-239): they stay.
+        ...(patch.categoryId !== undefined &&
+        patch.categoryId !== d.categoryId &&
+        !isSalesChoice(d.pays)
           ? { pays: '' }
           : {}),
       }
@@ -459,7 +472,7 @@ export function ExpenseEditor({
       queryClient.setQueryData(trpc.expense.get.queryKey({ id: expenseId }), next)
       void queryClient.invalidateQueries({ queryKey: trpc.expense.list.pathKey() })
       void queryClient.invalidateQueries({ queryKey: trpc.payable.list.pathKey() })
-      void queryClient.invalidateQueries({ queryKey: trpc.productCost.pathKey() })
+      void invalidateProfit(queryClient, trpc)
       void refreshOwn()
       toast.success(
         t(action === 'finalize' ? 'expenses.confirm.finalized' : 'expenses.confirm.submitted'),
@@ -760,13 +773,14 @@ export function ExpenseEditor({
                 </NativeSelect>
               )}
             />
-            {payableItems && payableItems.length > 0 ? (
+            {(payableItems && payableItems.length > 0) || channelItems ? (
               // Under its category and month (what it depends on), across the form from 640px; the
               // document type fills the place beside the month (a dense grid).
               <div className="sm:col-span-2">
                 <PaysChoice
                   ref={paysField}
-                  options={payableItems}
+                  options={payableItems ?? []}
+                  channels={channelItems}
                   value={draft.pays}
                   onChange={(pays) => set({ pays })}
                   error={paysError}

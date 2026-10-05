@@ -484,6 +484,35 @@ const SALES = {
   requiresCapabilities: [],
 } as const satisfies ModuleManifest
 
+// Reports (M3 Step 3; planned until Release A in Step 6, served before that only under the dev-only
+// preview, D-125): Reports → Real profit («الربح الحقيقي»), worked out on read from the posted sales,
+// their frozen costs, the month's costs, the channels' fees and the owner's time (nothing stored,
+// D-223). `reports.sales.view` opens it with the sales figures (which need every sale seen, H1);
+// `reports.profit.view` adds the profit and what it is made of (Q11: with the costs switch and Product
+// costs, PERMISSION_NEEDS). Profit is `profit_margin`, costs are `cost`. No deps: sales already posted
+// still count with Sales switched off (Orders and Invoices post sales too, M9).
+const REPORTS = {
+  id: 'reports',
+  kind: 'core',
+  availability: 'planned',
+  phase: 3,
+  deps: [],
+  permissionKeys: ['reports.sales.view', 'reports.profit.view'],
+  nav: [
+    {
+      id: 'real_profit',
+      labelKey: 'nav.real_profit',
+      path: 'reports/profit',
+      icon: 'chart-line',
+      group: 'main',
+      permission: 'reports.sales.view',
+    },
+  ],
+  quickActions: [],
+  sensitiveFields: ['cost', 'profit_margin'],
+  requiresCapabilities: [],
+} as const satisfies ModuleManifest
+
 interface PlannedManifest extends ModuleManifest {
   readonly availability: 'planned'
   readonly permissionKeys: readonly []
@@ -530,7 +559,7 @@ export const MODULES = [
   planned('customers', 'core', 3),
   SALES,
   planned('payments', 'core', 3),
-  planned('reports', 'core', 3),
+  REPORTS,
   planned('orders', 'optional', 3, { deps: ['products', 'customers', 'payments'] }),
   planned('quotations', 'optional', 3, { deps: ['products', 'customers'] }),
   // No requiresCapabilities: a business that is not VAT-registered sends plain invoices (§6.6).

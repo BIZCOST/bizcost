@@ -232,9 +232,10 @@ describe('saying it on a draft', () => {
     expect(bill.pays).toEqual({
       kind: 'running_cost',
       runningCost: { id: run.power.id, name: 'DEWA' },
+      channel: null,
     })
     const bonus = await draft(cat.salaries, { pays: EXTRA })
-    expect(bonus.pays).toEqual({ kind: 'extra', runningCost: null })
+    expect(bonus.pays).toEqual({ kind: 'extra', runningCost: null, channel: null })
     // Nothing said: it can wait until it is finalized.
     expect((await draft(cat.power)).pays).toBeNull()
   })
@@ -320,10 +321,14 @@ describe('saying it on a draft', () => {
         ...wholeDraft(said, { description: 'Bill' }),
       }),
     ).data
-    expect(resaved.pays).toEqual({ kind: 'running_cost', runningCost: null })
+    expect(resaved.pays).toEqual({ kind: 'running_cost', runningCost: null, channel: null })
     expect(
       ok(await shop.run<Envelope<ExpenseDto>>('expense.get', { id: own.id })).data.pays,
-    ).toEqual({ kind: 'running_cost', runningCost: { id: run.power.id, name: 'DEWA' } })
+    ).toEqual({
+      kind: 'running_cost',
+      runningCost: { id: run.power.id, name: 'DEWA' },
+      channel: null,
+    })
   })
 })
 
@@ -336,11 +341,19 @@ describe('finalizing needs it said whenever its category has a running cost for 
     const posted = await shop.postExpense(bill, billOf(run.power))
     expect(posted).toMatchObject({
       status: 'posted',
-      pays: { kind: 'running_cost', runningCost: { id: run.power.id, name: 'DEWA' } },
+      pays: {
+        kind: 'running_cost',
+        runningCost: { id: run.power.id, name: 'DEWA' },
+        channel: null,
+      },
     })
     // Said on the draft: finalized as it is.
     const extra = await draft(cat.salaries, { pays: EXTRA })
-    expect((await shop.postExpense(extra)).pays).toEqual({ kind: 'extra', runningCost: null })
+    expect((await shop.postExpense(extra)).pays).toEqual({
+      kind: 'extra',
+      runningCost: null,
+      channel: null,
+    })
     // Without running costs in its category, nothing is asked.
     expect((await shop.postExpense(await draft(cat.ads))).pays).toBeNull()
     // Nor for a month before its running costs started.
@@ -421,7 +434,11 @@ describe('finalizing needs it said whenever its category has a running cost for 
       ).data
       expect(approved).toMatchObject({
         status: 'approved',
-        pays: { kind: 'running_cost', runningCost: { id: run.power.id, name: 'DEWA' } },
+        pays: {
+          kind: 'running_cost',
+          runningCost: { id: run.power.id, name: 'DEWA' },
+          channel: null,
+        },
       })
       expect((await shop.postExpense(approved)).pays?.runningCost?.id).toBe(run.power.id)
       // Approved without saying it: the one who finalizes says it.
@@ -455,7 +472,7 @@ describe('finalizing needs it said whenever its category has a running cost for 
       const mine = ok(
         await as<MineExpenseResultDto>('employee', 'expense.getMine', { id: direct.id }),
       ).data
-      expect(mine.pays).toEqual({ kind: 'running_cost', runningCost: null })
+      expect(mine.pays).toEqual({ kind: 'running_cost', runningCost: null, channel: null })
     } finally {
       ok(await shop.run('expense.updateSettings', { approval: false }))
     }
@@ -473,7 +490,7 @@ describe('finalizing needs it said whenever its category has a running cost for 
     try {
       expect((await shop.postExpense(unsaid)).pays).toBeNull()
       const posted = await shop.postExpense(said)
-      expect(posted.pays).toEqual({ kind: 'running_cost', runningCost: null })
+      expect(posted.pays).toEqual({ kind: 'running_cost', runningCost: null, channel: null })
       // Nobody says it while the module is off.
       const another = await draft(cat.power)
       expect(
@@ -541,6 +558,7 @@ describe('who sees the running cost’s name (never its amount)', () => {
       const expected = {
         kind: 'running_cost',
         runningCost: named ? { id: run.power.id, name: 'DEWA' } : null,
+        channel: null,
       }
       expect(ok(one).data.pays, template).toEqual(expected)
       expect(ok(list).data.items[0]?.pays, template).toEqual(expected)
@@ -557,6 +575,7 @@ describe('who sees the running cost’s name (never its amount)', () => {
     expect(mine.items.find((e) => e.id === own.id)?.pays).toEqual({
       kind: 'running_cost',
       runningCost: null,
+      channel: null,
     })
     const managerOwn = await draft(cat.power, { description: 'Mine too' }, 'manager')
     ok(
@@ -570,6 +589,7 @@ describe('who sees the running cost’s name (never its amount)', () => {
     expect(managers.items.find((e) => e.id === managerOwn.id)?.pays).toEqual({
       kind: 'running_cost',
       runningCost: { id: run.power.id, name: 'DEWA' },
+      channel: null,
     })
   })
 })

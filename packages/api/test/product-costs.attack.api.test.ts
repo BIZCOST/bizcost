@@ -122,7 +122,7 @@ describe('values at the columns’ limits are never an internal error', () => {
     ])
     expect(cost.cost).toMatchObject({
       materials: '3',
-      runningCosts: { state: 'awaiting_sales' },
+      runningCosts: { state: 'awaiting_sales', amount: null },
       total: '3',
       tooLarge: false,
     })

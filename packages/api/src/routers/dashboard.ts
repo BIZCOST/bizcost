@@ -1,4 +1,5 @@
-import { dashboardChecklistDto } from '@bizcost/contracts'
+import { dashboardCardsDto, dashboardChecklistDto } from '@bizcost/contracts'
+import { getCards } from '../services/cards'
 import { getChecklist } from '../services/dashboard'
 import { businessProcedure, requireModule, requirePermission, router } from '../trpc'
 
@@ -13,4 +14,9 @@ export const dashboardRouter = router({
    * (services/dashboard.ts).
    */
   checklist: viewDashboard.output(dashboardChecklistDto).query(({ ctx }) => getChecklist(ctx)),
+  /**
+   * `dashboard.cards` (dashboard.home.view; M3 Step 3): the decision cards the business has data for
+   * and this member may see (services/cards.ts); none while Sales is not served.
+   */
+  cards: viewDashboard.output(dashboardCardsDto).query(({ ctx }) => getCards(ctx)),
 })

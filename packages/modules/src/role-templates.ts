@@ -11,7 +11,9 @@ import { PERMISSION_CATALOG, type PermissionKey } from './permissions'
 // expenses_security for the expenses and running-costs keys of M2 Step 5, owners_answers_access for
 // the Employee keys of the owner's answers of 2026-09-29, product_costs_access for the product-cost
 // keys of M2 Step 6, sales_security for the sales keys of M3 Step 2, by the plan's Q10 table: an
-// Employee enters and finalizes their own sales only, D-218).
+// Employee enters and finalizes their own sales only, D-218; reports_access for the reports keys of M3
+// Step 3: Real profit's sales figures for those who see every sale, its profit for the Manager and the
+// Accountant).
 
 export const ROLE_TEMPLATE_KEYS = [
   OWNER_TEMPLATE_KEY,
@@ -74,6 +76,8 @@ export const ROLE_TEMPLATES: readonly RoleTemplate[] = [
       'sales.documents.post',
       'sales.documents.reverse',
       'sales.channels.manage',
+      'reports.sales.view',
+      'reports.profit.view',
       'data.cost.view',
       'data.profit_margin.view',
       'data.supplier_price.view',
@@ -94,6 +98,8 @@ export const ROLE_TEMPLATES: readonly RoleTemplate[] = [
       'running_costs.items.view',
       'cost_engine.product_costs.view',
       'sales.documents.view',
+      'reports.sales.view',
+      'reports.profit.view',
       'data.cost.view',
       'data.profit_margin.view',
       'data.supplier_price.view',
@@ -109,6 +115,7 @@ export const ROLE_TEMPLATES: readonly RoleTemplate[] = [
       'sales.documents.view',
       'sales.documents.manage',
       'sales.documents.post',
+      'reports.sales.view',
     ],
   },
   {
@@ -123,6 +130,7 @@ export const ROLE_TEMPLATES: readonly RoleTemplate[] = [
       'sales.documents.view',
       'sales.documents.manage',
       'sales.documents.post',
+      'reports.sales.view',
     ],
   },
   // The owner's answers of 2026-09-29 (D-179, D-180): an employee sees what goes into each product

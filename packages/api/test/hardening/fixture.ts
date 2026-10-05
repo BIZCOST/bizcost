@@ -64,7 +64,8 @@ import { CapturedEmails, join, setupBusiness, WORKSHOP } from '../settings'
 // M3 Step 2: Sales is planned until Release A, so the suites run with the dev-only preview of it
 // (D-125), as a local server does, and its procedures are attacked like the others. Each business
 // also has a sales channel of its own (with a commission %), a finalized sale with delivery charged and
-// its cost, and a draft of Today's sales.
+// its cost, and a draft of Today's sales. M3 Step 3: Reports is previewed too (profit.summary), and
+// the Dashboard's cards read the same sale.
 
 export type Handler = ReturnType<typeof handlerFor>
 
@@ -82,8 +83,11 @@ export interface Api {
   close: () => Promise<void>
 }
 
-/** The modules still being built that the suites preview (D-125): Sales since M3 Step 2. */
-export const PREVIEW_MODULES = ['sales'] as const
+/**
+ * The modules still being built that the suites preview (D-125): Sales since M3 Step 2, Reports since
+ * Step 3.
+ */
+export const PREVIEW_MODULES = ['sales', 'reports'] as const
 
 /**
  * The API as deployed (secret key for Storage, emails kept instead of sent), with the modules still
@@ -748,6 +752,9 @@ export function queryInputOf(path: string, tenant: Tenant): unknown {
   if (path === 'member.permissions') return { memberId: tenant.employeeMemberId }
   if (path === 'member.locations') return { memberId: tenant.employeeMemberId }
   if (path === 'sale.get') return { id: tenant.sale.id }
+  if (path === 'profit.summary') {
+    return { from: `${tenant.sale.businessDate.slice(0, 7)}-01`, to: tenant.sale.businessDate }
+  }
   if (path === 'sale.daySheet') {
     return { businessDate: tenant.sale.businessDate, channelId: tenant.channel.id }
   }

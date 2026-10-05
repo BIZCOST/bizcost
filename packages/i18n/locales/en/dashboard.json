@@ -112,6 +112,18 @@
         "done_services": "Your service costs are complete before running costs, which are added once you record your sales.",
         "action": "See product costs",
         "action_services": "See service costs"
+      },
+      "sales": {
+        "title": "Add or import your sales",
+        "todo": "Enter today's sales or one sale, so your real profit can be worked out.",
+        "done": "Your sales are coming in.",
+        "action": "Enter today's sales"
+      },
+      "real_profit": {
+        "title": "See your real profit",
+        "todo": "Once a finalized sale has its whole cost, see what you really earn.",
+        "done": "Your real profit is ready.",
+        "action": "See your real profit"
       }
     },
     "ready": {
@@ -123,6 +135,107 @@
       "bodyServicesWithoutTime": "Each service's cost comes from what it uses; its share of running costs is added once you record your sales.",
       "action": "See product costs",
       "action_services": "See service costs"
+    },
+    "titleProfit": "Let's calculate your first real profit",
+    "descriptionProfit": "Follow these steps, and BizCost works out what you really earn.",
+    "profitReady": {
+      "title": "Your real profit is ready",
+      "body": "It comes from your sales, what they cost you, your running costs and your time. It stays up to date as you enter sales, purchases and expenses.",
+      "bodyWithoutTime": "It comes from your sales, what they cost you and your running costs. It stays up to date as you enter sales, purchases and expenses.",
+      "action": "See your real profit"
+    }
+  },
+  "cards": {
+    "title": "{{month}} so far",
+    "margin": "Margin {{percent}}",
+    "profit": {
+      "title": "Real profit",
+      "loss": "Real loss",
+      "margin": "{{percent}} of sales",
+      "lossMargin": "A loss of {{percent}} of sales",
+      "costsSoFar": "Running costs so far: {{amount}}",
+      "costsSince": "Running costs since your first sale on {{day}}: {{amount}}",
+      "costsAhead": "Your running costs so far are more than this month's sales.",
+      "noSales": "No sales yet this month",
+      "lastMonth": "Last month: {{amount}}",
+      "lastMonthLoss": "Last month: a loss of {{amount}}",
+      "incomplete": "Not complete yet",
+      "beforeRunning": "Before running costs",
+      "open": "See your real profit"
+    },
+    "sales": {
+      "title": "Sales",
+      "titleBeforeVat": "Sales before VAT",
+      "lastMonth": "Last month: {{amount}}",
+      "open": "See your sales"
+    },
+    "moneyWent": {
+      "title": "Where your money went",
+      "hint": "Out of your sales this month so far.",
+      "materials": "Materials",
+      "materials_food": "Ingredients & supplies",
+      "materials_retail": "Items",
+      "fees": "App fees",
+      "delivery": "Delivery",
+      "running": "Running costs",
+      "time": "Your time",
+      "profit": "Real profit",
+      "loss": "Real loss",
+      "ofSales": "{{percent}} of sales"
+    },
+    "chart": {
+      "title": "Sales and real profit by day",
+      "titleSales": "Sales by day",
+      "sales": "Sales",
+      "profit": "Real profit",
+      "day": "Day",
+      "summary": "Sales and real profit for each day from {{from}} to {{to}}. The table below has every day.",
+      "summarySales": "Sales for each day from {{from}} to {{to}}. The table below has every day.",
+      "table": "Each day's figures",
+      "hint": "Each day carries its share of running costs at your rate.",
+      "hintBefore": "The days are before running costs until {{day}}, once you have 7 days of sales.",
+      "hintMonth": "Your real profit above takes off the month's running costs so far.",
+      "openSales": "See your sales by day"
+    },
+    "top": {
+      "title": "Top sellers",
+      "byQuantity": "By quantity",
+      "byMargin": "By margin",
+      "marginHint": "Real margin, among those whose costs are complete."
+    },
+    "concerns": {
+      "title": "Sold at a loss or a low margin",
+      "hint": "A real margin under 10% this month.",
+      "loss": "Loss",
+      "low": "Low margin",
+      "open": "See them in Real profit"
+    },
+    "costIncreases": {
+      "title": "Cost increases",
+      "hint": "Materials in what you sold whose average cost rose 10% or more in 30 days.",
+      "change": "{{before}} → {{now}}",
+      "rise": "+{{percent}}"
+    },
+    "channels": {
+      "title": "Sales by channel",
+      "share": "{{percent}} of sales"
+    },
+    "needsLook": {
+      "title": "Needs a look",
+      "unpricedMaterials": "No price yet",
+      "unpricedMaterialsHint": "Materials behind your sales that were never bought: enter a purchase so their cost counts.",
+      "channelsWithoutFees": "Before app fees",
+      "channelsWithoutFeesHint": "Channels that keep part of each sale, with nothing entered for it: add what they keep.",
+      "productsWithoutRecipe": "Sold without a recipe",
+      "productsWithoutRecipeHint": "Their materials can't be counted: add what goes into them.",
+      "materialsInNoRecipe": "Bought, but in no recipe",
+      "materialsInNoRecipeHint": "They count with your running costs. Add them to a recipe to make them that item's own cost.",
+      "actions": {
+        "unpricedMaterials": "Enter a purchase",
+        "channelsWithoutFees": "Sales channels",
+        "productsWithoutRecipe": "Add recipes",
+        "materialsInNoRecipe": "See your products"
+      }
     }
   }
 }

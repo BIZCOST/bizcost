@@ -280,7 +280,7 @@ Release rule:
       - an employee who sees only their own sheet.
   - Depends on: Step 1.
 
-- [ ] **Step 3: Real profit: running costs switch on, the Dashboard's cards and Reports** (APPROVED; decisions Q13, Q14). Real profit is worked out on read, and no profit is stored (as D-186). It is read from:
+- [x] **Step 3: Real profit: running costs switch on, the Dashboard's cards and Reports** (DONE 2026-10-05; decisions Q13, Q14; built as D-237–D-249, review fixes D-250, D-251. Checks at the end: `pnpm check` 31/31 tasks with 1,665 unit tests, `pnpm db:test` 1,304 pgTAP + 59 database tests, `pnpm api:test` 2,291 tests in 82 files, `pnpm e2e` 139 passed; ROADMAP.md holds the status). Real profit is worked out on read, and no profit is stored (as D-186). It is read from:
   - the posted sales and their snapshots;
   - the month's costs (`costPool`, D-202, D-203, D-216);
   - the channel fees;

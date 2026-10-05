@@ -1,13 +1,17 @@
 'use client'
 
 import type { MonthCostCategoryDto, MonthCostLineDto, MonthCostsDto } from '@bizcost/contracts'
+import { daysIn, sumDecimals } from '@bizcost/domain'
 import { useTranslation } from 'react-i18next'
 import { NBSP } from '@/features/catalog/units'
-import { useBusinessMonth, useMoney } from '@/features/documents/amounts'
+import { useBusinessDate, useBusinessMonth, useMoney } from '@/features/documents/amounts'
 import { cn } from '@/lib/utils'
+import { useRatePercent } from './words'
 
 // The business's costs of the last full calendar month (D-202, D-203, D-216), in "How your costs are
-// worked out": what running costs will be shared over what it sold that month once sales are recorded.
+// worked out": what running costs will be shared over what it sold that month once sales are recorded;
+// once they are (M3 Step 3), the costs this month's rate divides (the month it comes from, or a first
+// month's days so far) and the sales they are divided by, with the materials no product uses (Q13 A).
 // The total, then each category, the largest first, with what is inside it: each of its running costs
 // with where its amount comes from (its own bills in place of its regular amount, never both; a
 // quarter's or a year's bills spread over its months; its regular amount; what a reversal of an
@@ -117,22 +121,61 @@ function Category({ category }: { category: MonthCostCategoryDto }) {
 /**
  * The month's costs by category (none when off, or hidden with costs). `materialsOn`: the Materials
  * module is on (then it says material purchases are each item's own line, not here).
+ * `salesOn`: Sales is on (served): the materials no product uses count here (Q13 A), so the note says
+ * only those your products use are each item's own; a released business keeps its M2 words (D-250).
  * `vatRegistered`: the amounts are said to be before the VAT the business gets back.
  */
 export function MonthCosts({
   costs,
   materialsOn,
+  salesOn,
   vatRegistered,
 }: {
   costs: MonthCostsDto
   materialsOn: boolean
+  salesOn: boolean
   vatRegistered: boolean
 }) {
   const { t } = useTranslation()
   const monthName = useBusinessMonth()
+  const businessDate = useBusinessDate()
+  const money = useMoney()
+  const ratePercent = useRatePercent()
   if (costs.state === undefined || costs.state === 'off') return null
   // The month and its year stay together («سبتمبر 2026»).
   const month = monthName(costs.month).replaceAll(' ', NBSP)
+  const day = (value: string | null) => (value ? businessDate(value).replaceAll(' ', NBSP) : '')
+  // A rate worked out so far (a first month, Q6): the days it counts, not the whole month (a first
+  // month that began on its 1st and is over is its month).
+  const days =
+    costs.from !== null &&
+    costs.to !== null &&
+    !(
+      costs.from.endsWith('-01') &&
+      costs.from.slice(0, 7) === costs.to.slice(0, 7) &&
+      Number(costs.to.slice(8, 10)) === daysIn(costs.to.slice(0, 7))
+    )
+  const title = days
+    ? t('costing.pool.titleDays', { from: day(costs.from), to: day(costs.to) })
+    : t('costing.pool.title', { month })
+  // How they are shared (M3 Step 3): over the sales of the same days, or once sales are recorded.
+  const percent = typeof costs.rate === 'string' ? ratePercent(costs.rate) : ''
+  const sales = typeof costs.sales === 'string' ? money(costs.sales).replaceAll(' ', NBSP) : null
+  const shared =
+    costs.state === 'applied'
+      ? days
+        ? t(sales ? 'costing.pool.sharedDays' : 'costing.pool.sharedDaysRate', { sales, percent })
+        : t(sales ? 'costing.pool.sharedApplied' : 'costing.pool.sharedAppliedRate', {
+            sales,
+            percent,
+            month,
+          })
+      : costs.state === 'none'
+        ? t('costing.pool.sharedNone')
+        : costs.state === 'before_running_costs'
+          ? t('costing.pool.sharedBefore', { day: day(costs.showsOn) })
+          : t('costing.pool.shared', { month })
+  const materials = Array.isArray(costs.materials) ? costs.materials : []
   if (!costs.amountsShown || typeof costs.total !== 'string' || !Array.isArray(costs.categories)) {
     return (
       <p data-month-hidden className="text-muted-foreground">
@@ -140,7 +183,7 @@ export function MonthCosts({
       </p>
     )
   }
-  if (costs.categories.length === 0) {
+  if (costs.categories.length === 0 && materials.length === 0) {
     return (
       <p data-month-none className="text-muted-foreground">
         {t('costing.pool.none', { month })}
@@ -149,27 +192,68 @@ export function MonthCosts({
   }
   const notes = [
     t('costing.pool.note'),
-    materialsOn ? t('costing.pool.noPurchases') : null,
+    materialsOn
+      ? t(
+          salesOn || materials.length > 0
+            ? 'costing.pool.noPurchasesUsed'
+            : 'costing.pool.noPurchases',
+        )
+      : null,
+    materials.length > 0 ? t('costing.pool.materialsNote') : null,
     vatRegistered ? t('costing.pool.vat') : null,
   ].filter(Boolean)
   return (
     <div data-month-costs className="space-y-2">
       <div>
         <p className="flex items-baseline justify-between gap-3 font-medium">
-          <span className="min-w-0">{t('costing.pool.title', { month })}</span>
+          <span className="min-w-0">{title}</span>
           <Amount
             value={costs.total}
             className="shrink-0 font-semibold whitespace-nowrap tabular-nums"
           />
         </p>
         <p data-month-shared className="text-muted-foreground">
-          {t('costing.pool.shared', { month })}
+          {shared}
         </p>
       </div>
       <ul className="divide-y divide-foreground/[0.06] border-y border-foreground/[0.06]">
         {costs.categories.map((category) => (
           <Category key={category.categoryId} category={category} />
         ))}
+        {materials.length > 0 ? (
+          // Materials nothing sold uses (Q13 A): they count here, in the month they were bought.
+          <li data-month-materials className="py-1.5">
+            <p className="flex items-baseline justify-between gap-3">
+              <span className="min-w-0">{t('costing.pool.materials')}</span>
+              <Amount
+                value={sumDecimals(materials.map((material) => material.amount))}
+                className="shrink-0 whitespace-nowrap tabular-nums"
+              />
+            </p>
+            <ul className={cn(materials.length > 1 && 'mt-1 space-y-1')}>
+              {materials.map((material) => (
+                <li
+                  key={material.materialId}
+                  data-month-material={material.name}
+                  className={cn(
+                    'flex items-baseline justify-between gap-3 text-xs text-muted-foreground',
+                    materials.length > 1 && 'border-s-2 border-foreground/10 ps-2',
+                  )}
+                >
+                  <span className="min-w-0 break-words text-foreground/80">
+                    <bdi>{material.name}</bdi>
+                  </span>
+                  {materials.length > 1 ? (
+                    <Amount
+                      value={material.amount}
+                      className="shrink-0 whitespace-nowrap tabular-nums"
+                    />
+                  ) : null}
+                </li>
+              ))}
+            </ul>
+          </li>
+        ) : null}
       </ul>
       <p data-month-note className="text-xs text-muted-foreground">
         {notes.join(' ')}

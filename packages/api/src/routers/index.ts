@@ -15,6 +15,7 @@ import { memberRouter } from './member'
 import { payableRouter, purchasePaymentRouter } from './payable'
 import { productRouter } from './product'
 import { productCostRouter } from './product-cost'
+import { profitRouter } from './profit'
 import { purchaseRouter } from './purchase'
 import { purchaseReturnRouter } from './purchase-return'
 import { recipeRouter } from './recipe'
@@ -54,6 +55,7 @@ export const appRouter = router({
   productCost: productCostRouter,
   sale: saleRouter,
   channel: channelRouter,
+  profit: profitRouter,
 })
 
 export type AppRouter = typeof appRouter

@@ -44,6 +44,7 @@ import { can } from '@/features/settings/sections'
 import { useLocale, useTerminology } from '@/lib/i18n/client'
 import { useBusinessContext } from '@/lib/trpc/client'
 import { cn } from '@/lib/utils'
+import { invalidateProfit } from '@/features/reports/refresh'
 import { draftUnits, formName, type MaterialDraft } from './material-draft'
 import { withLatinDigits, type FieldError } from './numbers'
 import {
@@ -388,7 +389,7 @@ export function ProductSheet({
         queryClient.invalidateQueries({ queryKey: trpc.product.list.pathKey() }),
         queryClient.invalidateQueries({ queryKey: trpc.product.costs.pathKey() }),
         // Its cost moves with its price, VAT and minutes (Product costs).
-        queryClient.invalidateQueries({ queryKey: trpc.productCost.pathKey() }),
+        invalidateProfit(queryClient, trpc),
         ...(saved.resaleMaterialId
           ? [queryClient.invalidateQueries({ queryKey: trpc.material.list.pathKey() })]
           : []),

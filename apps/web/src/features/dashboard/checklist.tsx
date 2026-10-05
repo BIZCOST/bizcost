@@ -124,8 +124,11 @@ export function ChecklistSkeleton({
   className,
 }: {
   steps: number
-  /** "Finish setting up", or "Let's find the real cost of what you sell" (M2 Step 7). */
-  kind?: 'setup' | 'costs'
+  /**
+   * "Finish setting up", "Let's find the real cost of what you sell" (M2 Step 7), or, with the sales
+   * steps (M3 Step 3), "Let's calculate your first real profit".
+   */
+  kind?: 'setup' | 'costs' | 'profit'
   className?: string
 }) {
   const { t } = useTranslation()
@@ -136,12 +139,18 @@ export function ChecklistSkeleton({
         <div className="flex items-start justify-between gap-4">
           <div className="min-w-0">
             <h2 id={id} className="text-lg font-semibold tracking-tight">
-              {kind === 'setup' ? t('dashboard.checklist.title') : t('dashboard.costs.title')}
+              {kind === 'setup'
+                ? t('dashboard.checklist.title')
+                : kind === 'profit'
+                  ? t('dashboard.costs.titleProfit')
+                  : t('dashboard.costs.title')}
             </h2>
             <p className="mt-1 text-sm text-muted-foreground">
               {kind === 'setup'
                 ? t('dashboard.checklist.description')
-                : t('dashboard.costs.description')}
+                : kind === 'profit'
+                  ? t('dashboard.costs.descriptionProfit')
+                  : t('dashboard.costs.description')}
             </p>
           </div>
           <Skeleton className="mt-1.5 h-4 w-20 shrink-0" />

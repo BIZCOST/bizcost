@@ -144,7 +144,9 @@ describe('dashboardChecklistDto', () => {
       costSteps: [{ id: 'products', done: false, missing: [], remaining: null, ...extra }],
     })
     expect(dashboardChecklistDto.safeParse(step({})).success).toBe(true)
-    expect(dashboardChecklistDto.safeParse(step({ id: 'sales' })).success).toBe(false)
+    // M3 Step 3 adds the sales steps; nothing else is a step.
+    expect(dashboardChecklistDto.safeParse(step({ id: 'real_profit' })).success).toBe(true)
+    expect(dashboardChecklistDto.safeParse(step({ id: 'orders' })).success).toBe(false)
     expect(dashboardChecklistDto.safeParse(step({ missing: ['logo'] })).success).toBe(false)
     // The estimate of monthly purchases is gone (D-202).
     expect(dashboardChecklistDto.safeParse(step({ missing: ['estimate'] })).success).toBe(false)
@@ -187,8 +189,13 @@ describe('what an expense pays (D-216)', () => {
     ).toEqual({ kind: 'running_cost', runningCostId })
   })
 
-  it('a bill names its running cost; nothing else is a choice', () => {
+  it('a bill names its running cost, app fees their channel; nothing else is a choice', () => {
+    expect(createExpenseInput.parse({ ...draft, pays: { kind: 'delivery' } }).pays).toEqual({
+      kind: 'delivery',
+    })
     for (const pays of [
+      { kind: 'channel_fees' },
+      { kind: 'channel_fees', channelId: 'not-a-uuid' },
       { kind: 'running_cost' },
       { kind: 'running_cost', runningCostId: 'not-a-uuid' },
       { kind: 'salary' },
@@ -203,13 +210,26 @@ describe('what an expense pays (D-216)', () => {
   it('answers the kind, and the running cost only by id and name', () => {
     const id = newId()
     expect(
-      expensePaysDto.parse({ kind: 'running_cost', runningCost: { id, name: 'DEWA' } }),
-    ).toEqual({ kind: 'running_cost', runningCost: { id, name: 'DEWA' } })
+      expensePaysDto.parse({
+        kind: 'running_cost',
+        runningCost: { id, name: 'DEWA' },
+        channel: null,
+      }),
+    ).toEqual({ kind: 'running_cost', runningCost: { id, name: 'DEWA' }, channel: null })
+    // A channel's app fees (M3 Step 3, Q8): the channel by id and name.
+    expect(
+      expensePaysDto.parse({
+        kind: 'channel_fees',
+        runningCost: null,
+        channel: { id, name: 'Talabat', feePercent: '20' },
+      }),
+    ).toEqual({ kind: 'channel_fees', runningCost: null, channel: { id, name: 'Talabat' } })
     expect(expensePaysDto.parse(null)).toBeNull()
     expect(
       expensePaysDto.safeParse({
         kind: 'running_cost',
         runningCost: { id, name: 'DEWA', amount: '1' },
+        channel: null,
       }).data?.runningCost,
     ).toEqual({ id, name: 'DEWA' })
   })

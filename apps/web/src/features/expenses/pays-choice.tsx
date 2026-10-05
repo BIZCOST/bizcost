@@ -1,13 +1,13 @@
 'use client'
 
-import type { ExpensePaysDto, PayableRunningCostDto } from '@bizcost/contracts'
+import type { ExpensePaysDto, PayableChannelsDto, PayableRunningCostDto } from '@bizcost/contracts'
 import { CheckIcon } from 'lucide-react'
 import { useId, type Ref } from 'react'
 import { useTranslation } from 'react-i18next'
 import { isolate } from '@/components/form/use-message'
 import { useBusinessDate, useBusinessMonth } from '@/features/documents/amounts'
 import { cn } from '@/lib/utils'
-import { EXTRA } from './expense-draft'
+import { DELIVERY, EXTRA, FEES, ORDINARY } from './expense-draft'
 
 // What an expense pays (the owner's decision of 2026-10-01, "1أ"; D-216). In a category that has a
 // running cost a bill for its month can pay, one choice: «فاتورة لـ…» / "Bill for …", which takes the
@@ -16,7 +16,10 @@ import { EXTRA } from './expense-draft'
 // amounts. Asked in the expense editor, and of the one who approves or finalizes an expense entered
 // by a member who may not see running costs. Its label shows in the lists and on the expense. Two
 // of the same name (a rent changed that month, D-176) say when each counts (D-217; a bill of either
-// pays for both that month).
+// pays for both that month). While Sales is served (M3 Step 3, Q8), a member who sees costs may also
+// say it pays «عمولات تطبيق…» / "App fees of …" (a delivery app's or marketplace's) or "Delivery
+// already on my sales and orders": neither counts in the month's costs; in a category without running
+// costs the choice then offers "An ordinary expense" too (it counts as itself).
 
 /** One option: a radio card with what it means under it. */
 function Option({
@@ -78,14 +81,33 @@ function Option({
   )
 }
 
+type PayableChannel = PayableChannelsDto['items'][number]
+
+/** The channels whose app fees an expense is offered: those that keep part of each sale, and its own. */
+export function feeChannels(
+  channels: readonly PayableChannel[] | undefined,
+  value: string,
+): PayableChannel[] {
+  return (channels ?? []).filter(
+    (channel) =>
+      channel.kind === 'delivery_app' ||
+      channel.kind === 'marketplace' ||
+      value === `${FEES}${channel.id}`,
+  )
+}
+
 /**
  * «ماذا يدفع هذا المصروف؟»: the bill of one of `options` (the running costs its category can pay
- * that month, by name), or an extra. `value`: a running cost's id, EXTRA, or '' (not chosen yet).
- * `hint`: a line under the question; `error`: what to fix (required to finalize). `columns`: two
- * columns from 640 px (the editor; a dialog keeps one).
+ * that month, by name), or an extra; while Sales is served, a channel's app fees or delivery already
+ * on the sales (`channels`: those offered, for a member who sees costs), and, in a category without
+ * running costs, an ordinary expense. `value`: a running cost's id, EXTRA, `fees:<id>`, DELIVERY,
+ * ORDINARY, or '' (not chosen yet; an ordinary expense where that is offered). `hint`: a line under
+ * the question; `error`: what to fix (required to finalize). `columns`: two columns from 640 px
+ * (the editor; a dialog keeps one).
  */
 export function PaysChoice({
   options,
+  channels,
   value,
   onChange,
   hint,
@@ -94,6 +116,7 @@ export function PaysChoice({
   ref,
 }: {
   options: readonly PayableRunningCostDto[]
+  channels?: readonly PayableChannel[]
   value: string
   onChange: (value: string) => void
   hint?: string
@@ -156,15 +179,53 @@ export function PaysChoice({
             onChange={onChange}
           />
         ))}
-        <Option
-          name={name}
-          value={EXTRA}
-          checked={value === EXTRA}
-          title={t('expenses.pays.extra')}
-          hint={t('expenses.pays.hint.extra')}
-          invalid={Boolean(error)}
-          onChange={onChange}
-        />
+        {options.length > 0 ? (
+          <Option
+            name={name}
+            value={EXTRA}
+            checked={value === EXTRA}
+            title={t('expenses.pays.extra')}
+            hint={t('expenses.pays.hint.extra')}
+            invalid={Boolean(error)}
+            onChange={onChange}
+          />
+        ) : null}
+        {channels ? (
+          <>
+            {feeChannels(channels, value).map((channel) => (
+              <Option
+                key={channel.id}
+                name={name}
+                value={`${FEES}${channel.id}`}
+                checked={value === `${FEES}${channel.id}`}
+                title={t('expenses.pays.channelFees', { name: isolate(channel.name) })}
+                hint={t('expenses.pays.hint.channelFees')}
+                invalid={Boolean(error)}
+                onChange={onChange}
+              />
+            ))}
+            <Option
+              name={name}
+              value={DELIVERY}
+              checked={value === DELIVERY}
+              title={t('expenses.pays.delivery')}
+              hint={t('expenses.pays.hint.delivery')}
+              invalid={Boolean(error)}
+              onChange={onChange}
+            />
+            {options.length === 0 ? (
+              <Option
+                name={name}
+                value={ORDINARY}
+                checked={value === ORDINARY || value === ''}
+                title={t('expenses.pays.ordinary')}
+                hint={t('expenses.pays.hint.ordinary')}
+                invalid={Boolean(error)}
+                onChange={onChange}
+              />
+            ) : null}
+          </>
+        ) : null}
       </div>
       {error ? (
         <p id={errorId} role="alert" className="mt-1.5 text-sm text-destructive">
@@ -184,6 +245,11 @@ export function usePaysLabel() {
   return (pays: ExpensePaysDto | undefined): string | null => {
     if (!pays) return null
     if (pays.kind === 'extra') return t('expenses.pays.extra')
+    // M3 Step 3 (Q8): a channel's app fees, delivery already on the sales.
+    if (pays.kind === 'channel_fees') {
+      return t('expenses.pays.channelFees', { name: isolate(pays.channel?.name ?? '') })
+    }
+    if (pays.kind === 'delivery') return t('expenses.pays.delivery')
     return pays.runningCost
       ? t('expenses.pays.bill', { name: isolate(pays.runningCost.name) })
       : t('expenses.pays.billUnnamed')

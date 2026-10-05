@@ -44,6 +44,7 @@ import { can } from '@/features/settings/sections'
 import { useLocale } from '@/lib/i18n/client'
 import { useBusinessContext } from '@/lib/trpc/client'
 import { cn } from '@/lib/utils'
+import { invalidateProfit } from '@/features/reports/refresh'
 import { hasModule, useAllMaterials, useLocationOptions } from './data'
 import { pricePerCountingUnit, quantityInWords } from './line-units'
 import { PaymentsPanel } from './payments-panel'
@@ -187,7 +188,7 @@ export function PurchaseView({
       queryClient.invalidateQueries({ queryKey: trpc.purchase.list.pathKey() }),
       queryClient.invalidateQueries({ queryKey: trpc.material.costs.pathKey() }),
       queryClient.invalidateQueries({ queryKey: trpc.product.costs.pathKey() }),
-      queryClient.invalidateQueries({ queryKey: trpc.productCost.pathKey() }),
+      invalidateProfit(queryClient, trpc),
       queryClient.invalidateQueries({ queryKey: trpc.recipe.get.pathKey() }),
       queryClient.invalidateQueries({ queryKey: trpc.purchasePayment.list.pathKey() }),
       queryClient.invalidateQueries({ queryKey: trpc.payable.list.pathKey() }),

@@ -79,6 +79,15 @@ export const PERMISSION_NEEDS: Readonly<Partial<Record<PermissionKey, readonly P
     // Sales (M3 Step 2): entering and finalizing sales needs no "see every sale" (without it a member
     // sees only their own, D-181); reversing one needs to see every sale.
     'sales.documents.reverse': ['sales.documents.view'],
+    // Reports (M3 Step 3): Real profit's sales figures are the sales totals, seen with every sale (H1);
+    // its profit and costs need the costs switch and Product costs too (Q11). A key missing what it
+    // needs grants nothing (withNeededKeys, D-190).
+    'reports.sales.view': ['sales.documents.view'],
+    'reports.profit.view': [
+      'reports.sales.view',
+      'data.cost.view',
+      'cost_engine.product_costs.view',
+    ],
   }
 
 /** The keys of `keys` granted without a key they need (empty when the set is coherent). */

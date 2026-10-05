@@ -15,6 +15,7 @@ import type { BusinessCtx } from '../business-context'
 import { AppError } from '../errors'
 import { passes } from '../trpc'
 import { listProductCostsIn } from './product-costs'
+import { salesServed } from './real-profit'
 
 // Dashboard (ROADMAP.md Step 7, docs/PRODUCT.md §10): the getting-started checklists from real data.
 // Which steps a member sees follows the business's capabilities, the modules it has on and the
@@ -27,7 +28,9 @@ import { listProductCostsIn } from './product-costs'
 //     (productCost.list), read only for a member who sees costs, in the same transaction, without
 //     the services that miss only their optional materials (D-200). Running costs reach every product
 //     and service by its price (D-202), so every business is asked for them, one that sells only
-//     services too.
+//     services too. While Sales and Reports are served (M3 Step 3) it becomes "Let's calculate your
+//     first real profit": add or import your sales (one finalized sale), see your real profit (one
+//     finalized sale with a complete cost).
 
 /**
  * Whether the business sells only services (D-200): every product or service in use (not archived) is
@@ -177,6 +180,12 @@ async function readCostFacts(tx: Tx, ctx: BusinessCtx, costs: boolean): Promise<
     // Services that miss only their optional materials are complete there (D-203).
     incompleteCosts = page.data.counts.incomplete ?? 0
   }
+  const sales = salesServed(ctx)
+    ? await readSaleFacts(tx, businessId, {
+        materialsOn: passes(ctx, ['materials']),
+        expensesOn: passes(ctx, ['expenses']),
+      })
+    : { finalized: 0, complete: 0 }
   return {
     items: row.items,
     madeProducts: row.made_products,
@@ -187,7 +196,56 @@ async function readCostFacts(tx: Tx, ctx: BusinessCtx, costs: boolean): Promise<
     hourlyRateSet: row.hourly_rate_set,
     itemsWithMinutes: row.items_with_minutes,
     incompleteCosts,
+    finalizedSales: sales.finalized,
+    completeSales: sales.complete,
   }
+}
+
+/**
+ * The sale steps of "Let's calculate your first real profit" (M3 Step 3, PRODUCT.md §10): how many
+ * finalized sales count (Q3: a reversal on its own day is as if never finalized), and how many of
+ * them have a complete cost (real-profit.ts's reasons: every material priced, a recipe for a product
+ * made here while Materials is on, the owner's time with its rate, the delivery cost entered, and app
+ * fees known for a delivery app or a marketplace: its %, or an expense marked as its fees for the
+ * sale's month).
+ */
+async function readSaleFacts(
+  tx: Tx,
+  businessId: string,
+  modules: { materialsOn: boolean; expensesOn: boolean },
+): Promise<{ finalized: number; complete: number }> {
+  const [row] = (await tx.execute(sql`
+    select count(*)::int as finalized, (count(*) filter (where t.complete))::int as complete
+      from (
+        select not exists (
+                 select 1
+                   from app.sale_lines l
+                   left join app.products_services p
+                     on p.business_id = l.business_id and p.id = l.product_id
+                  where l.business_id = s.business_id and l.sale_id = s.id and l.deleted_at is null
+                    and (exists (select 1 from app.sale_line_materials x
+                                  where x.business_id = l.business_id and x.sale_line_id = l.id
+                                    and x.deleted_at is null and x.cost is null)
+                      or (${modules.materialsOn}::boolean and l.kind = 'item'
+                          and l.cost_basis = 'none' and p.type = 'product'
+                          and p.resale_material_id is null)
+                      or (l.time_minutes is not null and l.time_cost is null)))
+               and not (s.delivery_needed and s.delivery_cost is null)
+               and not (c.kind in ('delivery_app', 'marketplace') and c.fee_percent is null
+                 and not (${modules.expensesOn}::boolean and exists (
+                   select 1 from app.expenses e
+                    where e.business_id = s.business_id and e.channel_id = s.channel_id
+                      and e.pays = 'channel_fees' and e.status = 'posted' and e.deleted_at is null
+                      and e.period_month = date_trunc('month', s.business_date)::date)))
+                 as complete
+          from app.sales s
+          join app.sales_channels c on c.business_id = s.business_id and c.id = s.channel_id
+         where s.business_id = ${businessId} and s.deleted_at is null
+           and (s.status = 'posted'
+             or (s.status = 'reversed' and s.reversal_business_date > s.business_date))
+      ) t
+  `)) as unknown as { finalized: number; complete: number }[]
+  return { finalized: row?.finalized ?? 0, complete: row?.complete ?? 0 }
 }
 
 /**

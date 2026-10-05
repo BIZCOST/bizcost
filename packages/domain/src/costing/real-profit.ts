@@ -18,6 +18,8 @@ import {
   daysRunIn,
   handoversOf,
   type PoolExpense,
+  type PoolLine,
+  type PoolMaterialPurchase,
   type PoolRunningCost,
 } from './cost-share'
 import type { OwnerTimeState } from './product-cost'
@@ -112,10 +114,24 @@ export interface CostsSoFar {
   readonly to: string
   /** The days counted, from … to. */
   readonly days: number
-  /** Σ of the categories, exact. */
+  /** Σ of the categories and the materials no product uses, exact. */
   readonly total: CostAmount
-  /** Each category with something in the month (costPool's), its amount so far. */
-  readonly categories: readonly { readonly categoryId: string; readonly amount: CostAmount }[]
+  /** Each category with something in the month (costPool's), its amount so far, line by line. */
+  readonly categories: readonly {
+    readonly categoryId: string
+    readonly amount: CostAmount
+    /** costPool's lines, in its order, each with its amount so far. */
+    readonly lines: readonly {
+      readonly kind: PoolLine['kind']
+      readonly runningCostId: string | null
+      readonly amount: CostAmount
+    }[]
+  }[]
+  /** The materials no product uses (Q13 A), spread over the month's days; null without any. */
+  readonly materials: {
+    readonly amount: CostAmount
+    readonly lines: readonly { readonly materialId: string; readonly amount: CostAmount }[]
+  } | null
 }
 
 /**
@@ -140,11 +156,12 @@ export function costsSpanOf(
 /**
  * The month's costs over the days `from` … `to` of it (both within `month`): each running cost for the
  * days it ran in them (its regular amount × days ÷ the month's days, divided once), and the month's
- * bills and expenses (and what reversals take back in it) spread evenly over its days, counted for
- * those days. Built on costPool (each running cost, bill and extra counted once, D-202, D-216, D-217)
- * and daysRunIn. Over the whole month it is costPool's total exactly. The first month's rent bill of
- * 6,000 counts 6,000 × 15 ÷ 30 = 3,000 on the 15th of a 30-day month. Throws RangeError as costPool
- * does, and for days outside the month or `to` before `from`.
+ * bills and expenses (and what reversals take back in it), and the materials no product uses bought
+ * in it (Q13 A), spread evenly over its days, counted for those days. Built on costPool (each running
+ * cost, bill and extra counted once, D-202, D-216, D-217) and daysRunIn. Over the whole month it is
+ * costPool's total exactly. The first month's rent bill of 6,000 counts 6,000 × 15 ÷ 30 = 3,000 on the
+ * 15th of a 30-day month. Throws RangeError as costPool does, and for days outside the month or `to`
+ * before `from`.
  */
 export function monthCostsSoFar(
   month: BusinessMonth,
@@ -152,8 +169,9 @@ export function monthCostsSoFar(
   to: string,
   runningCosts: readonly PoolRunningCost[],
   expenses: readonly PoolExpense[],
+  materialPurchases: readonly PoolMaterialPurchase[] = [],
 ): CostsSoFar {
-  const pool = costPool(month, runningCosts, expenses)
+  const pool = costPool(month, runningCosts, expenses, materialPurchases)
   if (monthOf(from) !== month || monthOf(to) !== month) {
     throw new RangeError(`The days must be within ${month}: "${from}" … "${to}"`)
   }
@@ -177,19 +195,38 @@ export function monthCostsSoFar(
     return divideOnce([cost.amount, PER_YEAR[cost.frequency], String(ran)], String(12 * monthDays))
   }
   const categories = pool.categories.map((category) => {
-    const amounts = category.lines.map((line) => {
+    const lines = category.lines.map((line) => {
+      let amount: CostAmount
       if (line.kind === 'running_cost' && line.source === 'regular') {
         const group = groups.get(line.runningCostId!) ?? []
         const regular = add(group.map(regularSoFar))
-        return line.takenBack === null
-          ? regular
-          : (plain(toDec(regular).minus(toDec(spread(line.takenBack)))) as CostAmount)
+        amount =
+          line.takenBack === null
+            ? regular
+            : (plain(toDec(regular).minus(toDec(spread(line.takenBack)))) as CostAmount)
+      } else {
+        amount = spread(line.amount)
       }
-      return spread(line.amount)
+      return { kind: line.kind, runningCostId: line.runningCostId, amount }
     })
-    return { categoryId: category.categoryId, amount: add(amounts) }
+    return {
+      categoryId: category.categoryId,
+      amount: add(lines.map((l) => l.amount)),
+      lines,
+    }
   })
-  return { month, from, to, days, total: add(categories.map((c) => c.amount)), categories }
+  const materials =
+    pool.materials === null
+      ? null
+      : (() => {
+          const lines = pool.materials.lines.map((line) => ({
+            materialId: line.materialId,
+            amount: spread(line.amount),
+          }))
+          return { amount: add(lines.map((l) => l.amount)), lines }
+        })()
+  const total = add([...categories.map((c) => c.amount), materials?.amount ?? null])
+  return { month, from, to, days, total, categories, materials }
 }
 
 // ---------------------------------------------------------------------------------------------------
@@ -279,22 +316,23 @@ export function rateSourceOf(
  * The costs a rate divides (rateSourceOf): the whole month's (costPool's total), or those of its days
  * (monthCostsSoFar), month by month where they run on from a short first month into the next, added.
  * The caller gives the running costs and finalized expenses of those months and the months around them
- * (as costPool reads them), and divides by the item sales of the same days. Throws RangeError as
- * costPool and monthCostsSoFar do.
+ * (as costPool reads them), and the purchases of materials no product uses (Q13 A), and divides by
+ * the item sales of the same days. Throws RangeError as costPool and monthCostsSoFar do.
  */
 export function rateCostsOf(
   source: RateSource,
   runningCosts: readonly PoolRunningCost[],
   expenses: readonly PoolExpense[],
+  materialPurchases: readonly PoolMaterialPurchase[] = [],
 ): CostAmount {
   if (source.from === null || source.to === null) {
-    return costPool(source.month, runningCosts, expenses).total
+    return costPool(source.month, runningCosts, expenses, materialPurchases).total
   }
   const parts: CostAmount[] = []
   for (let month = monthOf(source.from); month <= monthOf(source.to); month = addMonths(month, 1)) {
     const from = month === monthOf(source.from) ? source.from : firstDayOf(month)
     const to = month === monthOf(source.to) ? source.to : lastDayOf(month)
-    parts.push(monthCostsSoFar(month, from, to, runningCosts, expenses).total)
+    parts.push(monthCostsSoFar(month, from, to, runningCosts, expenses, materialPurchases).total)
   }
   return add(parts)
 }
@@ -467,6 +505,113 @@ function feeOf(net: string, fees: ChannelFees): CostAmount | null {
   return inSignOf(net, divideOnce([size, fees.fees], fees.sales))
 }
 
+/** A finalized expense marked "App fees of [channel]" (`expenses.pays` channel_fees, Q8). */
+export interface FeeExpense {
+  readonly channelId: string
+  /** What it cost the business (`cost_total`, zero or more). */
+  readonly cost: string
+  /** The month it is for (`period_month`, YYYY-MM). */
+  readonly month: BusinessMonth
+  /** Null while it stands; reversed: the month its reversal counts in, never before its own. */
+  readonly reversedIn: BusinessMonth | null
+}
+
+/** Checks a marked expense; false when it was reversed within its own month (as if never posted). */
+function feeExpenseCounts(expense: FeeExpense): boolean {
+  checkMonth(expense.month)
+  if (toDec(expense.cost).lt(0)) {
+    throw new RangeError(`An expense must not be negative: "${expense.cost}"`)
+  }
+  if (expense.reversedIn === null) return true
+  checkMonth(expense.reversedIn)
+  if (expense.reversedIn < expense.month) {
+    throw new RangeError(
+      `A reversal counts in its expense's month or later: "${expense.reversedIn}"`,
+    )
+  }
+  return expense.reversedIn !== expense.month
+}
+
+/** The app fees of a month from the expenses marked as each channel's fees (channelFeeExpensesOf). */
+export interface ChannelFeeExpenses {
+  /**
+   * Each channel with an expense for the month that counts in it, and their sum: its fees for the
+   * month (over its item sales of the month, before its commission %). A channel whose only expense is
+   * one reversed within its own month, or a take-back of an earlier month's, is not here: its
+   * commission % applies (Q8).
+   */
+  readonly marked: ReadonlyMap<string, CostAmount>
+  /**
+   * What reversals of earlier months' marked expenses take back in this month (D-200: its month was
+   * closed), every channel: the business level gives it back (feesNotCarried), never a channel's lines.
+   */
+  readonly takenBack: CostAmount
+}
+
+/**
+ * The fees of `month` from the expenses marked "App fees of [channel]" (Q8, M3 Step 3; D-250): each
+ * channel's expenses for the month (one reversed within it: as if never posted; one reversed in a later
+ * month still counts here), and apart what reversals of earlier months' take back in it, as costPool
+ * counts an extra's (D-203). They never count in the month's costs (costPool skips them), so a
+ * channel's fees count once: a statement covering a line's day first, else these, else the commission %
+ * (channelFeesOf). Throws RangeError for a malformed month, a negative cost or a reversal before its
+ * expense's month.
+ */
+export function channelFeeExpensesOf(
+  month: BusinessMonth,
+  expenses: readonly FeeExpense[],
+): ChannelFeeExpenses {
+  checkMonth(month)
+  const sums = new Map<string, ReturnType<typeof toDec>>()
+  let takenBack = toDec('0')
+  for (const expense of expenses) {
+    if (!feeExpenseCounts(expense)) continue
+    if (expense.month === month) {
+      sums.set(
+        expense.channelId,
+        (sums.get(expense.channelId) ?? toDec('0')).plus(toDec(expense.cost)),
+      )
+    }
+    if (expense.reversedIn === month) takenBack = takenBack.plus(toDec(expense.cost))
+  }
+  const marked = new Map<string, CostAmount>()
+  for (const [channelId, sum] of sums) marked.set(channelId, plain(sum) as CostAmount)
+  return { marked, takenBack: plain(takenBack) as CostAmount }
+}
+
+/**
+ * The app fees the business level of `month` takes off that no sold line carries (Q8, D-250), over its
+ * days `from` … `to` (both within it; spread evenly over the month's days like its bills, so the whole
+ * month counts them exactly, monthCostsSoFar): the expenses marked as a channel's fees for the month
+ * when the channel's item sales of the month (every branch) come to zero or less (nothing to divide them
+ * over: a monthly fee in a month the app sold nothing, an invoice dated in the month after its sales),
+ * less what reversals of earlier months' take back in it. So every marked expense is taken off once:
+ * by the channel's lines, or here. Negative when more is taken back. Throws RangeError for days outside
+ * the month or `to` before `from`, and as channelFeeExpensesOf does.
+ */
+export function feesNotCarried(
+  month: BusinessMonth,
+  from: string,
+  to: string,
+  fees: ChannelFeeExpenses,
+  channelSales: ReadonlyMap<string, string>,
+): CostAmount {
+  checkMonth(month)
+  if (monthOf(from) !== month || monthOf(to) !== month) {
+    throw new RangeError(`The days must be within ${month}: "${from}" … "${to}"`)
+  }
+  const days = dayNumber(to) - dayNumber(from) + 1
+  if (days < 1) throw new RangeError(`"${to}" is before "${from}"`)
+  let amount = toDec('0').minus(toDec(fees.takenBack))
+  for (const [channelId, marked] of fees.marked) {
+    if (!toDec(channelSales.get(channelId) ?? '0').gt(0)) amount = amount.plus(toDec(marked))
+  }
+  if (amount.isZero()) return '0' as CostAmount
+  return days === daysIn(month)
+    ? (plain(amount) as CostAmount)
+    : divideOnce([plain(amount), String(days)], String(daysIn(month)))
+}
+
 // ---------------------------------------------------------------------------------------------------
 // A line's real profit, a sum of lines, and the business's
 // ---------------------------------------------------------------------------------------------------
@@ -592,11 +737,109 @@ export function saleLineProfit(input: SaleLineProfitInput): SaleLineProfit {
   }
 }
 
-/** What a sale's delivery cost the business (sales.delivery_cost): `none` without delivery. */
+/**
+ * Sold lines of one kind, counted in one month and through one channel, summed (soldLinesProfit): the
+ * report's unit, read as sums in SQL so a year of sales costs one division per month and channel, not
+ * one per line.
+ */
+export interface SoldLinesInput {
+  readonly kind: SaleLineKind
+  /** Σ of the lines' net before VAT (a refund's negative). */
+  readonly net: string
+  /** Σ of their materials that have a price; null when none has one. */
+  readonly materials: string | null
+  /** Their material rows (sale_line_materials), and how many have no price yet. */
+  readonly materialRows: number
+  readonly unpricedRows: number
+  /** Item lines of products sold without a recipe while Materials was on (`no_recipe`). */
+  readonly withoutRecipe: number
+  /** Σ of the owner's time worked out; null when none is. */
+  readonly ownerTime: string | null
+  /** Lines with the owner's minutes and no hourly rate yet. */
+  readonly rateNotSet: number
+  /** Their channel's fees for the month (item lines). */
+  readonly fees: ChannelFees
+  /** The rate of their month (item lines). */
+  readonly rate: SaleRate
+}
+
+/**
+ * The real profit of sold lines summed (see SoldLinesInput), part by part as saleLineProfit gives one
+ * line's: the share and the fees worked out once on their net (line net × costs ÷ sales is linear, so
+ * this is the lines' own shares and fees added, within the 12-decimal rounding of each), the
+ * materials and the owner's time their exact sums. Pure; throws RangeError on malformed input.
+ */
+export function soldLinesProfit(input: SoldLinesInput): SaleLineProfit {
+  const isItem = input.kind === 'item'
+  const reasons = new Set<RealProfitReason>()
+  if (input.materialRows < 0 || input.unpricedRows < 0 || input.unpricedRows > input.materialRows) {
+    throw new RangeError('Material rows must be counted from zero, the unpriced among them')
+  }
+  const materials = {
+    state: (input.materialRows === 0
+      ? 'none'
+      : input.unpricedRows > 0
+        ? 'no_price_yet'
+        : 'priced') as ProfitMaterialsState,
+    amount: input.materials === null ? null : (plain(toDec(input.materials)) as CostAmount),
+  }
+  if (isItem && input.withoutRecipe > 0) reasons.add('no_recipe')
+  if (input.unpricedRows > 0) reasons.add('unpriced_materials')
+
+  const fees = isItem ? { state: input.fees.state, amount: feeOf(input.net, input.fees) } : null
+  if (fees?.state === 'not_entered') reasons.add('fees_not_entered')
+
+  const runningCosts = isItem
+    ? {
+        state: input.rate.state,
+        basis: input.rate.source?.basis ?? null,
+        amount: shareOf(input.net, input.rate),
+      }
+    : null
+
+  const ownerTime = {
+    state: (input.rateNotSet > 0
+      ? 'rate_not_set'
+      : input.ownerTime !== null
+        ? 'applied'
+        : 'none') as OwnerTimeState,
+    amount: input.ownerTime === null ? null : (plain(toDec(input.ownerTime)) as CostAmount),
+  }
+  if (input.rateNotSet > 0) reasons.add('hourly_rate_not_set')
+
+  const known = add([
+    materials.amount,
+    fees?.amount ?? null,
+    runningCosts?.amount ?? null,
+    ownerTime.amount,
+  ])
+  const ordered = REAL_PROFIT_REASONS.filter((reason) => reasons.has(reason))
+  return {
+    kind: input.kind,
+    sales: plain(toDec(input.net)),
+    materials,
+    fees,
+    runningCosts,
+    ownerTime,
+    profit: plain(toDec(input.net).minus(toDec(known))) as CostAmount,
+    beforeRunningCosts:
+      runningCosts !== null &&
+      (runningCosts.state === 'awaiting_sales' || runningCosts.state === 'before_running_costs'),
+    reasons: ordered,
+    complete: ordered.length === 0,
+  }
+}
+
+/**
+ * What a sale's delivery cost the business (sales.delivery_cost): `none` without delivery;
+ * `reversed`: a sale reversed on a later day takes its delivery cost back on that day (M3 Step 3: the
+ * reversal's mirror, subtracted from what deliveries cost).
+ */
 export type SaleDeliveryCost =
   | { readonly state: 'none' }
   | { readonly state: 'not_entered' }
   | { readonly state: 'entered'; readonly cost: string }
+  | { readonly state: 'reversed'; readonly cost: string }
 
 /** Real profit of some sold lines (a sale, an order, a day, a product, a channel, a branch…). */
 export interface RealProfitSum {
@@ -643,11 +886,22 @@ export function sumRealProfit(
   const reasons = new Set<RealProfitReason>(lines.flatMap((line) => line.reasons))
   for (const delivery of deliveries) {
     if (delivery.state === 'not_entered') reasons.add('delivery_cost_not_entered')
-    if (delivery.state === 'entered' && toDec(delivery.cost).lt(0)) {
+    if (
+      (delivery.state === 'entered' || delivery.state === 'reversed') &&
+      toDec(delivery.cost).lt(0)
+    ) {
       throw new RangeError(`A delivery cost must not be negative: "${delivery.cost}"`)
     }
   }
-  const deliveryCost = add(deliveries.map((d) => (d.state === 'entered' ? d.cost : null)))
+  const deliveryCost = add(
+    deliveries.map((d) =>
+      d.state === 'entered'
+        ? d.cost
+        : d.state === 'reversed'
+          ? plain(toDec(d.cost).negated())
+          : null,
+    ),
+  )
   const deliveryCharged = add(lines.filter((l) => l.kind === 'delivery').map((l) => l.sales))
   const sales = add(lines.map((l) => l.sales))
   const profit = plain(
@@ -678,30 +932,80 @@ export interface BusinessRealProfit extends RealProfitSum {
   readonly monthCosts: CostAmount | null
   /** monthCosts − the shares carried: "Running costs not carried by this month's sales". */
   readonly notCarried: CostAmount | null
+  /**
+   * The app fees no sold line carries (feesNotCarried), in `fees` and taken off the profit; null when
+   * both modules are off.
+   */
+  readonly feesNotCarried: CostAmount | null
 }
 
 /**
  * The business's real profit (see above): every sale of the month summed (sumRealProfit), less the
  * month's costs themselves in place of the shares its lines carry, with what the shares did not carry
- * said apart. The café's September: 80,000 − 24,000 − 1,800 − 20,000 = 34,200 (42.75 %). With the
+ * said apart, and less the app fees marked for the month that no line carries (feesNotCarried: added
+ * to `fees`). The café's September: 80,000 − 24,000 − 1,800 − 20,000 = 34,200 (42.75 %). With the
  * costs subtracted it is never "before running costs", even while its lines are (a first month's first
  * days): `notCarried` says what their shares do not carry yet.
  */
 export function businessRealProfit(
   sum: RealProfitSum,
-  costs: { readonly state: 'off' } | { readonly state: 'on'; readonly costs: string },
+  costs:
+    | { readonly state: 'off' }
+    | { readonly state: 'on'; readonly costs: string; readonly feesNotCarried?: string },
 ): BusinessRealProfit {
-  if (costs.state === 'off') return { ...sum, monthCosts: null, notCarried: null }
+  if (costs.state === 'off') {
+    return { ...sum, monthCosts: null, notCarried: null, feesNotCarried: null }
+  }
   const monthCosts = plain(toDec(costs.costs)) as CostAmount
+  const feesNotCarried = plain(toDec(costs.feesNotCarried ?? '0')) as CostAmount
   const profit = plain(
-    toDec(sum.profit).plus(toDec(sum.runningCosts)).minus(toDec(monthCosts)),
+    toDec(sum.profit)
+      .plus(toDec(sum.runningCosts))
+      .minus(toDec(monthCosts))
+      .minus(toDec(feesNotCarried)),
   ) as CostAmount
   return {
     ...sum,
+    fees: plain(toDec(sum.fees).plus(toDec(feesNotCarried))) as CostAmount,
     profit,
     marginPercent: marginOf(profit, sum.sales),
     beforeRunningCosts: false,
     monthCosts,
     notCarried: plain(toDec(monthCosts).minus(toDec(sum.runningCosts))) as CostAmount,
+    feesNotCarried,
   }
+}
+
+// ---------------------------------------------------------------------------------------------------
+// Reports and the Dashboard's cards (M3 Step 3, Q14)
+// ---------------------------------------------------------------------------------------------------
+
+/** The Monday of the week (Monday to Sunday) that holds `day` (YYYY-MM-DD). Throws for a bad day. */
+export function weekOf(day: string): string {
+  const n = dayNumber(day)
+  // 1970-01-01, day 0, was a Thursday: (n + 3) mod 7 is 0 on a Monday.
+  return dayString(n - ((((n + 3) % 7) + 7) % 7))
+}
+
+/** "Low margin" (Q14): a real margin under 10 % of the sales (a loss is under 0). */
+export const LOW_MARGIN_PERCENT = '10'
+
+/** "Cost increases" (Q14): a material whose average rose 10 % or more in 30 days. */
+export const COST_INCREASE_PERCENT = '10'
+export const COST_INCREASE_DAYS = 30
+
+/**
+ * How much a material's average rose, in percent: (now − before) × 100 ÷ before, divided once (12
+ * decimals); null when `before` is zero or less (nothing to compare with).
+ */
+export function costIncreasePercent(before: string, now: string): string | null {
+  if (!toDec(before).gt(0)) return null
+  return divideOnce([plain(toDec(now).minus(toDec(before))), '100'], before)
+}
+
+/** A real margin (in percent) by Q14's words: `loss` under 0, `low` under 10, else null. */
+export function marginConcern(marginPercent: string | null): 'loss' | 'low' | null {
+  if (marginPercent === null) return null
+  if (toDec(marginPercent).lt(0)) return 'loss'
+  return toDec(marginPercent).lt(toDec(LOW_MARGIN_PERCENT)) ? 'low' : null
 }

@@ -35,6 +35,7 @@ import { hasModule } from '@/features/purchasing/data'
 import { can } from '@/features/settings/sections'
 import { useLocale, useTerminology } from '@/lib/i18n/client'
 import { useBusinessContext } from '@/lib/trpc/client'
+import { invalidateProfit } from '@/features/reports/refresh'
 import {
   ArchiveDialog,
   isNothingInUse,
@@ -193,7 +194,7 @@ function ProductsList({ startNew }: { startNew: boolean }) {
     Promise.all([
       queryClient.invalidateQueries({ queryKey: trpc.product.list.pathKey() }),
       queryClient.invalidateQueries({ queryKey: trpc.product.costs.pathKey() }),
-      queryClient.invalidateQueries({ queryKey: trpc.productCost.pathKey() }),
+      invalidateProfit(queryClient, trpc),
     ])
   const add = () => setEditing({ key: `new-${Date.now()}` })
 

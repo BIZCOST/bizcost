@@ -200,6 +200,23 @@ export const COST_STEP_RULES: readonly CostStepRule[] = [
     categories: ['cost'],
     withoutTeam: false,
   },
+  {
+    // M3 Step 3 (PRODUCT.md §10): "Add or import your sales", while Sales is served and on, for a
+    // member who enters and finalizes sales.
+    id: 'sales',
+    modules: ['sales'],
+    permissions: ['sales.documents.manage', 'sales.documents.post'],
+    categories: [],
+    withoutTeam: false,
+  },
+  {
+    // "See your real profit": Reports served and on, for a member who sees profit (Q11).
+    id: 'real_profit',
+    modules: ['reports'],
+    permissions: ['reports.profit.view'],
+    categories: ['cost', 'profit_margin'],
+    withoutTeam: false,
+  },
 ]
 
 /** What decides which cost steps a member sees. */
@@ -244,6 +261,10 @@ export interface CostFacts {
    * share awaiting sales, nor a service that misses only its optional materials (D-203).
    */
   readonly incompleteCosts: number
+  /** Finalized sales that count (M3 Step 3; 0 while Sales is not served). */
+  readonly finalizedSales: number
+  /** Of those, the ones whose cost is complete: "See your real profit" is done with one. */
+  readonly completeSales: number
 }
 
 /**
@@ -264,7 +285,8 @@ function costStepApplies(id: CostStepId, facts: CostFacts): boolean {
  * A cost step's state. Each is done once nothing it covers is missing: an item added; every product
  * made here has what goes into it; every material the items use has a price; running costs entered
  * (they are what is shared over what the business sells once sales are recorded, D-202); the hourly
- * rate and the minutes of at least one item; every cost complete.
+ * rate and the minutes of at least one item; every cost complete; one finalized sale (M3 Step 3); one
+ * finalized sale with a complete cost (its real profit).
  */
 export function costStep(id: CostStepId, facts: CostFacts): CostStepDto {
   switch (id) {
@@ -301,6 +323,10 @@ export function costStep(id: CostStepId, facts: CostFacts): CostStepDto {
         missing: [],
         remaining: facts.items > 0 ? facts.incompleteCosts : null,
       }
+    case 'sales':
+      return { id, done: facts.finalizedSales > 0, missing: [], remaining: null }
+    case 'real_profit':
+      return { id, done: facts.completeSales > 0, missing: [], remaining: null }
   }
 }
 

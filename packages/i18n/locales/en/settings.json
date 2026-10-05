@@ -315,7 +315,9 @@
     "data_profit_margin_view": "See profit and margins",
     "data_supplier_price_view": "See supplier prices",
     "data_payroll_view": "See payroll",
-    "data_employee_pii_view": "See employees' personal details"
+    "data_employee_pii_view": "See employees' personal details",
+    "reports_sales_view": "See the Real profit page (sales only)",
+    "reports_profit_view": "See profit reports"
   },
   "permissionHints": {
     "dashboard_home_view": "The business's home page.",
@@ -378,7 +380,9 @@
     "data_profit_margin_view": "Profit and margins.",
     "data_supplier_price_view": "What you pay each supplier.",
     "data_payroll_view": "Salaries, overtime and advances.",
-    "data_employee_pii_view": "Phone numbers, IDs and other private details of employees."
+    "data_employee_pii_view": "Phone numbers, IDs and other private details of employees.",
+    "reports_sales_view": "Reports → Real profit with the sales of each month, product, channel and branch. Needs every sale seen.",
+    "reports_profit_view": "Real profit and what it is made of: the cost of what was sold, app fees, delivery, running costs and the month’s total. Needs costs and product costs."
   },
   "modules": {
     "title": "Customize BizCost",
