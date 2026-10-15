@@ -67,7 +67,7 @@ const NULL_PROFIT = {
 } as const
 
 /** A sum as the DTO gives it: the sales figures always, the rest only when profit is shown. */
-function partsOf(sum: RealProfitSum, shown: boolean): ProfitPartsDto {
+export function partsOf(sum: RealProfitSum, shown: boolean): ProfitPartsDto {
   const sales = {
     sales: sum.sales,
     itemSales: sum.itemSales,
@@ -98,35 +98,66 @@ function periodEnd(from: string): string {
   return `${month}-${String(Math.min(day, last)).padStart(2, '0')}`
 }
 
-/** Names of the products, channels and branches a report names (as they are now). */
+/** What a report shows of a group it names (as it is now). */
+interface GroupName {
+  name: string
+  unit: string | null
+  kind: string | null
+  /** By order: its customer's name. */
+  customerName: string | null
+  /** How it sorts by name (an order: by its number's integer). */
+  sortName: string
+}
+
+/** Names of the products, channels, branches and orders a report names (as they are now). */
 async function namesOf(
   tx: Tx,
   businessId: string,
   grouping: SummaryInput['groupBy'],
   keys: readonly string[],
-): Promise<Map<string, { name: string; unit: string | null; kind: string | null }>> {
+): Promise<Map<string, GroupName>> {
   const ids = keys.filter((k) => /^[0-9a-f-]{36}$/.test(k))
-  const result = new Map<string, { name: string; unit: string | null; kind: string | null }>()
+  const result = new Map<string, GroupName>()
   if (ids.length === 0) return result
+  const named = (name: string, unit: string | null = null, kind: string | null = null) => ({
+    name,
+    unit,
+    kind,
+    customerName: null,
+    sortName: name.toLowerCase(),
+  })
   const list = sql`${`{${ids.join(',')}}`}::text::uuid[]`
   if (grouping === 'product') {
     const rows = (await tx.execute(sql`
       select p.id, p.name, p.unit from app.products_services p
        where p.business_id = ${businessId} and p.id = any(${list})
     `)) as unknown as { id: string; name: string; unit: string }[]
-    for (const r of rows) result.set(r.id, { name: r.name, unit: r.unit, kind: null })
+    for (const r of rows) result.set(r.id, named(r.name, r.unit))
   } else if (grouping === 'channel') {
     const rows = (await tx.execute(sql`
       select c.id, c.name, c.kind from app.sales_channels c
        where c.business_id = ${businessId} and c.id = any(${list})
     `)) as unknown as { id: string; name: string; kind: string }[]
-    for (const r of rows) result.set(r.id, { name: r.name, unit: null, kind: r.kind })
+    for (const r of rows) result.set(r.id, named(r.name, null, r.kind))
   } else if (grouping === 'branch') {
     const rows = (await tx.execute(sql`
       select l.id, l.name from app.locations l
        where l.business_id = ${businessId} and l.id = any(${list})
     `)) as unknown as { id: string; name: string }[]
-    for (const r of rows) result.set(r.id, { name: r.name, unit: null, kind: null })
+    for (const r of rows) result.set(r.id, named(r.name))
+  } else if (grouping === 'order') {
+    const rows = (await tx.execute(sql`
+      select o.id, o.number, o.seq, c.name as customer_name from app.orders o
+        left join app.customers c on c.business_id = o.business_id and c.id = o.customer_id
+       where o.business_id = ${businessId} and o.id = any(${list})
+    `)) as unknown as { id: string; number: string; seq: number; customer_name: string | null }[]
+    for (const r of rows) {
+      result.set(r.id, {
+        ...named(r.number),
+        customerName: r.customer_name,
+        sortName: String(r.seq).padStart(12, '0'),
+      })
+    }
   }
   return result
 }
@@ -216,7 +247,8 @@ async function summarize(
       quantity: input.groupBy === 'product' && named ? group.quantity : null,
       unit: named?.unit ?? null,
       channelKind: named?.kind ?? null,
-      sortName: (named?.name ?? group.key).toLowerCase(),
+      customerName: named?.customerName ?? null,
+      sortName: named?.sortName ?? group.key.toLowerCase(),
     }
   })
   if (input.show === 'loss')

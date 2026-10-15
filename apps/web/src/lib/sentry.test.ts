@@ -34,6 +34,30 @@ describe('scrub', () => {
     })
   })
 
+  it('replaces customers’ personal data (M3 Step 5)', () => {
+    expect(
+      scrub({
+        qty: '2',
+        customerName: 'Mariam',
+        customer: { name: 'Mariam', id: 'c1' },
+        phone: '050 123 4567',
+        email: 'm@example.test',
+        trn: '100000000000003',
+        tradeLicenceNo: 'TL-1',
+        addressLine: 'Villa 7',
+      }),
+    ).toEqual({
+      qty: '2',
+      customerName: '[redacted]',
+      customer: '[redacted]',
+      phone: '[redacted]',
+      email: '[redacted]',
+      trn: '[redacted]',
+      tradeLicenceNo: '[redacted]',
+      addressLine: '[redacted]',
+    })
+  })
+
   it('replaces credentials', () => {
     expect(scrub({ Authorization: 'Bearer x', cookie: 'sb=1', accessToken: 't' })).toEqual({
       Authorization: '[redacted]',

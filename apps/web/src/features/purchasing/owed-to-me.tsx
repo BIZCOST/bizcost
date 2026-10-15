@@ -160,6 +160,7 @@ function OwedRow({ item, href }: { item: MinePayableDto; href: string | null }) 
 /** Amounts owed → "Owed to me": the totals, then every purchase and expense the member paid. */
 export function OwedToMeList() {
   const { t } = useTranslation()
+  const money = useMoney()
   const trpc = useTRPC()
   const hrefOf = useDocumentHref()
   const list = useInfiniteQuery(
@@ -171,7 +172,8 @@ export function OwedToMeList() {
   if (list.isError && !first) {
     return <LoadError error={list.error} onRetry={() => void list.refetch()} />
   }
-  if (!first || items.length === 0) {
+  // Money back a member received for the business counts even when nothing is owed to them (Q18).
+  if (!first || (items.length === 0 && compareDecimal(first.moneyBack, '0') <= 0)) {
     return (
       <ListEmpty
         icon={HandCoinsIcon}
@@ -201,14 +203,33 @@ export function OwedToMeList() {
           </dd>
         </div>
       </dl>
-      <ul
-        aria-label={t('purchasing.payables.toMe')}
-        className="divide-y overflow-hidden rounded-2xl bg-card shadow-sm ring-1 ring-foreground/[0.06]"
-      >
-        {items.map((item) => (
-          <OwedRow key={`${item.kind}:${item.documentId}`} item={item} href={hrefOf(item)} />
-        ))}
-      </ul>
+      {compareDecimal(first.moneyBack, '0') > 0 ? (
+        <p
+          data-money-back-mine
+          className="rounded-2xl bg-card px-4 py-3 text-sm shadow-sm ring-1 ring-foreground/[0.06] sm:px-5"
+        >
+          {t('purchasing.moneyBack.mineHolds', { amount: money(first.moneyBack, first.currency) })}{' '}
+          <span className="font-medium">
+            {compareDecimal(first.owedAfterMoneyBack, '0') < 0
+              ? t('purchasing.moneyBack.mineOwesBack', {
+                  amount: money(first.owedAfterMoneyBack.replace(/^-/, ''), first.currency),
+                })
+              : t('purchasing.moneyBack.mineOwedAfter', {
+                  amount: money(first.owedAfterMoneyBack, first.currency),
+                })}
+          </span>
+        </p>
+      ) : null}
+      {items.length > 0 ? (
+        <ul
+          aria-label={t('purchasing.payables.toMe')}
+          className="divide-y overflow-hidden rounded-2xl bg-card shadow-sm ring-1 ring-foreground/[0.06]"
+        >
+          {items.map((item) => (
+            <OwedRow key={`${item.kind}:${item.documentId}`} item={item} href={hrefOf(item)} />
+          ))}
+        </ul>
+      ) : null}
       {list.isError ? (
         <LoadError error={list.error} onRetry={() => void list.fetchNextPage()} />
       ) : list.hasNextPage ? (

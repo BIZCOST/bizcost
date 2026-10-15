@@ -39,15 +39,16 @@ select tables_are(
     'recipes', 'recipe_lines', 'purchase_payments',
     'cost_categories', 'expenses', 'expense_payments', 'running_costs',
     'sales_channels', 'sales', 'sale_lines', 'sale_line_materials',
-    'sale_imports', 'sale_import_rows', 'import_profiles', 'product_aliases', 'channel_statements'
+    'sale_imports', 'sale_import_rows', 'import_profiles', 'product_aliases', 'channel_statements',
+    'customers', 'document_counters', 'orders', 'order_lines', 'customer_payments'
   ],
   'app contains exactly the Milestone 1 and M2 tables and those of M3 so far'
 );
 
 select is(
   (select count(*)::int from business_tables),
-  41,
-  'sanity: 41 app tables carry business_id (the checks below are not vacuous)'
+  46,
+  'sanity: 46 app tables carry business_id (the checks below are not vacuous)'
 );
 
 -- 2. Row level security ---------------------------------------------------------

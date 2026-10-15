@@ -305,13 +305,15 @@ async function lockLines(tx: Tx, businessId: string, lineIds: readonly string[])
      order by l.id
        for no key update
   `)
-  // A new statement: it sees what a fill that held these lines committed.
+  // A new statement: it sees what a fill that held these lines committed. A refund's line (M3 Step
+  // 5) is priced as of the day of the sale it takes back, so it mirrors that sale's cost.
   return (await tx.execute(sql`
-    select l.id, s.business_date::text as business_date, l.cost_basis,
+    select l.id, coalesce(o.business_date, s.business_date)::text as business_date, l.cost_basis,
            trim_scale(l.cost)::text as cost, trim_scale(l.time_minutes)::text as time_minutes,
            trim_scale(l.time_cost)::text as time_cost
       from app.sale_lines l
       join app.sales s on s.business_id = l.business_id and s.id = l.sale_id
+      left join app.sales o on o.business_id = s.business_id and o.id = s.refund_of_id
      where l.business_id = ${businessId} and l.id = any(${uuidArray(ids)})
      order by l.id
   `)) as unknown as FillLineRecord[]

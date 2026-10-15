@@ -25,15 +25,15 @@ import { ProductSheet } from '@/features/catalog/product-sheet'
 import { useBusinessDate, useMoney } from '@/features/documents/amounts'
 import { closedFor, firstOpenDay } from '@/features/documents/books'
 import { ConfirmDialog } from '@/features/documents/confirm-dialog'
-import { MoneyInput } from '@/features/documents/line-editor'
 import { Panel } from '@/features/documents/panel'
 import { StatusBadge } from '@/features/documents/status-badge'
 import { Totals } from '@/features/documents/totals'
+import { CustomerPicker } from '@/features/customers/customer-picker'
+import { mayAddCustomers, mayPickCustomers } from '@/features/customers/data'
 import { hasModule } from '@/features/purchasing/data'
 import { can } from '@/features/settings/sections'
 import { useTerminology } from '@/lib/i18n/client'
 import { useBusinessContext } from '@/lib/trpc/client'
-import { cn } from '@/lib/utils'
 import {
   defaultChannelId,
   useAllProducts,
@@ -51,6 +51,7 @@ import {
   type SaleDraft,
   type SaleFields,
 } from './sale-draft'
+import { DeliveryFields } from './delivery-fields'
 import { ItemLineRow } from './sale-lines'
 
 // One sale («عملية بيع», M3 Step 2; Q9, D-230): a new one or a saved draft, for a job or a single
@@ -98,6 +99,9 @@ export function SaleEditor({
       ? 'offered'
       : 'none'
   const seesCosts = context?.visibleCategories.includes('cost') === true
+  // M3 Step 5: the customer of One sale, and "They'll pay later" (Q17), while their modules are on.
+  const customersShown = context !== undefined && mayPickCustomers(context)
+  const payLaterOffered = customersShown && context !== undefined && hasModule(context, 'payments')
   const { channels } = useChannels()
   const { products: loaded, ready: productsReady } = useAllProducts(canSeeProducts)
   const create = useMutation(trpc.sale.create.mutationOptions())
@@ -463,6 +467,52 @@ export function SaleEditor({
           </div>
         </Panel>
 
+        {customersShown ? (
+          <Panel title={t('orders.editor.forWhom')}>
+            <div className="space-y-4">
+              <TextField
+                label={t('orders.customers.picker.label')}
+                hint={(id) => (
+                  <p id={id} className="text-sm text-muted-foreground">
+                    {t('orders.customers.picker.saleHint')}
+                  </p>
+                )}
+                render={(a11y) => (
+                  <CustomerPicker
+                    value={draft.customer}
+                    label={t('orders.customers.picker.label')}
+                    describedBy={a11y['aria-describedby']}
+                    canAdd={mayAddCustomers(context)}
+                    onChange={(customer) =>
+                      set({ customer, payLater: customer ? draft.payLater : false })
+                    }
+                  />
+                )}
+              />
+              {payLaterOffered ? (
+                <div className="flex items-start justify-between gap-4 rounded-xl border bg-background/60 p-4">
+                  <div className="min-w-0">
+                    <label htmlFor={`${deliveryId}-later`} className="text-sm font-medium">
+                      {t('orders.payLater.label')}
+                    </label>
+                    <p className="mt-0.5 text-sm text-muted-foreground">
+                      {draft.customer
+                        ? t('orders.payLater.hint')
+                        : t('orders.payLater.needsCustomer')}
+                    </p>
+                  </div>
+                  <Switch
+                    id={`${deliveryId}-later`}
+                    checked={draft.payLater && draft.customer !== null}
+                    disabled={draft.customer === null}
+                    onCheckedChange={(payLater) => set({ payLater })}
+                  />
+                </div>
+              ) : null}
+            </div>
+          </Panel>
+        ) : null}
+
         <Panel title={t('sales.editor.items')}>
           {!canSeeProducts ? (
             <FormAlert tone="info" className="mb-3">
@@ -504,99 +554,15 @@ export function SaleEditor({
           </div>
         </Panel>
 
-        <Panel title={t('sales.editor.delivery')}>
-          <fieldset>
-            <legend className="mb-2 text-sm font-medium">
-              {t('sales.editor.deliveryQuestion')}
-            </legend>
-            <div className="grid max-w-xs grid-cols-2 gap-1 rounded-lg bg-muted p-1">
-              {[false, true].map((needed) => (
-                <label key={String(needed)} className="relative min-w-0">
-                  <input
-                    type="radio"
-                    name={`${deliveryId}-needed`}
-                    value={needed ? 'yes' : 'no'}
-                    checked={draft.deliveryNeeded === needed}
-                    onChange={() => set({ deliveryNeeded: needed })}
-                    className="peer sr-only"
-                  />
-                  <span
-                    className={cn(
-                      'flex min-h-11 cursor-pointer items-center justify-center rounded-md px-2 py-1.5 text-sm font-medium text-muted-foreground transition-colors',
-                      'peer-checked:bg-card peer-checked:text-foreground peer-checked:shadow-sm',
-                      'peer-focus-visible:ring-3 peer-focus-visible:ring-ring',
-                    )}
-                  >
-                    {needed ? t('sales.editor.deliveryYes') : t('sales.editor.deliveryNo')}
-                  </span>
-                </label>
-              ))}
-            </div>
-          </fieldset>
-          {draft.deliveryNeeded ? (
-            <div data-delivery className="mt-4 grid gap-4 sm:grid-cols-2">
-              <TextField
-                label={t('sales.editor.deliveryArea')}
-                autoComplete="off"
-                className="[unicode-bidi:plaintext]"
-                placeholder={t('sales.editor.deliveryAreaPlaceholder')}
-                value={draft.deliveryArea}
-                onChange={(event) => set({ deliveryArea: event.target.value })}
-                error={shown(check.errors.deliveryArea)}
-              />
-              <TextField
-                label={t('sales.editor.deliveryCharged')}
-                error={shown(check.errors.deliveryCharged)}
-                hint={(id) => (
-                  <p id={id} className="text-sm text-muted-foreground">
-                    {t('sales.editor.deliveryChargedHint')}
-                  </p>
-                )}
-                render={(a11y) => (
-                  <MoneyInput
-                    id={a11y.id}
-                    invalid={a11y['aria-invalid']}
-                    describedBy={a11y['aria-describedby']}
-                    value={draft.deliveryCharged}
-                    onChange={(deliveryCharged) => set({ deliveryCharged })}
-                  />
-                )}
-              />
-              {vatRegistered ? (
-                <div className="flex items-center justify-between gap-4 sm:col-start-2">
-                  <label htmlFor={`${deliveryId}-vat`} className="text-sm">
-                    {t('sales.editor.deliveryIncludesVat')}
-                  </label>
-                  <Switch
-                    id={`${deliveryId}-vat`}
-                    checked={draft.deliveryIncludesVat}
-                    onCheckedChange={(deliveryIncludesVat) => set({ deliveryIncludesVat })}
-                  />
-                </div>
-              ) : null}
-              {deliveryCostShown ? (
-                <TextField
-                  label={t('sales.editor.deliveryCost')}
-                  error={shown(check.errors.deliveryCost)}
-                  hint={(id) => (
-                    <p id={id} className="text-sm text-muted-foreground">
-                      {t('sales.editor.deliveryCostHint')}
-                    </p>
-                  )}
-                  render={(a11y) => (
-                    <MoneyInput
-                      id={a11y.id}
-                      invalid={a11y['aria-invalid']}
-                      describedBy={a11y['aria-describedby']}
-                      value={draft.deliveryCost}
-                      onChange={(deliveryCost) => set({ deliveryCost })}
-                    />
-                  )}
-                />
-              ) : null}
-            </div>
-          ) : null}
-        </Panel>
+        <DeliveryFields
+          draft={draft}
+          errors={check.errors}
+          shown={shown}
+          vatRegistered={vatRegistered}
+          costShown={deliveryCostShown}
+          question={t('sales.editor.deliveryQuestion')}
+          onChange={set}
+        />
 
         <Panel title={t('purchasing.totals.title')}>
           <Totals

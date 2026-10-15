@@ -51,6 +51,12 @@ const TRPC_CODE_OF: Record<AppErrorCode, TRPC_ERROR_CODE_KEY> = {
   import_unmatched: 'CONFLICT',
   import_replace_partial: 'CONFLICT',
   statement_overlap: 'CONFLICT',
+  sale_has_payments: 'CONFLICT',
+  sale_has_refunds: 'CONFLICT',
+  exceeds_sale: 'BAD_REQUEST',
+  order_cancelled: 'CONFLICT',
+  below_paid: 'BAD_REQUEST',
+  payment_has_money_back: 'CONFLICT',
   internal: 'INTERNAL_SERVER_ERROR',
 }
 

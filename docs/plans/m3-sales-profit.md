@@ -460,7 +460,7 @@ Release rule:
     - `import.spec.ts` (AR/EN).
   - Depends on: Step 3.
 
-- [ ] **Step 5: Customers, Orders with delivery, customer payments, refunds and what customers owe** (APPROVED; decisions Q2, Q16–Q20).
+- [x] **Step 5: Customers, Orders with delivery, customer payments, refunds and what customers owe** (DONE 2026-10-15; decisions Q2, Q16–Q20; built as D-263–D-271 (domain, data and API) and D-272 (screens), with the fixes of its review D-273 (server) and D-274 (screens). Checks at the end: `pnpm check --force` 31/31 tasks with 1,805 unit tests, `pnpm db:test` 1,516 pgTAP checks in 29 files + 59 database tests, `pnpm api:test` 2,804 tests in 93 files, `pnpm e2e` 147 passed; ROADMAP.md holds the status).
   - **Domain** (moved here from Step 1, S1):
     - `orderTransition` / `orderActions`: Pending → Delivered or Cancelled, and Undo delivery (Q16);
     - `paymentState`: paid, deposit, unpaid or overpaid, built from `outstandingOf` / `overpaidOf` (D-160);

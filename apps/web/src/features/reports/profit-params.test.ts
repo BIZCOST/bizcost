@@ -60,6 +60,16 @@ describe('Real profit in the address', () => {
     expect(read('by=branch').by).toBe('branch')
     expect(groupChoices(SALES_ONLY)).toEqual(['month', 'week', 'product', 'channel', 'day'])
     expect(groupChoices(OWNER)).toEqual(['month', 'week', 'product', 'channel', 'branch', 'day'])
+    // M3 Step 5: by order, with Orders on.
+    expect(groupChoices({ ...OWNER, orders: true })).toEqual([
+      'month',
+      'week',
+      'product',
+      'channel',
+      'branch',
+      'order',
+      'day',
+    ])
   })
 
   it('drops the days of a period that is not chosen, and a new grouping starts in its own order', () => {

@@ -29,7 +29,7 @@ import { useLocale, useTerminology } from '@/lib/i18n/client'
 import { useBusinessContext } from '@/lib/trpc/client'
 import { cn } from '@/lib/utils'
 import { COSTS_READY_HIDDEN_COOKIE, PROFIT_READY_HIDDEN_COOKIE } from './all-set-cookie'
-import { DecisionCards, hasCards } from './cards'
+import { DecisionCards, hasCards, hasOrderCards, OrderCards } from './cards'
 import { AllSet, Checklist, ChecklistSkeleton } from './checklist'
 import { progressOf } from './checklist-steps'
 import { CostChecklist, CostsReady } from './cost-checklist'
@@ -307,6 +307,10 @@ function DashboardView({ businessId }: { businessId: string }) {
         ) : null}
         {showCards ? (
           <DecisionCards cards={cardsData} businessId={businessId} context={context} />
+        ) : null}
+        {/* M3 Step 5: Recent orders and What customers owe, whether or not anything sold yet. */}
+        {server.cardsServed && hasOrderCards(cardsData) ? (
+          <OrderCards cards={cardsData} businessId={businessId} context={context} />
         ) : null}
         {failed ? (
           <LoadError error={checklist.error} onRetry={() => void checklist.refetch()} />

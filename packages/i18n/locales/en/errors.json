@@ -20,7 +20,7 @@
   "only_location_of_products": "Some products or services are sold only at this branch. In Products & Services, choose other branches for them first, then remove it.",
   "name_taken": "You already have one with this name. Use another name, or find it in your list (archived ones too).",
   "file_invalid": "Use a PNG, JPG or WebP image of up to 2 MB.",
-  "attachment_invalid": "Use a photo (PNG, JPG or WebP) or a PDF of up to 10\u00a0MB.",
+  "attachment_invalid": "Use a photo (PNG, JPG or WebP) or a PDF of up to 10 MB.",
   "books_closed": "The books are closed up to this date. Use a later date, or open the books again in Settings.",
   "future_date": "This date is after today. Choose today or an earlier date.",
   "document_posted": "This is final and can't be changed. To fix it, reverse or correct it.",
@@ -45,5 +45,11 @@
   "already_imported": "This file was already imported. To bring it in again, reverse that import first.",
   "import_unmatched": "Some names in this file aren't settled yet. Match each one, add it as new, or mark it as not something you sell, then finalize.",
   "import_replace_partial": "A day you replace is part of an earlier file's sales of several days, and this file doesn't have all of them. Reverse that import first, or keep the days already imported.",
-  "statement_overlap": "A final statement of this channel already covers some of these days. Reverse it first, or change the days."
+  "statement_overlap": "A final statement of this channel already covers some of these days. Reverse it first, or change the days.",
+  "sale_has_payments": "This sale has payments recorded on it. Reverse the payments first, then try again.",
+  "sale_has_refunds": "This sale has refunds. Reverse the refunds first, then try again.",
+  "exceeds_sale": "That's more than is left of this sale to refund. Check the quantity or the amount.",
+  "order_cancelled": "This order was cancelled, so it can't be changed, delivered or paid. Money given back is still recorded.",
+  "below_paid": "The order's total can't be less than what the customer already paid. Give money back first, or keep the total.",
+  "payment_has_money_back": "Money was given back to the customer from this payment. Reverse the money given back first, then the payment."
 }

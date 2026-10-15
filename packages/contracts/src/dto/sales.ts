@@ -1,7 +1,9 @@
 import {
   checkDecimal,
   compareDecimal,
+  CREDIT_BY,
   DOCUMENT_STATUSES,
+  PAYMENT_STATES,
   SALE_COST_BASES,
   SALE_LINE_KINDS,
   SALE_LINE_QTY_MAX,
@@ -11,6 +13,7 @@ import {
   VAT_CATEGORIES,
 } from '@bizcost/domain'
 import { z } from 'zod'
+import { REFUND_LINES_MAX } from '../customers'
 import { withMeta } from '../envelope'
 import { DOCUMENT_PAGE_SIZE, DOCUMENT_PAGE_SIZE_MAX } from '../purchasing'
 import { zBusinessDate, zDecimal, zUuid } from '../primitives'
@@ -23,7 +26,15 @@ import {
 } from '../sales'
 import { sensitive } from '../sensitivity'
 import { nameInput, standardUnitDto } from './catalog'
-import { discountDto, discountInput, moneyInput, notesInput, percentInput } from './purchases'
+import {
+  discountDto,
+  discountInput,
+  moneyInput,
+  notesInput,
+  percentInput,
+  positiveMoneyInput,
+  settlementMethodDto,
+} from './purchases'
 import { optionalLine } from './suppliers'
 
 // Sales (ROADMAP.md M3 Step 2; docs/DATA_MODEL.md §6; D-219–D-222, D-225–D-232): the business's sales
@@ -172,6 +183,16 @@ const saleFields = {
    */
   deliveryCost: moneyInput.nullish(),
   notes: notesInput,
+  /**
+   * One sale only (M3 Step 5): the customer (a live one of the business; null: none named). Needs
+   * Customers on (MODULE_DISABLED) and a key that names customers.
+   */
+  customerId: zUuid.nullable().default(null),
+  /**
+   * One sale only: "They'll pay later" (Q17): what it comes to is owed by its customer (it needs one)
+   * until paid through customer payments. Otherwise a sale is paid when made. Needs Payments on.
+   */
+  payLater: z.boolean().default(false),
   /** In their order on the sale; every item line names something sold (Q9). Ids are client UUIDv7s. */
   lines: z
     .array(saleLineInput)
@@ -199,25 +220,125 @@ function deliveryFits(sale: {
 }
 const deliveryMessage = { message: 'delivery area, cost and charge go with a sale with delivery' }
 
+/** "They'll pay later" needs the customer who will. */
+const payLaterFits = (sale: { payLater: boolean; customerId: string | null }) =>
+  !sale.payLater || sale.customerId !== null
+const payLaterMessage = { message: 'payLater needs the customer' }
+
+/** How a sale may be entered: Today's sales or One sale (orders, refunds and imports post their own). */
+export const enteredSaleSourceDto = z.enum(['day_sheet', 'single'])
+
 /**
  * `sale.create` (a draft): idempotent on the client's `id`. `day_sheet`: Today's sales, items only,
- * no delivery; one live sheet per member × days × channel × location (CONFLICT for a second; ask
- * `sale.daySheet`, which opens it). `periodFrom` only on a day sheet.
+ * no delivery, no customer; one live sheet per member × days × channel × location (CONFLICT for a
+ * second; ask `sale.daySheet`, which opens it). `periodFrom` only on a day sheet.
  */
 export const createSaleInput = z
-  .object({ id: zUuid, source: saleSourceDto, ...saleFields })
+  .object({ id: zUuid, source: enteredSaleSourceDto, ...saleFields })
   .refine(deliveryFits, deliveryMessage)
+  .refine(payLaterFits, payLaterMessage)
   .refine(
     (sale) => (sale.source === 'day_sheet' ? !sale.deliveryNeeded : sale.periodFrom === null),
     { message: 'a day sheet has no delivery; only a day sheet covers several days' },
   )
+  .refine((sale) => sale.source === 'single' || (sale.customerId === null && !sale.payLater), {
+    message: 'a day sheet names no customer',
+  })
 export type CreateSaleInput = z.input<typeof createSaleInput>
 
 /** `sale.update` (a draft only): the whole sale, `version` as read. Its source never changes. */
 export const updateSaleInput = z
   .object({ id: zUuid, version: z.int().positive(), ...saleFields })
   .refine(deliveryFits, deliveryMessage)
+  .refine(payLaterFits, payLaterMessage)
 export type UpdateSaleInput = z.input<typeof updateSaleInput>
+
+/** One line a refund takes back: by quantity (`qty`) or by amount (`amount`), as the refund says. */
+export const refundLineInput = z.object({
+  /** The line of the sale refunded. */
+  lineId: zUuid,
+  /** By quantity: how much of it comes back (at most what is left). */
+  qty: saleQtyInput.optional(),
+  /** By amount: what it is cut by, typed like its prices (at most what is left of its value). */
+  amount: moneyInput.optional(),
+})
+
+/**
+ * `sale.refund` (M3 Step 5): a negative sale linked to the finalized sale it refunds (`saleId`), or to
+ * a delivered order's sale (`orderId`): by quantity (goods returned: it takes off the line's frozen
+ * cost of what was sold for that quantity) or by amount (a price cut: it takes off no cost). Never more
+ * than is left of a line (EXCEEDS_SALE); each later refund starts from what the earlier ones left. Its
+ * day (default today) is never after today nor on or before the books-closed date. `payment`: the
+ * money given back with it, on the order or the sale "they'll pay later" (payments.customers.record).
+ * Idempotent on the client's `id`.
+ */
+export const refundSaleInput = z
+  .object({
+    id: zUuid,
+    saleId: zUuid.optional(),
+    orderId: zUuid.optional(),
+    by: z.enum(CREDIT_BY),
+    businessDate: zBusinessDate.optional(),
+    lines: z
+      .array(refundLineInput)
+      .min(1)
+      .max(REFUND_LINES_MAX)
+      .refine((lines) => new Set(lines.map((l) => l.lineId)).size === lines.length, {
+        message: 'a line twice',
+      }),
+    notes: notesInput,
+    payment: z
+      .object({
+        id: zUuid,
+        method: settlementMethodDto,
+        amount: positiveMoneyInput,
+      })
+      .nullish()
+      .transform((value) => value ?? null),
+  })
+  .refine((input) => (input.saleId === undefined) !== (input.orderId === undefined), {
+    message: 'exactly one of saleId and orderId',
+  })
+  .refine(
+    (input) =>
+      input.lines.every((l) =>
+        input.by === 'quantity'
+          ? l.qty !== undefined && l.amount === undefined
+          : l.amount !== undefined && l.qty === undefined,
+      ),
+    { message: 'by quantity: each line its qty; by amount: each line its amount' },
+  )
+export type RefundSaleInput = z.input<typeof refundSaleInput>
+
+/**
+ * What a document "they'll pay later" (an order, or a sale with payLater) is paid and owes (Q17; one
+ * figure per obligation, A2): it comes to `total` (an order: 0 once cancelled), less its refunds
+ * (`credited`, with VAT); `paid` is the payments that stand, `refunded` the money given back; `owed`
+ * what is still owed, `overpaid` what was paid beyond it ("money back to the customer"). Never a field
+ * named balance.
+ */
+export const documentPaymentStateDto = z.object({
+  state: z.enum(PAYMENT_STATES),
+  total: zDecimal,
+  credited: zDecimal,
+  paid: zDecimal,
+  refunded: zDecimal,
+  owed: zDecimal,
+  overpaid: zDecimal,
+})
+export type DocumentPaymentStateDto = z.infer<typeof documentPaymentStateDto>
+
+/** A refund of a sale (sale.refund): its day, how it took back, and what it came to. */
+export const refundSummaryDto = z.object({
+  id: zUuid,
+  businessDate: zBusinessDate,
+  by: z.enum(CREDIT_BY),
+  /** What it gives back (with VAT), as a positive amount. */
+  total: zDecimal,
+  /** `reversed`: taken back itself. */
+  status: z.enum(['posted', 'reversed']),
+})
+export type RefundSummaryDto = z.infer<typeof refundSummaryDto>
 
 /** `sale.get`, `sale.reverse`. */
 export const saleIdInput = z.object({ id: zUuid })
@@ -249,6 +370,8 @@ export const saleListInput = z
     source: saleSourceDto.optional(),
     channelId: zUuid.optional(),
     locationId: zUuid.optional(),
+    /** A customer's sales (M3 Step 5): those that name them (an order's sale and refunds too). */
+    customerId: zUuid.optional(),
     /** Business days from and to (both included). */
     from: zBusinessDate.optional(),
     to: zBusinessDate.optional(),
@@ -334,6 +457,22 @@ export const saleLineDto = z.object({
    * member who may not see what goes into each product (products.recipes.view, D-150).
    */
   materials: sensitive(z.array(saleLineMaterialDto).nullable(), 'cost'),
+  /** A refund's line: the line of the sale it takes back. */
+  refundOfLineId: zUuid.nullable(),
+  /**
+   * A finalized sale's line (not a refund's): what its refunds that stand leave of it, as positive
+   * amounts (`typed`: its value as its prices are typed, with VAT when they include it). Null for a
+   * draft or a refund.
+   */
+  left: z
+    .object({
+      qty: zDecimal,
+      net: zDecimal,
+      vat: zDecimal,
+      total: zDecimal,
+      typed: zDecimal,
+    })
+    .nullable(),
 })
 export type SaleLineDto = z.infer<typeof saleLineDto>
 
@@ -384,6 +523,25 @@ export const saleDto = z.object({
    * its import (a day, or the whole file), never on its own.
    */
   importId: zUuid.nullable(),
+  /** The customer it names (M3 Step 5), their name as it is now and their phone's last 4 digits. */
+  customerId: zUuid.nullable(),
+  customerName: z.string().nullable(),
+  customerPhoneLast4: z.string().nullable(),
+  /** "They'll pay later": owed by its customer until paid (customer payments). */
+  payLater: z.boolean(),
+  /** An order's sale (source order), and a refund of one: the order and its number. */
+  orderId: zUuid.nullable(),
+  orderNumber: z.string().nullable(),
+  /** A refund: the sale it takes back, and how (by quantity or amount). */
+  refundOfId: zUuid.nullable(),
+  refundBy: z.enum(CREDIT_BY).nullable(),
+  /** The refunds of this sale, newest first (none for a draft or a refund). */
+  refunds: z.array(refundSummaryDto),
+  /**
+   * A sale "they'll pay later": what it is paid and owes (null otherwise, and without
+   * payments.customers.view or with Payments off). An order's sale owes nothing: its order does.
+   */
+  payment: documentPaymentStateDto.nullable(),
   createdAt: isoTimestamp,
   version: z.int().positive(),
 })
@@ -413,6 +571,11 @@ export const saleListItemDto = z.object({
   /** Who entered it; null without a team. */
   enteredByName: z.string().nullable(),
   mine: z.boolean(),
+  /** M3 Step 5: its customer's name, its order's number, the sale a refund takes back. */
+  customerName: z.string().nullable(),
+  orderNumber: z.string().nullable(),
+  refundOfId: zUuid.nullable(),
+  payLater: z.boolean(),
   version: z.int().positive(),
 })
 export type SaleListItemDto = z.infer<typeof saleListItemDto>

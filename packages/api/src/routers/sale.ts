@@ -8,6 +8,7 @@ import {
   daySheetInput,
   fillDeliveryCostInput,
   okDto,
+  refundSaleInput,
   saleIdInput,
   saleListDto,
   saleListInput,
@@ -30,6 +31,7 @@ import {
   reverseSale,
   updateSale,
 } from '../services/sales'
+import { refundSale } from '../services/refunds'
 import {
   archiveChannel,
   createChannel,
@@ -115,6 +117,17 @@ export const saleRouter = router({
     .input(correctSaleInput)
     .output(saleResultDto)
     .mutation(({ ctx, input }) => correctSale(ctx, input)),
+  /**
+   * `sale.refund` (M3 Step 5): a negative sale linked to the finalized sale (or delivered order) it
+   * refunds, by quantity or by amount, never more than is left. A sale's refund needs
+   * sales.documents.reverse; a delivered order's, Orders on and orders.documents.reverse (the service
+   * checks which). Idempotent on the client's id.
+   */
+  refund: salesModule
+    .use(requireAnyPermission('sales.documents.reverse', 'orders.documents.reverse'))
+    .input(refundSaleInput)
+    .output(saleResultDto)
+    .mutation(({ ctx, input }) => refundSale(ctx, input)),
   /**
    * `sale.fillDeliveryCost`: what a finalized sale's delivery actually cost, once, while missing
    * (.manage and the costs switch, D-230).

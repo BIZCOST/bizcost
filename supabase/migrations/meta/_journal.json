@@ -351,6 +351,41 @@
       "when": 1792056917409,
       "tag": "20261015093517_staged_rows_audit",
       "breakpoints": true
+    },
+    {
+      "idx": 50,
+      "version": "7",
+      "when": 1792064806986,
+      "tag": "20261015114646_orders_tables",
+      "breakpoints": true
+    },
+    {
+      "idx": 51,
+      "version": "7",
+      "when": 1792064820548,
+      "tag": "20261015114700_orders_security",
+      "breakpoints": true
+    },
+    {
+      "idx": 52,
+      "version": "7",
+      "when": 1792066167195,
+      "tag": "20261015120927_refund_delivery_line",
+      "breakpoints": true
+    },
+    {
+      "idx": 53,
+      "version": "7",
+      "when": 1792078853654,
+      "tag": "20261015154053_order_undo_keeps_delivery_cost",
+      "breakpoints": true
+    },
+    {
+      "idx": 54,
+      "version": "7",
+      "when": 1792084787480,
+      "tag": "20261015171947_undone_order_sale_takes_no_cost",
+      "breakpoints": true
     }
   ]
 }

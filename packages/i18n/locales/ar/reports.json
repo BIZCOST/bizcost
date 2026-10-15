@@ -32,7 +32,8 @@
       "product": "المنتج",
       "product_services": "الخدمة",
       "channel": "القناة",
-      "branch": "الفرع"
+      "branch": "الفرع",
+      "order": "الطلب"
     },
     "show": {
       "label": "عرض",
@@ -163,7 +164,8 @@
       "removed": "لم يعد في القائمة",
       "incomplete": "غير مكتمل",
       "beforeRunning": "قبل المصاريف التشغيلية",
-      "parts": "أين ذهبت"
+      "parts": "أين ذهبت",
+      "noOrder": "ليست من طلب"
     },
     "empty": {
       "title": "لا مبيعات في هذه الأيام",

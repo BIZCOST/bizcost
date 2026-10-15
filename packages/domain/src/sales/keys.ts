@@ -52,9 +52,11 @@ export type SalesChannelPreset = (typeof SALES_CHANNEL_PRESETS)[number]['key']
  * `sales.source`: how a sale came in. M3 Step 2: Today's sales (`day_sheet`, one sheet per member,
  * day or days, channel and branch, Q10) and One sale (`single`, a job or one customer). M3 Step 4: a
  * file imported (`import`: one sale per day × branch × channel, a summary's days on its last day).
- * Later steps add `order`, `invoice` and `credit_note`.
+ * M3 Step 5: an order delivered (`order`: posted on its delivery day, reversed by undoing the
+ * delivery) and a refund (`refund`: a negative sale of the sale it takes back, by quantity or amount).
+ * Later steps add `invoice` and `credit_note`.
  */
-export const SALE_SOURCES = ['day_sheet', 'single', 'import'] as const
+export const SALE_SOURCES = ['day_sheet', 'single', 'import', 'order', 'refund'] as const
 export type SaleSource = (typeof SALE_SOURCES)[number]
 
 /**

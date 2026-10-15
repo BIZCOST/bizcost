@@ -8,9 +8,12 @@ import {
   BanknoteIcon,
   ChevronRightIcon,
   CircleAlertIcon,
+  ClipboardListIcon,
   SearchCheckIcon,
   TrendingDownIcon,
   TrendingUpIcon,
+  TruckIcon,
+  WalletIcon,
   type LucideIcon,
 } from 'lucide-react'
 import Link from 'next/link'
@@ -25,9 +28,11 @@ import { NBSP } from '@/features/catalog/units'
 import {
   useBusinessDate,
   useBusinessMonth,
+  useBusinessWeekday,
   useMoney,
   useUnitCost,
 } from '@/features/documents/amounts'
+import { OrderStatusBadge, PaymentBadge } from '@/features/orders/badges'
 import { hasModule } from '@/features/purchasing/data'
 import { can, sectionPath } from '@/features/settings/sections'
 import { useLocale, useTerminology } from '@/lib/i18n/client'
@@ -567,6 +572,225 @@ function NeedsLook({
   )
 }
 
+// ---------------------------------------------------------------------------------------------------
+// M3 Step 5: Recent orders, What customers owe, Delivery margin (D-270)
+// ---------------------------------------------------------------------------------------------------
+
+/** Whether the order cards have something to show: Orders or Payments served, on, and open. */
+export function hasOrderCards(cards: Cards | null | undefined): cards is Cards {
+  return Boolean(cards && (cards.recentOrders !== null || cards.customersOwe !== null))
+}
+
+/** "Recent orders" (the mockup: #1001, its first item, the amount, Pending / Delivered). */
+function RecentOrders({
+  orders,
+  href,
+  newHref,
+}: {
+  orders: NonNullable<Cards['recentOrders']>
+  href: string
+  newHref: string | null
+}) {
+  const { t } = useTranslation()
+  const weekday = useBusinessWeekday()
+  return (
+    <Card
+      id="recent-orders"
+      icon={ClipboardListIcon}
+      title={t('dashboard.cards.orders.title')}
+      action={
+        orders.length > 0 ? (
+          <More href={href} label={t('dashboard.cards.orders.open')} />
+        ) : undefined
+      }
+    >
+      {orders.length === 0 ? (
+        <div className="space-y-3 text-sm text-muted-foreground">
+          <p>{t('dashboard.cards.orders.none')}</p>
+          {newHref ? (
+            <Button asChild variant="outline" size="sm">
+              <Link href={newHref}>{t('common.nav.new_order')}</Link>
+            </Button>
+          ) : null}
+        </div>
+      ) : (
+        <ul className="-my-2 divide-y">
+          {orders.map((order) => (
+            <li key={order.id}>
+              <Link
+                href={`${href}/${order.id}`}
+                data-recent-order
+                className="flex items-start justify-between gap-3 py-2.5 outline-none hover:underline focus-visible:ring-3 focus-visible:ring-ring"
+              >
+                <span className="min-w-0">
+                  <span className="block font-medium break-words">
+                    <bdi dir="ltr">{order.number}</bdi>
+                    {order.itemName ? (
+                      <>
+                        {' · '}
+                        <bdi>{order.itemName}</bdi>
+                        {order.moreItems > 0 ? (
+                          <span className="font-normal text-muted-foreground">
+                            {' '}
+                            {t('dashboard.cards.orders.more', { count: order.moreItems })}
+                          </span>
+                        ) : null}
+                      </>
+                    ) : null}
+                  </span>
+                  <span className="mt-0.5 block text-sm text-muted-foreground">
+                    {order.customerName ? <bdi>{order.customerName}</bdi> : null}
+                    {order.customerName && order.dueDate && order.status === 'pending'
+                      ? ' · '
+                      : null}
+                    {order.dueDate && order.status === 'pending'
+                      ? t('dashboard.cards.orders.due', {
+                          date: weekday(order.dueDate).replaceAll(' ', NBSP),
+                        })
+                      : null}
+                  </span>
+                </span>
+                <span className="flex shrink-0 flex-col items-end gap-1">
+                  <Amount value={order.total} className="font-medium" />
+                  <span className="flex flex-wrap justify-end gap-1">
+                    <OrderStatusBadge status={order.status} />
+                    {order.paymentState && order.status !== 'cancelled' ? (
+                      <PaymentBadge
+                        state={order.paymentState}
+                        pending={order.status === 'pending'}
+                      />
+                    ) : null}
+                  </span>
+                </span>
+              </Link>
+            </li>
+          ))}
+        </ul>
+      )}
+    </Card>
+  )
+}
+
+/**
+ * "What customers owe": every customer's orders and sales they pay later (only sales without Orders,
+ * D-274).
+ */
+function CustomersOwe({
+  owe,
+  href,
+  salesOnly,
+}: {
+  owe: NonNullable<Cards['customersOwe']>
+  href: string
+  salesOnly: boolean
+}) {
+  const { t } = useTranslation()
+  const money = useMoney()
+  return (
+    <Tile
+      id="customers-owe"
+      icon={WalletIcon}
+      label={t('common.nav.receivables')}
+      value={nonZero(owe.owed) ? owe.owed : null}
+      words={t('dashboard.cards.owe.nothing')}
+      href={href}
+      lines={
+        <>
+          {owe.documents > 0 ? (
+            <p>
+              {t('dashboard.cards.owe.customers', { count: owe.customers })}
+              {' · '}
+              {t(salesOnly ? 'dashboard.cards.owe.sales' : 'dashboard.cards.owe.documents', {
+                count: owe.documents,
+              })}
+            </p>
+          ) : null}
+          {nonZero(owe.overpaid) ? (
+            <p className="text-warning">
+              {t('dashboard.cards.owe.back', {
+                amount: money(owe.overpaid).replaceAll(' ', NBSP),
+              })}
+            </p>
+          ) : null}
+        </>
+      }
+    />
+  )
+}
+
+/** "Delivery margin" this month: what customers were charged, what deliveries cost, the margin. */
+function DeliveryMargin({ margin }: { margin: NonNullable<Cards['deliveryMargin']> }) {
+  const { t } = useTranslation()
+  const money = useMoney()
+  const value = shown(margin.margin)
+  const cost = shown(margin.cost)
+  const said = (amount: string) => money(amount).replaceAll(' ', NBSP)
+  return (
+    <Card
+      id="delivery-margin"
+      icon={TruckIcon}
+      title={t('dashboard.cards.delivery.title')}
+      hint={t('dashboard.cards.delivery.deliveries', { count: margin.deliveries })}
+    >
+      <p
+        data-delivery-margin
+        className={cn('text-2xl font-semibold tracking-tight', isLoss(value) && 'text-loss')}
+      >
+        {value === null ? null : <Amount value={withoutMinus(value)} />}
+      </p>
+      <p className="text-sm text-muted-foreground">
+        {isLoss(value) ? t('dashboard.cards.delivery.lost') : t('dashboard.cards.delivery.earned')}
+      </p>
+      <div className="mt-2 space-y-0.5 text-sm text-muted-foreground">
+        <p>{t('dashboard.cards.delivery.charged', { amount: said(margin.charged) })}</p>
+        {cost !== null ? <p>{t('dashboard.cards.delivery.cost', { amount: said(cost) })}</p> : null}
+        {margin.notEntered > 0 ? (
+          <p className="text-warning">
+            {t('dashboard.cards.delivery.notEntered', { count: margin.notEntered })}
+          </p>
+        ) : null}
+      </div>
+    </Card>
+  )
+}
+
+/** The order cards (M3 Step 5): Recent orders and What customers owe, whatever was sold yet. */
+export function OrderCards({
+  cards,
+  businessId,
+  context,
+}: {
+  cards: Cards
+  businessId: string
+  context: BusinessContextDto
+}) {
+  const page = (path: string) => `/b/${businessId}/${path}`
+  const ordersOpen = moduleAccess(context.modules, 'orders', 'orders') === 'open'
+  const oweOpen = moduleAccess(context.modules, 'payments', 'receivables') === 'open'
+  const canEnter = hasModule(context, 'orders') && can(context, 'orders.documents.manage')
+  const recent = cards.recentOrders && ordersOpen ? cards.recentOrders : null
+  const owe = cards.customersOwe && oweOpen ? cards.customersOwe : null
+  if (!recent && !owe) return null
+  return (
+    <div data-order-cards className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+      {recent ? (
+        <RecentOrders
+          orders={recent}
+          href={page('orders')}
+          newHref={canEnter ? page('orders/new') : null}
+        />
+      ) : null}
+      {owe ? (
+        <CustomersOwe
+          owe={owe}
+          href={page('receivables')}
+          salesOnly={!hasModule(context, 'orders')}
+        />
+      ) : null}
+    </div>
+  )
+}
+
 /** The decision cards, for this month so far. */
 export function DecisionCards({
   cards,
@@ -771,6 +995,9 @@ export function DecisionCards({
           <Channels channels={cards.byChannel} />
         ) : null}
         {needsLook ? <NeedsLook look={needsLook} hrefs={lookHrefs} /> : null}
+        {cards.deliveryMargin && shown(cards.deliveryMargin.margin) !== null ? (
+          <DeliveryMargin margin={cards.deliveryMargin} />
+        ) : null}
       </div>
     </section>
   )

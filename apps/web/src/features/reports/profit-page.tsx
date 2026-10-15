@@ -29,6 +29,7 @@ import { useParams, usePathname, useRouter, useSearchParams } from 'next/navigat
 import { Fragment, useId, useState, type ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
 import { FormAlert } from '@/components/form/form-alert'
+import { isolate } from '@/components/form/use-message'
 import { ModuleGate } from '@/components/shell/module-gate'
 import { PageContainer } from '@/components/shell/page-container'
 import { LoadError } from '@/components/states/query-state'
@@ -119,6 +120,7 @@ function accessOf(context: BusinessContextDto): ProfitAccess {
       context.visibleCategories.includes('cost') &&
       context.visibleCategories.includes('profit_margin'),
     branches: context.capabilities.multi_location === true,
+    orders: context.modules.some((module) => module.id === 'orders'),
   }
 }
 
@@ -904,6 +906,12 @@ function useGroupName() {
         : t('reports.profit.table.week', { day: businessDate(group.key) })
     }
     if (by === 'day') return businessDate(group.key)
+    if (by === 'order') {
+      // Sales that came from no order are one group (M3 Step 5).
+      if (group.key === 'none') return t('reports.profit.table.noOrder')
+      const number = group.name ?? t('reports.profit.table.removed')
+      return group.customerName ? `${isolate(number)} · ${group.customerName}` : isolate(number)
+    }
     if (group.key === 'delivery') return t('reports.profit.table.deliveryRow')
     if (group.key === 'charge') return t('reports.profit.table.chargeRow')
     return group.name ?? t('reports.profit.table.removed')

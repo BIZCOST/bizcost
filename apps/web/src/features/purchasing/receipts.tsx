@@ -103,8 +103,35 @@ export function useUploadReceipt(entity: AttachmentEntity = 'purchase') {
 function recordKey(trpc: ReturnType<typeof useTRPC>, entity: AttachmentEntity, id: string) {
   return entity === 'expense'
     ? trpc.expense.get.queryKey({ id })
-    : trpc.purchase.get.queryKey({ id })
+    : entity === 'order'
+      ? trpc.order.get.queryKey({ id })
+      : trpc.purchase.get.queryKey({ id })
 }
+
+/** A record's words: a purchase's and an expense's receipts, an order's files (M3 Step 5). */
+const WORDS = {
+  purchase: {
+    title: 'purchasing.receipts.title',
+    attached: 'purchasing.receipts.attached',
+    removed: 'purchasing.receipts.removed',
+    none: 'purchasing.receipts.none',
+    removeBody: 'purchasing.receipts.removeBody',
+  },
+  expense: {
+    title: 'purchasing.receipts.title',
+    attached: 'purchasing.receipts.attached',
+    removed: 'purchasing.receipts.removed',
+    none: 'purchasing.receipts.none',
+    removeBody: 'purchasing.receipts.removeBodyExpense',
+  },
+  order: {
+    title: 'orders.files.title',
+    attached: 'orders.files.attached',
+    removed: 'orders.files.removed',
+    none: 'orders.files.none',
+    removeBody: 'orders.files.removeBody',
+  },
+} as const satisfies Record<AttachmentEntity, Record<string, I18nKey>>
 
 export class ReceiptError extends Error {
   constructor(readonly key: I18nKey) {
@@ -268,7 +295,7 @@ export function Receipts({
     setUploading(true)
     try {
       await upload(recordId, file)
-      toast.success(t('purchasing.receipts.attached'))
+      toast.success(t(WORDS[entity].attached))
     } catch (caught) {
       setError(caught instanceof ReceiptError ? caught.key : 'errors.internal')
     } finally {
@@ -280,7 +307,7 @@ export function Receipts({
     if (!removing) return
     try {
       await remove.mutateAsync({ id: removing.id })
-      toast.success(t('purchasing.receipts.removed'))
+      toast.success(t(WORDS[entity].removed))
       setRemoving(null)
     } catch (caught) {
       setError(apiErrorKey(caught))
@@ -296,9 +323,9 @@ export function Receipts({
       {list.isPending ? (
         <p className="text-sm text-muted-foreground">{t('status.loading')}</p>
       ) : items.length === 0 ? (
-        <p className="text-sm text-muted-foreground">{t('purchasing.receipts.none')}</p>
+        <p className="text-sm text-muted-foreground">{t(WORDS[entity].none)}</p>
       ) : (
-        <ul aria-label={t('purchasing.receipts.title')} className="space-y-2">
+        <ul aria-label={t(WORDS[entity].title)} className="space-y-2">
           {items.map((item) => (
             <li
               key={item.id}
@@ -355,11 +382,7 @@ export function Receipts({
             <AlertDialogTitle>
               {t('purchasing.receipts.removeTitle', { name: isolate(removing?.fileName ?? '') })}
             </AlertDialogTitle>
-            <AlertDialogDescription>
-              {entity === 'expense'
-                ? t('purchasing.receipts.removeBodyExpense')
-                : t('purchasing.receipts.removeBody')}
-            </AlertDialogDescription>
+            <AlertDialogDescription>{t(WORDS[entity].removeBody)}</AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel disabled={remove.isPending}>{t('actions.cancel')}</AlertDialogCancel>

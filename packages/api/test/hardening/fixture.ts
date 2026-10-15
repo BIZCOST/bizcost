@@ -1,5 +1,9 @@
 import { randomBytes } from 'node:crypto'
 import type {
+  CustomerDto,
+  CustomerPaymentDto,
+  DocumentPaymentsDto,
+  OrderDto,
   ChannelStatementDto,
   ImportProfileDto,
   ImportProfileListDto,
@@ -70,7 +74,9 @@ import { CapturedEmails, join, setupBusiness, WORKSHOP } from '../settings'
 // (D-125), as a local server does, and its procedures are attacked like the others. Each business
 // also has a sales channel of its own (with a commission %), a finalized sale with delivery charged and
 // its cost, and a draft of Today's sales. M3 Step 3: Reports is previewed too (profit.summary), and
-// the Dashboard's cards read the same sale.
+// the Dashboard's cards read the same sale. M3 Step 5: Customers, Payments and Orders are previewed
+// too; each business has a customer, a pending order with its deposit and its LPO, a delivered order
+// refunded by amount (with the money given back), and a One sale "they'll pay later" partly paid.
 
 export type Handler = ReturnType<typeof handlerFor>
 
@@ -90,9 +96,9 @@ export interface Api {
 
 /**
  * The modules still being built that the suites preview (D-125): Sales since M3 Step 2, Reports since
- * Step 3.
+ * Step 3, Customers, Payments and Orders since Step 5.
  */
-export const PREVIEW_MODULES = ['sales', 'reports'] as const
+export const PREVIEW_MODULES = ['customers', 'sales', 'payments', 'reports', 'orders'] as const
 
 /**
  * The API as deployed (secret key for Storage, emails kept instead of sent), with the modules still
@@ -278,6 +284,20 @@ export interface Tenant {
   draftImport: SaleImportDto
   /** The layout its file was imported with. */
   importProfile: ImportProfileDto
+  /** A customer of its own (M3 Step 5). */
+  customer: CustomerDto
+  /** A pending order of the customer (with an LPO reference), its deposit recorded. */
+  order: OrderDto
+  /** The deposit recorded with it. */
+  orderPayment: CustomerPaymentDto
+  /** A delivered order (its sale posted), refunded 5 by amount with the money given back. */
+  deliveredOrder: OrderDto
+  /** The refund of the delivered order's sale. */
+  refund: SaleDto
+  /** A One sale of the customer "they'll pay later", finalized, partly paid. */
+  payLaterSale: SaleDto
+  /** The payment recorded on it. */
+  salePayment: CustomerPaymentDto
 }
 
 function ok<T>(result: CallResult<T>, what: string): T {
@@ -774,6 +794,143 @@ export async function createTenant(api: Api, label: string): Promise<Tenant> {
     ok(await as('importProfile.list', 'query'), 'importProfile.list') as ImportProfileListDto
   ).items[0]!
 
+  // M3 Step 5: a customer, a pending order with its deposit, a delivered order refunded by amount,
+  // and a One sale "they'll pay later" partly paid.
+  const customer = ok(
+    await as('customer.create', 'mutation', {
+      id: newId(),
+      name: `Customer ${label} ${tag}`,
+      kind: 'business',
+      phone: `050 ${tag
+        .slice(-7)
+        .replace(/[^0-9]/g, '1')
+        .padStart(7, '7')}`,
+      email: `buyer-${label.toLowerCase()}-${tag}@test.bizcost.local`,
+      tradeLicenceNo: `TL-${label}-${tag}`,
+      notes: `Customer notes ${label} ${tag}`,
+    }),
+    'customer.create',
+  ) as CustomerDto
+  const orderPaymentId = newId()
+  const order = (
+    ok(
+      await as('order.create', 'mutation', {
+        id: newId(),
+        customerId: customer.id,
+        customerRef: `LPO-${label}-${tag}`,
+        businessDate: today,
+        dueDate: today,
+        locationId: branch.id,
+        channelId: channel.id,
+        deliveryNeeded: true,
+        deliveryArea: `Order area ${label} ${tag}`,
+        deliveryCost: '6',
+        notes: `Order ${label} ${tag}`,
+        lines: [
+          { kind: 'item', id: newId(), productId: product.id, qty: '2', unitPrice: '15.5' },
+          { kind: 'delivery', id: newId(), amount: '10' },
+        ],
+        payment: { id: orderPaymentId, method: 'bank_transfer', amount: '20' },
+      }),
+      'order.create',
+    ) as { data: OrderDto }
+  ).data
+  const orderPayment = (
+    ok(
+      await as('customerPayment.list', 'query', { orderId: order.id }),
+      'customerPayment.list',
+    ) as { items: CustomerPaymentDto[] }
+  ).items.find((p) => p.id === orderPaymentId)!
+  const toDeliver = (
+    ok(
+      await as('order.create', 'mutation', {
+        id: newId(),
+        customerId: customer.id,
+        businessDate: today,
+        locationId: branch.id,
+        channelId: channel.id,
+        lines: [{ kind: 'item', id: newId(), productId: product.id, qty: '1', unitPrice: '15.5' }],
+      }),
+      'order.create (to deliver)',
+    ) as { data: OrderDto }
+  ).data
+  const delivered = (
+    ok(
+      await as('order.deliver', 'mutation', { id: toDeliver.id, version: toDeliver.version }),
+      'order.deliver',
+    ) as { data: OrderDto }
+  ).data
+  ok(
+    await as('customerPayment.record', 'mutation', {
+      id: newId(),
+      orderId: delivered.id,
+      businessDate: today,
+      method: 'cash',
+      amount: '15.5',
+    }),
+    'customerPayment.record (order paid)',
+  )
+  const deliveredSale = (
+    ok(await as('sale.get', 'query', { id: delivered.saleId }), 'sale.get (order)') as {
+      data: SaleDto
+    }
+  ).data
+  const refund = (
+    ok(
+      await as('sale.refund', 'mutation', {
+        id: newId(),
+        orderId: delivered.id,
+        by: 'amount',
+        businessDate: today,
+        lines: [{ lineId: deliveredSale.lines[0]?.id, amount: '5' }],
+        notes: `Refund ${label} ${tag}`,
+        payment: { id: newId(), method: 'cash', amount: '5' },
+      }),
+      'sale.refund',
+    ) as { data: SaleDto }
+  ).data
+  const deliveredOrder = (
+    ok(await as('order.get', 'query', { id: delivered.id }), 'order.get') as { data: OrderDto }
+  ).data
+  const payLaterDraft = (
+    ok(
+      await as('sale.create', 'mutation', {
+        id: newId(),
+        source: 'single',
+        businessDate: today,
+        locationId: branch.id,
+        channelId: channel.id,
+        customerId: customer.id,
+        payLater: true,
+        notes: `Pay later ${label} ${tag}`,
+        lines: [{ kind: 'item', id: newId(), productId: product.id, qty: '4', unitPrice: '15.5' }],
+      }),
+      'sale.create (pay later)',
+    ) as { data: SaleDto }
+  ).data
+  ok(
+    await as('sale.post', 'mutation', { id: payLaterDraft.id, version: payLaterDraft.version }),
+    'sale.post (pay later)',
+  )
+  const salePaymentId = newId()
+  const salePaid = ok(
+    await as('customerPayment.record', 'mutation', {
+      id: salePaymentId,
+      saleId: payLaterDraft.id,
+      businessDate: today,
+      method: 'card',
+      amount: '12',
+      note: `Sale paid ${label} ${tag}`,
+    }),
+    'customerPayment.record (sale)',
+  ) as DocumentPaymentsDto
+  const salePayment = salePaid.items.find((p) => p.id === salePaymentId)!
+  const payLaterSale = (
+    ok(await as('sale.get', 'query', { id: payLaterDraft.id }), 'sale.get (pay later)') as {
+      data: SaleDto
+    }
+  ).data
+
   return {
     id,
     label,
@@ -819,6 +976,13 @@ export async function createTenant(api: Api, label: string): Promise<Tenant> {
     statement,
     draftImport,
     importProfile,
+    customer,
+    order,
+    orderPayment,
+    deliveredOrder,
+    refund,
+    payLaterSale,
+    salePayment,
   }
 }
 
@@ -855,6 +1019,10 @@ export function queryInputOf(path: string, tenant: Tenant): unknown {
   if (path === 'sale.daySheet') {
     return { businessDate: tenant.sale.businessDate, channelId: tenant.channel.id }
   }
+  if (path === 'customer.get') return { id: tenant.customer.id }
+  if (path === 'customer.similar') return { name: tenant.customer.name }
+  if (path === 'order.get') return { id: tenant.order.id }
+  if (path === 'customerPayment.list') return { orderId: tenant.order.id }
   return undefined
 }
 
@@ -927,6 +1095,26 @@ export function markersOf(tenant: Tenant): string[] {
     tenant.draftImport.id,
     tenant.draftImport.fileName,
     tenant.importProfile.id,
+    tenant.customer.id,
+    tenant.customer.name,
+    tenant.customer.phone ?? tenant.customer.id,
+    tenant.customer.email ?? tenant.customer.id,
+    tenant.customer.tradeLicenceNo ?? tenant.customer.id,
+    tenant.customer.notes ?? tenant.customer.id,
+    tenant.order.id,
+    tenant.order.customerRef ?? tenant.order.id,
+    tenant.order.deliveryArea ?? tenant.order.id,
+    tenant.order.notes ?? tenant.order.id,
+    ...tenant.order.lines.map((l) => l.id),
+    tenant.orderPayment.id,
+    tenant.deliveredOrder.id,
+    tenant.deliveredOrder.saleId ?? tenant.deliveredOrder.id,
+    tenant.refund.id,
+    tenant.refund.notes ?? tenant.refund.id,
+    tenant.payLaterSale.id,
+    tenant.payLaterSale.notes ?? tenant.payLaterSale.id,
+    tenant.salePayment.id,
+    tenant.salePayment.note ?? tenant.salePayment.id,
     ...Object.values(tenant.roles).map((role) => role.id),
     ...[tenant.owner, tenant.admin, tenant.employee].flatMap(({ user }) => [
       user.id,

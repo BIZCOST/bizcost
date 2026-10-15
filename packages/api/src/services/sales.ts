@@ -21,8 +21,10 @@ import {
   can,
   canAccessLocation,
   computeSale,
+  creditLeft,
   isCurrencyCode,
   newId,
+  phoneLast4,
   saleError,
   saleLineCost,
   sumDecimals,
@@ -46,6 +48,8 @@ import { AppError } from '../errors'
 import { assertModuleActive, assertQueryable, passes } from '../trpc'
 import { containsPattern, decodeCursor, encodeCursor, requestHashOf } from './catalog'
 import { resolveLocation } from './purchases'
+import { resolveCustomer } from './customers'
+import { paymentStateOf, readObligation } from './receivables'
 import {
   insertMaterialRows,
   itemMaterialsOf,
@@ -54,7 +58,14 @@ import {
   postedPurchaseLinesOf,
   shareCostRows,
 } from './sale-costs'
-import { assertPostable, isoOf, lockPostingBusiness, reversalDateOf, uuidArray } from './stock'
+import {
+  assertPostable,
+  isoOf,
+  lockPostingBusiness,
+  reversalDateOf,
+  uuidArray,
+  type PostingBusiness,
+} from './stock'
 
 // Sales (ROADMAP.md M3 Step 2; DATA_MODEL.md §6; D-219–D-222, D-225–D-232). Module `sales` (planned
 // until Release A: served under the dev-only preview only, D-125). sales.documents.view sees every
@@ -90,12 +101,20 @@ const invalid = (message: string) => new AppError('validation', { message })
 // ---------------------------------------------------------------------------------------------------
 
 /** The caller sees every sale (and so the sales totals, H1). */
-function seesAll(ctx: BusinessCtx): boolean {
+export function seesAll(ctx: BusinessCtx): boolean {
   return can(ctx.access.effective, 'sales.documents.view')
 }
 
+/**
+ * The caller sees what customers pay and owe (payments.customers.view with Payments on): a sale's
+ * `payment` block (M3 Step 5).
+ */
+export function seesPayments(ctx: BusinessCtx): boolean {
+  return passes(ctx, ['payments', 'payments.customers.view'])
+}
+
 /** The sales the caller may see (alias `s`): every sale or their own, and only their branches. */
-function visibleTo(ctx: BusinessCtx): SQL[] {
+export function visibleTo(ctx: BusinessCtx): SQL[] {
   const parts: SQL[] = []
   if (!seesAll(ctx)) parts.push(sql`s.created_by = app.current_user_id()`)
   const scope = ctx.access.locationScope
@@ -103,12 +122,12 @@ function visibleTo(ctx: BusinessCtx): SQL[] {
   return parts
 }
 
-function where(parts: readonly SQL[]): SQL {
+export function where(parts: readonly SQL[]): SQL {
   return sql.join([...parts], sql` and `)
 }
 
 /** A location the caller may sell at (FORBIDDEN for a branch they are not limited to). */
-function assertInScope(ctx: BusinessCtx, locationId: string): void {
+export function assertInScope(ctx: BusinessCtx, locationId: string): void {
   if (!canAccessLocation(ctx.access.locationScope, locationId)) {
     throw new AppError('forbidden', { message: 'not one of your branches' })
   }
@@ -147,6 +166,14 @@ interface SaleRecord extends Record<string, unknown> {
   reversal_business_date: string | null
   copied_from_id: string | null
   import_id: string | null
+  customer_id: string | null
+  customer_name: string | null
+  customer_phone: string | null
+  pay_later: boolean
+  order_id: string | null
+  order_number: string | null
+  refund_of_id: string | null
+  refund_by: 'quantity' | 'amount' | null
   created_at: Date | string
   version: number
 }
@@ -175,6 +202,16 @@ interface LineRecord extends Record<string, unknown> {
   time_cost: string | null
   /** An item of a product (not a service, not bought ready to sell) that froze nothing to cost. */
   needs_recipe: boolean
+  refund_of_line_id: string | null
+}
+
+/** What the refunds that stand took of each line of a sale (positive sums). */
+interface TakenRecord extends Record<string, unknown> {
+  refund_of_line_id: string
+  qty: string
+  net: string
+  vat: string
+  total: string
 }
 
 interface MaterialRecord extends Record<string, unknown> {
@@ -187,14 +224,14 @@ interface MaterialRecord extends Record<string, unknown> {
   basis: 'purchases_90_days' | 'last_purchase' | 'first_purchase' | null
 }
 
-function discountOf(percent: string | null, amount: string | null) {
+export function discountOf(percent: string | null, amount: string | null) {
   if (percent !== null) return { percent }
   if (amount !== null) return { amount }
   return null
 }
 
 /** Who entered a sale: their name in the business now (the member row of `s.created_by`). */
-const enteredByName = sql`(
+export const enteredByName = sql`(
   select bm.display_name from app.business_members bm
    where bm.business_id = s.business_id and bm.user_id = s.created_by and bm.kind = 'account'
    order by (bm.status = 'active') desc, bm.created_at desc
@@ -218,10 +255,14 @@ export async function readSale(tx: Tx, ctx: BusinessCtx, id: string): Promise<Sa
            ${enteredByName} as entered_by_name,
            s.created_by = app.current_user_id() as mine,
            s.posted_at, s.reversed_at, s.reversal_business_date::text as reversal_business_date,
-           s.copied_from_id, s.import_id, s.created_at, s.version
+           s.copied_from_id, s.import_id, s.customer_id, cu.name as customer_name,
+           cu.phone as customer_phone, s.pay_later, s.order_id, o.number as order_number,
+           s.refund_of_id, s.refund_by, s.created_at, s.version
       from app.sales s
       join app.locations l on l.business_id = s.business_id and l.id = s.location_id
       join app.sales_channels c on c.business_id = s.business_id and c.id = s.channel_id
+      left join app.customers cu on cu.business_id = s.business_id and cu.id = s.customer_id
+      left join app.orders o on o.business_id = s.business_id and o.id = s.order_id
      where ${where([
        sql`s.business_id = ${ctx.businessId}`,
        sql`s.id = ${id}`,
@@ -242,7 +283,8 @@ export async function readSale(tx: Tx, ctx: BusinessCtx, id: string): Promise<Sa
            trim_scale(l.cost)::text as cost, trim_scale(l.time_minutes)::text as time_minutes,
            trim_scale(l.time_cost)::text as time_cost,
            coalesce(l.kind = 'item' and l.cost_basis = 'none' and p.type = 'product'
-                    and p.resale_material_id is null, false) as needs_recipe
+                    and p.resale_material_id is null, false) as needs_recipe,
+           l.refund_of_line_id
       from app.sale_lines l
       left join app.products_services p
         on p.business_id = l.business_id and p.id = l.product_id
@@ -267,6 +309,50 @@ export async function readSale(tx: Tx, ctx: BusinessCtx, id: string): Promise<Sa
   for (const m of materials) byLine.set(m.sale_line_id, [...(byLine.get(m.sale_line_id) ?? []), m])
   // A product sold with nothing to cost while Materials is on: what it used is not known (D-223).
   const materialsOn = passes(ctx, ['materials'])
+
+  // M3 Step 5: what its refunds that stand took of each line, its refunds, and (a sale "they'll pay
+  // later") what it is paid and owes.
+  const finalized = head.status !== 'draft' && head.refund_of_id === null
+  const taken = finalized
+    ? new Map(
+        (
+          (await tx.execute(sql`
+            select rl.refund_of_line_id,
+                   trim_scale(coalesce(sum(abs(rl.qty)) filter (where r.refund_by = 'quantity'), 0))::text
+                     as qty,
+                   trim_scale(sum(abs(rl.net)))::text as net, trim_scale(sum(abs(rl.vat)))::text as vat,
+                   trim_scale(sum(abs(rl.total)))::text as total
+              from app.sale_lines rl
+              join app.sales r on r.business_id = rl.business_id and r.id = rl.sale_id
+             where rl.business_id = ${ctx.businessId} and r.refund_of_id = ${id}
+               and r.status = 'posted' and r.deleted_at is null and rl.deleted_at is null
+               and rl.refund_of_line_id is not null
+             group by rl.refund_of_line_id
+          `)) as unknown as TakenRecord[]
+        ).map((t) => [t.refund_of_line_id, t] as const),
+      )
+    : new Map<string, TakenRecord>()
+  const refunds =
+    head.status === 'draft' || head.refund_of_id !== null
+      ? []
+      : ((await tx.execute(sql`
+          select r.id, r.business_date::text as business_date, r.refund_by,
+                 trim_scale(-r.total)::text as total, r.status
+            from app.sales r
+           where r.business_id = ${ctx.businessId} and r.refund_of_id = ${id}
+             and r.deleted_at is null and r.status <> 'draft'
+           order by r.business_date desc, r.created_at desc, r.id desc
+        `)) as unknown as {
+          id: string
+          business_date: string
+          refund_by: 'quantity' | 'amount'
+          total: string
+          status: 'posted' | 'reversed'
+        }[])
+  const payment =
+    head.pay_later && head.status === 'posted' && seesPayments(ctx)
+      ? await readObligation(tx, ctx.businessId, 'sale', id)
+      : null
 
   return {
     id: head.id,
@@ -323,6 +409,8 @@ export async function readSale(tx: Tx, ctx: BusinessCtx, id: string): Promise<Sa
             basis: m.basis,
           }))
         : null,
+      refundOfLineId: l.refund_of_line_id,
+      left: finalized ? leftOf(l, taken.get(l.id)) : null,
     })),
     enteredByName: ctx.access.capabilities.has_team ? head.entered_by_name : null,
     mine: head.mine,
@@ -331,13 +419,47 @@ export async function readSale(tx: Tx, ctx: BusinessCtx, id: string): Promise<Sa
     reversalBusinessDate: head.reversal_business_date,
     copiedFromId: head.copied_from_id,
     importId: head.import_id,
+    customerId: head.customer_id,
+    customerName: head.customer_name,
+    customerPhoneLast4: phoneLast4(head.customer_phone),
+    payLater: head.pay_later,
+    orderId: head.order_id,
+    orderNumber: head.order_number,
+    refundOfId: head.refund_of_id,
+    refundBy: head.refund_by,
+    refunds: refunds.map((r) => ({
+      id: r.id,
+      businessDate: r.business_date,
+      by: r.refund_by,
+      total: r.total,
+      status: r.status,
+    })),
+    payment: payment ? paymentStateOf(payment) : null,
     createdAt: isoOf(head.created_at),
     version: head.version,
   }
 }
 
+/** What is left of a finalized line after its refunds that stand (creditLeft). */
+function leftOf(line: LineRecord, taken: TakenRecord | undefined) {
+  const left = creditLeft(
+    {
+      qty: line.qty,
+      unitPrice: line.unit_price,
+      priceIncludesVat: line.price_includes_vat,
+      net: line.net,
+      vat: line.vat,
+      total: line.total,
+    },
+    taken
+      ? [{ by: 'quantity', qty: taken.qty, net: taken.net, vat: taken.vat, total: taken.total }]
+      : [],
+  )
+  return { qty: left.qty, net: left.net, vat: left.vat, total: left.total, typed: left.typed }
+}
+
 /** An envelope for redaction (the redact middleware fills meta.redacted). */
-function result(data: SaleDto): SaleResultDto {
+export function result(data: SaleDto): SaleResultDto {
   return { data, meta: { redacted: [] } }
 }
 
@@ -363,13 +485,17 @@ interface ListRecord extends Record<string, unknown> {
   item_names: string[]
   entered_by_name: string | null
   mine: boolean
+  customer_name: string | null
+  order_number: string | null
+  refund_of_id: string | null
+  pay_later: boolean
   version: number
 }
 
 /** A channel or location a filter names: one of this business's (NOT_FOUND otherwise). */
 async function assertListed(
   tx: Tx,
-  table: 'sales_channels' | 'locations',
+  table: 'sales_channels' | 'locations' | 'customers',
   businessId: string,
   id: string,
 ) {
@@ -377,8 +503,11 @@ async function assertListed(
     table === 'sales_channels'
       ? sql`select c.id from app.sales_channels c
              where c.business_id = ${businessId} and c.id = ${id} and c.deleted_at is null`
-      : sql`select l.id from app.locations l
-             where l.business_id = ${businessId} and l.id = ${id} and l.deleted_at is null`,
+      : table === 'customers'
+        ? sql`select c.id from app.customers c
+               where c.business_id = ${businessId} and c.id = ${id} and c.deleted_at is null`
+        : sql`select l.id from app.locations l
+               where l.business_id = ${businessId} and l.id = ${id} and l.deleted_at is null`,
   )) as unknown as { id: string }[]
   if (!row) throw new AppError('not_found')
 }
@@ -398,6 +527,7 @@ export function listSales(ctx: BusinessCtx, input: ListInput): Promise<SaleListD
   if (input.source) filters.push(sql`s.source = ${input.source}`)
   if (input.channelId) filters.push(sql`s.channel_id = ${input.channelId}`)
   if (input.locationId) filters.push(sql`s.location_id = ${input.locationId}`)
+  if (input.customerId) filters.push(sql`s.customer_id = ${input.customerId}`)
   if (input.search) {
     // The names on its lines, never an amount (D-209).
     const pattern = containsPattern(input.search)
@@ -418,6 +548,7 @@ export function listSales(ctx: BusinessCtx, input: ListInput): Promise<SaleListD
   return ctx.tx(async (tx) => {
     if (input.channelId) await assertListed(tx, 'sales_channels', ctx.businessId, input.channelId)
     if (input.locationId) await assertListed(tx, 'locations', ctx.businessId, input.locationId)
+    if (input.customerId) await assertListed(tx, 'customers', ctx.businessId, input.customerId)
     const rows = (await tx.execute(sql`
       select s.id, s.status, s.source, s.business_date::text as business_date,
              s.period_from::text as period_from, s.location_id, s.channel_id,
@@ -433,9 +564,12 @@ export function listSales(ctx: BusinessCtx, input: ListInput): Promise<SaleListD
                     where l.business_id = s.business_id and l.sale_id = s.id
                       and l.kind = 'item' and l.deleted_at is null
                     order by l.position, l.id
-                    limit 2) as item_names
+                    limit 2) as item_names,
+             cu.name as customer_name, o.number as order_number, s.refund_of_id, s.pay_later
         from app.sales s
         join app.sales_channels c on c.business_id = s.business_id and c.id = s.channel_id
+        left join app.customers cu on cu.business_id = s.business_id and cu.id = s.customer_id
+        left join app.orders o on o.business_id = s.business_id and o.id = s.order_id
        where ${where(page)}
        order by s.business_date desc, s.id desc
        limit ${input.limit + 1}
@@ -491,6 +625,10 @@ export function listSales(ctx: BusinessCtx, input: ListInput): Promise<SaleListD
         itemNames: r.item_names,
         enteredByName: team ? r.entered_by_name : null,
         mine: r.mine,
+        customerName: r.customer_name,
+        orderNumber: r.order_number,
+        refundOfId: r.refund_of_id,
+        payLater: r.pay_later,
         version: r.version,
       })),
       nextCursor: more && last ? encodeCursor({ key: last.business_date, id: last.id }) : null,
@@ -549,7 +687,7 @@ async function dayTotalsOf(
 // ---------------------------------------------------------------------------------------------------
 
 /** What a sale's save needs of the business (not locked: posting reads it again under its lock). */
-interface SaleContext {
+export interface SaleContext {
   readonly currency: CurrencyCode
   readonly vatRegistered: boolean
   readonly today: string
@@ -557,7 +695,7 @@ interface SaleContext {
   readonly defaultLocationId: string | null
 }
 
-async function saleContextOf(tx: Tx, businessId: string): Promise<SaleContext> {
+export async function saleContextOf(tx: Tx, businessId: string): Promise<SaleContext> {
   const [row] = (await tx.execute(sql`
     select trim(b.currency) as currency, b.vat_registered,
            (now() at time zone b.timezone)::date::text as today,
@@ -588,7 +726,7 @@ async function saleContextOf(tx: Tx, businessId: string): Promise<SaleContext> {
  * The days of a sale: never after today (FUTURE_DATE), and a sheet for several days starts before
  * its last day, in the same month (VALIDATION; one month: the running-cost rate is monthly, Q9).
  */
-function assertDays(businessDate: string, periodFrom: string | null, today: string): void {
+export function assertDays(businessDate: string, periodFrom: string | null, today: string): void {
   if (businessDate > today) throw new AppError('future_date')
   if (periodFrom === null) return
   if (periodFrom >= businessDate || periodFrom.slice(0, 7) !== businessDate.slice(0, 7)) {
@@ -601,7 +739,7 @@ function assertDays(businessDate: string, periodFrom: string | null, today: stri
  * sale already has it (`current`) or for reading (`archivedToo`); null: its only active channel
  * (VALIDATION when it has several: the screen asks).
  */
-async function resolveChannel(
+export async function resolveChannel(
   tx: Tx,
   businessId: string,
   channelId: string | null,
@@ -628,7 +766,7 @@ async function resolveChannel(
 }
 
 /** A product or service as a sale line copies it. */
-interface ProductRecord extends Record<string, unknown> {
+export interface ProductRecord extends Record<string, unknown> {
   id: string
   name: string
   type: ProductType
@@ -640,7 +778,7 @@ interface ProductRecord extends Record<string, unknown> {
   owner_minutes: string | null
 }
 
-async function productsOf(
+export async function productsOf(
   tx: Tx,
   businessId: string,
   ids: readonly string[],
@@ -658,7 +796,7 @@ async function productsOf(
   return new Map(rows.map((row) => [row.id, row] as const))
 }
 
-function toLineDiscount(
+export function toLineDiscount(
   discount: { percent: string } | { amount: string } | null | undefined,
 ): LineDiscount | null {
   if (!discount) return null
@@ -667,23 +805,34 @@ function toLineDiscount(
     : { amount: discount.amount as Money }
 }
 
-/** A stored or typed line, with what computeSale needs of its product. */
-interface PricedLine {
+/** An item's VAT basis as a document stored it (an order's line), used instead of its product's. */
+export interface StoredVat {
+  readonly priceIncludesVat: boolean
+  readonly vatCategory: VatCategory
+}
+
+/**
+ * A stored or typed line, with what computeSale needs of its product. `vat`: the item's VAT basis
+ * as an order saved it, over the product's as it is now (an order delivered under the VAT
+ * registration it was saved under keeps its amounts, M3 Step 5).
+ */
+export interface PricedLine {
   readonly line: InputLine
   readonly product: ProductRecord | null
+  readonly vat?: StoredVat | undefined
 }
 
 /** The domain's view of the lines (computeSale). */
-function domainLines(lines: readonly PricedLine[]): DomainSaleLine[] {
-  return lines.map(({ line, product }) =>
+export function domainLines(lines: readonly PricedLine[]): DomainSaleLine[] {
+  return lines.map(({ line, product, vat }) =>
     line.kind === 'item'
       ? {
           kind: 'item',
           qty: line.qty as Quantity,
           unitPrice: line.unitPrice as Money,
-          priceIncludesVat: product?.price_includes_vat ?? false,
+          priceIncludesVat: vat?.priceIncludesVat ?? product?.price_includes_vat ?? false,
           discount: toLineDiscount(line.discount),
-          vatCategory: product?.vat_category ?? 'standard',
+          vatCategory: vat?.vatCategory ?? product?.vat_category ?? 'standard',
         }
       : {
           kind: 'delivery',
@@ -694,14 +843,21 @@ function domainLines(lines: readonly PricedLine[]): DomainSaleLine[] {
   )
 }
 
-/** A sale's amounts (computeSale); VALIDATION with the domain's code when they cannot be computed. */
-function amountsOf(
+/**
+ * A sale's (or an order's) amounts (computeSale), with the document's discount (an order's, M3 Step
+ * 5); VALIDATION with the domain's code when they cannot be computed.
+ */
+export function amountsOf(
   lines: readonly PricedLine[],
   vatRegistered: boolean,
   currency: CurrencyCode,
+  discount: LineDiscount | null = null,
 ): SaleAmounts | null {
-  if (lines.length === 0) return null
-  const input = { lines: domainLines(lines), vatRegistered }
+  if (lines.length === 0) {
+    if (discount !== null) throw invalid('discount: an order with nothing to discount')
+    return null
+  }
+  const input = { lines: domainLines(lines), vatRegistered, discount }
   const error = saleError(input, currency)
   if (error) {
     const at = error.line === undefined ? '' : ` (line ${error.line + 1})`
@@ -715,7 +871,7 @@ function amountsOf(
 }
 
 /** The header's totals from the lines' amounts (zero without a line). */
-function totalsOf(amounts: SaleAmounts | null) {
+export function totalsOf(amounts: SaleAmounts | null) {
   if (amounts === null) {
     return { subtotal: '0', discountTotal: '0', netTotal: '0', vatTotal: '0', total: '0' }
   }
@@ -729,13 +885,13 @@ function totalsOf(amounts: SaleAmounts | null) {
 }
 
 /** The sale_lines columns of each line, with its amounts. */
-function lineValues(
+export function lineValues(
   businessId: string,
   priced: readonly PricedLine[],
   amounts: SaleAmounts | null,
   vatRegistered: boolean,
 ): Omit<NewSaleLine, 'saleId'>[] {
-  return priced.map(({ line, product }, position) => {
+  return priced.map(({ line, product, vat }, position) => {
     const a = amounts?.lines[position]
     const common = {
       id: line.id,
@@ -771,7 +927,8 @@ function lineValues(
       qty: line.qty,
       unit: product?.unit ?? null,
       unitPrice: line.unitPrice,
-      priceIncludesVat: vatRegistered && (product?.price_includes_vat ?? false),
+      priceIncludesVat:
+        vatRegistered && (vat?.priceIncludesVat ?? product?.price_includes_vat ?? false),
       discountPercent: line.discount && 'percent' in line.discount ? line.discount.percent : null,
       discountAmount: line.discount && 'amount' in line.discount ? line.discount.amount : null,
     }
@@ -783,6 +940,7 @@ interface StoredDraft {
   readonly channelId: string
   readonly productIds: ReadonlySet<string>
   readonly deliveryCost: string | null
+  readonly customerId: string | null
 }
 
 /**
@@ -812,6 +970,18 @@ async function prepareDraft(
   if (!biz.vatRegistered && input.lines.some((l) => l.kind === 'delivery' && l.amountIncludesVat)) {
     throw new AppError('capability_disabled', { message: 'VAT needs a VAT-registered business' })
   }
+  // M3 Step 5: One sale may name a customer (Customers on) and "They'll pay later" (Payments on).
+  if (source !== 'single' && (input.customerId !== null || input.payLater)) {
+    throw invalid('customerId: only One sale names a customer')
+  }
+  if (input.customerId !== null) assertModuleActive(ctx, 'customers')
+  if (input.payLater) assertModuleActive(ctx, 'payments')
+  const customerId = await resolveCustomer(
+    tx,
+    ctx.businessId,
+    input.customerId,
+    stored?.customerId ?? null,
+  )
   const locationId = await resolveLocation(tx, ctx, input.locationId, biz.defaultLocationId)
   assertInScope(ctx, locationId)
   const channel = await resolveChannel(
@@ -856,6 +1026,8 @@ async function prepareDraft(
     deliveryArea: input.deliveryNeeded ? input.deliveryArea : null,
     deliveryCost,
     notes: input.notes,
+    customerId,
+    payLater: input.payLater,
   }
   return { header, lines: lineValues(ctx.businessId, priced, amounts, biz.vatRegistered) }
 }
@@ -884,7 +1056,7 @@ export function createSale(ctx: BusinessCtx, input: CreateInput): Promise<SaleRe
   })
 }
 
-interface HeadRecord extends Record<string, unknown> {
+export interface HeadRecord extends Record<string, unknown> {
   id: string
   status: SaleDto['status']
   version: number
@@ -894,6 +1066,10 @@ interface HeadRecord extends Record<string, unknown> {
   channel_id: string
   delivery_needed: boolean
   delivery_cost: string | null
+  customer_id: string | null
+  order_id: string | null
+  refund_of_id: string | null
+  pay_later: boolean
   /** The caller entered it. */
   entered: boolean
   /**
@@ -904,11 +1080,12 @@ interface HeadRecord extends Record<string, unknown> {
 }
 
 /** The sale row, locked FOR UPDATE (lock 1); NOT_FOUND when not live or not the caller's to see. */
-async function lockSale(tx: Tx, ctx: BusinessCtx, id: string): Promise<HeadRecord> {
+export async function lockSale(tx: Tx, ctx: BusinessCtx, id: string): Promise<HeadRecord> {
   const [row] = (await tx.execute(sql`
     select s.id, s.status, s.version, s.source, s.business_date::text as business_date,
            s.location_id, s.channel_id, s.delivery_needed,
-           trim_scale(s.delivery_cost)::text as delivery_cost,
+           trim_scale(s.delivery_cost)::text as delivery_cost, s.customer_id, s.order_id,
+           s.refund_of_id, s.pay_later,
            s.created_by = app.current_user_id() as entered,
            coalesce(s.created_by = app.current_user_id()
              and coalesce(s.updated_by, s.created_by) = app.current_user_id(), false) as mine
@@ -979,6 +1156,7 @@ export function updateSale(ctx: BusinessCtx, input: UpdateInput): Promise<SaleRe
       channelId: head.channel_id,
       productIds: new Set(live.flatMap((l) => (l.productId ? [l.productId] : []))),
       deliveryCost: head.delivery_cost,
+      customerId: head.customer_id,
     })
     await tx
       .update(sales)
@@ -1145,92 +1323,126 @@ export function postSale(ctx: BusinessCtx, input: VersionInput): Promise<SaleRes
     }))
     const amounts = amountsOf(priced, business.vatRegistered, business.currency)
 
-    // What each item uses, then lock 3: its materials' cost rows FOR SHARE (created when missing),
-    // then one read of the purchases posted now (sale-costs.ts).
-    const uses = await itemMaterialsOf(
-      tx,
-      ctx.businessId,
-      [...products.values()].map((p) => ({
-        id: p.id,
-        unit: p.unit,
-        resaleMaterialId: p.resale_material_id,
-      })),
-      passes(ctx, ['materials']),
-    )
-    const materialIds = [...uses.values()].flatMap((use) =>
-      use.basis === 'recipe'
-        ? use.lines.map((l) => l.materialId)
-        : use.basis === 'resale'
-          ? [use.materialId]
-          : [],
-    )
-    await shareCostRows(tx, ctx.businessId, materialIds)
-    const purchases = await postedPurchaseLinesOf(tx, ctx.businessId, materialIds)
-    const hourlyRate = ctx.access.capabilities.has_team
-      ? null
-      : await hourlyRateOf(tx, ctx.businessId)
-
-    const lines = lineValues(ctx.businessId, priced, amounts, business.vatRegistered)
-    const rows: ReturnType<typeof materialRows> = []
-    const updates = lines.map((line, position) => {
-      const source = stored[position]!
-      if (source.kind !== 'item') {
-        return {
-          ...line,
-          costBasis: 'none' as const,
-          cost: null,
-          timeMinutes: null,
-          timeCost: null,
-        }
-      }
-      const product = products.get(source.productId)!
-      const ownerTime: OwnerTimePart = ctx.access.capabilities.has_team
-        ? { state: 'team' }
-        : { state: 'solo', minutes: product.owner_minutes, hourlyRate }
-      const snapshot = saleLineCost({
-        qty: source.qty,
-        day: head.business_date,
-        materials: uses.get(product.id) ?? { basis: 'none' },
-        purchases,
-        ownerTime,
-      })
-      rows.push(...materialRows(ctx.businessId, input.id, source.id, snapshot))
-      return { ...line, ...lineCostColumns(snapshot) }
+    await freezeAndPost(tx, ctx, {
+      saleId: input.id,
+      day: head.business_date,
+      stored,
+      priced,
+      products,
+      amounts,
+      business,
     })
-    await tx.execute(sql`
-      update app.sale_lines l
-         set description = v.description, unit = v.unit, price_includes_vat = v.price_includes_vat,
-             vat_category = v.vat_category, vat_rate = v.vat_rate, subtotal = v.subtotal,
-             discount = v.discount, net = v.net, vat = v.vat, total = v.total,
-             cost_basis = v.cost_basis, cost = v.cost, time_minutes = v.time_minutes,
-             time_cost = v.time_cost
-        from (values ${sql.join(
-          updates.map(
-            (u) => sql`(${u.id}::uuid, ${u.description ?? null}::text, ${u.unit ?? null}::text,
-              ${u.priceIncludesVat ?? false}::boolean, ${u.vatCategory ?? null}::text,
-              ${u.vatRate ?? null}::numeric, ${u.subtotal}::numeric, ${u.discount}::numeric,
-              ${u.net}::numeric, ${u.vat}::numeric, ${u.total}::numeric, ${u.costBasis}::text,
-              ${u.cost}::numeric, ${u.timeMinutes}::numeric, ${u.timeCost}::numeric)`,
-          ),
-          sql`, `,
-        )}) as v(id, description, unit, price_includes_vat, vat_category, vat_rate, subtotal,
-                 discount, net, vat, total, cost_basis, cost, time_minutes, time_cost)
-       where l.business_id = ${ctx.businessId} and l.id = v.id
-    `)
-    await insertMaterialRows(tx, rows)
-    await tx
-      .update(sales)
-      .set({
-        status: 'posted',
-        postedAt: sql`now()`,
-        postedBy: sql`app.current_user_id()`,
-        vatRegistered: business.vatRegistered,
-        currency: business.currency,
-        ...totalsOf(amounts),
-      })
-      .where(and(eq(sales.businessId, ctx.businessId), eq(sales.id, input.id)))
     return result(await readSale(tx, ctx, input.id))
   })
+}
+
+/** What freezeAndPost posts: the sale (its draft lines saved), its day, its lines and their amounts. */
+export interface Posting {
+  readonly saleId: string
+  readonly day: string
+  /** The sale's lines as saved, in order (their ids are the saved lines'). */
+  readonly stored: readonly InputLine[]
+  readonly priced: readonly PricedLine[]
+  readonly products: ReadonlyMap<string, ProductRecord>
+  readonly amounts: SaleAmounts | null
+  /** The business as read under its row's lock (lock 2). */
+  readonly business: PostingBusiness
+}
+
+/**
+ * Posts a sale whose draft lines are saved, with lock 1 (the sale, or for an order's delivery the
+ * order) and lock 2 (the business row FOR SHARE) held: freezes the cost of what each item line sold
+ * on its day (D-222) in the lock order of sale-costs.ts (lock 3: its materials' cost rows FOR SHARE,
+ * then one read of the purchases posted), writes each line's amounts and snapshot and the material
+ * rows, and marks the sale posted with its totals and the VAT registration of the day. Shared by
+ * sale.post and order.deliver (M3 Step 5).
+ */
+export async function freezeAndPost(tx: Tx, ctx: BusinessCtx, posting: Posting): Promise<void> {
+  const { saleId, day, stored, priced, products, amounts, business } = posting
+  // What each item uses, then lock 3: its materials' cost rows FOR SHARE (created when missing),
+  // then one read of the purchases posted now (sale-costs.ts).
+  const uses = await itemMaterialsOf(
+    tx,
+    ctx.businessId,
+    [...products.values()].map((p) => ({
+      id: p.id,
+      unit: p.unit,
+      resaleMaterialId: p.resale_material_id,
+    })),
+    passes(ctx, ['materials']),
+  )
+  const materialIds = [...uses.values()].flatMap((use) =>
+    use.basis === 'recipe'
+      ? use.lines.map((l) => l.materialId)
+      : use.basis === 'resale'
+        ? [use.materialId]
+        : [],
+  )
+  await shareCostRows(tx, ctx.businessId, materialIds)
+  const purchases = await postedPurchaseLinesOf(tx, ctx.businessId, materialIds)
+  const hourlyRate = ctx.access.capabilities.has_team
+    ? null
+    : await hourlyRateOf(tx, ctx.businessId)
+
+  const lines = lineValues(ctx.businessId, priced, amounts, business.vatRegistered)
+  const rows: ReturnType<typeof materialRows> = []
+  const updates = lines.map((line, position) => {
+    const source = stored[position]!
+    if (source.kind !== 'item') {
+      return {
+        ...line,
+        costBasis: 'none' as const,
+        cost: null,
+        timeMinutes: null,
+        timeCost: null,
+      }
+    }
+    const product = products.get(source.productId)!
+    const ownerTime: OwnerTimePart = ctx.access.capabilities.has_team
+      ? { state: 'team' }
+      : { state: 'solo', minutes: product.owner_minutes, hourlyRate }
+    const snapshot = saleLineCost({
+      qty: source.qty,
+      day,
+      materials: uses.get(product.id) ?? { basis: 'none' },
+      purchases,
+      ownerTime,
+    })
+    rows.push(...materialRows(ctx.businessId, saleId, source.id, snapshot))
+    return { ...line, ...lineCostColumns(snapshot) }
+  })
+  await tx.execute(sql`
+    update app.sale_lines l
+       set description = v.description, unit = v.unit, price_includes_vat = v.price_includes_vat,
+           vat_category = v.vat_category, vat_rate = v.vat_rate, subtotal = v.subtotal,
+           discount = v.discount, net = v.net, vat = v.vat, total = v.total,
+           cost_basis = v.cost_basis, cost = v.cost, time_minutes = v.time_minutes,
+           time_cost = v.time_cost
+      from (values ${sql.join(
+        updates.map(
+          (u) => sql`(${u.id}::uuid, ${u.description ?? null}::text, ${u.unit ?? null}::text,
+            ${u.priceIncludesVat ?? false}::boolean, ${u.vatCategory ?? null}::text,
+            ${u.vatRate ?? null}::numeric, ${u.subtotal}::numeric, ${u.discount}::numeric,
+            ${u.net}::numeric, ${u.vat}::numeric, ${u.total}::numeric, ${u.costBasis}::text,
+            ${u.cost}::numeric, ${u.timeMinutes}::numeric, ${u.timeCost}::numeric)`,
+        ),
+        sql`, `,
+      )}) as v(id, description, unit, price_includes_vat, vat_category, vat_rate, subtotal,
+               discount, net, vat, total, cost_basis, cost, time_minutes, time_cost)
+     where l.business_id = ${ctx.businessId} and l.id = v.id
+  `)
+  await insertMaterialRows(tx, rows)
+  await tx
+    .update(sales)
+    .set({
+      status: 'posted',
+      postedAt: sql`now()`,
+      postedBy: sql`app.current_user_id()`,
+      vatRegistered: business.vatRegistered,
+      currency: business.currency,
+      ...totalsOf(amounts),
+    })
+    .where(and(eq(sales.businessId, ctx.businessId), eq(sales.id, saleId)))
 }
 
 // ---------------------------------------------------------------------------------------------------
@@ -1243,11 +1455,20 @@ export function postSale(ctx: BusinessCtx, input: VersionInput): Promise<SaleRes
  * its day is closed the reversal is dated the first open day, and its negative counts in that day's
  * month (D-227; BOOKS_CLOSED when that day is after today).
  */
-async function reverseInTx(tx: Tx, ctx: BusinessCtx, id: string): Promise<void> {
+export async function reverseInTx(
+  tx: Tx,
+  ctx: BusinessCtx,
+  id: string,
+  options: { readonly orderDelivery?: boolean } = {},
+): Promise<void> {
   const head = await lockSale(tx, ctx, id)
   if (head.source === 'import') throw invalid('an imported sale is reversed from its import')
+  if (head.source === 'order' && options.orderDelivery !== true) {
+    throw invalid('an order’s sale is reversed by undoing its delivery')
+  }
   if (head.status === 'reversed') return
   if (head.status !== 'posted') throw new AppError('document_not_posted')
+  await assertNoDependents(tx, ctx.businessId, id)
   const business = await lockPostingBusiness(tx, ctx.businessId)
   const reversalBusinessDate = reversalDateOf(business, head.business_date)
   await tx
@@ -1259,6 +1480,26 @@ async function reverseInTx(tx: Tx, ctx: BusinessCtx, id: string): Promise<void> 
       reversalBusinessDate,
     })
     .where(and(eq(sales.businessId, ctx.businessId), eq(sales.id, id)))
+}
+
+/**
+ * A finalized sale is reversed only once the customer payments on it (SALE_HAS_PAYMENTS, B6) and its
+ * refunds that stand (SALE_HAS_REFUNDS) are reversed (M3 Step 5; the database holds the same,
+ * sales_keep_dependents).
+ */
+export async function assertNoDependents(tx: Tx, businessId: string, id: string): Promise<void> {
+  const [row] = (await tx.execute(sql`
+    select exists (
+             select 1 from app.customer_payments p
+              where p.business_id = ${businessId} and p.sale_id = ${id}
+                and p.reversed_at is null and p.deleted_at is null) as payments,
+           exists (
+             select 1 from app.sales r
+              where r.business_id = ${businessId} and r.refund_of_id = ${id}
+                and r.status = 'posted' and r.deleted_at is null) as refunds
+  `)) as unknown as { payments: boolean; refunds: boolean }[]
+  if (row?.payments) throw new AppError('sale_has_payments')
+  if (row?.refunds) throw new AppError('sale_has_refunds')
 }
 
 /** `sale.reverse`: see reverseInTx. Idempotent. */
@@ -1302,6 +1543,10 @@ export function correctSale(ctx: BusinessCtx, input: CorrectInput): Promise<Sale
     if (head.status === 'draft') throw new AppError('document_not_posted')
     if (head.source === 'import')
       throw invalid('an imported sale is corrected by importing it again')
+    if (head.source === 'order')
+      throw invalid('an order’s sale is corrected by undoing its delivery')
+    if (head.source === 'refund') throw invalid('a refund is reversed, never corrected')
+    if (head.status === 'posted') await assertNoDependents(tx, ctx.businessId, input.id)
     const [source] = await tx
       .select()
       .from(sales)
@@ -1334,6 +1579,8 @@ export function correctSale(ctx: BusinessCtx, input: CorrectInput): Promise<Sale
       deliveryArea: source.deliveryArea,
       deliveryCost: ctx.access.visibleCategories.has('cost') ? source.deliveryCost : null,
       notes: source.notes,
+      customerId: source.customerId,
+      payLater: source.payLater,
       copiedFromId: input.id,
       requestHash,
     })
@@ -1382,8 +1629,9 @@ export function correctSale(ctx: BusinessCtx, input: CorrectInput): Promise<Sale
  * `sale.fillDeliveryCost`: what the delivery of a finalized (or reversed) sale actually cost, once,
  * while it is still missing (D-230): the costs switch only (FORBIDDEN before anything is read). Also
  * into a closed month: it completes a cost shown as missing, nothing is posted. A draft is edited
- * instead (DOCUMENT_NOT_POSTED); a sale without delivery is VALIDATION; one whose delivery cost is
- * set already is DOCUMENT_POSTED.
+ * instead (DOCUMENT_NOT_POSTED), and so is the order of an order's sale whose delivery was undone
+ * (DOCUMENT_NOT_POSTED, D-273); a sale without delivery is VALIDATION; one whose delivery cost is set
+ * already is DOCUMENT_POSTED.
  */
 export function fillDeliveryCost(
   ctx: BusinessCtx,
@@ -1393,6 +1641,12 @@ export function fillDeliveryCost(
   return ctx.tx(async (tx) => {
     const head = await lockSale(tx, ctx, input.id)
     if (head.status === 'draft') throw new AppError('document_not_posted')
+    // An order's sale whose delivery was undone counts nowhere: its order holds what the delivery
+    // cost (Undo delivery took back what was filled before, D-273) and is changed instead, also when
+    // the undo committed while this call waited on the sale's row: the lock reads it reversed then.
+    if (head.status === 'reversed' && head.order_id !== null) {
+      throw new AppError('document_not_posted')
+    }
     if (!head.delivery_needed) throw invalid('deliveryCost: this sale had no delivery')
     if (head.delivery_cost !== null) throw new AppError('document_posted')
     await tx

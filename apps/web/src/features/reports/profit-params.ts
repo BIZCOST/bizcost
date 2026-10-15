@@ -33,6 +33,7 @@ export const GROUP_ORDER: readonly ProfitGroup[] = [
   'product',
   'channel',
   'branch',
+  'order',
   'day',
 ]
 
@@ -59,6 +60,8 @@ export interface ProfitParams {
 export interface ProfitAccess {
   readonly profitShown: boolean
   readonly branches: boolean
+  /** Orders is on (M3 Step 5): "by order" is offered. */
+  readonly orders?: boolean
 }
 
 const DAY = /^\d{4}-\d{2}-\d{2}$/
@@ -68,9 +71,11 @@ export function isTimeGroup(by: ProfitGroup): boolean {
   return by === 'month' || by === 'week' || by === 'day'
 }
 
-/** The groupings this member may pick (by branch only with branches). */
+/** The groupings this member may pick (by branch only with branches, by order with Orders on). */
 export function groupChoices(access: ProfitAccess): ProfitGroup[] {
-  return GROUP_ORDER.filter((by) => by !== 'branch' || access.branches)
+  return GROUP_ORDER.filter(
+    (by) => (by !== 'branch' || access.branches) && (by !== 'order' || access.orders === true),
+  )
 }
 
 /**

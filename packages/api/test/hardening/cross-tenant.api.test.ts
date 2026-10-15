@@ -1015,6 +1015,20 @@ const PROBES: Record<string, Probe> = {
         },
         own: ['conflict'],
       },
+      // Money back from the supplier (M3 Step 5): the member who received it is looked up in the
+      // x-business-id business (here the purchase is not overpaid, so that refuses it first).
+      {
+        input: {
+          id: newId(),
+          purchaseId: attacker.creditPurchase.id,
+          kind: 'refund',
+          businessDate: attacker.creditPurchase.businessDate,
+          method: 'cash',
+          amount: '1',
+          receivedByMemberId: victim.employeeMemberId,
+        },
+        own: ['exceeds_outstanding', 'not_found'],
+      },
     ],
   },
   'purchasePayment.reverse': {
@@ -1556,11 +1570,12 @@ const PROBES: Record<string, Probe> = {
   },
   'sale.list': {
     base: 'business',
-    reason: `${NO_ROWS}; a channel or branch filter is looked up in that business (NOT_FOUND)`,
+    reason: `${NO_ROWS}; a channel, branch or customer filter is looked up in that business (NOT_FOUND)`,
     variants: (victim) => [
       { input: { status: 'all' } },
       { input: { channelId: victim.channel.id }, own: ['not_found'] },
       { input: { locationId: victim.branch.id }, own: ['not_found'] },
+      { input: { customerId: victim.customer.id }, own: ['not_found'] },
     ],
   },
   'sale.get': {
@@ -1601,6 +1616,8 @@ const PROBES: Record<string, Probe> = {
         { input: { ...fields, id: victim.sale.id, lines: [] }, own: ['conflict'] },
         { input: { ...fields, id: newId(), channelId: victim.channel.id }, own: ['not_found'] },
         { input: { ...fields, id: newId(), locationId: victim.branch.id }, own: ['not_found'] },
+        // One sale may name a customer (M3 Step 5): looked up in the x-business-id business.
+        { input: { ...fields, id: newId(), customerId: victim.customer.id }, own: ['not_found'] },
         {
           input: {
             ...fields,
@@ -1648,6 +1665,8 @@ const PROBES: Record<string, Probe> = {
         },
         { input: { ...fields, ...own, channelId: victim.channel.id }, own: ['not_found'] },
         { input: { ...fields, ...own, locationId: victim.branch.id }, own: ['not_found'] },
+        // A day sheet names no customer (VALIDATION) before any lookup.
+        { input: { ...fields, ...own, customerId: victim.customer.id }, own: ['validation'] },
         {
           input: {
             ...fields,
@@ -1712,6 +1731,311 @@ const PROBES: Record<string, Probe> = {
     variants: (victim) => [
       { input: { id: victim.sale.id, deliveryCost: '1' }, own: ['not_found'] },
     ],
+  },
+  // Customers, orders, customer payments and refunds (M3 Step 5).
+  'customer.list': {
+    base: 'business',
+    reason: `${NO_ROWS}; the cursor only positions a page of that business's customers`,
+    variants: () => [{ input: { status: 'all' } }],
+  },
+  'customer.get': {
+    base: 'business',
+    reason: 'looked up in the x-business-id business',
+    variants: (victim) => [{ input: { id: victim.customer.id }, own: ['not_found'] }],
+  },
+  'customer.pick': {
+    base: 'business',
+    reason: 'every id named is looked up in the x-business-id business (NOT_FOUND otherwise)',
+    variants: (victim, attacker) => [
+      { input: { ids: [victim.customer.id] }, own: ['not_found'] },
+      { input: { ids: [attacker.customer.id, victim.customer.id] }, own: ['not_found'] },
+    ],
+  },
+  'customer.similar': {
+    base: 'business',
+    reason:
+      'compares names within the x-business-id business; the customer left out is looked up there',
+    variants: (victim) => [
+      { input: { name: victim.customer.name } },
+      { input: { name: 'Ahmed', excludeId: victim.customer.id }, own: ['not_found'] },
+    ],
+  },
+  'customer.create': {
+    base: 'business',
+    reason: 'an id used anywhere is CONFLICT',
+    variants: (victim) => [
+      { input: { id: victim.customer.id, name: 'Takeover' }, own: ['conflict'] },
+    ],
+  },
+  'customer.update': {
+    base: 'business',
+    reason: 'looked up in the x-business-id business (with its version)',
+    variants: (victim) => [
+      {
+        input: { id: victim.customer.id, version: victim.customer.version, name: 'Pwned' },
+        own: ['not_found'],
+      },
+    ],
+  },
+  'customer.archive': {
+    base: 'business',
+    reason: 'looked up in the x-business-id business',
+    variants: (victim) => [{ input: { id: victim.customer.id }, own: ['not_found'] }],
+  },
+  'customer.unarchive': {
+    base: 'business',
+    reason: 'looked up in the x-business-id business',
+    variants: (victim) => [{ input: { id: victim.customer.id }, own: ['not_found'] }],
+  },
+  'order.list': {
+    base: 'business',
+    reason: `${NO_ROWS}; a customer filter is looked up in that business (NOT_FOUND)`,
+    variants: (victim) => [
+      { input: { status: 'all' } },
+      { input: { customerId: victim.customer.id }, own: ['not_found'] },
+    ],
+  },
+  'order.get': {
+    base: 'business',
+    reason: 'looked up in the x-business-id business',
+    variants: (victim) => [{ input: { id: victim.order.id }, own: ['not_found'] }],
+  },
+  'order.create': {
+    base: 'business',
+    reason:
+      'its customer, branch, channel and products are looked up in the x-business-id business; an ' +
+      'order, line or payment id used anywhere is CONFLICT, and the number is never taken',
+    variants: (victim, attacker) => {
+      const fields = {
+        businessDate: attacker.order.businessDate,
+        channelId: attacker.channel.id,
+        locationId: attacker.branch.id,
+      }
+      const line = { kind: 'item', productId: attacker.product.id, qty: '1', unitPrice: '1' }
+      return [
+        { input: { ...fields, id: victim.order.id }, own: ['conflict'] },
+        { input: { ...fields, id: newId(), customerId: victim.customer.id }, own: ['not_found'] },
+        { input: { ...fields, id: newId(), locationId: victim.branch.id }, own: ['not_found'] },
+        { input: { ...fields, id: newId(), channelId: victim.channel.id }, own: ['not_found'] },
+        {
+          input: {
+            ...fields,
+            id: newId(),
+            lines: [{ ...line, id: newId(), productId: victim.product.id }],
+          },
+          own: ['not_found'],
+        },
+        {
+          input: { ...fields, id: newId(), lines: [{ ...line, id: victim.order.lines[0]?.id }] },
+          own: ['conflict'],
+        },
+        {
+          input: {
+            ...fields,
+            id: newId(),
+            lines: [{ ...line, id: newId() }],
+            payment: { id: victim.orderPayment.id, method: 'cash', amount: '1' },
+          },
+          own: ['conflict'],
+        },
+      ]
+    },
+  },
+  'order.update': {
+    base: 'business',
+    reason:
+      'the order (locked) and its customer, branch, channel and products are looked up in the ' +
+      'x-business-id business; a line id used anywhere is CONFLICT',
+    variants: (victim, attacker) => {
+      const fields = {
+        businessDate: attacker.order.businessDate,
+        channelId: attacker.channel.id,
+        locationId: attacker.branch.id,
+        customerId: attacker.customer.id,
+        deliveryNeeded: true,
+      }
+      const own = { id: attacker.order.id, version: attacker.order.version }
+      const line = { kind: 'item', productId: attacker.product.id, qty: '2', unitPrice: '15.5' }
+      return [
+        {
+          input: { ...fields, id: victim.order.id, version: victim.order.version },
+          own: ['not_found'],
+        },
+        { input: { ...fields, ...own, customerId: victim.customer.id }, own: ['not_found'] },
+        { input: { ...fields, ...own, locationId: victim.branch.id }, own: ['not_found'] },
+        { input: { ...fields, ...own, channelId: victim.channel.id }, own: ['not_found'] },
+        {
+          input: {
+            ...fields,
+            ...own,
+            lines: [{ ...line, id: newId(), productId: victim.product.id }],
+          },
+          own: ['not_found'],
+        },
+        {
+          input: { ...fields, ...own, lines: [{ ...line, id: victim.order.lines[0]?.id }] },
+          own: ['conflict'],
+        },
+      ]
+    },
+  },
+  'order.cancel': {
+    base: 'business',
+    reason: 'looked up (and locked) in the x-business-id business',
+    variants: (victim) => [
+      { input: { id: victim.order.id, version: victim.order.version }, own: ['not_found'] },
+    ],
+  },
+  'order.deliver': {
+    base: 'business',
+    reason: 'looked up (and locked) in the x-business-id business',
+    variants: (victim) => [
+      { input: { id: victim.order.id, version: victim.order.version }, own: ['not_found'] },
+    ],
+  },
+  'order.undoDelivery': {
+    base: 'business',
+    reason: 'looked up (and locked) in the x-business-id business',
+    variants: (victim) => [{ input: { id: victim.deliveredOrder.id }, own: ['not_found'] }],
+  },
+  'customerPayment.list': {
+    base: 'business',
+    reason: 'the order, sale or customer is looked up in the x-business-id business',
+    variants: (victim) => [
+      { input: { orderId: victim.order.id }, own: ['not_found'] },
+      { input: { saleId: victim.payLaterSale.id }, own: ['not_found'] },
+      { input: { customerId: victim.customer.id }, own: ['not_found'] },
+    ],
+  },
+  'customerPayment.record': {
+    base: 'business',
+    reason:
+      'the order or sale is looked up (and locked) in the x-business-id business; a payment id used ' +
+      'anywhere is CONFLICT',
+    variants: (victim, attacker) => {
+      const fields = { businessDate: attacker.order.businessDate, method: 'cash', amount: '1' }
+      return [
+        { input: { ...fields, id: newId(), orderId: victim.order.id }, own: ['not_found'] },
+        { input: { ...fields, id: newId(), saleId: victim.payLaterSale.id }, own: ['not_found'] },
+        {
+          input: { ...fields, id: victim.orderPayment.id, orderId: attacker.order.id },
+          own: ['conflict'],
+        },
+      ]
+    },
+  },
+  'customerPayment.reverse': {
+    base: 'business',
+    reason: 'the payment is looked up in the x-business-id business',
+    variants: (victim) => [{ input: { id: victim.orderPayment.id }, own: ['not_found'] }],
+  },
+  'customerPayment.recordMany': {
+    base: 'business',
+    reason:
+      'the customer and every order or sale are looked up (and locked) in the x-business-id ' +
+      'business; a payment id used anywhere is CONFLICT',
+    variants: (victim, attacker) => {
+      const fields = { businessDate: attacker.order.businessDate, method: 'cash', amount: '1' }
+      return [
+        {
+          input: {
+            ...fields,
+            customerId: victim.customer.id,
+            documents: [{ id: newId(), orderId: attacker.order.id }],
+          },
+          own: ['not_found'],
+        },
+        {
+          input: {
+            ...fields,
+            customerId: attacker.customer.id,
+            documents: [{ id: newId(), orderId: victim.order.id }],
+          },
+          own: ['not_found'],
+        },
+        {
+          input: {
+            ...fields,
+            customerId: attacker.customer.id,
+            documents: [{ id: newId(), saleId: victim.payLaterSale.id }],
+          },
+          own: ['not_found'],
+        },
+        {
+          input: {
+            ...fields,
+            customerId: attacker.customer.id,
+            documents: [{ id: victim.orderPayment.id, orderId: attacker.order.id }],
+          },
+          own: ['conflict'],
+        },
+      ]
+    },
+  },
+  'receivable.list': {
+    base: 'business',
+    reason: `${NO_ROWS}; a customer filter is looked up in that business (NOT_FOUND)`,
+    variants: (victim) => [
+      { input: {} },
+      { input: { customerId: victim.customer.id }, own: ['not_found'] },
+    ],
+  },
+  'sale.refund': {
+    base: 'business',
+    reason:
+      'the order, the sale and each line are looked up (and locked) in the x-business-id business; ' +
+      'a refund or payment id used anywhere is CONFLICT',
+    variants: (victim, attacker) => {
+      const line = (sale: { lines: { id: string }[] }) => sale.lines[0]?.id
+      return [
+        {
+          input: {
+            id: newId(),
+            saleId: victim.sale.id,
+            by: 'amount',
+            lines: [{ lineId: line(victim.sale), amount: '1' }],
+          },
+          own: ['not_found'],
+        },
+        {
+          input: {
+            id: newId(),
+            orderId: victim.deliveredOrder.id,
+            by: 'amount',
+            lines: [{ lineId: line(attacker.sale), amount: '1' }],
+          },
+          own: ['not_found'],
+        },
+        {
+          input: {
+            id: newId(),
+            saleId: attacker.sale.id,
+            by: 'amount',
+            lines: [{ lineId: line(victim.sale), amount: '1' }],
+          },
+          own: ['not_found'],
+        },
+        {
+          input: {
+            id: victim.refund.id,
+            saleId: attacker.sale.id,
+            by: 'amount',
+            lines: [{ lineId: line(attacker.sale), amount: '1' }],
+          },
+          own: ['conflict'],
+        },
+        {
+          input: {
+            id: newId(),
+            orderId: attacker.deliveredOrder.id,
+            by: 'amount',
+            lines: [{ lineId: line(attacker.refund), amount: '1' }],
+            payment: { id: victim.orderPayment.id, method: 'cash', amount: '1' },
+          },
+          own: ['not_found', 'conflict'],
+        },
+      ]
+    },
   },
   // Importing sales from a file (M3 Step 4).
   'saleImport.list': {

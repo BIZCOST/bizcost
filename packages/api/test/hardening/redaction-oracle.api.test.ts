@@ -1,5 +1,7 @@
 import { randomBytes } from 'node:crypto'
 import {
+  type CustomerDto,
+  type OrderDto,
   isWithMeta,
   withMeta,
   type AppErrorCode,
@@ -633,6 +635,71 @@ async function readableSale(persona: Persona, extra?: object): Promise<string> {
   return draft.id
 }
 
+// Orders (M3 Step 5): one of the costed product at its price for the oracle's customer, today. Its
+// delivery cost is never typed here (the member who types one reads it back, D-230): the order's
+// costs are its profit's (materials: RECIPE_COST, `cost`; the profit itself, `profit_margin`), read
+// as the owner once it is delivered (orderValues), shown only with the costs switch.
+const orderValues = { cost: [] as string[], profit_margin: [] as string[] }
+let customer: CustomerDto
+let deliveredOrder: OrderDto
+
+function orderInput(extra: object = {}) {
+  return {
+    id: newId(),
+    customerId: customer.id,
+    businessDate: today,
+    channelId: channel.id,
+    lines: [
+      { kind: 'item', id: newId(), productId: costed.id, qty: '1', unitPrice: PRODUCT_PRICE },
+    ],
+    ...extra,
+  }
+}
+
+/** A member who does not see every order changes and delivers only their own (Q10, D-214). */
+function ordersOnlyOwn(persona: Persona): boolean {
+  return persona !== 'owner' && !holds(persona, 'orders.documents.view')
+}
+
+/** A pending order entered by `persona` when they see only their own, else by the owner. */
+async function ownOrder(persona: Persona): Promise<OrderDto> {
+  if (!ordersOnlyOwn(persona) || !holds(persona, 'orders.documents.manage')) {
+    return (await asOwner<{ data: OrderDto }>('order.create', 'mutation', orderInput())).data
+  }
+  const result = await callProcedure<{ data: OrderDto }>(
+    api.handler,
+    { path: 'order.create', type: 'mutation' },
+    members.get(persona)!.token,
+    { businessId, input: orderInput() },
+  )
+  expect(result.error, result.raw).toBeUndefined()
+  return result.data!.data
+}
+
+/**
+ * A delivered order `persona` may read (their own, delivered by them, where they see only theirs;
+ * else the owner's), its profit's numbers read as the owner (orderValues).
+ */
+async function readableOrder(persona: Persona): Promise<string> {
+  let id = deliveredOrder.id
+  if (ordersOnlyOwn(persona) && holds(persona, 'orders.documents.deliver')) {
+    const own = await ownOrder(persona)
+    const result = await callProcedure<{ data: OrderDto }>(
+      api.handler,
+      { path: 'order.deliver', type: 'mutation' },
+      members.get(persona)!.token,
+      { businessId, input: { id: own.id, version: own.version } },
+    )
+    expect(result.error, result.raw).toBeUndefined()
+    id = own.id
+  }
+  const { data } = await asOwner<{ data: OrderDto }>('order.get', 'query', { id })
+  expect(data.profit?.materials, JSON.stringify(data.profit)).toBe(RECIPE_COST)
+  orderValues.cost = [data.profit!.materials!]
+  orderValues.profit_margin = [data.profit!.profit!]
+  return id
+}
+
 // Imports (M3 Step 4): a one-day summary of the costed product at its price, its fee column 13.57
 // (`cost`), each in a channel of its own (a finalized import's fee column becomes that channel's
 // statement for its day, and statements of a channel never cover a day twice). A channel's statement
@@ -945,6 +1012,68 @@ const PRODUCTION_ORACLE: Record<string, OracleEntry> = {
     permission: 'cost_engine.product_costs.view',
     prepare: async () => ({ productId: (await readCosted()).productId }),
     valuesOf: breakdownValues,
+  },
+  // Orders (M3 Step 5): reading needs any order key (every template has one); a pending order has no
+  // profit, a delivered one its profit with the costs switch.
+  'order.get': {
+    prepare: async (persona) => ({ id: await readableOrder(persona) }),
+    valuesOf: orderValues,
+  },
+  'order.create': {
+    permission: 'orders.documents.manage',
+    prepare: () => Promise.resolve(orderInput()),
+    valuesOf: { cost: [], profit_margin: [] },
+  },
+  'order.update': {
+    permission: 'orders.documents.manage',
+    prepare: async (persona) => {
+      const order = await ownOrder(persona)
+      const fields: Record<string, unknown> = orderInput({ notes: 'Oracle change' })
+      delete fields.id
+      return { ...fields, id: order.id, version: order.version }
+    },
+    valuesOf: { cost: [], profit_margin: [] },
+  },
+  'order.cancel': {
+    permission: 'orders.documents.manage',
+    prepare: async (persona) => {
+      const order = await ownOrder(persona)
+      return { id: order.id, version: order.version }
+    },
+    valuesOf: { cost: [], profit_margin: [] },
+  },
+  // Delivered: its profit's materials (one costed product, 1.02834) with the costs switch.
+  'order.deliver': {
+    permission: 'orders.documents.deliver',
+    prepare: async (persona) => {
+      const order = await ownOrder(persona)
+      return { id: order.id, version: order.version }
+    },
+    valuesOf: { cost: [RECIPE_COST], profit_margin: [] },
+  },
+  // Pending again: no profit.
+  'order.undoDelivery': {
+    permission: 'orders.documents.reverse',
+    prepare: async () => {
+      const order = await ownOrder('owner')
+      await asOwner('order.deliver', 'mutation', { id: order.id, version: order.version })
+      return { id: order.id }
+    },
+    valuesOf: { cost: [], profit_margin: [] },
+  },
+  // A refund by quantity takes off the line's frozen cost (−1.02834).
+  'sale.refund': {
+    permission: 'sales.documents.reverse',
+    prepare: async () => {
+      const sale = await newPostedSale()
+      return {
+        id: newId(),
+        saleId: sale.id,
+        by: 'quantity',
+        lines: [{ lineId: sale.lines[0]?.id, qty: '1' }],
+      }
+    },
+    valuesOf: { cost: [RECIPE_COST] },
   },
   'profit.summary': {
     permission: 'reports.sales.view',
@@ -1442,6 +1571,21 @@ beforeAll(async () => {
   await asOwner('expensePayment.record', 'mutation', expensePaymentInput(owedExpense.id))
   channel = await newChannel()
   sold = await newPostedSale()
+  // M3 Step 5: the oracle's customer (no digits of an amount in the phone: the search test) and a
+  // delivered order of the costed product.
+  customer = await asOwner<CustomerDto>('customer.create', 'mutation', {
+    id: newId(),
+    name: 'Oracle customer',
+    phone: '050 888 2020',
+  })
+  const pendingOrder = (await asOwner<{ data: OrderDto }>('order.create', 'mutation', orderInput()))
+    .data
+  deliveredOrder = (
+    await asOwner<{ data: OrderDto }>('order.deliver', 'mutation', {
+      id: pendingOrder.id,
+      version: pendingOrder.version,
+    })
+  ).data
   running = (
     await asOwner<{ data: RunningCostDto }>('runningCost.create', 'mutation', runningInput())
   ).data
@@ -1706,6 +1850,159 @@ describe('each role template, and each changed by overrides, receives exactly th
   })
 })
 
+// Customers' personal data (M3 Step 5; Q2, Q10): not a redaction category but a permission. A member
+// without customers.items.view never lists or reads customers; when they may name one (adding
+// customers, entering orders or sales, recording payments) the pickers give them the name and the
+// phone's last 4 digits only. Every persona is held to it.
+describe('masked pickers: without customers.items.view, the name and the phone’s last 4 digits only', () => {
+  const PICKS: PermissionKey[] = [
+    'customers.items.view',
+    'customers.items.manage',
+    'orders.documents.manage',
+    'sales.documents.manage',
+    'payments.customers.record',
+  ]
+
+  it.each(PERSONAS)('%s', async (persona) => {
+    const person = members.get(persona)!
+    const call = (path: string, input: unknown) =>
+      callProcedure<Record<string, unknown>>(api.handler, { path, type: 'query' }, person.token, {
+        businessId,
+        input,
+      })
+    const sees = holds(persona, 'customers.items.view')
+    const picks = PICKS.some((key) => holds(persona, key))
+    for (const [path, input] of [
+      ['customer.pick', { search: 'Oracle customer' }],
+      ['customer.similar', { name: 'Oracle customer' }],
+    ] as const) {
+      const result = await call(path, input)
+      if (!picks) {
+        expect(result.error?.data.appCode, result.raw).toBe('forbidden')
+        expect(result.raw).not.toContain('888 2020')
+        continue
+      }
+      expect(result.error, result.raw).toBeUndefined()
+      const items = [
+        ...(((result.data as { items?: unknown[] }).items ?? []) as { id: string }[]),
+        ...(((result.data as { same?: unknown[] }).same ?? []) as { id: string }[]),
+      ] as { id: string; phone: string | null; phoneLast4: string | null }[]
+      const found = items.find((i) => i.id === customer.id)
+      expect(found, `${path}: ${result.raw}`).toBeDefined()
+      expect(found?.phoneLast4).toBe('2020')
+      expect(found?.phone).toBe(sees ? '050 888 2020' : null)
+      expect(result.raw.includes('888'), path).toBe(sees)
+    }
+    // Listing and reading customers need customers.items.view.
+    for (const [path, input] of [
+      ['customer.list', {}],
+      ['customer.get', { id: customer.id }],
+    ] as const) {
+      const result = await call(path, input)
+      if (sees) expect(result.error, result.raw).toBeUndefined()
+      else {
+        expect(result.error?.data.appCode, result.raw).toBe('forbidden')
+        expect(result.raw).not.toContain('888')
+      }
+    }
+  })
+
+  // A member who adds customers without seeing them gets back what they typed, also when they send
+  // the same create again after the owner completed the customer's details (D-273).
+  it.each(PERSONAS.filter((p) => holds(p, 'customers.items.manage')))(
+    'customer.create replayed by %s',
+    async (persona) => {
+      const person = members.get(persona)!
+      const create = { id: newId(), name: `Oracle replay ${persona}`, phone: '050 333 1919' }
+      const call = () =>
+        callProcedure<Record<string, unknown>>(
+          api.handler,
+          { path: 'customer.create', type: 'mutation' },
+          person.token,
+          { businessId, input: create },
+        )
+      const first = await call()
+      expect(first.error, first.raw).toBeUndefined()
+      const current = await asOwner<CustomerDto>('customer.get', 'query', { id: create.id })
+      await asOwner('customer.update', 'mutation', {
+        id: create.id,
+        version: current.version,
+        name: create.name,
+        kind: 'individual',
+        phone: '050 777 6161',
+        email: 'oracle.secret@example.com',
+        trn: null,
+        tradeLicenceNo: null,
+        addressLine: 'Oracle villa',
+        city: null,
+        emirate: null,
+        country: 'AE',
+        notes: 'Oracle secret note',
+      })
+      const replayed = await call()
+      expect(replayed.error, replayed.raw).toBeUndefined()
+      const sees = holds(persona, 'customers.items.view')
+      for (const secret of ['777 6161', 'oracle.secret', 'Oracle villa', 'Oracle secret note']) {
+        expect(replayed.raw.includes(secret), `${persona} ${secret}`).toBe(sees)
+      }
+      if (!sees) expect(replayed.raw).toContain('050 333 1919')
+    },
+  )
+})
+
+// An order's delivery cost (D-269: `cost`, except the entering member's own) stays the owner's when
+// another member delivers it: the order's sale is the entering member's own record, never the
+// deliverer's, so `ownDeliveryCost` never hands it to a member without the costs switch (D-273).
+describe('an order’s delivery cost on its sale is its entrant’s own, not the deliverer’s', () => {
+  // More than 59: never inside a timestamp's seconds.
+  const DELIVERY_COST = '97.61'
+
+  it.each(PERSONAS)('%s', async (persona) => {
+    const person = members.get(persona)!
+    const created = (
+      await asOwner<{ data: OrderDto }>(
+        'order.create',
+        'mutation',
+        orderInput({
+          lines: [
+            { kind: 'item', id: newId(), productId: costed.id, qty: '1', unitPrice: PRODUCT_PRICE },
+            { kind: 'delivery', id: newId(), amount: '15' },
+          ],
+          deliveryNeeded: true,
+          deliveryArea: 'Oracle area',
+          deliveryCost: DELIVERY_COST,
+        }),
+      )
+    ).data
+    // Delivered by the persona when they may deliver the owner's order, else by the owner.
+    const delivers =
+      persona === 'owner' ||
+      (holds(persona, 'orders.documents.deliver') && holds(persona, 'orders.documents.view'))
+    const delivered = await callProcedure<{ data: OrderDto }>(
+      api.handler,
+      { path: 'order.deliver', type: 'mutation' },
+      (delivers ? person : members.get('owner')!).token,
+      { businessId, input: { id: created.id, version: created.version } },
+    )
+    expect(delivered.error, delivered.raw).toBeUndefined()
+    const seesCosts = visibleTo(persona).includes('cost')
+    for (const [path, id] of [
+      ['sale.get', delivered.data!.data.saleId],
+      ['order.get', created.id],
+    ] as const) {
+      const result = await callProcedure<unknown>(
+        api.handler,
+        { path, type: 'query' },
+        person.token,
+        { businessId, input: { id } },
+      )
+      expect(result.raw.includes(DELIVERY_COST), `${persona} ${path}: ${result.raw}`).toBe(
+        seesCosts && result.error === undefined,
+      )
+    }
+  })
+})
+
 // The owner's minutes frozen on a sale (D-119: a `cost`). This business has a team, so its sales
 // freeze none; a sale finalized before the business took on a team keeps them. Each persona reads a
 // sale of theirs to which such minutes are written as that posting wrote them (past the guard of posted
@@ -1799,7 +2096,14 @@ const PLAIN_QUERY_FIELDS: Record<string, string> = {
   locationId: 'names a record (a filter on the branch)',
   periodMonth: 'the month an expense is for',
   order: 'the direction of a sort the member may use',
-  groupBy: 'how Real profit groups its sales: by time, product, channel or branch, never a value',
+  groupBy:
+    'how Real profit groups its sales: by time, product, channel, branch or order, never a value',
+  // M3 Step 5.
+  name: 'a name typed to compare with the customers’ names ("Did you mean"), never an amount',
+  excludeId: 'names a record (the customer being edited)',
+  orderId: 'names a record',
+  saleId: 'names a record',
+  customerId: 'names a record (a filter on the customer)',
 }
 
 /** Each option of a field that sorts or filters by value: the category it orders on, or none. */

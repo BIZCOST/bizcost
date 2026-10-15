@@ -2,6 +2,7 @@ import {
   checkDecimal,
   compareDecimal,
   DOCUMENT_STATUSES,
+  PAYMENT_KINDS,
   PAYMENT_METHODS,
   PURCHASE_DOCUMENT_TYPES,
   PURCHASE_RETURN_KINDS,
@@ -597,6 +598,13 @@ export const payableGroupDto = z.object({
   outstanding: price(),
   /** How many of its purchases and expenses are still owed. */
   invoiceCount: z.int().nonnegative(),
+  /**
+   * A member: the money back from suppliers they received for the business (Q18), which counts
+   * against what it owes them (D-181); 0 for a supplier.
+   */
+  moneyBack: price(),
+  /** outstanding − moneyBack: below zero when the member holds more than they are owed. */
+  owedAfterMoneyBack: price(),
   /** The oldest PAYABLE_INVOICES_MAX of them, oldest first. */
   invoices: z.array(payableInvoiceDto),
 })
@@ -609,6 +617,8 @@ export const payableListDto = withMeta(
     currency: z.string(),
     /** Σ outstanding of every supplier or member (all pages). */
     total: price(),
+    /** Members: Σ money back from suppliers they received (all pages); 0 for suppliers. */
+    moneyBackTotal: price(),
     /** This page, by name. */
     groups: z.array(payableGroupDto),
     /** The next page's cursor; null on the last page. */
@@ -620,6 +630,9 @@ export type PayableListDto = z.infer<typeof payableListDto>
 /** How the business paid what it owed: cash, card, bank transfer or cheque. */
 export const settlementMethodDto = z.enum(SETTLEMENT_METHODS)
 
+/** A payment, or money given back (from a supplier, Q18; to a customer, Q17). */
+export const paymentKindDto = z.enum(PAYMENT_KINDS)
+
 /**
  * `purchasePayment.record` (purchases.payments.record, and supplier prices visible: the amount is
  * checked against what is owed): a payment of what is owed on a final purchase bought on credit or
@@ -628,19 +641,34 @@ export const settlementMethodDto = z.enum(SETTLEMENT_METHODS)
  * purchase (VALIDATION); the amount more than zero, at most the currency's decimals (VALIDATION) and
  * at most what is still owed (EXCEEDS_OUTSTANDING).
  */
-export const recordPurchasePaymentInput = z.object({
-  id: zUuid,
-  purchaseId: zUuid,
-  businessDate: zBusinessDate,
-  method: settlementMethodDto,
-  amount: positiveMoneyInput,
-  note: z
-    .string()
-    .trim()
-    .max(PAYMENT_NOTE_MAX_LENGTH)
-    .nullish()
-    .transform((value) => (value ? value : null)),
-})
+export const recordPurchasePaymentInput = z
+  .object({
+    id: zUuid,
+    purchaseId: zUuid,
+    /**
+     * `payment` (what the business pays), or `refund`: "Money back from the supplier" (M3 Step 5,
+     * Q18) on a purchase paid beyond what it came to after its returns and credit notes, at most what
+     * was paid beyond (EXCEEDS_OUTSTANDING). It settles its "Overpaid".
+     */
+    kind: paymentKindDto.default('payment'),
+    businessDate: zBusinessDate,
+    method: settlementMethodDto,
+    amount: positiveMoneyInput,
+    note: z
+      .string()
+      .trim()
+      .max(PAYMENT_NOTE_MAX_LENGTH)
+      .nullish()
+      .transform((value) => (value ? value : null)),
+    /**
+     * Money back only: the member who received it (an active member; null: the business did). It
+     * lowers what the business owes that member (D-181).
+     */
+    receivedByMemberId: zUuid.nullable().default(null),
+  })
+  .refine((input) => input.kind === 'refund' || input.receivedByMemberId === null, {
+    message: 'receivedByMemberId goes with money back (kind refund)',
+  })
 export type RecordPurchasePaymentInput = z.input<typeof recordPurchasePaymentInput>
 
 /** The fields of a payment as recordPurchasePaymentInput has them (expensePayment.record too). */
@@ -665,6 +693,8 @@ export type PurchasePaymentsInput = z.input<typeof purchasePaymentsInput>
 
 export const purchasePaymentDto = z.object({
   id: zUuid,
+  /** A payment, or money back from the supplier (purchases only, Q18). */
+  kind: paymentKindDto,
   businessDate: zBusinessDate,
   method: settlementMethodDto,
   amount: price(),
@@ -678,6 +708,8 @@ export const purchasePaymentDto = z.object({
   reversedBy: memberNameDto.nullable(),
   /** The reversal's business day (the payment's own, or the first open day). */
   reversalDate: zBusinessDate.nullable(),
+  /** Money back: the member who received it; null when the business did (and for payments). */
+  receivedBy: memberNameDto.nullable(),
 })
 export type PurchasePaymentDto = z.infer<typeof purchasePaymentDto>
 
@@ -700,7 +732,9 @@ export const documentPaymentsFields = {
   /** A purchase: its final returns and credit notes (their totals, with VAT); 0 for an expense. */
   returned: price(),
   paid: price(),
-  /** What can still be paid (0 unless it is final and owed). */
+  /** Money back from the supplier that stands (Q18); 0 for an expense. */
+  moneyBack: price(),
+  /** What can still be paid (0 unless it is final and owed): total − returned − (paid − moneyBack). */
   outstanding: price(),
   /**
    * What was paid beyond what it came to after its final returns and credit notes (paid − (total −

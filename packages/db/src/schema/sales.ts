@@ -1,4 +1,5 @@
 import {
+  CREDIT_BY,
   DOCUMENT_STATUSES,
   IMPORT_OVERLAPS,
   IMPORT_SHAPES,
@@ -10,6 +11,7 @@ import {
   SALES_CHANNEL_KINDS,
   STANDARD_UNITS,
   VAT_CATEGORIES,
+  type CreditBy,
   type DocumentStatus,
   type ImportOverlap,
   type ImportShape,
@@ -37,11 +39,14 @@ import {
   unique,
   uniqueIndex,
   uuid,
+  type PgTableExtraConfigValue,
 } from 'drizzle-orm/pg-core'
 import { timestamptz } from './_app'
 import { tenantRef, tenantTable } from './_helpers'
 import { materials, productsServices } from './catalog'
+import { customers } from './customers'
 import { locations } from './locations'
+import { orders } from './orders'
 
 // Sales (M3 Step 2; docs/DATA_MODEL.md §6, D-219–D-222, D-225–D-231). A sale goes draft → posted →
 // reversed, like a purchase: a draft changes nothing; posting freezes its amounts (computeSale) and
@@ -222,8 +227,17 @@ export const sales = tenantTable(
     copiedFromId: uuid('copied_from_id'),
     // An imported sale (source `import`, M3 Step 4): the import it came from.
     importId: uuid('import_id'),
+    // M3 Step 5. The customer it names (One sale, an order's sale, a refund of one).
+    customerId: uuid('customer_id'),
+    // An order's sale (source `order`), and the refunds of one: the order. One live sale per order.
+    orderId: uuid('order_id'),
+    // A refund (source `refund`): the finalized sale it takes back, and how (quantity or amount).
+    refundOfId: uuid('refund_of_id'),
+    refundBy: text('refund_by').$type<CreditBy>(),
+    // One sale "they'll pay later" (Q17): owed by its customer until paid (customer_payments).
+    payLater: boolean('pay_later').notNull().default(false),
   },
-  (t) => [
+  (t): PgTableExtraConfigValue[] => [
     tenantRef('sales_location_fk', [t.businessId, t.locationId], locations),
     tenantRef('sales_channel_fk', [t.businessId, t.channelId], salesChannels),
     foreignKey({
@@ -233,6 +247,42 @@ export const sales = tenantTable(
     }),
     tenantRef('sales_import_fk', [t.businessId, t.importId], saleImports),
     index('sales_import_idx').on(t.businessId, t.importId),
+    tenantRef('sales_customer_fk', [t.businessId, t.customerId], customers),
+    tenantRef('sales_order_fk', [t.businessId, t.orderId], orders),
+    foreignKey({
+      name: 'sales_refund_of_fk',
+      columns: [t.businessId, t.refundOfId],
+      foreignColumns: [t.businessId, t.id],
+    }),
+    index('sales_customer_idx').on(t.businessId, t.customerId),
+    index('sales_order_idx').on(t.businessId, t.orderId),
+    index('sales_refund_of_idx').on(t.businessId, t.refundOfId),
+    // One live sale per order (H7): undoing a delivery reverses it and frees the key for the next.
+    uniqueIndex('sales_order_key')
+      .on(t.businessId, t.orderId)
+      .where(
+        sql`order_id is not null and refund_of_id is null and status <> 'reversed'
+          and deleted_at is null`,
+      ),
+    check(
+      'sales_order_check',
+      sql`(source = 'order') = (order_id is not null and refund_of_id is null)
+        and (order_id is null or source in ('order', 'refund'))`,
+    ),
+    check(
+      'sales_refund_check',
+      sql`(source = 'refund') = (refund_of_id is not null)
+        and (refund_of_id is null) = (refund_by is null)
+        and refund_by in (${quoted(CREDIT_BY)}) and refund_of_id <> id`,
+    ),
+    check(
+      'sales_customer_check',
+      sql`customer_id is null or source in ('single', 'order', 'refund')`,
+    ),
+    check(
+      'sales_pay_later_check',
+      sql`not pay_later or (source = 'single' and customer_id is not null)`,
+    ),
     // Lists: newest business day first; a member's own sales; a channel's or a location's.
     index('sales_business_date_idx').on(t.businessId, t.businessDate, t.id),
     index('sales_created_by_idx').on(t.businessId, t.createdBy, t.businessDate),
@@ -317,10 +367,18 @@ export const saleLines = tenantTable(
     cost: unbounded('cost'),
     timeMinutes: unbounded('time_minutes'),
     timeCost: unbounded('time_cost'),
+    // A refund's line (M3 Step 5): the line of the sale it takes back.
+    refundOfLineId: uuid('refund_of_line_id'),
   },
   (t) => [
     tenantRef('sale_lines_sale_fk', [t.businessId, t.saleId], sales),
     tenantRef('sale_lines_product_fk', [t.businessId, t.productId], productsServices),
+    foreignKey({
+      name: 'sale_lines_refund_of_line_fk',
+      columns: [t.businessId, t.refundOfLineId],
+      foreignColumns: [t.businessId, t.id],
+    }),
+    index('sale_lines_refund_of_line_idx').on(t.businessId, t.refundOfLineId),
     // Target of sale_line_materials: a line of the row's own sale.
     unique('sale_lines_sale_id_key').on(t.businessId, t.saleId, t.id),
     index('sale_lines_product_idx').on(t.businessId, t.productId),
@@ -328,7 +386,8 @@ export const saleLines = tenantTable(
     check('sale_lines_product_check', sql`(kind = 'item') = (product_id is not null)`),
     check(
       'sale_lines_delivery_check',
-      sql`kind <> 'delivery' or (qty = 1 and unit is null
+      // A refund of the delivery charged takes it back with −1 (M3 Step 5).
+      sql`kind <> 'delivery' or (abs(qty) = 1 and unit is null
         and discount_percent is null and discount_amount is null)`,
     ),
     check('sale_lines_unit_check', sql`unit in (${STANDARD_UNIT_LIST})`),

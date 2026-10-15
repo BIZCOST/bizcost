@@ -2,6 +2,7 @@ import {
   DELIVERY_AREA_MAX_LENGTH,
   DOCUMENT_NOTES_MAX_LENGTH,
   type CreateSaleInput,
+  type CustomerPickItemDto,
   type ProductDto,
   type SaleDto,
 } from '@bizcost/contracts'
@@ -11,6 +12,7 @@ import {
   newId,
   saleError,
   type CurrencyCode,
+  type LineDiscount,
   type Money,
   type Quantity,
   type SaleAmounts,
@@ -61,6 +63,10 @@ export interface SaleDraft {
   /** What the delivery actually cost the business ('' : not known yet). */
   readonly deliveryCost: string
   readonly notes: string
+  /** The customer (M3 Step 5; One sale only): null for none. */
+  readonly customer: CustomerPickItemDto | null
+  /** "They'll pay later" (M3 Step 5, Q17): owed by the customer until paid. */
+  readonly payLater: boolean
 }
 
 export interface ItemLineErrors {
@@ -76,6 +82,8 @@ export interface SaleErrors {
   deliveryCharged?: FieldError
   deliveryCost?: FieldError
   notes?: FieldError
+  /** The discount on the whole document (an order's, M3 Step 5). */
+  discount?: FieldError
   lines: Record<string, ItemLineErrors>
 }
 
@@ -99,6 +107,8 @@ export interface SaleFormContext {
    * touched is kept as it is (D-210, D-230).
    */
   readonly storedDeliveryCost: string
+  /** A discount on the whole document (an order's, M3 Step 5), as typed and read. */
+  readonly documentDiscount?: LineDiscount | null
 }
 
 export interface CheckedSale {
@@ -155,6 +165,8 @@ export function saleDraft(
       deliveryIncludesVat: false,
       deliveryCost: '',
       notes: '',
+      customer: null,
+      payLater: false,
     }
   }
   const delivery = sale.lines.find((line) => line.kind === 'delivery')
@@ -181,7 +193,26 @@ export function saleDraft(
     deliveryIncludesVat: delivery?.priceIncludesVat ?? false,
     deliveryCost: typeof cost === 'string' ? cost : '',
     notes: sale.notes ?? '',
+    customer: !sale.customerId
+      ? null
+      : {
+          id: sale.customerId,
+          name: sale.customerName ?? '',
+          kind: 'individual',
+          phone: null,
+          phoneLast4: sale.customerPhoneLast4,
+          archived: false,
+        },
+    payLater: sale.payLater === true,
   }
+}
+
+/** Why a discount on the whole document can't be taken, by the domain's code. */
+const DOCUMENT_DISCOUNT_ERRORS: Readonly<Record<string, I18nKey>> = {
+  document_discount_negative: 'catalog.numbers.notNegative',
+  document_discount_over_100_percent: 'orders.editor.errors.discountOver100',
+  document_discount_over_net: 'orders.editor.errors.discountOverItems',
+  document_discount_mixed_prices: 'orders.editor.errors.discountMixed',
 }
 
 const BUSINESS_DAY = /^\d{4}-\d{2}-\d{2}$/
@@ -277,10 +308,22 @@ export function checkSale(draft: SaleDraft, context: SaleFormContext): CheckedSa
   }
 
   const inputs = [...counted.map((line) => line.input), ...(deliveryLine ? [deliveryLine] : [])]
+  // A discount on the whole document (an order's): off the items by their net (D-220); one the items
+  // can't take is said on it, and the amounts are shown without it until it is fixed.
+  const discount = context.documentDiscount ?? null
+  const withDiscount = { lines: inputs, vatRegistered: context.vatRegistered, discount }
+  const discountProblem =
+    discount && inputs.length > 0 ? saleError(withDiscount, context.currency) : null
+  if (discountProblem && discountProblem.line === undefined) {
+    errors.discount = {
+      key:
+        DOCUMENT_DISCOUNT_ERRORS[discountProblem.code] ?? 'orders.editor.errors.discountOverItems',
+    }
+  }
+  const counting = errors.discount ? { ...withDiscount, discount: null } : withDiscount
   const amounts =
-    inputs.length > 0 &&
-    saleError({ lines: inputs, vatRegistered: context.vatRegistered }, context.currency) === null
-      ? computeSale({ lines: inputs, vatRegistered: context.vatRegistered }, context.currency)
+    inputs.length > 0 && saleError(counting, context.currency) === null
+      ? computeSale(counting, context.currency)
       : null
   const lineAmounts = new Map(
     amounts ? counted.map((line, index) => [line.id, amounts.lines[index]!] as const) : [],
@@ -294,6 +337,7 @@ export function checkSale(draft: SaleDraft, context: SaleFormContext): CheckedSa
     !errors.deliveryArea &&
     !errors.deliveryCharged &&
     !errors.deliveryCost &&
+    !errors.discount &&
     fieldLines.length === draft.lines.length
   const area = draft.deliveryArea.trim()
   return {
@@ -312,6 +356,8 @@ export function checkSale(draft: SaleDraft, context: SaleFormContext): CheckedSa
           deliveryArea: draft.deliveryNeeded && area ? area : null,
           ...(deliveryCost === undefined ? {} : { deliveryCost }),
           notes: notes || null,
+          customerId: draft.customer?.id ?? null,
+          payLater: draft.customer !== null && draft.payLater,
           lines: [
             ...fieldLines,
             ...(deliveryLine

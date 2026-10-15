@@ -1,4 +1,4 @@
-import { SALE_SHARE_STATES } from '@bizcost/domain'
+import { ORDER_STATUSES, PAYMENT_STATES, SALE_SHARE_STATES } from '@bizcost/domain'
 import { z } from 'zod'
 import { withMeta } from '../envelope'
 import { zBusinessDate } from '../primitives'
@@ -199,6 +199,45 @@ const needsLookDto = z.object({
   materialsInNoRecipe: z.array(namedDto),
 })
 
+/** One of "Recent orders". */
+const recentOrderDto = z.object({
+  id: z.string(),
+  number: z.string(),
+  /** Its first item's name; null for an order with no item yet. */
+  itemName: z.string().nullable(),
+  /** How many more items it has. */
+  moreItems: z.int().nonnegative(),
+  customerName: z.string().nullable(),
+  total: cardAmount,
+  status: z.enum(ORDER_STATUSES),
+  /** Paid / Deposit paid / Not paid; null without payments.customers.view. */
+  paymentState: z.enum(PAYMENT_STATES).nullable(),
+  dueDate: zBusinessDate.nullable(),
+})
+
+/** "What customers owe": every customer's orders and sales "they'll pay later". */
+const customersOweDto = z.object({
+  owed: cardAmount,
+  /** How many customers owe, and how many orders and sales. */
+  customers: z.int().nonnegative(),
+  documents: z.int().nonnegative(),
+  /** Paid beyond what they come to: money back to customers. */
+  overpaid: cardAmount,
+})
+
+/** "Delivery margin" this month: charged − what deliveries cost. */
+const deliveryMarginDto = z.object({
+  from: zBusinessDate,
+  to: zBusinessDate,
+  /** Deliveries counted (sales with delivery this month). */
+  deliveries: z.int().nonnegative(),
+  charged: cardAmount,
+  cost: cardCost(),
+  margin: cardProfit(),
+  /** Deliveries whose cost was not entered (the margin leaves them out). */
+  notEntered: z.int().nonnegative(),
+})
+
 export const dashboardCardsDto = withMeta(
   z.object({
     currency: z.string(),
@@ -236,6 +275,22 @@ export const dashboardCardsDto = withMeta(
     /** With two or more channels that sold this month. */
     byChannel: z.array(channelFigureDto).nullable(),
     needsLook: sensitive(needsLookDto.nullable(), 'cost'),
+    /**
+     * M3 Step 5, "Recent orders" (the mockup: #1001, its first item, amount, Pending/Delivered): the
+     * latest orders the member may see (every order with orders.documents.view, else their own), while
+     * Orders is served and on; null otherwise.
+     */
+    recentOrders: z.array(recentOrderDto).nullable(),
+    /**
+     * M3 Step 5, "What customers owe": with payments.customers.view and Payments served and on; null
+     * otherwise.
+     */
+    customersOwe: customersOweDto.nullable(),
+    /**
+     * M3 Step 5, "Delivery margin" this month (the member's branches): what customers were charged for
+     * delivery, what it cost, and the margin; with profit seen (the cost and margin), and deliveries.
+     */
+    deliveryMargin: deliveryMarginDto.nullable(),
   }),
 )
 export type DashboardCardsDto = z.infer<typeof dashboardCardsDto>

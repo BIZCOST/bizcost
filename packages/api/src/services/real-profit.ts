@@ -170,10 +170,21 @@ export interface ProfitStatement {
  */
 export function piecesOf(
   businessId: string,
-  options: { from?: string; to?: string; scope?: readonly string[] | null } = {},
+  options: {
+    from?: string
+    to?: string
+    scope?: readonly string[] | null
+    /** One order's sales: its delivered sale and their refunds (M3 Step 5). */
+    orderId?: string
+  } = {},
 ): SQL {
   const own: SQL[] = []
   const back: SQL[] = []
+  if (options.orderId !== undefined) {
+    const order = sql`s.order_id = ${options.orderId}`
+    own.push(order)
+    back.push(order)
+  }
   if (options.from !== undefined) {
     own.push(sql`s.business_date >= ${options.from}::date`)
     back.push(sql`s.reversal_business_date >= ${options.from}::date`)
@@ -191,14 +202,14 @@ export function piecesOf(
     parts.length === 0 ? sql`` : sql` and ${sql.join(parts, sql` and `)}`
   return sql`(
     select s.id as sale_id, s.business_date as day, 1 as sign, s.channel_id, s.location_id,
-           s.delivery_needed, s.delivery_cost
+           s.delivery_needed, s.delivery_cost, s.order_id, s.refund_by
       from app.sales s
      where s.business_id = ${businessId} and s.deleted_at is null
        and (s.status = 'posted'
          or (s.status = 'reversed' and s.reversal_business_date > s.business_date))${extra(own)}
     union all
     select s.id, s.reversal_business_date, -1, s.channel_id, s.location_id, s.delivery_needed,
-           s.delivery_cost
+           s.delivery_cost, s.order_id, s.refund_by
       from app.sales s
      where s.business_id = ${businessId} and s.deleted_at is null and s.status = 'reversed'
        and s.reversal_business_date > s.business_date${extra(back)}
@@ -847,7 +858,8 @@ async function statementFeesNotCarried(
 // ---------------------------------------------------------------------------------------------------
 
 /** How a report groups its lines. */
-export type ProfitGrouping = 'month' | 'week' | 'day' | 'product' | 'channel' | 'branch' | 'all'
+export type ProfitGrouping =
+  'month' | 'week' | 'day' | 'product' | 'channel' | 'branch' | 'order' | 'all'
 
 function groupKeyOf(grouping: ProfitGrouping): { line: SQL; sale: SQL } {
   switch (grouping) {
@@ -867,6 +879,12 @@ function groupKeyOf(grouping: ProfitGrouping): { line: SQL; sale: SQL } {
       return { line: sql`p.channel_id::text`, sale: sql`p.channel_id::text` }
     case 'branch':
       return { line: sql`p.location_id::text`, sale: sql`p.location_id::text` }
+    case 'order':
+      // An order's sale and its refunds; the sales from no order are one group ('none').
+      return {
+        line: sql`coalesce(p.order_id::text, 'none')`,
+        sale: sql`coalesce(p.order_id::text, 'none')`,
+      }
     case 'all':
       return { line: sql`'all'`, sale: sql`'all'` }
   }
@@ -939,6 +957,8 @@ export async function profitGroups(
     to: string
     grouping: ProfitGrouping
     scope: readonly string[] | null
+    /** One order's sale and refunds only (an order's profit, M3 Step 5). */
+    orderId?: string
   },
 ): Promise<ProfitGroupSums[]> {
   if (env.firstSaleDay === null) return []
@@ -947,6 +967,7 @@ export async function profitGroups(
     from: options.from,
     to: options.to,
     scope: options.scope,
+    ...(options.orderId === undefined ? {} : { orderId: options.orderId }),
   })
   const key = groupKeyOf(options.grouping)
   // Completeness (H2, D-250): each line by its own facts and its sale's delivery cost (a delivery
@@ -973,7 +994,9 @@ export async function profitGroups(
     select ${key.line} as key, to_char(p.day, 'YYYY-MM') as month, p.channel_id::text as channel_id,
            st.id::text as statement_id, l.kind,
            trim_scale(sum(p.sign * l.net))::text as net,
-           trim_scale(sum(p.sign * l.qty) filter (where l.kind = 'item'))::text as qty,
+           -- A price cut (a refund by amount) takes back no quantity sold (M3 Step 5).
+           trim_scale(sum(p.sign * l.qty) filter (where l.kind = 'item'
+             and p.refund_by is distinct from 'amount'))::text as qty,
            trim_scale(sum(p.sign * m.priced))::text as materials,
            coalesce(sum(m.rows), 0)::int as material_rows,
            coalesce(sum(m.unpriced), 0)::int as unpriced_rows,

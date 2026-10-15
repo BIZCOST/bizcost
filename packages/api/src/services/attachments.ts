@@ -14,7 +14,7 @@ import {
   type OkDto,
 } from '@bizcost/contracts'
 import { attachments, fileUploads, type Tx } from '@bizcost/db'
-import { newId, type AttachmentEntity } from '@bizcost/domain'
+import { can, newId, type AttachmentEntity, type LocationScope } from '@bizcost/domain'
 import { and, eq, inArray, isNull, lt, sql } from 'drizzle-orm'
 import type { z } from 'zod'
 import {
@@ -26,7 +26,7 @@ import {
 import type { BusinessCtx } from '../business-context'
 import type { ApiConfig } from '../deps'
 import { AppError } from '../errors'
-import { isoOf } from './stock'
+import { isoOf, uuidArray } from './stock'
 
 // Attachments (ROADMAP.md M2 Step 3; DATA_MODEL.md §6 Files; D-030, D-085): files attached to a
 // record (a purchase's or an expense's receipts, M2 Steps 3 and 5), in the private bucket
@@ -56,6 +56,8 @@ const EXTENSION_OF: Readonly<Record<AttachmentContentType, string>> = {
 const RECORD_TABLES: Readonly<Record<AttachmentEntity, ReturnType<typeof sql.raw>>> = {
   purchase: sql.raw('app.purchases'),
   expense: sql.raw('app.expenses'),
+  // M3 Step 5: an order's files (the customer's LPO, a photo of the order).
+  order: sql.raw('app.orders'),
 }
 
 /** Storage's signed upload URLs work for 2 hours; the registry closes the path at the same time. */
@@ -87,7 +89,10 @@ export function sniffAttachmentType(bytes: Uint8Array): AttachmentContentType | 
  * (EXPENSE_IN_APPROVAL): what the approver looks at, its receipts included, is what is approved
  * (D-164, D-176). With `ownOnly` too (a member who may not see supplier prices), an expense's or a
  * purchase's files change only on one the caller entered, while it is a draft (or a rejected expense;
- * FORBIDDEN otherwise, D-184, D-200): never another member's, never a final one's.
+ * FORBIDDEN otherwise, D-184, D-200): never another member's, never a final one's. With `orders`, an
+ * order is found only as the caller may see it (orders.ts visibleOrders): their own without "see
+ * every order", and only in their branches when they are limited to some (Q12, D-273); NOT_FOUND
+ * otherwise, as if it did not exist.
  */
 async function assertRecord(
   tx: Tx,
@@ -98,18 +103,27 @@ async function assertRecord(
     lock = false,
     change = false,
     ownOnly = false,
-  }: { lock?: boolean; change?: boolean; ownOnly?: boolean } = {},
+    orders,
+  }: { lock?: boolean; change?: boolean; ownOnly?: boolean; orders?: OrderAccess } = {},
 ) {
   // The attachments table's trigger checks the same (DATA_MODEL.md §6).
   const table = RECORD_TABLES[entity]
   if (!table) throw new AppError('not_found')
+  // An order of another branch, for a member limited to some branches (Q12): as if it did not exist.
+  const branches =
+    entity === 'order' && orders && !orders.scope.all
+      ? sql`and r.location_id = any(${uuidArray([...orders.scope.ids])})`
+      : sql``
   const [row] = (await tx.execute(sql`
     select r.id, r.status, coalesce(r.created_by = app.current_user_id(), false) as mine
       from ${table} r
-     where r.business_id = ${businessId} and r.id = ${id} and r.deleted_at is null
+     where r.business_id = ${businessId} and r.id = ${id} and r.deleted_at is null ${branches}
      ${lock ? sql`for no key update` : sql``}
   `)) as unknown as { id: string; status: string; mine: boolean }[]
   if (!row) throw new AppError('not_found')
+  // An order of someone else's, for a member who sees only their own orders (M3 Step 5, Q10): as if
+  // it did not exist.
+  if (entity === 'order' && orders?.ownOnly && !row.mine) throw new AppError('not_found')
   if (change && entity === 'expense' && (row.status === 'submitted' || row.status === 'approved')) {
     throw new AppError('expense_in_approval')
   }
@@ -125,6 +139,20 @@ async function assertRecord(
 
 /** Whether the caller changes only the files of their own expenses and purchases (D-184). */
 const ownOnly = (ctx: BusinessCtx) => !ctx.access.visibleCategories.has('supplier_price')
+
+/**
+ * Which orders the caller may see (M3 Step 5): only those they entered without "see every order",
+ * and only their branches' when they are limited to some (Q12).
+ */
+interface OrderAccess {
+  readonly ownOnly: boolean
+  readonly scope: LocationScope
+}
+
+const orderAccess = (ctx: BusinessCtx): OrderAccess => ({
+  ownOnly: !can(ctx.access.effective, 'orders.documents.view'),
+  scope: ctx.access.locationScope,
+})
 
 async function countOn(tx: Tx, businessId: string, entity: AttachmentEntity, id: string) {
   const [row] = (await tx.execute(sql`
@@ -178,6 +206,7 @@ export async function attachmentUploadUrl(
     await assertRecord(tx, ctx.businessId, input.entity, input.entityId, {
       change: true,
       ownOnly: ownOnly(ctx),
+      orders: orderAccess(ctx),
     })
     if (
       (await countOn(tx, ctx.businessId, input.entity, input.entityId)) >=
@@ -276,7 +305,9 @@ export async function listAttachments(
   input: ListInput,
 ): Promise<AttachmentListDto> {
   const records = await ctx.tx(async (tx) => {
-    await assertRecord(tx, ctx.businessId, input.entity, input.entityId)
+    await assertRecord(tx, ctx.businessId, input.entity, input.entityId, {
+      orders: orderAccess(ctx),
+    })
     return recordsOf(
       tx,
       ctx.businessId,
@@ -310,6 +341,7 @@ export async function addAttachment(
     await assertRecord(tx, ctx.businessId, input.entity, input.entityId, {
       change: true,
       ownOnly: ownOnly(ctx),
+      orders: orderAccess(ctx),
     })
     return tx
       .select({ status: fileUploads.status, purpose: fileUploads.purpose })
@@ -365,6 +397,7 @@ export async function addAttachment(
       lock: true,
       change: true,
       ownOnly: ownOnly(ctx),
+      orders: orderAccess(ctx),
     })
     if (
       (await countOn(tx, ctx.businessId, input.entity, input.entityId)) >=
@@ -451,6 +484,7 @@ export async function removeAttachment(
       lock: true,
       change: true,
       ownOnly: ownOnly(ctx),
+      orders: orderAccess(ctx),
     })
     const [row] = await tx
       .update(attachments)

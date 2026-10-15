@@ -70,6 +70,12 @@ export function checkPayment(
     readonly outstanding: string
     /** What is paid: a purchase (the default) or an expense. */
     readonly kind?: PayableKindDto
+    /**
+     * Another document's words (a customer's order or sale, M3 Step 5): "This day is before …", and
+     * "That's more than …" (money given back: more than was paid beyond what it comes to).
+     */
+    readonly beforeKey?: I18nKey
+    readonly overKey?: I18nKey
     /** The document's own day: a payment is never before it. */
     readonly documentDate: string
     readonly today: string
@@ -82,7 +88,7 @@ export function checkPayment(
   } else if (draft.businessDate > context.today) {
     errors.businessDate = { key: 'errors.future_date' }
   } else if (draft.businessDate < context.documentDate) {
-    errors.businessDate = { key: BEFORE_DOCUMENT[context.kind ?? 'purchase'] }
+    errors.businessDate = { key: context.beforeKey ?? BEFORE_DOCUMENT[context.kind ?? 'purchase'] }
   } else if (closedFor(draft.businessDate, context.today, context.closedThrough)) {
     errors.businessDate = { key: 'purchasing.payment.booksClosed' }
   }
@@ -90,7 +96,7 @@ export function checkPayment(
   const amount = readAmount(draft.amount, { positive: true, currency: context.currency })
   if (!amount.ok) errors.amount = amount.error
   else if (compareDecimal(amount.value, context.outstanding) > 0) {
-    errors.amount = { key: 'errors.exceeds_outstanding' }
+    errors.amount = { key: context.overKey ?? 'errors.exceeds_outstanding' }
   }
   const note = draft.note.trim()
   if (note.length > PAYMENT_NOTE_MAX_LENGTH) {

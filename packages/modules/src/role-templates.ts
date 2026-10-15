@@ -13,7 +13,10 @@ import { PERMISSION_CATALOG, type PermissionKey } from './permissions'
 // keys of M2 Step 6, sales_security for the sales keys of M3 Step 2, by the plan's Q10 table: an
 // Employee enters and finalizes their own sales only, D-218; reports_access for the reports keys of M3
 // Step 3: Real profit's sales figures for those who see every sale, its profit for the Manager and the
-// Accountant; sale_imports_security for the import key of M3 Step 4, the Manager's).
+// Accountant; sale_imports_security for the import key of M3 Step 4, the Manager's; orders_security
+// for the customers, orders and customer-payments keys of M3 Step 5, by the plan's Q10 table: an
+// Employee adds customers, enters and delivers their own orders, and picks customers by name and the
+// phone's last 4 digits only).
 
 export const ROLE_TEMPLATE_KEYS = [
   OWNER_TEMPLATE_KEY,
@@ -79,6 +82,14 @@ export const ROLE_TEMPLATES: readonly RoleTemplate[] = [
       'sales.imports.manage',
       'reports.sales.view',
       'reports.profit.view',
+      'customers.items.view',
+      'customers.items.manage',
+      'orders.documents.view',
+      'orders.documents.manage',
+      'orders.documents.deliver',
+      'orders.documents.reverse',
+      'payments.customers.view',
+      'payments.customers.record',
       'data.cost.view',
       'data.profit_margin.view',
       'data.supplier_price.view',
@@ -101,6 +112,10 @@ export const ROLE_TEMPLATES: readonly RoleTemplate[] = [
       'sales.documents.view',
       'reports.sales.view',
       'reports.profit.view',
+      'customers.items.view',
+      'orders.documents.view',
+      'payments.customers.view',
+      'payments.customers.record',
       'data.cost.view',
       'data.profit_margin.view',
       'data.supplier_price.view',
@@ -117,6 +132,13 @@ export const ROLE_TEMPLATES: readonly RoleTemplate[] = [
       'sales.documents.manage',
       'sales.documents.post',
       'reports.sales.view',
+      'customers.items.view',
+      'customers.items.manage',
+      'orders.documents.view',
+      'orders.documents.manage',
+      'orders.documents.deliver',
+      'payments.customers.view',
+      'payments.customers.record',
     ],
   },
   {
@@ -132,6 +154,11 @@ export const ROLE_TEMPLATES: readonly RoleTemplate[] = [
       'sales.documents.manage',
       'sales.documents.post',
       'reports.sales.view',
+      'customers.items.view',
+      'customers.items.manage',
+      'orders.documents.view',
+      'orders.documents.manage',
+      'orders.documents.deliver',
     ],
   },
   // The owner's answers of 2026-09-29 (D-179, D-180): an employee sees what goes into each product
@@ -150,6 +177,9 @@ export const ROLE_TEMPLATES: readonly RoleTemplate[] = [
       'expenses.documents.manage',
       'sales.documents.manage',
       'sales.documents.post',
+      'customers.items.manage',
+      'orders.documents.manage',
+      'orders.documents.deliver',
     ],
   },
 ]

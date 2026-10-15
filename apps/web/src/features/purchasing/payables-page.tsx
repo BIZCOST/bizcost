@@ -22,7 +22,7 @@ import { LoadError } from '@/components/states/query-state'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { ListEmpty, ListSkeleton } from '@/features/catalog/catalog-list'
-import { Money, useBusinessDate } from '@/features/documents/amounts'
+import { Money, useBusinessDate, useMoney } from '@/features/documents/amounts'
 import { can } from '@/features/settings/sections'
 import { useLocale } from '@/lib/i18n/client'
 import { useBusinessContext } from '@/lib/trpc/client'
@@ -200,6 +200,7 @@ function GroupCard({
   onPay?: (invoice: PayableInvoiceDto) => (() => void) | undefined
 }) {
   const { t } = useTranslation()
+  const money = useMoney()
   const id = useId()
   return (
     <section
@@ -228,6 +229,25 @@ function GroupCard({
           </span>
         </p>
       </div>
+      {group.party === 'member' &&
+      group.moneyBack !== undefined &&
+      compareDecimal(group.moneyBack, '0') > 0 ? (
+        <p data-money-back className="border-b px-4 py-2.5 text-sm text-muted-foreground sm:px-5">
+          {t('purchasing.moneyBack.memberHolds', {
+            amount: money(group.moneyBack),
+          })}{' '}
+          <span className="font-medium text-foreground">
+            {group.owedAfterMoneyBack !== undefined &&
+            compareDecimal(group.owedAfterMoneyBack, '0') < 0
+              ? t('purchasing.moneyBack.memberOwesBack', {
+                  amount: money(group.owedAfterMoneyBack.replace(/^-/, '')),
+                })
+              : t('purchasing.moneyBack.memberOwedAfter', {
+                  amount: money(group.owedAfterMoneyBack ?? '0'),
+                })}
+          </span>
+        </p>
+      ) : null}
       <ul aria-label={group.name} className="divide-y">
         {group.invoices.map((invoice) => (
           <InvoiceRow

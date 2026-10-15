@@ -25,6 +25,8 @@ export const DASHBOARD_MESSAGES: readonly MessageSpec[] = [
   'dashboard',
   { namespace: 'setup', paths: ['cap', 'review.groups.about'] },
   { namespace: 'units', paths: ['qty', 'per'] },
+  // M3 Step 5: Recent orders' status and payment badges.
+  { namespace: 'orders', paths: ['status', 'paymentState'] },
 ]
 
 /**
@@ -104,8 +106,68 @@ export const SALES_MESSAGES: readonly MessageSpec[] = [
   'units',
   {
     namespace: 'purchasing',
-    paths: ['editor', 'totals', 'view.discountPercent', 'view.discountAmount'],
+    paths: [
+      'editor',
+      'totals',
+      'view.discountPercent',
+      'view.discountAmount',
+      // M3 Step 5: how a customer paid, and the payment form's own checks.
+      'paymentMethods',
+      'payment',
+    ],
   },
+  // M3 Step 5: One sale's customer and "They'll pay later", its payments and refunds.
+  'orders',
+]
+
+/** The purchasing words the customer payment forms share (how it was paid, a payment's checks). */
+const PAYMENT_WORDS: MessageSpec = {
+  namespace: 'purchasing',
+  paths: ['paymentMethods', 'payment', 'editor'],
+}
+
+/**
+ * Orders (M3 Step 5; its layout; shown only under the dev-only preview until Release A): the orders
+ * messages and the sales ones (an order's lines, delivery and refunds are a sale's), the catalog's
+ * words and the unit names (a line names a product; its quick-add opens the product form), and the
+ * purchasing words of the shared document parts, payments and files.
+ */
+export const ORDERS_MESSAGES: readonly MessageSpec[] = [
+  'orders',
+  'sales',
+  'catalog',
+  'units',
+  {
+    namespace: 'purchasing',
+    paths: [
+      'editor',
+      'totals',
+      'view.discountPercent',
+      'view.discountAmount',
+      'paymentMethods',
+      'payment',
+      'receipts',
+    ],
+  },
+]
+
+/**
+ * Customers (M3 Step 5; its layout): the orders messages (customers, their orders, payments and what
+ * they owe), the catalog's list and form words, and the sales words of a customer's sales.
+ */
+export const CUSTOMERS_MESSAGES: readonly MessageSpec[] = [
+  'orders',
+  { namespace: 'catalog', paths: ['list', 'form', 'numbers'] },
+  { namespace: 'sales', paths: ['list', 'status', 'view.title'] },
+  PAYMENT_WORDS,
+]
+
+/** What customers owe (M3 Step 5; its layout): the orders messages and the payment forms' words. */
+export const RECEIVABLES_MESSAGES: readonly MessageSpec[] = [
+  'orders',
+  { namespace: 'catalog', paths: ['list', 'numbers'] },
+  { namespace: 'sales', paths: ['list.namesSeparator', 'list.moreItems'] },
+  PAYMENT_WORDS,
 ]
 
 /**

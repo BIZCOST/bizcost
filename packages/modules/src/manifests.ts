@@ -514,6 +514,111 @@ const REPORTS = {
   requiresCapabilities: [],
 } as const satisfies ModuleManifest
 
+// Customers (M3 Step 5; planned until Release A in Step 6, served before that only under the dev-only
+// preview, D-125): one list of the business's customers, apart from suppliers (D-112), names that may
+// repeat ("Did you mean", Q2). `customers.items.view` lists them with their details; `.manage` adds
+// and changes them. A member without `.view` who adds them (the Employee's quick add, Q10) changes
+// none, and picks a customer by name and the phone's last 4 digits only (customer.pick). Nothing on a
+// customer is a redaction category: their personal data is a permission.
+const CUSTOMERS = {
+  id: 'customers',
+  kind: 'core',
+  availability: 'planned',
+  phase: 3,
+  deps: [],
+  permissionKeys: ['customers.items.view', 'customers.items.manage'],
+  nav: [
+    {
+      id: 'customers',
+      labelKey: 'nav.customers',
+      path: 'customers',
+      icon: 'users',
+      group: 'main',
+      permission: 'customers.items.view',
+    },
+  ],
+  quickActions: [],
+  sensitiveFields: [],
+  requiresCapabilities: [],
+} as const satisfies ModuleManifest
+
+// Payments (M3 Step 5; planned until Release A): what customers pay on their orders and on sales
+// "they'll pay later", and "What customers owe" («مستحقات العملاء»), one figure per obligation (Q17,
+// A2). `payments.customers.view` (it needs every sale seen, H1) lists them; `.record` records and
+// reverses payments and money given back. Amounts are sales amounts: who sees them is a permission.
+const PAYMENTS = {
+  id: 'payments',
+  kind: 'core',
+  availability: 'planned',
+  phase: 3,
+  deps: [],
+  permissionKeys: ['payments.customers.view', 'payments.customers.record'],
+  nav: [
+    {
+      id: 'receivables',
+      labelKey: 'nav.receivables',
+      path: 'receivables',
+      icon: 'wallet',
+      group: 'main',
+      permission: 'payments.customers.view',
+    },
+  ],
+  quickActions: [],
+  sensitiveFields: [],
+  requiresCapabilities: [],
+} as const satisfies ModuleManifest
+
+// Orders (M3 Step 5; planned until Release A): a customer's order with delivery, deposits and
+// refunds, Pending → Delivered (it counts as a sale on its delivery day) or Cancelled, "Undo delivery"
+// (Q16). "Orders / الطلبات" in every wording profile (Q19). `orders.documents.view` sees every order
+// (it needs every sale seen, H1); without it a member who enters orders sees, changes and delivers only
+// their own (Q10, D-214). `.manage` enters and changes pending orders and cancels them, `.deliver`
+// delivers them, `.reverse` undoes a delivery and refunds a delivered order. Its page is reached with
+// "see every order" or "enter orders" (two entries of one path, listed once), and "+" offers a new
+// order to those who enter them. The delivery cost is `cost`, the order's profit `profit_margin`.
+const ORDERS = {
+  id: 'orders',
+  kind: 'optional',
+  availability: 'planned',
+  phase: 3,
+  deps: ['products', 'customers', 'payments'],
+  permissionKeys: [
+    'orders.documents.view',
+    'orders.documents.manage',
+    'orders.documents.deliver',
+    'orders.documents.reverse',
+  ],
+  nav: [
+    {
+      id: 'orders',
+      labelKey: 'nav.orders',
+      path: 'orders',
+      icon: 'clipboard-list',
+      group: 'main',
+      permission: 'orders.documents.view',
+    },
+    {
+      id: 'orders',
+      labelKey: 'nav.orders',
+      path: 'orders',
+      icon: 'clipboard-list',
+      group: 'main',
+      permission: 'orders.documents.manage',
+    },
+  ],
+  quickActions: [
+    {
+      id: 'new_order',
+      labelKey: 'nav.new_order',
+      path: 'orders/new',
+      icon: 'clipboard-list',
+      permission: 'orders.documents.manage',
+    },
+  ],
+  sensitiveFields: ['cost', 'profit_margin'],
+  requiresCapabilities: [],
+} as const satisfies ModuleManifest
+
 interface PlannedManifest extends ModuleManifest {
   readonly availability: 'planned'
   readonly permissionKeys: readonly []
@@ -557,11 +662,11 @@ export const MODULES = [
   RUNNING_COSTS,
   FILES,
   COST_ENGINE,
-  planned('customers', 'core', 3),
+  CUSTOMERS,
   SALES,
-  planned('payments', 'core', 3),
+  PAYMENTS,
   REPORTS,
-  planned('orders', 'optional', 3, { deps: ['products', 'customers', 'payments'] }),
+  ORDERS,
   planned('quotations', 'optional', 3, { deps: ['products', 'customers'] }),
   // No requiresCapabilities: a business that is not VAT-registered sends plain invoices (§6.6).
   planned('invoices', 'optional', 3, { deps: ['products', 'customers', 'payments'] }),

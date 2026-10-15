@@ -468,5 +468,33 @@
       "settled": "Paid back in full",
       "supplier": "From {{name}}"
     }
+  },
+  "moneyBack": {
+    "record": "Record money back from the supplier",
+    "title": "Money back from the supplier",
+    "description": "What {{name}} gave back for this purchase, after its returns or credit notes.",
+    "descriptionNoName": "What the supplier gave back for this purchase, after its returns or credit notes.",
+    "date": "Day received",
+    "method": "How you got it back",
+    "methodPick": "Choose how",
+    "methodRequired": "Choose how you got it back.",
+    "receivedBy": "Who received it?",
+    "receivedByHint": "When an employee received it, it counts against what the business owes them.",
+    "business": "The business",
+    "save": "Record money back",
+    "recorded": "Money back recorded.",
+    "over": "That's more than was overpaid on this purchase.",
+    "row": "Money back from the supplier",
+    "tag": "Money back",
+    "receivedByName": "Received by {{name}}",
+    "receivedByBusiness": "Received by the business",
+    "reverseTitle": "Reverse this money back?",
+    "reverseBody": "{{amount}} is owed back to you again. It stays listed, marked reversed.",
+    "memberHolds": "They received {{amount}} of money back from suppliers for the business.",
+    "memberOwedAfter": "Owed to them after it: {{amount}}.",
+    "memberOwesBack": "They hold {{amount}} more than they are owed: settle it with them.",
+    "mineHolds": "You received {{amount}} of money back from suppliers for the business. It counts against what you are owed.",
+    "mineOwedAfter": "Owed to you after it: {{amount}}.",
+    "mineOwesBack": "You hold {{amount}} more than you are owed: settle it with the business."
   }
 }

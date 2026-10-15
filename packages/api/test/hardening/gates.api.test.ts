@@ -82,7 +82,12 @@ const RECIPES: Gate = [['products', 'materials']]
 const RECEIPTS: Gate = [
   ['files', 'purchases'],
   ['files', 'expenses'],
+  // An order's files (M3 Step 5: the customer's LPO).
+  ['files', 'orders'],
 ]
+const CUSTOMERS: Gate = [['customers']]
+const ORDERS: Gate = [['orders']]
+const PAYMENTS: Gate = [['payments']]
 const SALES: Gate = [['sales']]
 const SALES_AND_PRODUCTS: Gate = [['sales', 'products']]
 /** The books-closed date: purchases, expenses and sales obey it (D-227, D-236). */
@@ -122,6 +127,19 @@ const MODULE_GATES: Record<string, Gate> = {
   'costCategory.list': EXPENSES_OR_RUNNING_COSTS,
   'costCategory.unarchive': EXPENSES_OR_RUNNING_COSTS,
   'costCategory.update': EXPENSES_OR_RUNNING_COSTS,
+  // Customers and customer payments (M3 Step 5).
+  'customer.archive': CUSTOMERS,
+  'customer.create': CUSTOMERS,
+  'customer.get': CUSTOMERS,
+  'customer.list': CUSTOMERS,
+  'customer.pick': CUSTOMERS,
+  'customer.similar': CUSTOMERS,
+  'customer.unarchive': CUSTOMERS,
+  'customer.update': CUSTOMERS,
+  'customerPayment.list': PAYMENTS,
+  'customerPayment.record': PAYMENTS,
+  'customerPayment.recordMany': PAYMENTS,
+  'customerPayment.reverse': PAYMENTS,
   'dashboard.cards': NONE,
   'dashboard.checklist': NONE,
   'expense.approve': EXPENSES,
@@ -176,6 +194,14 @@ const MODULE_GATES: Record<string, Gate> = {
   'member.transferOwnership': NONE,
   'member.updateLocations': SALES,
   'member.updatePermissions': NONE,
+  // Orders (M3 Step 5).
+  'order.cancel': ORDERS,
+  'order.create': ORDERS,
+  'order.deliver': ORDERS,
+  'order.get': ORDERS,
+  'order.list': ORDERS,
+  'order.undoDelivery': ORDERS,
+  'order.update': ORDERS,
   'payable.list': PURCHASES_OR_EXPENSES,
   'payable.mine': PURCHASES_OR_EXPENSES,
   'product.archive': PRODUCTS,
@@ -209,6 +235,7 @@ const MODULE_GATES: Record<string, Gate> = {
   'purchaseReturn.post': PURCHASES,
   'purchaseReturn.reverse': PURCHASES,
   'purchaseReturn.update': PURCHASES,
+  'receivable.list': PAYMENTS,
   'recipe.get': RECIPES,
   'recipe.save': RECIPES,
   'role.list': NONE,
@@ -228,6 +255,7 @@ const MODULE_GATES: Record<string, Gate> = {
   'sale.get': SALES,
   'sale.list': SALES,
   'sale.post': SALES,
+  'sale.refund': SALES,
   'sale.reverse': SALES,
   'sale.update': SALES,
   // Importing sales from a file (M3 Step 4): the names are matched to products.
@@ -522,9 +550,14 @@ describe('a module switched off is refused by every procedure that needs it (MOD
   it('a planned module is never listed, even with a row that turns it on', async () => {
     const planned = MODULES.find((m) => m.availability === 'planned')
     if (!planned) return
+    // Smart Setup may have written its row already (Quotations for a workshop): kept as it was.
+    const [before] = await api.admin<{ enabled: boolean }[]>`
+      select enabled from app.business_modules
+       where business_id = ${tenant.id} and module_key = ${planned.id}`
     await api.admin`
       insert into app.business_modules (id, business_id, module_key, enabled, created_by)
-      values (${newId()}, ${tenant.id}, ${planned.id}, true, ${tenant.owner.user.id})`
+      values (${newId()}, ${tenant.id}, ${planned.id}, true, ${tenant.owner.user.id})
+      on conflict (business_id, module_key) do update set enabled = true`
     try {
       for (const person of [tenant.owner, tenant.admin, tenant.employee]) {
         const context = ok(await as<BusinessContextDto>(person, tenant.id, 'business.context'))
@@ -532,7 +565,7 @@ describe('a module switched off is refused by every procedure that needs it (MOD
       }
     } finally {
       await api.admin`
-        update app.business_modules set enabled = false
+        update app.business_modules set enabled = ${before?.enabled ?? false}
          where business_id = ${tenant.id} and module_key = ${planned.id}`
     }
   })
@@ -853,6 +886,23 @@ const HIDDEN_FIELDS: Record<string, HiddenField | { notHidden: string }> = {
     capability: 'vat_registered',
     input: (b) => saleUpdate(b, deliveryWithVat()),
   },
+  // Orders (M3 Step 5): a branch only with branches; a delivery priced with its VAT only with VAT.
+  'order.create locationId': {
+    capability: 'multi_location',
+    input: (b) => create('order.create', orderInput(b, { locationId: otherLocation(b) })),
+  },
+  'order.update locationId': {
+    capability: 'multi_location',
+    input: (b) => orderUpdate(b, { locationId: otherLocation(b) }),
+  },
+  'order.create lines.*.amountIncludesVat': {
+    capability: 'vat_registered',
+    input: (b) => create('order.create', orderInput(b, deliveryWithVat())),
+  },
+  'order.update lines.*.amountIncludesVat': {
+    capability: 'vat_registered',
+    input: (b) => orderUpdate(b, deliveryWithVat()),
+  },
   'member.updateLocations locationIds.*': {
     capability: 'multi_location',
     input: async (b) => {
@@ -885,6 +935,28 @@ async function saleUpdate(b: Business, extra: object) {
   ).data
   const fields = updateFieldsOf(saleInput(b, extra))
   return { path: 'sale.update', input: { ...fields, id: draft.id, version: draft.version } }
+}
+
+/** A pending order without lines (M3 Step 5; its only channel, the default location). */
+function orderInput(b: Business, extra: object = {}) {
+  return { id: newId(), businessDate: b.today, lines: [], ...extra }
+}
+
+/** An order saved without the field, then the whole order with it. */
+async function orderUpdate(b: Business, extra: object) {
+  const order = ok(
+    await as<{ data: { id: string; version: number } }>(
+      b.owner,
+      b.id,
+      'order.create',
+      orderInput(b),
+    ),
+  ).data
+  const fields = orderInput(b, extra)
+  return {
+    path: 'order.update',
+    input: { ...fields, id: order.id, version: order.version },
+  }
 }
 
 /** A file of one day's sales to import (M3 Step 4): another file (its hash) each time. */

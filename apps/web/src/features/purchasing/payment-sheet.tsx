@@ -10,6 +10,7 @@ import {
 } from '@bizcost/domain'
 import type { I18nKey } from '@bizcost/i18n'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
+import { useQuery } from '@tanstack/react-query'
 import { useMemo, useRef, useState, type FormEvent } from 'react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
@@ -35,12 +36,17 @@ import type { FieldError } from '@/features/catalog/numbers'
 import { useMoney } from '@/features/documents/amounts'
 import { firstOpenDay } from '@/features/documents/books'
 import { MoneyInput } from '@/features/documents/line-editor'
+import { can } from '@/features/settings/sections'
+import { useBusinessContext } from '@/lib/trpc/client'
 import { checkPayment, PAYMENT_MISSING, paymentDraft, type PaymentDraft } from './payment-draft'
 
 // "Record a payment" of what is owed on a purchase (the owner's request of 2026-09-29) or an expense
 // (M2 Step 5, D-166), from the document or from Amounts owed: the day, how it was paid, how much (all
 // that is owed to start with; part of it is fine) and an optional note. purchasePayment.record or
-// expensePayment.record, idempotent on the sheet's id.
+// expensePayment.record, idempotent on the sheet's id. On a purchase paid beyond what it came to after
+// its returns and credit notes, "Record money back from the supplier" (M3 Step 5, Q18, D-268; ships at
+// once): the day it came back, how, how much (at most the overpaid amount) and who received it (the
+// business, or a member, which counts against what the business owes them, D-181).
 
 /** A document something is owed on: a purchase or an expense (D-166). */
 export interface OwedDocument {
@@ -75,6 +81,7 @@ export function PaymentSheet({
   owed,
   today,
   closedThrough,
+  moneyBack = false,
   onClose,
 }: {
   document: OwedDocument
@@ -82,6 +89,8 @@ export function PaymentSheet({
   owed: OwedAmounts
   today: string
   closedThrough: string | null
+  /** "Money back from the supplier" on an overpaid purchase (Q18), not a payment. */
+  moneyBack?: boolean
   onClose: () => void
 }) {
   const { t } = useTranslation()
@@ -90,9 +99,20 @@ export function PaymentSheet({
   const queryClient = useQueryClient()
   const recordPurchase = useMutation(trpc.purchasePayment.record.mutationOptions())
   const recordExpense = useMutation(trpc.expensePayment.record.mutationOptions())
+  const { data: context } = useBusinessContext()
+  // Who may have received money back: the business, or a member (the purchase's payers list).
+  const team = context?.capabilities.has_team === true
+  const payers = useQuery({
+    ...trpc.purchase.payers.queryOptions(),
+    enabled:
+      moneyBack && team && context !== undefined && can(context, 'purchases.documents.manage'),
+    staleTime: 60_000,
+  })
+  const [receivedBy, setReceivedBy] = useState('')
+  const max = (moneyBack ? owed.overpaid : owed.outstanding) ?? '0'
   const [paymentId] = useState(() => newId())
   const [initial] = useState<PaymentDraft>(() =>
-    paymentDraft(owed.outstanding ?? '0', today, owed.currency as CurrencyCode),
+    paymentDraft(max, today, owed.currency as CurrencyCode),
   )
   const [draft, setDraft] = useState<PaymentDraft>(initial)
   const [submitted, setSubmitted] = useState(false)
@@ -104,16 +124,24 @@ export function PaymentSheet({
     () =>
       checkPayment(draft, {
         currency,
-        outstanding: owed.outstanding ?? '0',
+        outstanding: max,
         kind: document.kind,
+        overKey: moneyBack ? 'purchasing.moneyBack.over' : undefined,
         documentDate: document.businessDate,
         today,
         closedThrough,
       }),
-    [draft, currency, owed.outstanding, document, today, closedThrough],
+    [draft, currency, max, moneyBack, document, today, closedThrough],
   )
   const shown = (error: FieldError | undefined): string | undefined =>
-    error && (submitted || !PAYMENT_MISSING.has(error.key)) ? t(error.key, error.values) : undefined
+    error && (submitted || !PAYMENT_MISSING.has(error.key))
+      ? t(
+          moneyBack && error.key === 'purchasing.payment.methodRequired'
+            ? 'purchasing.moneyBack.methodRequired'
+            : error.key,
+          error.values,
+        )
+      : undefined
   const set = (patch: Partial<PaymentDraft>) => setDraft((d) => ({ ...d, ...patch }))
   const openFrom = firstOpenDay(today, closedThrough)
   const minDate = openFrom && openFrom > document.businessDate ? openFrom : document.businessDate
@@ -142,14 +170,15 @@ export function PaymentSheet({
           id: paymentId,
           purchaseId: document.id,
           ...check.fields,
+          ...(moneyBack ? { kind: 'refund' as const, receivedByMemberId: receivedBy || null } : {}),
         })
         queryClient.setQueryData(
           trpc.purchasePayment.list.queryKey({ purchaseId: document.id }),
           result,
         )
       }
-      await queryClient.invalidateQueries({ queryKey: trpc.payable.list.pathKey() })
-      toast.success(t('purchasing.payment.recorded'))
+      await queryClient.invalidateQueries({ queryKey: trpc.payable.pathKey() })
+      toast.success(t(moneyBack ? 'purchasing.moneyBack.recorded' : 'purchasing.payment.recorded'))
       return true
     } catch (error) {
       setServerError(
@@ -181,23 +210,36 @@ export function PaymentSheet({
           className="flex min-h-0 flex-1 flex-col"
         >
           <SheetHeader>
-            <SheetTitle>{t('purchasing.payment.title')}</SheetTitle>
+            <SheetTitle>
+              {t(moneyBack ? 'purchasing.moneyBack.title' : 'purchasing.payment.title')}
+            </SheetTitle>
             <SheetDescription className="max-sm:not-sr-only">
-              {t(DESCRIPTIONS[document.kind][owed.owedTo?.party ?? 'supplier'], {
-                name: isolate(owedTo),
-              })}
+              {moneyBack
+                ? t(
+                    owedTo
+                      ? 'purchasing.moneyBack.description'
+                      : 'purchasing.moneyBack.descriptionNoName',
+                    {
+                      name: isolate(owedTo),
+                    },
+                  )
+                : t(DESCRIPTIONS[document.kind][owed.owedTo?.party ?? 'supplier'], {
+                    name: isolate(owedTo),
+                  })}
             </SheetDescription>
           </SheetHeader>
           <SheetBody className="space-y-6">
             {serverError ? <FormAlert tone="error">{t(serverError)}</FormAlert> : null}
             <p className="flex items-baseline justify-between gap-3 rounded-xl bg-muted/60 px-4 py-3 text-sm">
-              <span className="text-muted-foreground">{t('purchasing.payments.outstanding')}</span>
+              <span className="text-muted-foreground">
+                {t(moneyBack ? 'purchasing.payments.overpaid' : 'purchasing.payments.outstanding')}
+              </span>
               <bdi data-outstanding className="font-semibold tabular-nums">
-                {money(owed.outstanding ?? '0', currency)}
+                {money(max, currency)}
               </bdi>
             </p>
             <TextField
-              label={t('purchasing.payment.date')}
+              label={t(moneyBack ? 'purchasing.moneyBack.date' : 'purchasing.payment.date')}
               type="date"
               min={minDate}
               max={today}
@@ -206,7 +248,11 @@ export function PaymentSheet({
               error={shown(check.errors.businessDate)}
             />
             <TextField
-              label={<Required>{t('purchasing.payment.method')}</Required>}
+              label={
+                <Required>
+                  {t(moneyBack ? 'purchasing.moneyBack.method' : 'purchasing.payment.method')}
+                </Required>
+              }
               error={shown(check.errors.method)}
               render={(a11y) => (
                 <NativeSelect
@@ -216,7 +262,11 @@ export function PaymentSheet({
                   onChange={(event) => set({ method: event.target.value as SettlementMethod })}
                 >
                   <option value="" disabled>
-                    {t('purchasing.payment.methodPick')}
+                    {t(
+                      moneyBack
+                        ? 'purchasing.moneyBack.methodPick'
+                        : 'purchasing.payment.methodPick',
+                    )}
                   </option>
                   {SETTLEMENT_METHODS.map((method) => (
                     <option key={method} value={method}>
@@ -231,9 +281,7 @@ export function PaymentSheet({
               error={shown(check.errors.amount)}
               hint={(id) => (
                 <p id={id} className="text-sm text-muted-foreground">
-                  {t('purchasing.payment.amountHint', {
-                    amount: money(owed.outstanding ?? '0', currency),
-                  })}
+                  {t('purchasing.payment.amountHint', { amount: money(max, currency) })}
                 </p>
               )}
               render={(a11y) => (
@@ -246,6 +294,30 @@ export function PaymentSheet({
                 />
               )}
             />
+            {moneyBack && team ? (
+              <TextField
+                label={t('purchasing.moneyBack.receivedBy')}
+                hint={(id) => (
+                  <p id={id} className="text-sm text-muted-foreground">
+                    {t('purchasing.moneyBack.receivedByHint')}
+                  </p>
+                )}
+                render={(a11y) => (
+                  <NativeSelect
+                    {...a11y}
+                    value={receivedBy}
+                    onChange={(event) => setReceivedBy(event.target.value)}
+                  >
+                    <option value="">{t('purchasing.moneyBack.business')}</option>
+                    {(payers.data?.items ?? []).map((payer) => (
+                      <option key={payer.memberId} value={payer.memberId}>
+                        {payer.name}
+                      </option>
+                    ))}
+                  </NativeSelect>
+                )}
+              />
+            ) : null}
             <TextField
               label={t('purchasing.payment.note')}
               error={shown(check.errors.note)}
@@ -275,7 +347,9 @@ export function PaymentSheet({
               {t('actions.cancel')}
             </Button>
             <Button type="submit" disabled={busy}>
-              {busy ? t('status.saving') : t('purchasing.payment.save')}
+              {busy
+                ? t('status.saving')
+                : t(moneyBack ? 'purchasing.moneyBack.save' : 'purchasing.payment.save')}
             </Button>
           </SheetFooter>
         </form>

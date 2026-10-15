@@ -260,6 +260,59 @@
         "productsWithoutRecipe": "إضافة الوصفات",
         "materialsInNoRecipe": "عرض منتجاتك"
       }
+    },
+    "orders": {
+      "title": "أحدث الطلبات",
+      "open": "اعرض كل الطلبات",
+      "none": "لا طلبات بعد.",
+      "more_zero": "+ {{count}}",
+      "more_one": "+ صنف آخر",
+      "more_two": "+ صنفان آخران",
+      "more_few": "+ {{count}} أصناف أخرى",
+      "more_many": "+ {{count}} صنفًا آخر",
+      "more_other": "+ {{count}} صنف آخر",
+      "due": "موعده {{date}}"
+    },
+    "owe": {
+      "nothing": "لا مستحقات",
+      "customers_zero": "{{count}} عميل",
+      "customers_one": "عميل واحد",
+      "customers_two": "عميلان",
+      "customers_few": "{{count}} عملاء",
+      "customers_many": "{{count}} عميلًا",
+      "customers_other": "{{count}} عميل",
+      "documents_zero": "{{count}} طلب أو عملية بيع",
+      "documents_one": "طلب أو عملية بيع واحدة",
+      "documents_two": "طلبان أو عمليتا بيع",
+      "documents_few": "{{count}} طلبات وعمليات بيع",
+      "documents_many": "{{count}} طلبًا وعملية بيع",
+      "documents_other": "{{count}} طلب وعملية بيع",
+      "sales_zero": "{{count}} عملية بيع",
+      "sales_one": "عملية بيع واحدة",
+      "sales_two": "عمليتا بيع",
+      "sales_few": "{{count}} عمليات بيع",
+      "sales_many": "{{count}} عملية بيع",
+      "sales_other": "{{count}} عملية بيع",
+      "back": "مبالغ تُعاد إلى العملاء: {{amount}}"
+    },
+    "delivery": {
+      "title": "هامش التوصيل",
+      "deliveries_zero": "{{count}} توصيل هذا الشهر",
+      "deliveries_one": "توصيل واحد هذا الشهر",
+      "deliveries_two": "توصيلان هذا الشهر",
+      "deliveries_few": "{{count}} توصيلات هذا الشهر",
+      "deliveries_many": "{{count}} توصيلًا هذا الشهر",
+      "deliveries_other": "{{count}} توصيل هذا الشهر",
+      "earned": "ربحته من التوصيل بعد خصم تكلفته.",
+      "lost": "كلّفك التوصيل هذا المبلغ أكثر مما دفعه العملاء.",
+      "charged": "على العملاء: {{amount}}",
+      "cost": "تكلفة التوصيل: {{amount}}",
+      "notEntered_zero": "لم تُدخل تكلفة {{count}} توصيل بعد، فلم تُحسب.",
+      "notEntered_one": "لم تُدخل تكلفة توصيل واحد بعد، فلم تُحسب.",
+      "notEntered_two": "لم تُدخل تكلفة توصيلين بعد، فلم تُحسبا.",
+      "notEntered_few": "لم تُدخل تكلفة {{count}} توصيلات بعد، فلم تُحسب.",
+      "notEntered_many": "لم تُدخل تكلفة {{count}} توصيلًا بعد، فلم تُحسب.",
+      "notEntered_other": "لم تُدخل تكلفة {{count}} توصيل بعد، فلم تُحسب."
     }
   }
 }

@@ -10,7 +10,7 @@
 -- owned by postgres, callable only by bizcost_api. 00_catalog_coverage, 01_grants and 03_rls_initplan
 -- check the same rules generically for every table and function.
 begin;
-select plan(128);
+select plan(130);
 
 do $$
 begin
@@ -335,7 +335,13 @@ insert into links values
                               payment_method, currency, amount, net_total, vat_total, total, pays,
                               channel_id)
     values (pg_temp.id('t'), pg_temp.id('biz A'), pg_temp.id('cat A'), pg_temp.id('loc A'), current_date,
-            'no_invoice', 'cash', 'AED', 10, 10, 0, 10, 'channel_fees', :t) $$);
+            'no_invoice', 'cash', 'AED', 10, 10, 0, 10, 'channel_fees', :t) $$),
+  (42, 'purchase_payments', 'received_by_member_id', 'biz owner member',
+   'money back from the supplier and the member who received it (M3 Step 5)', $$
+    insert into app.purchase_payments (id, business_id, purchase_id, business_date, method, amount, currency,
+                                       kind, received_by_member_id)
+    values (pg_temp.id('t'), pg_temp.id('biz A'), pg_temp.id('pur credit A'), current_date, 'cash', 1, 'AED',
+            'refund', :t) $$);
 
 -- The target's id: `<target> A` / `<target> B` ('biz owner member' becomes 'biz A owner member').
 create function pg_temp.target(p_target text, p_side text)

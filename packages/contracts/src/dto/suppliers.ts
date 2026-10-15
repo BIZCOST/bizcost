@@ -113,4 +113,4 @@ export const supplierListDto = z.object({
 })
 export type SupplierListDto = z.infer<typeof supplierListDto>
 
-export { optionalLine }
+export { emailInput, optionalLine, phoneInput, trnInput }

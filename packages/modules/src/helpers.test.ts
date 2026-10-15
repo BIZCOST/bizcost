@@ -233,8 +233,8 @@ describe('the dev-only preview (D-125)', () => {
   const registry = MODULES.map((m) => (m.id === 'orders' ? building : m))
   const ordersOn = resolveEnabledModules([{ key: 'orders', enabled: true }])
 
-  it('may show only planned modules whose build started: Sales since M3 Step 2, Reports since Step 3', () => {
-    expect(PREVIEWABLE_MODULE_IDS).toEqual(['sales', 'reports'])
+  it('may show only planned modules whose build started: Sales since M3 Step 2, Reports since Step 3, Customers, Payments and Orders since Step 5', () => {
+    expect(PREVIEWABLE_MODULE_IDS).toEqual(['customers', 'sales', 'payments', 'reports', 'orders'])
   })
 
   it('parses a comma or space separated list, ignores released modules, and names what it cannot preview', () => {
@@ -258,11 +258,11 @@ describe('the dev-only preview (D-125)', () => {
       released: [],
       invalid: ['quotations', 'Orders', 'nope'],
     })
-    // The real registry has nothing to preview.
-    expect(parsePreviewModules('orders,materials')).toEqual({
+    // The real registry previews only the modules being built (Quotations is not yet).
+    expect(parsePreviewModules('quotations,materials')).toEqual({
       ids: [],
       released: ['materials'],
-      invalid: ['orders'],
+      invalid: ['quotations'],
     })
   })
 
@@ -279,8 +279,8 @@ describe('the dev-only preview (D-125)', () => {
     expect(building.availability).toBe('planned')
     expect(isModuleActive(building, ordersOn)).toBe(false)
     expect(withPreviewModules([], registry)).toBe(registry)
-    // With the real registry nothing changes.
-    expect(withPreviewModules(['orders', 'materials'])).toBe(MODULES)
+    // With the real registry nothing changes for a module not being built.
+    expect(withPreviewModules(['quotations', 'materials'])).toBe(MODULES)
   })
 
   it('still needs the business to have the module on and the member its permission', () => {

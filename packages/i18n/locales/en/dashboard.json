@@ -236,6 +236,35 @@
         "productsWithoutRecipe": "Add recipes",
         "materialsInNoRecipe": "See your products"
       }
+    },
+    "orders": {
+      "title": "Recent orders",
+      "open": "See all orders",
+      "none": "No orders yet.",
+      "more_one": "+ {{count}} more",
+      "more_other": "+ {{count}} more",
+      "due": "Due {{date}}"
+    },
+    "owe": {
+      "nothing": "Nothing owed",
+      "customers_one": "{{count}} customer",
+      "customers_other": "{{count}} customers",
+      "documents_one": "{{count}} order or sale",
+      "documents_other": "{{count}} orders and sales",
+      "sales_one": "{{count}} sale",
+      "sales_other": "{{count}} sales",
+      "back": "Money back to customers: {{amount}}"
+    },
+    "delivery": {
+      "title": "Delivery margin",
+      "deliveries_one": "{{count}} delivery this month",
+      "deliveries_other": "{{count}} deliveries this month",
+      "earned": "Delivery earned you this, after what it cost.",
+      "lost": "Delivery cost you this more than customers paid for it.",
+      "charged": "Charged to customers: {{amount}}",
+      "cost": "What deliveries cost: {{amount}}",
+      "notEntered_one": "{{count}} delivery's cost isn't entered yet: it's left out.",
+      "notEntered_other": "{{count}} deliveries' costs aren't entered yet: they're left out."
     }
   }
 }

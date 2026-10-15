@@ -1,5 +1,6 @@
 import {
   DOCUMENT_STATUSES,
+  PAYMENT_KINDS,
   PAYMENT_METHODS,
   PURCHASE_DOCUMENT_TYPES,
   PURCHASE_LINE_KINDS,
@@ -7,6 +8,7 @@ import {
   SETTLEMENT_METHODS,
   STANDARD_UNITS,
   type DocumentStatus,
+  type PaymentKind,
   type PaymentMethod,
   type PurchaseDocumentType,
   type PurchaseLineKind,
@@ -357,10 +359,26 @@ export const purchasePayments = tenantTable(
     reversedAt: timestamptz('reversed_at'),
     reversedBy: uuid('reversed_by'),
     reversalDate: date('reversal_date', { mode: 'string' }),
+    // M3 Step 5 (Q18): `refund`, "Money back from the supplier", on a purchase paid beyond what it came
+    // to after its returns and credit notes; it settles its "Overpaid". Who received it: a member
+    // (it lowers what the business owes them, D-181), or the business (null).
+    kind: text('kind').$type<PaymentKind>().notNull().default('payment'),
+    receivedByMemberId: uuid('received_by_member_id'),
   },
   (t) => [
     tenantRef('purchase_payments_purchase_fk', [t.businessId, t.purchaseId], purchases),
+    tenantRef(
+      'purchase_payments_received_by_fk',
+      [t.businessId, t.receivedByMemberId],
+      businessMembers,
+    ),
     index('purchase_payments_purchase_idx').on(t.businessId, t.purchaseId),
+    index('purchase_payments_received_by_idx').on(t.businessId, t.receivedByMemberId),
+    check('purchase_payments_kind_check', sql`kind in (${quoted(PAYMENT_KINDS)})`),
+    check(
+      'purchase_payments_received_by_check',
+      sql`kind = 'refund' or received_by_member_id is null`,
+    ),
     check('purchase_payments_method_check', sql`method in (${quoted(SETTLEMENT_METHODS)})`),
     check('purchase_payments_amount_check', sql`amount > 0`),
     check('purchase_payments_currency_check', sql`currency ~ '^[A-Z]{3}$'`),

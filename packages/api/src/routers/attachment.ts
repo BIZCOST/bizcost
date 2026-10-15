@@ -31,30 +31,47 @@ import {
  * receipts the expenses module and expenses.documents.view / .manage (M2 Step 5). The procedures first
  * need the Files module on (receipts and documents, released with the Costing Core in M2 Step 7: with
  * it off, the screens show no receipts and the API refuses them, MODULE_DISABLED), then one of the
- * two (MODULE_DISABLED or FORBIDDEN before the input is read), then the record's own. The download
- * URLs are supplier_price (a receipt shows what was paid).
+ * ones (MODULE_DISABLED or FORBIDDEN before the input is read), then the record's own. An order's
+ * files (M3 Step 5: the customer's LPO) need Orders on and orders.documents.view or .manage to list
+ * (one who sees only their own orders, their own's; one limited to some branches, only those
+ * branches' orders, Q12), .manage to add or remove. The download URLs are
+ * supplier_price (a receipt shows what was paid).
  */
 const ACCESS: Readonly<
-  Record<AttachmentEntity, { view: ModuleAccessPair; manage: ModuleAccessPair }>
+  Record<
+    AttachmentEntity,
+    { view: readonly ModuleAccessPair[]; manage: readonly ModuleAccessPair[] }
+  >
 > = {
   purchase: {
-    view: ['purchases', 'purchases.documents.view'],
-    manage: ['purchases', 'purchases.documents.manage'],
+    view: [['purchases', 'purchases.documents.view']],
+    manage: [['purchases', 'purchases.documents.manage']],
   },
   expense: {
-    view: ['expenses', 'expenses.documents.view'],
-    manage: ['expenses', 'expenses.documents.manage'],
+    view: [['expenses', 'expenses.documents.view']],
+    manage: [['expenses', 'expenses.documents.manage']],
+  },
+  order: {
+    view: [
+      ['orders', 'orders.documents.view'],
+      ['orders', 'orders.documents.manage'],
+    ],
+    manage: [['orders', 'orders.documents.manage']],
   },
 }
 
 const files = businessProcedure.use(requireModule('files'))
-const viewAny = files.use(requireAnyAccess(ACCESS.purchase.view, ACCESS.expense.view))
-const manageAny = files.use(requireAnyAccess(ACCESS.purchase.manage, ACCESS.expense.manage))
+const viewAny = files.use(
+  requireAnyAccess(...ACCESS.purchase.view, ...ACCESS.expense.view, ...ACCESS.order.view),
+)
+const manageAny = files.use(
+  requireAnyAccess(...ACCESS.purchase.manage, ...ACCESS.expense.manage, ...ACCESS.order.manage),
+)
 
 const mayView = (ctx: BusinessCtx, entity: AttachmentEntity) =>
-  assertAnyAccess(ctx, [ACCESS[entity].view])
+  assertAnyAccess(ctx, ACCESS[entity].view)
 const mayManage = (ctx: BusinessCtx, entity: AttachmentEntity) =>
-  assertAnyAccess(ctx, [ACCESS[entity].manage])
+  assertAnyAccess(ctx, ACCESS[entity].manage)
 
 export const attachmentRouter = router({
   /** `attachment.list`: the record's files with signed download URLs. */

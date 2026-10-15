@@ -90,6 +90,16 @@ export const PERMISSION_NEEDS: Readonly<Partial<Record<PermissionKey, readonly P
       'data.cost.view',
       'cost_engine.product_costs.view',
     ],
+    // Customers, Orders and customer payments (M3 Step 5, the plan's Q10 table). Adding customers
+    // needs no "see customers": the Employee adds one from an order's picker and sees names and the
+    // phone's last 4 digits only; changing or archiving one needs both (the API checks them).
+    // Seeing every order, and what every order and sale owes, is seeing every sale (H1). Entering and
+    // delivering orders needs no "see every order" (one's own, as sales); undoing a delivery and
+    // refunding an order do.
+    'orders.documents.view': ['sales.documents.view'],
+    'orders.documents.reverse': ['orders.documents.view'],
+    'payments.customers.view': ['sales.documents.view'],
+    'payments.customers.record': ['payments.customers.view'],
   }
 
 /** The keys of `keys` granted without a key they need (empty when the set is coherent). */

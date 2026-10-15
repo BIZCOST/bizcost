@@ -1,5 +1,7 @@
 import { randomBytes } from 'node:crypto'
 import type {
+  CustomerDto,
+  OrderDto,
   BusinessProfileDto,
   ChannelStatementDto,
   CostCategoryDto,
@@ -344,6 +346,56 @@ async function statementDraft(): Promise<ChannelStatementDto> {
   ).data
 }
 
+/** A customer of the shop (M3 Step 5). */
+async function newCustomer(): Promise<CustomerDto> {
+  return ok(await shop.run<CustomerDto>('customer.create', { id: newId(), name: `Ahmed ${tag()}` }))
+}
+
+/** An order of the latte with every decimal field (M3 Step 5): its discounts, delivery and deposit. */
+function orderInput(customerId: string, extra: object = {}) {
+  return {
+    id: newId(),
+    customerId,
+    businessDate: today,
+    channelId,
+    discount: { amount: '1.25' },
+    deliveryNeeded: true,
+    deliveryCost: '4.75',
+    lines: [
+      {
+        kind: 'item',
+        id: newId(),
+        productId: latte.id,
+        qty: '2.5',
+        unitPrice: '12.25',
+        discount: { percent: '10' },
+      },
+      { kind: 'delivery', id: newId(), amount: '3.5' },
+    ],
+    ...extra,
+  }
+}
+
+async function newOrder(deliver = false): Promise<OrderDto> {
+  const created = ok(
+    await shop.run<{ data: OrderDto }>('order.create', orderInput((await newCustomer()).id)),
+  ).data
+  if (!deliver) return created
+  return ok(
+    await shop.run<{ data: OrderDto }>('order.deliver', {
+      id: created.id,
+      version: created.version,
+    }),
+  ).data
+}
+
+/** The fields of an order's update (no id). */
+function orderFields(customerId: string, extra: object = {}): Record<string, unknown> {
+  const fields: Record<string, unknown> = orderInput(customerId, extra)
+  delete fields.id
+  return fields
+}
+
 /** The import the last digits case made (its rows are read back through it). */
 let lastImportId = ''
 
@@ -510,6 +562,73 @@ const DIGITS: Record<string, Variant[]> = {
     },
   ],
   'sale.create': [{ input: async () => saleInput() }],
+  // Orders, customer payments and refunds (M3 Step 5).
+  'order.create': [
+    {
+      input: async () =>
+        orderInput((await newCustomer()).id, {
+          payment: { id: newId(), method: 'cash', amount: '5.5' },
+        }),
+    },
+  ],
+  'order.update': [
+    {
+      input: async () => {
+        const order = await newOrder()
+        return { ...orderFields(order.customerId ?? ''), id: order.id, version: order.version }
+      },
+    },
+  ],
+  'customerPayment.record': [
+    {
+      input: async () => ({
+        id: newId(),
+        orderId: (await newOrder()).id,
+        businessDate: today,
+        method: 'cash',
+        amount: '7.25',
+      }),
+    },
+  ],
+  'customerPayment.recordMany': [
+    {
+      input: async () => {
+        const order = await newOrder()
+        return {
+          customerId: order.customerId,
+          businessDate: today,
+          method: 'card',
+          amount: '6.75',
+          documents: [{ id: newId(), orderId: order.id }],
+        }
+      },
+    },
+  ],
+  'sale.refund': [
+    {
+      input: async () => {
+        const order = await newOrder(true)
+        const sale = ok(await shop.run<{ data: SaleDto }>('sale.get', { id: order.saleId })).data
+        return {
+          id: newId(),
+          orderId: order.id,
+          by: 'quantity',
+          lines: [{ lineId: sale.lines[0]?.id, qty: '1.5' }],
+        }
+      },
+    },
+    {
+      input: async () => {
+        const sale = await postedSale()
+        return {
+          id: newId(),
+          saleId: sale.id,
+          by: 'amount',
+          lines: [{ lineId: sale.lines[0]?.id, amount: '2.25' }],
+        }
+      },
+    },
+  ],
   'sale.update': [
     {
       input: async () => {
@@ -561,6 +680,17 @@ const DIGITS: Record<string, Variant[]> = {
     {
       input: async () => {
         const created = await shop.supplier()
+        return { id: created.id, version: created.version, name: created.name, phone: '0509876543' }
+      },
+    },
+  ],
+  'customer.create': [
+    { input: async () => ({ id: newId(), name: `Ahmed ${tag()}`, phone: '0501234567' }) },
+  ],
+  'customer.update': [
+    {
+      input: async () => {
+        const created = await newCustomer()
         return { id: created.id, version: created.version, name: created.name, phone: '0509876543' }
       },
     },
@@ -707,6 +837,40 @@ const CREATES: Record<string, Create> = {
   'sale.correct': {
     input: async () => ({ id: (await postedSale()).id, newId: newId() }),
     other: async (input) => ({ ...input, id: (await postedSale()).id }),
+  },
+  // M3 Step 5.
+  'customer.create': {
+    input: async () => ({ id: newId(), name: `Ahmed ${tag()}`, phone: '050 111 2222' }),
+    other: async (input) => ({ ...input, phone: '050 333 4444' }),
+  },
+  'order.create': {
+    input: async () =>
+      orderInput((await newCustomer()).id, {
+        payment: { id: newId(), method: 'cash', amount: '5' },
+      }),
+    other: async (input) => ({ ...input, notes: `Other ${tag()}` }),
+  },
+  'customerPayment.record': {
+    input: async () => ({
+      id: newId(),
+      orderId: (await newOrder()).id,
+      businessDate: today,
+      method: 'cash',
+      amount: '5',
+    }),
+    other: async (input) => ({ ...input, amount: '6' }),
+  },
+  'sale.refund': {
+    input: async () => {
+      const sale = await postedSale()
+      return {
+        id: newId(),
+        saleId: sale.id,
+        by: 'amount',
+        lines: [{ lineId: sale.lines[0]?.id, amount: '1' }],
+      }
+    },
+    other: async (input) => ({ ...input, notes: `Other ${tag()}` }),
   },
   'saleImport.create': {
     input: async () => importInput(),
@@ -1023,6 +1187,27 @@ const VERSIONED: Record<string, Versioned> = {
   'channelStatement.post': async () => {
     const draft = await statementDraft()
     return { id: draft.id, version: draft.version }
+  },
+  // M3 Step 5.
+  'customer.update': async () => {
+    const customer = await newCustomer()
+    return { id: customer.id, version: customer.version, name: `Renamed ${tag()}` }
+  },
+  'order.update': async () => {
+    const order = await newOrder()
+    return {
+      ...orderFields(order.customerId ?? '', { notes: 'Changed' }),
+      id: order.id,
+      version: order.version,
+    }
+  },
+  'order.cancel': async () => {
+    const order = await newOrder()
+    return { id: order.id, version: order.version }
+  },
+  'order.deliver': async () => {
+    const order = await newOrder()
+    return { id: order.id, version: order.version }
   },
   'member.updateLocations': async () => {
     const member = await api.member(shop, 'employee')

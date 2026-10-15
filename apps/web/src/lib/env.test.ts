@@ -157,9 +157,9 @@ describe('parseServerEnv', () => {
 
     it('refuses a module that cannot be previewed (unknown or not being built)', () => {
       const dev = { ...base, NODE_ENV: 'development' }
-      expect(() => parseServerEnv({ ...dev, BIZCOST_PREVIEW_MODULES: 'materials,orders' })).toThrow(
-        /BIZCOST_PREVIEW_MODULES: orders/,
-      )
+      expect(() =>
+        parseServerEnv({ ...dev, BIZCOST_PREVIEW_MODULES: 'materials,quotations' }),
+      ).toThrow(/BIZCOST_PREVIEW_MODULES: quotations/)
       expect(() => parseServerEnv({ ...dev, BIZCOST_PREVIEW_MODULES: 'nope' })).toThrow(
         /BIZCOST_PREVIEW_MODULES/,
       )

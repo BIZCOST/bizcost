@@ -23,7 +23,10 @@ import { PaymentSheet, type OwedAmounts, type OwedDocument } from './payment-she
 // and what is still owed; each payment with its day, how it was paid, who recorded it and its note.
 // A payment recorded by mistake is reversed (it stays listed, marked reversed, with who reversed it).
 // A return or credit note posted after it was paid can leave it paid beyond what it came to: then the
-// last row says how much, in place of "Still owed", and a line says who owes it back (D-162).
+// last row says how much, in place of "Still owed", and a line says who owes it back (D-162). The
+// money a supplier then gives back is recorded on the purchase ("Record money back from the
+// supplier", M3 Step 5, Q18, D-268; ships at once): it settles the overpaid amount, and is listed with
+// who received it.
 
 /** Whether more was paid than it came to after its returns and credit notes (D-162). */
 function isOverpaid(owed: OwedAmounts): boolean {
@@ -40,6 +43,13 @@ function Summary({ owed }: { owed: OwedAmounts }) {
     rows.push({ key: 'returned', label: t('purchasing.payments.returned'), value: owed.returned })
   }
   rows.push({ key: 'paid', label: t('purchasing.payments.paid'), value: owed.paid })
+  if (owed.moneyBack !== undefined && compareDecimal(owed.moneyBack, '0') > 0) {
+    rows.push({
+      key: 'moneyBack',
+      label: t('purchasing.moneyBack.row'),
+      value: owed.moneyBack,
+    })
+  }
   rows.push(
     isOverpaid(owed)
       ? {
@@ -110,7 +120,7 @@ export function PaymentsPanel({
   const reversePurchase = useMutation(trpc.purchasePayment.reverse.mutationOptions())
   const reverseExpense = useMutation(trpc.expensePayment.reverse.mutationOptions())
   const reversingBusy = reversePurchase.isPending || reverseExpense.isPending
-  const [recording, setRecording] = useState(false)
+  const [recording, setRecording] = useState<'payment' | 'moneyBack' | null>(null)
   const [reversing, setReversing] = useState<PurchasePaymentDto | null>(null)
   const [error, setError] = useState<I18nKey | null>(null)
   const owedTo = owed.owedTo
@@ -120,6 +130,9 @@ export function PaymentsPanel({
     owed.status === 'posted' &&
     outstanding !== undefined &&
     compareDecimal(outstanding, '0') > 0
+  // Money back from the supplier: on a final purchase paid beyond what it came to (Q18).
+  const canTakeBack =
+    canRecord && document.kind === 'purchase' && owed.status === 'posted' && isOverpaid(owed)
 
   async function doReverse() {
     if (!reversing) return
@@ -138,7 +151,7 @@ export function PaymentsPanel({
           result,
         )
       }
-      await queryClient.invalidateQueries({ queryKey: trpc.payable.list.pathKey() })
+      await queryClient.invalidateQueries({ queryKey: trpc.payable.pathKey() })
       toast.success(t('purchasing.payments.reversed'))
       setReversing(null)
     } catch (caught) {
@@ -158,9 +171,14 @@ export function PaymentsPanel({
       }
       action={
         canPay ? (
-          <Button variant="outline" onClick={() => setRecording(true)}>
+          <Button variant="outline" onClick={() => setRecording('payment')}>
             <HandCoinsIcon aria-hidden />
             {t('purchasing.payments.record')}
+          </Button>
+        ) : canTakeBack ? (
+          <Button variant="outline" onClick={() => setRecording('moneyBack')}>
+            <HandCoinsIcon aria-hidden />
+            {t('purchasing.moneyBack.record')}
           </Button>
         ) : null
       }
@@ -206,10 +224,22 @@ export function PaymentsPanel({
                     <span className="text-sm font-normal text-muted-foreground">
                       {t(`purchasing.paymentMethods.${payment.method}`)}
                     </span>
+                    {payment.kind === 'refund' ? (
+                      <Badge tone="primary">{t('purchasing.moneyBack.tag')}</Badge>
+                    ) : null}
                     {reversed ? (
                       <Badge tone="neutral">{t('purchasing.payments.reversedTag')}</Badge>
                     ) : null}
                   </p>
+                  {payment.kind === 'refund' ? (
+                    <p data-received-by className="mt-0.5 text-sm text-muted-foreground">
+                      {payment.receivedBy?.name
+                        ? t('purchasing.moneyBack.receivedByName', {
+                            name: isolate(payment.receivedBy.name),
+                          })
+                        : t('purchasing.moneyBack.receivedByBusiness')}
+                    </p>
+                  ) : null}
                   <p className="mt-0.5 text-sm text-muted-foreground">
                     {businessDate(payment.businessDate)}
                     {' · '}
@@ -254,11 +284,20 @@ export function PaymentsPanel({
       <ConfirmDialog
         open={reversing !== null}
         icon={Undo2Icon}
-        title={t('purchasing.payments.reverseTitle')}
-        body={t('purchasing.payments.reverseBody', {
-          amount:
-            reversing?.amount === undefined ? '' : money(reversing.amount, reversing.currency),
-        })}
+        title={t(
+          reversing?.kind === 'refund'
+            ? 'purchasing.moneyBack.reverseTitle'
+            : 'purchasing.payments.reverseTitle',
+        )}
+        body={t(
+          reversing?.kind === 'refund'
+            ? 'purchasing.moneyBack.reverseBody'
+            : 'purchasing.payments.reverseBody',
+          {
+            amount:
+              reversing?.amount === undefined ? '' : money(reversing.amount, reversing.currency),
+          },
+        )}
         note={t('purchasing.payments.reverseNote')}
         action={t('purchasing.payments.reverse')}
         busyLabel={t('purchasing.confirm.reversing')}
@@ -274,7 +313,8 @@ export function PaymentsPanel({
           owed={owed}
           today={today}
           closedThrough={closedThrough}
-          onClose={() => setRecording(false)}
+          moneyBack={recording === 'moneyBack'}
+          onClose={() => setRecording(null)}
         />
       ) : null}
     </Panel>

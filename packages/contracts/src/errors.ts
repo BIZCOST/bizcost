@@ -116,6 +116,27 @@ export const APP_ERROR_CODES = [
   'import_replace_partial',
   /** Finalizing a channel statement whose days a finalized statement of the channel already covers. */
   'statement_overlap',
+  /**
+   * Reversing or correcting a sale that has customer payments recorded on it: they are reversed
+   * first (M3 Step 5, B6).
+   */
+  'sale_has_payments',
+  /**
+   * Reversing or correcting a sale (or undoing an order's delivery) while refunds of it stand: they
+   * are reversed first (M3 Step 5).
+   */
+  'sale_has_refunds',
+  /** A refund of more than is left of a sale's line (its quantity, or its value; M3 Step 5). */
+  'exceeds_sale',
+  /** Changing, delivering or undoing the delivery of a cancelled order (M3 Step 5). */
+  'order_cancelled',
+  /** Changing an order so that it comes to less than was already paid on it (M3 Step 5). */
+  'below_paid',
+  /**
+   * Reversing a customer payment while money given back stands that it covers: the money given back
+   * is reversed first (M3 Step 5 review, D-273).
+   */
+  'payment_has_money_back',
   'internal',
 ] as const
 export type AppErrorCode = (typeof APP_ERROR_CODES)[number]

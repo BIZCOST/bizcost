@@ -83,6 +83,61 @@ export {
   type SaleLineKind,
   type SaleVatRate,
 } from './documents/sale'
+// Refunds and credits (M3 Step 5): what is left of each line, by quantity or by amount, never more;
+// each later credit starts from the value its earlier ones left (VAT ER Art. 60).
+export {
+  CREDIT_BY,
+  creditError,
+  creditLeft,
+  creditTotals,
+  fitCredit,
+  planCredit,
+  type CreditAmounts,
+  type CreditBy,
+  type CreditedLine,
+  type CreditErrorCode,
+  type CreditLeft,
+  type CreditLinePlan,
+  type CreditMade,
+  type CreditRequest,
+} from './documents/credit'
+// Orders (M3 Step 5): Pending → Delivered or Cancelled, Undo delivery (Q16); document numbers.
+export {
+  DOCUMENT_COUNTER_DEFAULTS,
+  DOCUMENT_NUMBER_PADDING_MAX,
+  DOCUMENT_SERIES,
+  documentNumber,
+  ORDER_ACTIONS,
+  ORDER_STATUSES,
+  orderActions,
+  orderTransition,
+  type DocumentSeries,
+  type OrderAction,
+  type OrderActionContext,
+  type OrderRefusal,
+  type OrderStatus,
+  type OrderTransition,
+} from './orders/orders'
+// Customers (M3 Step 5, Q2): kinds, emirates, the phone's last 4 digits for masked pickers.
+export {
+  CUSTOMER_KINDS,
+  customerMayHaveLicence,
+  DEFAULT_CUSTOMER_COUNTRY,
+  EMIRATES,
+  LICENSED_CUSTOMER_KINDS,
+  phoneLast4,
+  type CustomerKind,
+  type Emirate,
+} from './customers/keys'
+// Customer payments (M3 Step 5, Q17): payment or money given back; paid, deposit, unpaid, overpaid.
+export {
+  netPaid,
+  PAYMENT_KINDS,
+  PAYMENT_STATES,
+  paymentState,
+  type PaymentKind,
+  type PaymentState,
+} from './payments/state'
 // Units: standard units per dimension, material packs and cross factors, conversions (D-034).
 export {
   BASE_UNITS,

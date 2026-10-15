@@ -12,12 +12,15 @@ import {
   firstDayOf,
   marginConcern,
   monthOf,
+  netPaid,
+  paymentState,
   PURCHASE_AVERAGE_DAYS,
   STANDARD_UNITS,
   type StandardUnit,
 } from '@bizcost/domain'
 import { sql } from 'drizzle-orm'
 import type { BusinessCtx } from '../business-context'
+import { passes } from '../trpc'
 import {
   branchLimited,
   businessLevel,
@@ -33,6 +36,7 @@ import {
   type ProfitEnv,
   type ProfitGroupSums,
 } from './real-profit'
+import { obligationsOf } from './receivables'
 import { postedPurchaseLinesOf } from './sale-costs'
 import { uuidArray } from './stock'
 
@@ -77,6 +81,10 @@ export async function getCards(ctx: BusinessCtx): Promise<DashboardCardsDto> {
       costIncreases: null,
       byChannel: null,
       needsLook: null,
+      // M3 Step 5: orders and what customers owe show whether or not anything was sold yet.
+      recentOrders: await recentOrdersOf(tx, ctx),
+      customersOwe: await customersOweOf(tx, ctx),
+      deliveryMargin: null,
     }
     const answer = (data: Cards): DashboardCardsDto => ({ data, meta: { redacted: [] } })
     if (!salesServed(ctx) || env.firstSaleDay === null || (!sees && !shown)) return answer(none)
@@ -137,6 +145,7 @@ export async function getCards(ctx: BusinessCtx): Promise<DashboardCardsDto> {
     if (!soldThisMonth || thisSum === null) return answer(data)
 
     if (shown) {
+      data.deliveryMargin = await deliveryMarginOf(tx, env, thisSum, from, scope)
       data.moneyWent = {
         sales: thisSum.sales,
         materials: thisSum.materials,
@@ -396,4 +405,125 @@ async function needsLookOf(
     materialsInNoRecipe: unused.map((r) => ({ id: r.id, name: r.name })),
   }
   return Object.values(look).some((items) => items.length > 0) ? look : null
+}
+
+// ---------------------------------------------------------------------------------------------------
+// M3 Step 5: Recent orders, What customers owe, Delivery margin
+// ---------------------------------------------------------------------------------------------------
+
+/** How many orders "Recent orders" lists. */
+const RECENT_ORDERS = 5
+
+/**
+ * "Recent orders" (the mockup: #1001, its first item, amount, Pending/Delivered): the newest orders
+ * the member may see (every order with orders.documents.view, else their own; their branches), while
+ * Orders is served and on; null otherwise. Paid / Deposit paid / Not paid with
+ * payments.customers.view.
+ */
+async function recentOrdersOf(tx: Tx, ctx: BusinessCtx): Promise<Cards['recentOrders']> {
+  const all = passes(ctx, ['orders', 'orders.documents.view'])
+  if (!all && !passes(ctx, ['orders', 'orders.documents.manage'])) return null
+  const scope = ctx.access.locationScope
+  const payments = passes(ctx, ['payments', 'payments.customers.view'])
+  const rows = (await tx.execute(sql`
+    select o.id, o.number, o.status, o.due_date::text as due_date, trim_scale(o.total)::text as total,
+           c.name as customer_name,
+           (select l.description from app.order_lines l
+             where l.business_id = o.business_id and l.order_id = o.id and l.kind = 'item'
+               and l.deleted_at is null
+             order by l.position, l.id limit 1) as item_name,
+           greatest((select count(*)::int from app.order_lines l
+             where l.business_id = o.business_id and l.order_id = o.id and l.kind = 'item'
+               and l.deleted_at is null) - 1, 0) as more_items,
+           trim_scale(d.total_n)::text as d_total, trim_scale(d.credited_n)::text as d_credited,
+           trim_scale(d.paid_n)::text as d_paid, trim_scale(d.refunded_n)::text as d_refunded
+      from app.orders o
+      left join app.customers c on c.business_id = o.business_id and c.id = o.customer_id
+      left join ${obligationsOf(ctx.businessId)} d on d.kind = 'order' and d.id = o.id
+     where o.business_id = ${ctx.businessId} and o.deleted_at is null
+       ${all ? sql`` : sql`and o.created_by = app.current_user_id()`}
+       ${scope.all ? sql`` : sql`and o.location_id = any(${uuidArray([...scope.ids])})`}
+     order by o.created_at desc, o.id desc
+     limit ${RECENT_ORDERS}
+  `)) as unknown as {
+    id: string
+    number: string
+    status: 'pending' | 'delivered' | 'cancelled'
+    due_date: string | null
+    total: string
+    customer_name: string | null
+    item_name: string | null
+    more_items: number
+    d_total: string
+    d_credited: string
+    d_paid: string
+    d_refunded: string
+  }[]
+  return rows.map((r) => ({
+    id: r.id,
+    number: r.number,
+    itemName: r.item_name,
+    moreItems: r.more_items,
+    customerName: r.customer_name,
+    total: r.total,
+    status: r.status,
+    paymentState: payments
+      ? paymentState(r.d_total, r.d_credited, netPaid(r.d_paid, r.d_refunded))
+      : null,
+    dueDate: r.due_date,
+  }))
+}
+
+/**
+ * "What customers owe": every customer's orders and sales "they'll pay later" (the member's
+ * branches), with payments.customers.view and Payments served and on; null otherwise.
+ */
+async function customersOweOf(tx: Tx, ctx: BusinessCtx): Promise<Cards['customersOwe']> {
+  if (!passes(ctx, ['payments', 'payments.customers.view'])) return null
+  const scope = ctx.access.locationScope
+  const [row] = (await tx.execute(sql`
+    select trim_scale(coalesce(sum(greatest(d.left_n, 0)), 0))::text as owed,
+           trim_scale(coalesce(sum(greatest(-d.left_n, 0)), 0))::text as overpaid,
+           (count(distinct d.customer_id) filter (where d.left_n > 0))::int as customers,
+           (count(*) filter (where d.left_n > 0))::int as documents
+      from ${obligationsOf(ctx.businessId)} d
+     where ${scope.all ? sql`true` : sql`d.location_id = any(${uuidArray([...scope.ids])})`}
+  `)) as unknown as { owed: string; overpaid: string; customers: number; documents: number }[]
+  return {
+    owed: row?.owed ?? '0',
+    overpaid: row?.overpaid ?? '0',
+    customers: row?.customers ?? 0,
+    documents: row?.documents ?? 0,
+  }
+}
+
+/**
+ * "Delivery margin" this month (the member's branches): what customers were charged for delivery,
+ * what the deliveries cost the business, and the margin (cost facts: profit seen). Null without a
+ * sale with delivery this month.
+ */
+async function deliveryMarginOf(
+  tx: Tx,
+  env: ProfitEnv,
+  sum: { deliveryCharged: string; deliveryCost: string; deliveryMargin: string },
+  from: string,
+  scope: readonly string[] | null,
+): Promise<Cards['deliveryMargin']> {
+  const [row] = (await tx.execute(sql`
+    with p as ${piecesOf(env.businessId, { from, to: env.today, scope })}
+    select (count(*) filter (where p.sign = 1 and p.delivery_needed))::int as deliveries,
+           (count(*) filter (where p.sign = 1 and p.delivery_needed and p.delivery_cost is null))::int
+             as not_entered
+      from p
+  `)) as unknown as { deliveries: number; not_entered: number }[]
+  if (!row || row.deliveries === 0) return null
+  return {
+    from,
+    to: env.today,
+    deliveries: row.deliveries,
+    charged: sum.deliveryCharged,
+    cost: sum.deliveryCost,
+    margin: sum.deliveryMargin,
+    notEntered: row.not_entered,
+  }
 }

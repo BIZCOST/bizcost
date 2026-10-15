@@ -45,9 +45,11 @@ describe('sales list filters', () => {
     })
     expect(isFiltered(filters)).toBe(true)
     expect(readSaleFilters(new URLSearchParams('status=paid&kind=order')).status).toBe('all')
-    expect(readSaleFilters(new URLSearchParams('kind=order')).source).toBeNull()
-    // M3 Step 4: imported sales are a kind of their own.
+    expect(readSaleFilters(new URLSearchParams('kind=quotation')).source).toBeNull()
+    // M3 Step 4: imported sales are a kind of their own; M3 Step 5: orders' sales and refunds too.
     expect(readSaleFilters(new URLSearchParams('kind=import')).source).toBe('import')
+    expect(readSaleFilters(new URLSearchParams('kind=order')).source).toBe('order')
+    expect(readSaleFilters(new URLSearchParams('kind=refund')).source).toBe('refund')
   })
 
   it('writes the changes, leaving the defaults out', () => {

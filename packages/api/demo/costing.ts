@@ -3,12 +3,15 @@ import type {
   BooksDto,
   BusinessContextDto,
   CostCategoryListDto,
+  CustomerDto,
+  CustomerPaymentListDto,
   ExpenseDto,
   ExpensePaymentsDto,
   ExpenseSettingsDto,
   LocationDto,
   MaterialDto,
   MemberDto,
+  OrderDto,
   ProductDto,
   PurchaseDto,
   PurchasePaymentsDto,
@@ -28,6 +31,8 @@ import type {
   DemoCosting,
   DemoExpense,
   DemoMaterial,
+  DemoOrder,
+  DemoOrderPayment,
   DemoPack,
   DemoPayment,
   DemoPurchase,
@@ -51,6 +56,10 @@ import type {
 // M3 Step 2: the channels a business adds and its sales (Today's sales and One sale, previewed until
 // Release A like a local server, D-125), each entered after the purchases of its day and finalized as
 // the member who entered it, so its cost is frozen from the purchases posted by then (D-222).
+//
+// M3 Step 5: customers and their orders (previewed until Release A): each order entered on its day
+// with its deposit, delivered on its delivery day after that day's sales (its cost frozen then) or
+// cancelled, then paid and refunded, in date order like the rest.
 
 type Envelope<T> = WithMeta<T>
 
@@ -62,6 +71,7 @@ export interface CostingSummary {
   runningCosts: string
   expenses: string
   sales: string
+  orders: string
 }
 
 export interface CostingResult {
@@ -637,6 +647,7 @@ class CostingSeed {
         })
       }
     }
+    events.push(...this.orderEvents())
     events.sort((a, b) => b.daysAgo - a.daysAgo || a.order - b.order)
     for (const event of events) await this.attempt(event.label, event.run)
   }
@@ -757,6 +768,209 @@ class CostingSeed {
     if (!sale.draft && doc.status === 'draft') {
       await this.mutate('sale.post', { id, version: doc.version }, token)
     }
+  }
+
+  // -------------------------------------------------------------------------------------------------
+  // Customers and orders (M3 Step 5)
+  // -------------------------------------------------------------------------------------------------
+
+  private async customers(): Promise<void> {
+    const customers = this.data.customers ?? []
+    if (this.skipUnless('customers', customers.length, 'customers')) return
+    for (const c of customers) {
+      await this.attempt(`customer ${c.key}`, async () => {
+        const id = this.id(`customer:${c.key}`)
+        if (await this.find<CustomerDto>('customer.get', { id })) return
+        await this.mutate('customer.create', {
+          id,
+          name: c.name,
+          kind: c.kind ?? 'individual',
+          phone: c.phone ?? null,
+          email: c.email ?? null,
+          trn: c.trn ?? null,
+          tradeLicenceNo: c.tradeLicenceNo ?? null,
+          emirate: c.emirate ?? null,
+        })
+      })
+    }
+  }
+
+  /**
+   * Each order's steps on their days, after the day's sales: entered with its deposit, delivered or
+   * cancelled, then its payments, then its refund.
+   */
+  private orderEvents(): TimelineEvent[] {
+    const orders = this.data.orders ?? []
+    const what = 'orders, their payments and refunds'
+    if (this.skipUnless(what, orders.length, 'orders', 'customers', 'payments', 'products')) {
+      return []
+    }
+    return orders.flatMap((o): TimelineEvent[] => [
+      { order: 5, daysAgo: o.daysAgo, label: `order ${o.key}`, run: () => this.newOrder(o) },
+      ...(o.deliveredDaysAgo === undefined
+        ? []
+        : [
+            {
+              order: 6,
+              daysAgo: o.deliveredDaysAgo,
+              label: `order ${o.key}: delivery`,
+              run: () => this.deliverOrder(o),
+            },
+          ]),
+      ...(o.cancelledDaysAgo === undefined
+        ? []
+        : [
+            {
+              order: 6,
+              daysAgo: o.cancelledDaysAgo,
+              label: `order ${o.key}: cancel`,
+              run: () => this.cancelOrder(o),
+            },
+          ]),
+      ...(o.payments ?? []).map((pay) => ({
+        order: 7,
+        daysAgo: pay.daysAgo,
+        label: `order ${o.key}: payment ${pay.key}`,
+        run: () => this.orderPayment(o, pay),
+      })),
+      ...(o.refund
+        ? [
+            {
+              order: 8,
+              daysAgo: o.refund.daysAgo,
+              label: `order ${o.key}: refund ${o.refund.key}`,
+              run: () => this.orderRefund(o),
+            },
+          ]
+        : []),
+    ])
+  }
+
+  private orderId(o: DemoOrder): string {
+    return this.id(`order:${o.key}`)
+  }
+
+  private async orderOf(o: DemoOrder): Promise<OrderDto | undefined> {
+    return (await this.find<Envelope<OrderDto>>('order.get', { id: this.orderId(o) }))?.data
+  }
+
+  private async newOrder(o: DemoOrder): Promise<void> {
+    if (await this.orderOf(o)) return
+    const day = this.day(o.daysAgo)
+    const channelId = this.channelIds.get('messages') ?? [...this.channelIds.values()][0] ?? null
+    const prices = new Map((this.data.products ?? []).map((product) => [product.key, product]))
+    await this.mutate('order.create', {
+      id: this.orderId(o),
+      businessDate: day,
+      dueDate: o.dueIn === undefined ? null : addDays(day, o.dueIn),
+      customerId: this.id(`customer:${o.customer}`),
+      customerRef: o.customerRef ?? null,
+      channelId,
+      deliveryNeeded: o.delivery !== undefined,
+      deliveryArea: o.delivery?.area ?? null,
+      ...(o.delivery?.cost ? { deliveryCost: o.delivery.cost } : {}),
+      lines: [
+        ...o.lines.map(([product, qty, price]) => ({
+          kind: 'item',
+          id: this.id(`order:${o.key}:line:${product}`),
+          productId: this.id(`product:${product}`),
+          qty,
+          unitPrice: price ?? prices.get(product)?.price ?? '0',
+        })),
+        ...(o.delivery
+          ? [
+              {
+                kind: 'delivery',
+                id: this.id(`order:${o.key}:delivery`),
+                amount: o.delivery.charged,
+              },
+            ]
+          : []),
+      ],
+      payment: o.deposit
+        ? {
+            id: this.id(`order:${o.key}:deposit`),
+            method: o.deposit.method,
+            amount: o.deposit.amount,
+          }
+        : null,
+    })
+  }
+
+  private async deliverOrder(o: DemoOrder): Promise<void> {
+    const order = await this.orderOf(o)
+    if (!order) throw new Error('the order was not entered')
+    if (order.status !== 'pending' || o.deliveredDaysAgo === undefined) return
+    await this.mutate('order.deliver', {
+      id: order.id,
+      version: order.version,
+      businessDate: this.day(o.deliveredDaysAgo),
+    })
+  }
+
+  private async cancelOrder(o: DemoOrder): Promise<void> {
+    const order = await this.orderOf(o)
+    if (!order) throw new Error('the order was not entered')
+    if (order.status !== 'pending') return
+    await this.mutate('order.cancel', { id: order.id, version: order.version })
+  }
+
+  private async orderPayment(o: DemoOrder, pay: DemoOrderPayment): Promise<void> {
+    const id = this.id(`order:${o.key}:payment:${pay.key}`)
+    const orderId = this.orderId(o)
+    const listed = await this.query<CustomerPaymentListDto>('customerPayment.list', { orderId })
+    if (listed.items.some((p) => p.id === id)) return
+    await this.mutate('customerPayment.record', {
+      id,
+      orderId,
+      kind: pay.kind ?? 'payment',
+      businessDate: this.day(pay.daysAgo),
+      method: pay.method,
+      amount: pay.amount,
+    })
+  }
+
+  private async orderRefund(o: DemoOrder): Promise<void> {
+    const refund = o.refund
+    if (!refund) return
+    const id = this.id(`order:${o.key}:refund:${refund.key}`)
+    const order = await this.orderOf(o)
+    if (!order?.saleId) throw new Error('the order was not delivered')
+    if (!(await this.find<Envelope<SaleDto>>('sale.get', { id }))) {
+      const sale = (await this.query<Envelope<SaleDto>>('sale.get', { id: order.saleId })).data
+      const productId = this.id(`product:${refund.product}`)
+      const line = sale.lines.find((l) => l.kind === 'item' && l.productId === productId)
+      if (!line) throw new Error(`the order has no ${refund.product}`)
+      await this.mutate('sale.refund', {
+        id,
+        orderId: order.id,
+        by: refund.by,
+        businessDate: this.day(refund.daysAgo),
+        lines: [
+          refund.by === 'amount'
+            ? { lineId: line.id, amount: refund.value }
+            : { lineId: line.id, qty: refund.value },
+        ],
+        notes: refund.notes ?? null,
+      })
+    }
+    if (!refund.payBack) return
+    // The money given back with it: what the customer then paid beyond what the order comes to.
+    const backId = this.id(`order:${o.key}:refund:${refund.key}:back`)
+    const listed = await this.query<CustomerPaymentListDto>('customerPayment.list', {
+      orderId: order.id,
+    })
+    if (listed.items.some((p) => p.id === backId)) return
+    const overpaid = (await this.orderOf(o))?.payment?.overpaid ?? '0'
+    if (compareDecimal(overpaid, '0') <= 0) return
+    await this.mutate('customerPayment.record', {
+      id: backId,
+      orderId: order.id,
+      kind: 'refund',
+      businessDate: this.day(refund.daysAgo),
+      method: refund.payBack,
+      amount: overpaid,
+    })
   }
 
   // -------------------------------------------------------------------------------------------------
@@ -903,6 +1117,7 @@ class CostingSeed {
       runningCosts: await counted('running_costs', 'runningCost.list', { state: 'all' }, true),
       expenses: await counted('expenses', 'expense.list', { status: 'posted' }, true),
       sales: await counted('sales', 'sale.list', { status: 'posted' }, false),
+      orders: await counted('orders', 'order.list', {}, false),
     }
   }
 
@@ -915,6 +1130,7 @@ class CostingSeed {
     await this.recipes()
     await this.runningCosts()
     await this.channels()
+    await this.customers()
     await this.documents()
     await this.ownerTime()
     return { summary: await this.summary(), notes: this.notes, warnings: this.warnings }

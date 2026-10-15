@@ -191,6 +191,50 @@ describe.each(DEMO_PERSONAS.filter((p) => p.costing).map((p) => [p.title, p] as 
       }
     })
 
+    it('orders name its customers and products, and their steps follow each other (M3 Step 5)', () => {
+      const customers = new Set((data.customers ?? []).map((c) => c.key))
+      expect(unique([...customers])).toBe(true)
+      for (const c of data.customers ?? []) {
+        if (c.trn) expect(c.trn, c.key).toMatch(/^\d{15}$/)
+        // A trade licence is a company's or a government body's.
+        if (c.tradeLicenceNo) expect(c.kind ?? 'individual', c.key).not.toBe('individual')
+      }
+      const orders = data.orders ?? []
+      expect(unique(orders.map((o) => o.key))).toBe(true)
+      for (const o of orders) {
+        expect(customers.has(o.customer), o.key).toBe(true)
+        expect(o.lines.length, o.key).toBeGreaterThan(0)
+        expect(unique(o.lines.map(([product]) => product)), o.key).toBe(true)
+        for (const [product] of o.lines) expect(products.has(product), product).toBe(true)
+        // Delivered or cancelled, not both, on or after the day it was entered.
+        expect(o.deliveredDaysAgo !== undefined && o.cancelledDaysAgo !== undefined, o.key).toBe(
+          false,
+        )
+        for (const day of [o.deliveredDaysAgo, o.cancelledDaysAgo]) {
+          if (day !== undefined) {
+            expect(day, o.key).toBeGreaterThanOrEqual(0)
+            expect(day, o.key).toBeLessThanOrEqual(o.daysAgo)
+          }
+        }
+        expect(unique((o.payments ?? []).map((p) => p.key)), o.key).toBe(true)
+        for (const pay of o.payments ?? []) {
+          expect(pay.daysAgo, `${o.key} ${pay.key}`).toBeLessThanOrEqual(o.daysAgo)
+          expect(pay.daysAgo, `${o.key} ${pay.key}`).toBeGreaterThanOrEqual(0)
+          // Money given back only on a cancelled order here (a refund carries its own).
+          if (pay.kind === 'refund') expect(o.cancelledDaysAgo, o.key).toBeDefined()
+          else expect(o.cancelledDaysAgo, o.key).toBeUndefined()
+        }
+        if (o.refund) {
+          expect(o.deliveredDaysAgo, o.key).toBeDefined()
+          expect(o.refund.daysAgo, o.key).toBeLessThanOrEqual(o.deliveredDaysAgo!)
+          expect(
+            o.lines.some(([product]) => product === o.refund!.product),
+            o.key,
+          ).toBe(true)
+        }
+      }
+    })
+
     it('names only members who joined, and only with a team', () => {
       for (const e of data.expenses ?? []) {
         const approver = typeof e.approval === 'object' ? e.approval.by : undefined

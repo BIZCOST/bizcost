@@ -55,12 +55,18 @@ describe('module manifests', () => {
 
   it('give planned modules no permission keys, nav or quick actions until their build starts (no stubs)', () => {
     // A module gets its keys and nav when its build starts and stays planned (hidden) until it is
-    // released (D-124, D-125). M3 Step 2 builds Sales and Step 3 Reports (released with Release A,
-    // Step 6).
+    // released (D-124, D-125). M3 Step 2 builds Sales, Step 3 Reports and Step 5 Customers, Payments
+    // and Orders (released with Release A, Step 6).
     const started = MODULES.filter(
       (m) => m.availability === 'planned' && (m.permissionKeys.length > 0 || m.nav.length > 0),
     )
-    expect(started.map((m) => m.id)).toEqual(['sales', 'reports'])
+    expect(started.map((m) => m.id)).toEqual([
+      'customers',
+      'sales',
+      'payments',
+      'reports',
+      'orders',
+    ])
     for (const m of started) {
       expect(m.permissionKeys.length, m.id).toBeGreaterThan(0)
       expect(m.nav.length, m.id).toBeGreaterThan(0)
@@ -142,6 +148,8 @@ describe('module manifests', () => {
       // M3 Step 2 (planned: shown only under the dev-only preview until Release A).
       ['sales', 'today_sales', 'sales/today', 'sales.documents.manage'],
       ['sales', 'new_sale', 'sales/new', 'sales.documents.manage'],
+      // M3 Step 5 (planned likewise).
+      ['orders', 'new_order', 'orders/new', 'orders.documents.manage'],
     ])
   })
 
@@ -245,11 +253,18 @@ describe('module manifests', () => {
       ['payables', 'main'],
       ['running_costs', 'main'],
       ['product_costs', 'main'],
+      // Customers (M3 Step 5).
+      ['customers', 'main'],
       // Sales (M3 Step 2): one page, reached with "see every sale" or with "enter sales".
       ['sales', 'main'],
       ['sales', 'main'],
+      // What customers owe (M3 Step 5).
+      ['receivables', 'main'],
       // Reports (M3 Step 3): Real profit.
       ['real_profit', 'main'],
+      // Orders (M3 Step 5): one page, with "see every order" or with "enter orders".
+      ['orders', 'main'],
+      ['orders', 'main'],
     ])
   })
 
@@ -309,6 +324,14 @@ describe('permission catalog', () => {
         'sales.imports.manage',
         'reports.sales.view',
         'reports.profit.view',
+        'customers.items.view',
+        'customers.items.manage',
+        'payments.customers.view',
+        'payments.customers.record',
+        'orders.documents.view',
+        'orders.documents.manage',
+        'orders.documents.deliver',
+        'orders.documents.reverse',
         'data.cost.view',
         'data.profit_margin.view',
         'data.supplier_price.view',
@@ -429,6 +452,15 @@ describe('role templates', () => {
         'sales.imports.manage',
         'reports.sales.view',
         'reports.profit.view',
+        // M3 Step 5 (Q10): customers, every order (enter, deliver, undo), customer payments.
+        'customers.items.view',
+        'customers.items.manage',
+        'orders.documents.view',
+        'orders.documents.manage',
+        'orders.documents.deliver',
+        'orders.documents.reverse',
+        'payments.customers.view',
+        'payments.customers.record',
         'data.cost.view',
         'data.profit_margin.view',
         'data.supplier_price.view',
@@ -449,6 +481,11 @@ describe('role templates', () => {
         'sales.documents.view',
         'reports.sales.view',
         'reports.profit.view',
+        // M3 Step 5 (Q10): sees customers and every order, sees and records customer payments.
+        'customers.items.view',
+        'orders.documents.view',
+        'payments.customers.view',
+        'payments.customers.record',
         'data.cost.view',
         'data.profit_margin.view',
         'data.supplier_price.view',
@@ -465,6 +502,14 @@ describe('role templates', () => {
         'sales.documents.manage',
         'sales.documents.post',
         'reports.sales.view',
+        // M3 Step 5 (Q10): see and add customers, every order (enter, deliver), customer payments.
+        'customers.items.view',
+        'customers.items.manage',
+        'orders.documents.view',
+        'orders.documents.manage',
+        'orders.documents.deliver',
+        'payments.customers.view',
+        'payments.customers.record',
       ].sort(),
     )
     expect(keysOf('supervisor')).toEqual(
@@ -478,6 +523,12 @@ describe('role templates', () => {
         'sales.documents.manage',
         'sales.documents.post',
         'reports.sales.view',
+        // M3 Step 5 (Q10): see and add customers, every order (enter, deliver); no payments.
+        'customers.items.view',
+        'customers.items.manage',
+        'orders.documents.view',
+        'orders.documents.manage',
+        'orders.documents.deliver',
       ].sort(),
     )
     // The owner's answers of 2026-09-29 (D-179, D-180): what goes into each product (quantities) and
@@ -493,6 +544,11 @@ describe('role templates', () => {
         'expenses.documents.manage',
         'sales.documents.manage',
         'sales.documents.post',
+        // M3 Step 5 (Q10): add customers (picked by name and the phone's last 4 digits), enter and
+        // deliver their own orders.
+        'customers.items.manage',
+        'orders.documents.manage',
+        'orders.documents.deliver',
       ].sort(),
     )
     expect(keysMissingNeeds(keysOf('employee'))).toEqual([])

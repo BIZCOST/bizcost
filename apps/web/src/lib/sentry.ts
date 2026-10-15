@@ -4,8 +4,10 @@ import type { Breadcrumb, ErrorEvent, NodeOptions } from '@sentry/nextjs'
 // bodies, cookies and query strings (tRPC GET inputs) are dropped, and any key that looks like cost,
 // profit, margin, price or pay data, or like a credential, is replaced before an event leaves.
 
+// Customers' personal data too (M3 Step 5, Q2): their phone, email, TRN, trade licence and address, and
+// anything kept under a customer key (customerName, customer: {...}).
 const SENSITIVE_KEY =
-  /cost|profit|margin|price|salary|wage|payroll|password|secret|token|authorization|cookie|api[-_]?key/i
+  /cost|profit|margin|price|salary|wage|payroll|password|secret|token|authorization|cookie|api[-_]?key|phone|e-?mail|trn|licen[cs]e|address|customer/i
 
 const REDACTED = '[redacted]'
 const MAX_DEPTH = 8

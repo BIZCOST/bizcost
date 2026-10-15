@@ -13,11 +13,14 @@ import {
   ACCOUNT_MESSAGES,
   AUTH_MESSAGES,
   CATALOG_MESSAGES,
+  CUSTOMERS_MESSAGES,
   DASHBOARD_MESSAGES,
   EXPENSES_MESSAGES,
   MEMBER_ACCESS_MESSAGES,
+  ORDERS_MESSAGES,
   PRODUCT_COSTS_MESSAGES,
   PURCHASES_MESSAGES,
+  RECEIVABLES_MESSAGES,
   REPORTS_MESSAGES,
   ROOT_MESSAGES,
   RUNNING_COSTS_MESSAGES,
@@ -208,6 +211,70 @@ describe("each route's messages have the keys its code translates", () => {
       missing(
         ['features/sales', 'features/documents', 'features/catalog', 'components/ui'],
         SALES_MESSAGES,
+      ),
+    ).toEqual({})
+  })
+
+  it('Orders: the list, the editor, the order, its payments and refunds (M3 Step 5)', () => {
+    expect(
+      missing(
+        [
+          'features/orders',
+          'features/receivables/payments-panel.tsx',
+          'features/receivables/payment-sheet.tsx',
+          'features/customers/customer-picker.tsx',
+          'features/customers/customer-sheet.tsx',
+          'features/customers/customer-draft.ts',
+          'features/sales/refund-sheet.tsx',
+          'features/sales/refund-draft.ts',
+          'features/sales/delivery-fields.tsx',
+          'features/sales/sale-lines.tsx',
+          'features/documents',
+          'features/catalog',
+          'features/purchasing/receipts.tsx',
+          'components/ui',
+        ],
+        ORDERS_MESSAGES,
+      ),
+    ).toEqual({})
+  })
+
+  it("Customers: the list and a customer's page (M3 Step 5)", () => {
+    expect(
+      missing(
+        [
+          'features/customers',
+          'features/orders/badges.tsx',
+          'features/receivables',
+          'features/documents/amounts.tsx',
+          'features/documents/panel.tsx',
+          'features/documents/confirm-dialog.tsx',
+          'features/documents/line-editor.tsx',
+          'features/documents/status-badge.tsx',
+          'features/catalog/catalog-list.tsx',
+          'features/catalog/catalog-loading.tsx',
+          'components/ui',
+        ],
+        CUSTOMERS_MESSAGES,
+      ),
+    ).toEqual({})
+  })
+
+  it('What customers owe and its payment sheets (M3 Step 5)', () => {
+    expect(
+      missing(
+        [
+          'features/receivables',
+          'features/orders/badges.tsx',
+          'features/documents/amounts.tsx',
+          'features/documents/panel.tsx',
+          'features/documents/confirm-dialog.tsx',
+          'features/documents/line-editor.tsx',
+          'features/catalog/catalog-list.tsx',
+          'features/catalog/catalog-loading.tsx',
+          'components/ui',
+        ],
+        RECEIVABLES_MESSAGES,
       ),
     ).toEqual({})
   })

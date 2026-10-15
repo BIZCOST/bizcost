@@ -1,5 +1,7 @@
 import { randomBytes } from 'node:crypto'
 import type {
+  CustomerDto,
+  OrderDto,
   AttachmentUploadUrlDto,
   BusinessProfileDto,
   CostCategoryDto,
@@ -345,6 +347,45 @@ async function newSale(post = false): Promise<SaleDto> {
       }),
     )
   ).data
+}
+
+/** A pending order of the tenant's customer (M3 Step 5): its product, today, at the branch. */
+function orderInput(extra: object = {}) {
+  return {
+    id: newId(),
+    customerId: tenant.customer.id,
+    businessDate: tenant.sale.businessDate,
+    locationId: tenant.branch.id,
+    channelId: tenant.channel.id,
+    lines: [
+      { kind: 'item', id: newId(), productId: tenant.product.id, qty: '1', unitPrice: '15.5' },
+    ],
+    ...extra,
+  }
+}
+
+async function newOrder(deliver = false): Promise<OrderDto> {
+  const created = (
+    await ok(call<{ data: OrderDto }>(tenant.owner, 'order.create', 'mutation', orderInput()))
+  ).data
+  if (!deliver) return created
+  return (
+    await ok(
+      call<{ data: OrderDto }>(tenant.owner, 'order.deliver', 'mutation', {
+        id: created.id,
+        version: created.version,
+      }),
+    )
+  ).data
+}
+
+async function newCustomer(): Promise<CustomerDto> {
+  return ok(
+    call<CustomerDto>(tenant.owner, 'customer.create', 'mutation', {
+      id: newId(),
+      name: `Audit customer ${newId()}`,
+    }),
+  )
 }
 
 /** An import of today's sales of the tenant's product (M3 Step 4): another file, a channel of its own. */
@@ -1102,6 +1143,109 @@ const AUDIT: Record<string, AuditProbe> = {
   'sale.fillDeliveryCost': {
     run: async () =>
       asOwner('sale.fillDeliveryCost', { id: (await newSale(true)).id, deliveryCost: '6' }),
+  },
+  // Customers, orders, customer payments and refunds (M3 Step 5).
+  'customer.create': {
+    run: () => asOwner('customer.create', { id: newId(), name: `Audit ${newId()}` }),
+  },
+  'customer.update': {
+    run: async () => {
+      const customer = await newCustomer()
+      return asOwner('customer.update', {
+        id: customer.id,
+        version: customer.version,
+        name: customer.name,
+        phone: '050 000 1111',
+      })
+    },
+  },
+  'customer.archive': {
+    run: async () => asOwner('customer.archive', { id: (await newCustomer()).id }),
+  },
+  'customer.unarchive': {
+    run: async () => {
+      const customer = await newCustomer()
+      await ok(call(tenant.owner, 'customer.archive', 'mutation', { id: customer.id }))
+      return asOwner('customer.unarchive', { id: customer.id })
+    },
+  },
+  'order.create': {
+    run: () =>
+      asOwner(
+        'order.create',
+        orderInput({ payment: { id: newId(), method: 'cash', amount: '5' } }),
+      ),
+  },
+  'order.update': {
+    run: async () => {
+      const order = await newOrder()
+      const fields = orderInput({ notes: 'Changed' })
+      return asOwner('order.update', { ...fields, id: order.id, version: order.version })
+    },
+  },
+  'order.cancel': {
+    run: async () => {
+      const order = await newOrder()
+      return asOwner('order.cancel', { id: order.id, version: order.version })
+    },
+  },
+  'order.deliver': {
+    run: async () => {
+      const order = await newOrder()
+      return asOwner('order.deliver', { id: order.id, version: order.version })
+    },
+  },
+  'order.undoDelivery': {
+    run: async () => asOwner('order.undoDelivery', { id: (await newOrder(true)).id }),
+  },
+  'customerPayment.record': {
+    run: async () =>
+      asOwner('customerPayment.record', {
+        id: newId(),
+        orderId: (await newOrder()).id,
+        businessDate: tenant.sale.businessDate,
+        method: 'cash',
+        amount: '1',
+      }),
+  },
+  'customerPayment.reverse': {
+    run: async () => {
+      const id = newId()
+      await ok(
+        call(tenant.owner, 'customerPayment.record', 'mutation', {
+          id,
+          orderId: (await newOrder()).id,
+          businessDate: tenant.sale.businessDate,
+          method: 'cash',
+          amount: '1',
+        }),
+      )
+      return asOwner('customerPayment.reverse', { id })
+    },
+  },
+  'customerPayment.recordMany': {
+    run: async () =>
+      asOwner('customerPayment.recordMany', {
+        customerId: tenant.customer.id,
+        businessDate: tenant.sale.businessDate,
+        method: 'cash',
+        amount: '20',
+        documents: [
+          { id: newId(), orderId: (await newOrder()).id },
+          { id: newId(), orderId: (await newOrder()).id },
+        ],
+      }),
+  },
+  'sale.refund': {
+    run: async () => {
+      const sale = await newSale(true)
+      return asOwner('sale.refund', {
+        id: newId(),
+        saleId: sale.id,
+        by: 'quantity',
+        lines: [{ lineId: sale.lines[0]?.id, qty: '1' }],
+      })
+    },
   },
   // Importing sales from a file (M3 Step 4): each probe its own file (hash) and channel.
   'saleImport.create': { run: async () => asOwner('saleImport.create', importInput()) },

@@ -1,5 +1,14 @@
 import {
   PAYABLE_INVOICES_MAX,
+  type CustomerPaymentDto,
+  type customerPaymentListInput,
+  type CustomerPaymentListDto,
+  type DocumentPaymentsDto,
+  type ReceivableKindDto,
+  type recordCustomerPaymentInput,
+  type recordManyCustomerPaymentsInput,
+  type RecordManyCustomerPaymentsDto,
+  type reverseCustomerPaymentInput,
   type ExpensePaymentsDto,
   type expensePaymentsInput,
   type ExpenseStatusDto,
@@ -16,14 +25,23 @@ import {
   type reverseExpensePaymentInput,
   type reversePurchasePaymentInput,
 } from '@bizcost/contracts'
-import { createIdempotent, expensePayments, purchasePayments, type Tx } from '@bizcost/db'
+import {
+  createIdempotent,
+  customerPayments,
+  expensePayments,
+  purchasePayments,
+  type Tx,
+} from '@bizcost/db'
 import {
   compareDecimal,
   fitsCurrency,
   isCurrencyCode,
   isOwedPaymentMethod,
+  netPaid,
   outstandingOf,
   overpaidOf,
+  subtractDecimals,
+  type PaymentKind,
   type DocumentStatus,
   type PaymentMethod,
   type SettlementMethod,
@@ -34,7 +52,14 @@ import type { BusinessCtx } from '../business-context'
 import { AppError } from '../errors'
 import { assertQueryable } from '../trpc'
 import { decodeCursor, encodeCursor, requestHashOf } from './catalog'
-import { assertPostable, isoOf, lockPostingBusiness, reversalDateOf } from './stock'
+import { assertActivePayer } from './purchases'
+import {
+  owedDocumentOf,
+  readObligation,
+  readObligations,
+  type ObligationRecord,
+} from './receivables'
+import { assertPostable, isoOf, lockPostingBusiness, reversalDateOf, uuidArray } from './stock'
 
 // What the business still owes on its purchases and expenses, and paying it (the owner's requests of
 // 2026-09-29, D-160; expenses from M2 Step 5, D-166). A final purchase or expense bought on credit
@@ -73,6 +98,8 @@ interface PayableDoc {
   readonly fk: SQL
   /** Σ totals of the document's final returns and credit notes (purchases only), for alias `d`. */
   readonly returned: SQL
+  /** Its payments have a kind (purchases: payments and money back from the supplier, Q18). */
+  readonly kinds: boolean
 }
 
 const DOCS: Readonly<Record<PayableKindDto, PayableDoc>> = {
@@ -85,6 +112,7 @@ const DOCS: Readonly<Record<PayableKindDto, PayableDoc>> = {
       select sum(r.total) from app.purchase_returns r
        where r.business_id = d.business_id and r.purchase_id = d.id
          and r.status = 'posted' and r.deleted_at is null), 0)`,
+    kinds: true,
   },
   expense: {
     kind: 'expense',
@@ -92,6 +120,7 @@ const DOCS: Readonly<Record<PayableKindDto, PayableDoc>> = {
     payments: sql.raw('app.expense_payments'),
     fk: sql.raw('expense_id'),
     returned: sql`0::numeric`,
+    kinds: false,
   },
 }
 
@@ -138,6 +167,9 @@ export function listPayers(ctx: BusinessCtx): Promise<PurchasePayersDto> {
 
 interface OwedRecord extends Record<string, unknown> {
   all_outstanding: string
+  all_money_back: string
+  party_money_back: string
+  party_owed_after: string
   has_more: boolean
   party_id: string | null
   party_name: string
@@ -146,7 +178,8 @@ interface OwedRecord extends Record<string, unknown> {
   party_outstanding: string
   invoice_count: number
   kind: PayableKindDto
-  document_id: string
+  /** Null for a member listed only for the money back they received. */
+  document_id: string | null
   business_date: string
   reference: string | null
   document_type: PayableGroupDto['invoices'][number]['documentType']
@@ -188,7 +221,10 @@ function owedDocuments(
            group by r.purchase_id
         ) r on r.purchase_id = p.id
         left join (
-          select pp.purchase_id, sum(pp.amount) as paid from app.purchase_payments pp
+          -- Net of the money back from the supplier (Q18).
+          select pp.purchase_id,
+                 sum(case pp.kind when 'refund' then -pp.amount else pp.amount end) as paid
+            from app.purchase_payments pp
            where pp.business_id = ${businessId} and pp.reversed_at is null
              and pp.deleted_at is null
            group by pp.purchase_id
@@ -255,12 +291,29 @@ export function listPayables(
         party: input.party,
         currency: business?.currency ?? '',
         total: '0',
+        moneyBackTotal: '0',
         groups: [],
         nextCursor: null,
       },
       meta: { redacted: [] },
     })
     if (kinds.length === 0) return empty()
+    // Members: the money back from suppliers they received for the business (Q18), which counts
+    // against what it owes them (D-181); listed even when nothing else is owed to them.
+    const back =
+      !bySupplier && kinds.includes('purchase')
+        ? sql`select pm.id as party_id, pm.display_name as party_name,
+                  (pm.status = 'active' and pm.deleted_at is null) as party_active,
+                  sum(pp.amount) as money_back_n
+             from app.purchase_payments pp
+             join app.business_members pm
+               on pm.business_id = pp.business_id and pm.id = pp.received_by_member_id
+            where pp.business_id = ${ctx.businessId} and pp.kind = 'refund'
+              and pp.reversed_at is null and pp.deleted_at is null
+            group by pm.id, pm.display_name, pm.status, pm.deleted_at`
+        : sql`select null::uuid as party_id, null::text as party_name, null::boolean as party_active,
+                  0::numeric as money_back_n
+            where false`
     const rows = (await tx.execute(sql`
       with owed as (
         select d.*, ${party}
@@ -268,12 +321,23 @@ export function listPayables(
           ${join}
          where d.total_n - d.returned_n - d.paid_n > 0
       ),
-      parties as (
+      owed_parties as (
         select o.party_id, o.party_name, o.party_active,
                sum(o.total_n - o.returned_n - o.paid_n) as outstanding_n,
                count(*)::int as invoice_count
           from owed o
          group by o.party_id, o.party_name, o.party_active
+      ),
+      back as (${back}),
+      parties as (
+        select coalesce(o.party_id, b.party_id) as party_id,
+               coalesce(o.party_name, b.party_name) as party_name,
+               coalesce(o.party_active, b.party_active) as party_active,
+               coalesce(o.outstanding_n, 0) as outstanding_n,
+               coalesce(o.invoice_count, 0) as invoice_count,
+               coalesce(b.money_back_n, 0) as money_back_n
+          from owed_parties o
+          full join back b on b.party_id = o.party_id
       ),
       page as (
         select pa.*, row_number() over (order by lower(pa.party_name), pa.party_id) as pn
@@ -290,14 +354,18 @@ export function listPayables(
           from owed o
          where o.party_id in (select pg.party_id from page pg where pg.pn <= ${input.limit})
       )
-      select trim_scale(t.all_outstanding)::text as all_outstanding, t.has_more, x.*
+      select trim_scale(t.all_outstanding)::text as all_outstanding,
+             trim_scale(t.all_money_back)::text as all_money_back, t.has_more, x.*
         from (
           select coalesce((select sum(pa.outstanding_n) from parties pa), 0) as all_outstanding,
+                 coalesce((select sum(pa.money_back_n) from parties pa), 0) as all_money_back,
                  (select count(*) from page) > ${input.limit} as has_more
         ) t
         left join lateral (
           select pg.party_id, pg.party_name, lower(pg.party_name) as party_key, pg.party_active, pg.pn,
                  trim_scale(pg.outstanding_n)::text as party_outstanding, pg.invoice_count,
+                 trim_scale(pg.money_back_n)::text as party_money_back,
+                 trim_scale(pg.outstanding_n - pg.money_back_n)::text as party_owed_after,
                  o.kind, o.document_id, o.business_date::text as business_date, o.reference,
                  o.document_type, o.currency, o.category_name, o.n,
                  trim_scale(o.total_n - o.returned_n - o.paid_n)::text as outstanding,
@@ -314,7 +382,7 @@ export function listPayables(
                  end as item_names,
                  eb.id as entered_by_id, eb.display_name as entered_by_name
             from page pg
-            join ranked o on o.party_id = pg.party_id and o.n <= ${PAYABLE_INVOICES_MAX}
+            left join ranked o on o.party_id = pg.party_id and o.n <= ${PAYABLE_INVOICES_MAX}
             left join app.business_members eb on eb.business_id = o.business_id and eb.id = (
               select m.id from app.business_members m
                where m.business_id = o.business_id and m.user_id = o.created_by
@@ -335,10 +403,14 @@ export function listPayables(
           active: row.party_active,
           outstanding: row.party_outstanding,
           invoiceCount: row.invoice_count,
+          moneyBack: row.party_money_back,
+          owedAfterMoneyBack: row.party_owed_after,
           invoices: [],
         }
         groups.push(group)
       }
+      // A member with only money back to show has no document.
+      if (row.document_id === null) continue
       group.invoices.push({
         kind: row.kind,
         documentId: row.document_id,
@@ -362,6 +434,7 @@ export function listPayables(
         party: input.party,
         currency: business?.currency ?? '',
         total: rows[0]?.all_outstanding ?? '0',
+        moneyBackTotal: rows[0]?.all_money_back ?? '0',
         groups,
         nextCursor:
           rows[0]?.has_more && last?.party_id
@@ -390,6 +463,7 @@ interface HeadRecord extends Record<string, unknown> {
   total: string
   returned: string
   paid: string
+  money_back: string
 }
 
 /**
@@ -415,7 +489,17 @@ async function readHead(tx: Tx, doc: PayableDoc, businessId: string, id: string)
            trim_scale(coalesce((
              select sum(pp.amount) from ${doc.payments} pp
               where pp.business_id = d.business_id and pp.${doc.fk} = d.id
-                and pp.reversed_at is null and pp.deleted_at is null), 0))::text as paid
+                and pp.reversed_at is null and pp.deleted_at is null
+                ${doc.kinds ? sql`and pp.kind = 'payment'` : sql``}), 0))::text as paid,
+           ${
+             doc.kinds
+               ? sql`trim_scale(coalesce((
+                   select sum(pp.amount) from ${doc.payments} pp
+                    where pp.business_id = d.business_id and pp.${doc.fk} = d.id
+                      and pp.kind = 'refund' and pp.reversed_at is null and pp.deleted_at is null),
+                   0))::text`
+               : sql`'0'`
+           } as money_back
       from ${doc.table} d
       left join app.suppliers s on s.business_id = d.business_id and s.id = d.supplier_id
       left join app.business_members pm
@@ -426,20 +510,26 @@ async function readHead(tx: Tx, doc: PayableDoc, businessId: string, id: string)
   return row
 }
 
-/** What can still be paid on it: 0 unless it is final and owed. */
+/** What can still be paid on it: 0 unless it is final and owed (net of money back, Q18). */
 function outstandingOfHead(head: HeadRecord): string {
   if (head.status !== 'posted' || !isOwedPaymentMethod(head.payment_method)) return '0'
-  return outstandingOf(head.total, head.returned, head.paid)
+  return outstandingOf(head.total, head.returned, netPaid(head.paid, head.money_back))
 }
 
-/** What was paid on it beyond what it came to after its returns (D-162): 0 unless owed. */
+/**
+ * What was paid on it beyond what it came to after its returns (D-162), less the money back from the
+ * supplier recorded on it (Q18): 0 unless owed.
+ */
 function overpaidOfHead(head: HeadRecord): string {
   if (!isOwedPaymentMethod(head.payment_method)) return '0'
-  return overpaidOf(head.total, head.returned, head.paid)
+  return overpaidOf(head.total, head.returned, netPaid(head.paid, head.money_back))
 }
 
 interface PaymentRecord extends Record<string, unknown> {
   id: string
+  kind: PaymentKind
+  received_by_id: string | null
+  received_by_name: string | null
   business_date: string
   method: SettlementMethod
   amount: string
@@ -469,7 +559,13 @@ async function paymentsView(
 ): Promise<PaymentsView> {
   const head = await readHead(tx, doc, businessId, id)
   const rows = (await tx.execute(sql`
-    select p.id, p.business_date::text as business_date, p.method,
+    select p.id, ${doc.kinds ? sql`p.kind` : sql`'payment'::text as kind`},
+           ${doc.kinds ? sql`p.received_by_member_id` : sql`null::uuid`} as received_by_id,
+           (select m.display_name from app.business_members m
+             where m.business_id = p.business_id
+               and m.id = ${doc.kinds ? sql`p.received_by_member_id` : sql`null::uuid`})
+             as received_by_name,
+           p.business_date::text as business_date, p.method,
            trim_scale(p.amount)::text as amount, trim(p.currency) as currency, p.note, p.created_at,
            p.reversed_at, p.reversal_date::text as reversal_date,
            rb.id as recorded_by_id, rb.display_name as recorded_by_name,
@@ -502,10 +598,12 @@ async function paymentsView(
       total: head.total,
       returned: head.returned,
       paid: head.paid,
+      moneyBack: head.money_back,
       outstanding: outstandingOfHead(head),
       overpaid: overpaidOfHead(head),
       payments: rows.map((r): PurchasePaymentDto => ({
         id: r.id,
+        kind: r.kind,
         businessDate: r.business_date,
         method: r.method,
         amount: r.amount,
@@ -518,6 +616,10 @@ async function paymentsView(
         reversedBy:
           r.reversed_at === null ? null : { memberId: r.reversed_by_id, name: r.reversed_by_name },
         reversalDate: r.reversal_date,
+        receivedBy:
+          r.kind === 'refund' && r.received_by_id !== null
+            ? { memberId: r.received_by_id, name: r.received_by_name }
+            : null,
       })),
     },
   }
@@ -529,6 +631,9 @@ interface PaymentFields {
   readonly method: SettlementMethod
   readonly amount: string
   readonly note: string | null
+  /** Purchases: money back from the supplier (Q18), and who received it (null: the business). */
+  readonly kind?: PaymentKind
+  readonly receivedByMemberId?: string | null
 }
 
 /**
@@ -546,11 +651,15 @@ function recordPayment(
   input: PaymentFields,
 ): Promise<PaymentsView> {
   assertSeesAmounts(ctx)
-  const { id, ...rest } = input
-  // The fingerprint of purchase payments is as it was (their document named purchaseId).
+  const { id, kind = 'payment', receivedByMemberId = null, ...rest } = input
+  if (kind === 'refund' && !doc.kinds) throw invalid(`kind: no money back on an ${doc.kind}`)
+  // The fingerprint of purchase payments is as it was (their document named purchaseId); money back
+  // also says its kind and who received it.
   const requestHash = requestHashOf(
     doc.kind === 'purchase'
-      ? { purchaseId: documentId, ...rest }
+      ? kind === 'refund'
+        ? { purchaseId: documentId, ...rest, kind, receivedByMemberId }
+        : { purchaseId: documentId, ...rest }
       : { expenseId: documentId, ...rest },
   )
   return ctx.tx(async (tx) => {
@@ -579,7 +688,16 @@ function recordPayment(
     if (!fitsCurrency(input.amount, head.currency)) {
       throw invalid('amount: more decimals than the currency has')
     }
-    if (compareDecimal(input.amount, outstandingOfHead(head)) > 0) {
+    if (kind === 'refund') {
+      // Money back from the supplier settles what was paid beyond (D-162), never more (Q18); a member
+      // who received it is an active member (it lowers what the business owes them, D-181).
+      if (compareDecimal(input.amount, overpaidOfHead(head)) > 0) {
+        throw new AppError('exceeds_outstanding')
+      }
+      if (receivedByMemberId !== null) {
+        await assertActivePayer(tx, ctx.businessId, receivedByMemberId)
+      }
+    } else if (compareDecimal(input.amount, outstandingOfHead(head)) > 0) {
       throw new AppError('exceeds_outstanding')
     }
     const common = {
@@ -593,7 +711,12 @@ function recordPayment(
       requestHash,
     }
     if (doc.kind === 'purchase') {
-      await createIdempotent(tx, purchasePayments, { ...common, purchaseId: documentId })
+      await createIdempotent(tx, purchasePayments, {
+        ...common,
+        purchaseId: documentId,
+        kind,
+        receivedByMemberId,
+      })
     } else {
       await createIdempotent(tx, expensePayments, { ...common, expenseId: documentId })
     }
@@ -706,4 +829,549 @@ export async function reverseExpensePayment(
   input: ReverseExpenseInput,
 ): Promise<ExpensePaymentsDto> {
   return expenseResult(await reversePayment(ctx, DOCS.expense, input.id))
+}
+
+// ---------------------------------------------------------------------------------------------------
+// Customer payments (M3 Step 5; the owner's answer Q17 = A of D-218): on an order or a sale "they'll
+// pay later", as above (D-159, D-160): the method required, never edited (a mistake is reversed),
+// idempotent on the client's id, never more than is owed (EXCEEDS_OUTSTANDING), money given back never
+// more than was paid beyond. What is owed comes from receivables.ts (one figure per obligation, A2).
+//
+// Locks: recording or reversing a customer payment locks its order or sale FOR UPDATE first (lock 1),
+// then the business row FOR SHARE: the same order as an order's delivery, undo and refunds (the order,
+// then its sale) and a sale's refunds and reversal (the sale), so a payment, a delivery, a refund and a
+// cancel of one order wait for each other and each reads what the one before committed. "Pay several
+// at once" locks its documents in one order (orders by id, then sales by id) before the business row.
+// Customer payments are sales amounts, not a redaction category: who sees them is the key
+// payments.customers.view, and who records them payments.customers.record (the routers check them).
+// ---------------------------------------------------------------------------------------------------
+
+type CustomerListInput = z.output<typeof customerPaymentListInput>
+type RecordCustomerInput = z.output<typeof recordCustomerPaymentInput>
+type ReverseCustomerInput = z.output<typeof reverseCustomerPaymentInput>
+type RecordManyInput = z.output<typeof recordManyCustomerPaymentsInput>
+
+/** What a customer payment names, and where its rows live. */
+const RECEIVABLE_TABLES: Readonly<Record<ReceivableKindDto, SQL>> = {
+  order: sql.raw('app.orders'),
+  sale: sql.raw('app.sales'),
+}
+
+/** The branches the caller may see (Q12): a document of another branch is NOT_FOUND. */
+function inScope(ctx: BusinessCtx, alias: string): SQL {
+  const scope = ctx.access.locationScope
+  return scope.all
+    ? sql`true`
+    : sql`${sql.raw(alias)}.location_id = any(${uuidArray([...scope.ids])})`
+}
+
+export interface ReceivableHead extends Record<string, unknown> {
+  id: string
+  status: string
+  source: string | null
+  pay_later: boolean | null
+  business_date: string
+  customer_id: string | null
+  currency: string
+}
+
+/**
+ * Locks an order or a sale FOR UPDATE (lock 1) and reads it: NOT_FOUND unless a live one of the
+ * business in the caller's branches. A new statement after it reads what was committed meanwhile.
+ */
+export async function lockReceivable(
+  tx: Tx,
+  ctx: BusinessCtx,
+  kind: ReceivableKindDto,
+  id: string,
+): Promise<ReceivableHead> {
+  const [row] = (await tx.execute(sql`
+    select d.id from ${RECEIVABLE_TABLES[kind]} d
+     where d.business_id = ${ctx.businessId} and d.id = ${id} and d.deleted_at is null
+       and ${inScope(ctx, 'd')}
+       for update
+  `)) as unknown as { id: string }[]
+  if (!row) throw new AppError('not_found')
+  const [head] = (await tx.execute(
+    kind === 'order'
+      ? sql`select o.id, o.status, null::text as source, null::boolean as pay_later,
+                   o.business_date::text as business_date, o.customer_id, trim(o.currency) as currency
+              from app.orders o where o.business_id = ${ctx.businessId} and o.id = ${id}`
+      : sql`select s.id, s.status, s.source, s.pay_later, s.business_date::text as business_date,
+                   s.customer_id, trim(s.currency) as currency
+              from app.sales s where s.business_id = ${ctx.businessId} and s.id = ${id}`,
+  )) as unknown as ReceivableHead[]
+  if (!head) throw new AppError('not_found')
+  return head
+}
+
+/**
+ * What a payment may be recorded on: a pending or delivered order (money given back on a cancelled
+ * one too: its deposit), or a finalized One sale "they'll pay later". DOCUMENT_NOT_POSTED for a draft,
+ * ORDER_CANCELLED for a payment on a cancelled order, VALIDATION for a sale paid when made (or an
+ * order's sale or a refund: their order or sale is paid).
+ */
+function assertPayable(kind: ReceivableKindDto, head: ReceivableHead, payment: PaymentKind): void {
+  if (kind === 'order') {
+    if (head.status === 'cancelled' && payment === 'payment') throw new AppError('order_cancelled')
+    return
+  }
+  if (head.status === 'draft') throw new AppError('document_not_posted')
+  if (head.source !== 'single' || head.pay_later !== true) {
+    throw invalid('saleId: paid when made, or paid through its order')
+  }
+  if (head.status !== 'posted') throw new AppError('document_not_posted')
+}
+
+interface CustomerPaymentRecord extends Record<string, unknown> {
+  id: string
+  kind: PaymentKind
+  customer_id: string | null
+  customer_name: string | null
+  order_id: string | null
+  sale_id: string | null
+  order_number: string | null
+  business_date: string
+  method: SettlementMethod
+  amount: string
+  currency: string
+  note: string | null
+  created_at: Date | string
+  reversed_at: Date | string | null
+  reversal_date: string | null
+  recorded_by_id: string | null
+  recorded_by_name: string | null
+  reversed_by_id: string | null
+  reversed_by_name: string | null
+}
+
+const CUSTOMER_PAYMENT_COLUMNS = sql`p.id, p.kind, p.customer_id, cu.name as customer_name,
+  p.order_id, p.sale_id, o.number as order_number, p.business_date::text as business_date, p.method,
+  trim_scale(p.amount)::text as amount, trim(p.currency) as currency, p.note, p.created_at,
+  p.reversed_at, p.reversal_date::text as reversal_date,
+  rb.id as recorded_by_id, rb.display_name as recorded_by_name,
+  vb.id as reversed_by_id, vb.display_name as reversed_by_name`
+
+const CUSTOMER_PAYMENT_JOINS = sql`
+  left join app.customers cu on cu.business_id = p.business_id and cu.id = p.customer_id
+  left join app.orders o on o.business_id = p.business_id and o.id = p.order_id
+  left join app.business_members rb on rb.business_id = p.business_id and rb.id = (
+    select m.id from app.business_members m
+     where m.business_id = p.business_id and m.user_id = p.created_by
+     order by (m.deleted_at is null) desc, m.created_at desc limit 1)
+  left join app.business_members vb on vb.business_id = p.business_id and vb.id = (
+    select m.id from app.business_members m
+     where m.business_id = p.business_id and m.user_id = p.reversed_by
+     order by (m.deleted_at is null) desc, m.created_at desc limit 1)`
+
+function customerPaymentOf(r: CustomerPaymentRecord): CustomerPaymentDto {
+  return {
+    id: r.id,
+    kind: r.kind,
+    customerId: r.customer_id,
+    customerName: r.customer_name,
+    documentKind: r.order_id !== null ? 'order' : 'sale',
+    documentId: r.order_id ?? r.sale_id ?? '',
+    documentNumber: r.order_number,
+    businessDate: r.business_date,
+    method: r.method,
+    amount: r.amount,
+    currency: r.currency,
+    note: r.note,
+    status: r.reversed_at === null ? 'recorded' : 'reversed',
+    recordedBy: { memberId: r.recorded_by_id, name: r.recorded_by_name },
+    createdAt: isoOf(r.created_at),
+    reversedAt: isoOf(r.reversed_at),
+    reversedBy:
+      r.reversed_at === null ? null : { memberId: r.reversed_by_id, name: r.reversed_by_name },
+    reversalDate: r.reversal_date,
+  }
+}
+
+/** The payments of one order or sale (reversed ones too), newest first. */
+export async function paymentsOfDocument(
+  tx: Tx,
+  businessId: string,
+  kind: ReceivableKindDto,
+  id: string,
+): Promise<CustomerPaymentDto[]> {
+  const rows = (await tx.execute(sql`
+    select ${CUSTOMER_PAYMENT_COLUMNS}
+      from app.customer_payments p
+      ${CUSTOMER_PAYMENT_JOINS}
+     where p.business_id = ${businessId} and p.deleted_at is null
+       and ${kind === 'order' ? sql`p.order_id = ${id}` : sql`p.sale_id = ${id}`}
+     order by p.business_date desc, p.created_at desc, p.id desc
+  `)) as unknown as CustomerPaymentRecord[]
+  return rows.map(customerPaymentOf)
+}
+
+/** The document, what it is owed, and its payments (NOT_FOUND: not an obligation). */
+async function documentPayments(
+  tx: Tx,
+  businessId: string,
+  kind: ReceivableKindDto,
+  id: string,
+): Promise<DocumentPaymentsDto> {
+  const obligation = await readObligation(tx, businessId, kind, id)
+  if (!obligation) throw new AppError('not_found')
+  return {
+    document: owedDocumentOf(obligation),
+    items: await paymentsOfDocument(tx, businessId, kind, id),
+  }
+}
+
+/** Which document an input names. */
+function documentOf(input: { orderId?: string | undefined; saleId?: string | undefined }) {
+  return input.orderId !== undefined
+    ? { kind: 'order' as const, id: input.orderId }
+    : { kind: 'sale' as const, id: input.saleId ?? '' }
+}
+
+/**
+ * `customerPayment.list` (payments.customers.view): the payments of an order or a sale "they'll pay
+ * later" with what it is owed, or a customer's payments a page at a time (newest first).
+ */
+export function listCustomerPayments(
+  ctx: BusinessCtx,
+  input: CustomerListInput,
+): Promise<CustomerPaymentListDto> {
+  return ctx.tx(async (tx) => {
+    if (input.customerId === undefined) {
+      const { kind, id } = documentOf(input)
+      const [visible] = (await tx.execute(sql`
+        select d.id from ${RECEIVABLE_TABLES[kind]} d
+         where d.business_id = ${ctx.businessId} and d.id = ${id} and d.deleted_at is null
+           and ${inScope(ctx, 'd')}
+      `)) as unknown as { id: string }[]
+      if (!visible) throw new AppError('not_found')
+      const view = await documentPayments(tx, ctx.businessId, kind, id)
+      return { document: view.document, items: view.items, nextCursor: null }
+    }
+    const [customer] = (await tx.execute(sql`
+      select c.id from app.customers c
+       where c.business_id = ${ctx.businessId} and c.id = ${input.customerId}
+         and c.deleted_at is null
+    `)) as unknown as { id: string }[]
+    if (!customer) throw new AppError('not_found')
+    const cursor = input.cursor ? decodeCursor(input.cursor) : null
+    const [day, at] = cursor ? cursor.key.split('|') : [undefined, undefined]
+    if (cursor && (!/^\d{4}-\d{2}-\d{2}$/.test(day ?? '') || !at || Number.isNaN(Date.parse(at)))) {
+      throw invalid('invalid cursor')
+    }
+    const scope = ctx.access.locationScope
+    const rows = (await tx.execute(sql`
+      select ${CUSTOMER_PAYMENT_COLUMNS},
+             to_char(p.created_at at time zone 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"') as created_key
+        from app.customer_payments p
+        ${CUSTOMER_PAYMENT_JOINS}
+        left join app.sales s on s.business_id = p.business_id and s.id = p.sale_id
+       where p.business_id = ${ctx.businessId} and p.deleted_at is null
+         and p.customer_id = ${input.customerId}
+         ${
+           scope.all
+             ? sql``
+             : sql`and coalesce(o.location_id, s.location_id) = any(${uuidArray([...scope.ids])})`
+         }
+         ${
+           cursor
+             ? sql`and (p.business_date, p.created_at, p.id)
+                     < (${day}::date, ${at}::timestamptz, ${cursor.id}::uuid)`
+             : sql``
+         }
+       order by p.business_date desc, p.created_at desc, p.id desc
+       limit ${input.limit + 1}
+    `)) as unknown as (CustomerPaymentRecord & { created_key: string })[]
+    const page = rows.slice(0, input.limit)
+    const last = page.at(-1)
+    return {
+      document: null,
+      items: page.map(customerPaymentOf),
+      nextCursor:
+        rows.length > input.limit && last
+          ? encodeCursor({ key: `${last.business_date}|${last.created_key}`, id: last.id })
+          : null,
+    }
+  })
+}
+
+/** What one payment of `kind` of `amount` may be on a document now (EXCEEDS_OUTSTANDING otherwise). */
+function assertWithin(obligation: ObligationRecord, kind: PaymentKind, amount: string): void {
+  const room = kind === 'payment' ? obligation.owed : obligation.overpaid
+  if (compareDecimal(amount, room) > 0) throw new AppError('exceeds_outstanding')
+}
+
+/** A customer payment as recordCustomerPaymentInTx writes it. */
+export interface NewCustomerPaymentFields {
+  readonly id: string
+  readonly kind: PaymentKind
+  readonly businessDate: string
+  readonly method: SettlementMethod
+  readonly amount: string
+  readonly note: string | null
+  readonly requestHash: string
+}
+
+/**
+ * Records a customer payment (or money given back) in `tx`, the document locked by the caller (lock
+ * 1): the business row FOR SHARE (lock 2: the books-closed date), its day (not after today, not on or
+ * before the books-closed date, not before the document), the currency's decimals and what is owed.
+ * Used by customerPayment.record and .recordMany, an order's "Paid now / Deposit" and a refund's money
+ * given back.
+ */
+export async function recordCustomerPaymentInTx(
+  tx: Tx,
+  ctx: BusinessCtx,
+  document: { kind: ReceivableKindDto; id: string },
+  head: ReceivableHead,
+  payment: NewCustomerPaymentFields,
+): Promise<void> {
+  assertPayable(document.kind, head, payment.kind)
+  const business = await lockPostingBusiness(tx, ctx.businessId)
+  assertPostable(business, payment.businessDate)
+  if (payment.businessDate < head.business_date) {
+    throw invalid(`businessDate: before the ${document.kind}`)
+  }
+  if (!isCurrencyCode(head.currency)) throw invalid(`currency: ${head.currency} is not supported`)
+  if (!fitsCurrency(payment.amount, head.currency)) {
+    throw invalid('amount: more decimals than the currency has')
+  }
+  const obligation = await readObligation(tx, ctx.businessId, document.kind, document.id)
+  if (!obligation) throw invalid(`${document.kind}: nothing is owed on it`)
+  assertWithin(obligation, payment.kind, payment.amount)
+  await createIdempotent(tx, customerPayments, {
+    id: payment.id,
+    businessId: ctx.businessId,
+    customerId: head.customer_id,
+    orderId: document.kind === 'order' ? document.id : null,
+    saleId: document.kind === 'sale' ? document.id : null,
+    kind: payment.kind,
+    businessDate: payment.businessDate,
+    method: payment.method,
+    amount: payment.amount,
+    currency: head.currency,
+    note: payment.note,
+    requestHash: payment.requestHash,
+  })
+}
+
+/** The payment with this id, when it was recorded already (a retry, or an id used elsewhere). */
+export async function existingCustomerPayment(tx: Tx, businessId: string, id: string) {
+  const [row] = (await tx.execute(sql`
+    select p.request_hash, p.created_by = app.current_user_id() as mine
+      from app.customer_payments p
+     where p.business_id = ${businessId} and p.id = ${id}
+  `)) as unknown as { request_hash: string | null; mine: boolean }[]
+  return row
+}
+
+/**
+ * `customerPayment.record` (payments.customers.record): see recordCustomerPaymentInTx. Idempotent:
+ * the same payment again returns the document's payments; an id used otherwise is CONFLICT.
+ */
+export function recordCustomerPayment(
+  ctx: BusinessCtx,
+  input: RecordCustomerInput,
+): Promise<DocumentPaymentsDto> {
+  const document = documentOf(input)
+  const requestHash = requestHashOf({
+    [`${document.kind}Id`]: document.id,
+    kind: input.kind,
+    businessDate: input.businessDate,
+    method: input.method,
+    amount: input.amount,
+    note: input.note,
+  })
+  return ctx.tx(async (tx) => {
+    const head = await lockReceivable(tx, ctx, document.kind, document.id)
+    const existing = await existingCustomerPayment(tx, ctx.businessId, input.id)
+    if (existing) {
+      if (existing.request_hash !== requestHash || !existing.mine) throw new AppError('conflict')
+      return documentPayments(tx, ctx.businessId, document.kind, document.id)
+    }
+    await recordCustomerPaymentInTx(tx, ctx, document, head, {
+      id: input.id,
+      kind: input.kind,
+      businessDate: input.businessDate,
+      method: input.method,
+      amount: input.amount,
+      note: input.note,
+      requestHash,
+    })
+    return documentPayments(tx, ctx.businessId, document.kind, document.id)
+  })
+}
+
+/**
+ * `customerPayment.reverse` (payments.customers.record): a payment (or money given back) recorded by
+ * mistake stops counting, dated its own day or the first open day when the books are closed on it
+ * (BOOKS_CLOSED when that is after today). A payment that money given back still stands on is
+ * reversed after that money (PAYMENT_HAS_MONEY_BACK). Idempotent: a reversed payment is returned as
+ * it is.
+ */
+export function reverseCustomerPayment(
+  ctx: BusinessCtx,
+  input: ReverseCustomerInput,
+): Promise<DocumentPaymentsDto> {
+  return ctx.tx(async (tx) => {
+    const [found] = (await tx.execute(sql`
+      select p.order_id, p.sale_id from app.customer_payments p
+       where p.business_id = ${ctx.businessId} and p.id = ${input.id} and p.deleted_at is null
+    `)) as unknown as { order_id: string | null; sale_id: string | null }[]
+    if (!found) throw new AppError('not_found')
+    const document =
+      found.order_id !== null
+        ? { kind: 'order' as const, id: found.order_id }
+        : { kind: 'sale' as const, id: found.sale_id ?? '' }
+    // The document first, as recording a payment, a delivery and a refund lock it.
+    await lockReceivable(tx, ctx, document.kind, document.id)
+    const [payment] = (await tx.execute(sql`
+      select p.business_date::text as business_date, p.reversed_at, p.kind,
+             trim_scale(p.amount)::text as amount
+        from app.customer_payments p
+       where p.business_id = ${ctx.businessId} and p.id = ${input.id}
+         for update
+    `)) as unknown as {
+      business_date: string
+      reversed_at: Date | string | null
+      kind: PaymentKind
+      amount: string
+    }[]
+    if (!payment) throw new AppError('not_found')
+    if (payment.reversed_at === null && payment.kind === 'payment') {
+      // Money given back is never more than was paid beyond what it comes to (D-267), also after a
+      // payment under it is reversed: while money given back stands, a payment is reversed only when
+      // the document would still owe nothing; else the money given back is reversed first
+      // (PAYMENT_HAS_MONEY_BACK). A cancelled order (0) would otherwise owe its deposit again, which no
+      // payment can settle (D-273).
+      const obligation = await readObligation(tx, ctx.businessId, document.kind, document.id)
+      if (obligation && compareDecimal(obligation.refunded, '0') > 0) {
+        const leftAfter = subtractDecimals(
+          obligation.total,
+          obligation.credited,
+          subtractDecimals(obligation.paid, payment.amount, obligation.refunded),
+        )
+        if (compareDecimal(leftAfter, '0') > 0) throw new AppError('payment_has_money_back')
+      }
+    }
+    if (payment.reversed_at === null) {
+      const business = await lockPostingBusiness(tx, ctx.businessId)
+      const reversalDate = reversalDateOf(business, payment.business_date)
+      await tx.execute(sql`
+        update app.customer_payments
+           set reversed_at = now(), reversed_by = app.current_user_id(),
+               reversal_date = ${reversalDate}::date
+         where business_id = ${ctx.businessId} and id = ${input.id}
+      `)
+    }
+    return documentPayments(tx, ctx.businessId, document.kind, document.id)
+  })
+}
+
+/**
+ * `customerPayment.recordMany` ("Pay several at once", M14): one amount of one customer applied to the
+ * documents listed, in their order, each up to what it still owes; one payment each with its own
+ * client id. A document it does not reach gets no payment. Every document must be the customer's
+ * (VALIDATION) and owe something (VALIDATION when nothing is owed on one); more than they owe in all is
+ * EXCEEDS_OUTSTANDING. Idempotent: when any of its payment ids was recorded already, the same call is
+ * answered from what it recorded (CONFLICT when it differs).
+ */
+export function recordManyCustomerPayments(
+  ctx: BusinessCtx,
+  input: RecordManyInput,
+): Promise<RecordManyCustomerPaymentsDto> {
+  const documents = input.documents.map((d) => ({ paymentId: d.id, ...documentOf(d) }))
+  const batch = {
+    customerId: input.customerId,
+    businessDate: input.businessDate,
+    method: input.method,
+    amount: input.amount,
+    note: input.note,
+    documents: documents.map((d) => [d.kind, d.id]),
+  }
+  const hashOf = (index: number) => requestHashOf({ many: batch, index })
+  return ctx.tx(async (tx) => {
+    const [customer] = (await tx.execute(sql`
+      select c.id from app.customers c
+       where c.business_id = ${ctx.businessId} and c.id = ${input.customerId}
+         and c.deleted_at is null
+    `)) as unknown as { id: string }[]
+    if (!customer) throw new AppError('not_found')
+    // Lock 1, in one order for every caller: orders by id, then sales by id.
+    const order = [...documents].sort((a, b) =>
+      a.kind === b.kind ? (a.id < b.id ? -1 : a.id > b.id ? 1 : 0) : a.kind === 'order' ? -1 : 1,
+    )
+    const heads = new Map<string, ReceivableHead>()
+    for (const d of order) heads.set(d.id, await lockReceivable(tx, ctx, d.kind, d.id))
+    const answer = async (): Promise<RecordManyCustomerPaymentsDto> => {
+      const ids = documents.map((d) => d.paymentId)
+      const recorded = (await tx.execute(sql`
+        select ${CUSTOMER_PAYMENT_COLUMNS}
+          from app.customer_payments p
+          ${CUSTOMER_PAYMENT_JOINS}
+         where p.business_id = ${ctx.businessId} and p.id = any(${uuidArray(ids)})
+      `)) as unknown as CustomerPaymentRecord[]
+      const byId = new Map(recorded.map((r) => [r.id, r] as const))
+      const obligations = await readObligations(tx, ctx.businessId, documents)
+      return {
+        customerId: input.customerId,
+        payments: ids.flatMap((id) => {
+          const row = byId.get(id)
+          return row ? [customerPaymentOf(row)] : []
+        }),
+        documents: documents.flatMap((d) => {
+          const row = obligations.get(d.id)
+          return row ? [owedDocumentOf(row)] : []
+        }),
+      }
+    }
+    // A retry: every id it recorded must be this call's own.
+    let replay = false
+    for (const [index, d] of documents.entries()) {
+      const existing = await existingCustomerPayment(tx, ctx.businessId, d.paymentId)
+      if (!existing) continue
+      if (existing.request_hash !== hashOf(index) || !existing.mine) {
+        throw new AppError('conflict')
+      }
+      replay = true
+    }
+    if (replay) return answer()
+
+    for (const d of documents) {
+      const head = heads.get(d.id)
+      if (!head || head.customer_id !== input.customerId) {
+        throw invalid(`documents: ${d.kind} ${d.id} is not this customer's`)
+      }
+      assertPayable(d.kind, head, 'payment')
+    }
+    const obligations = await readObligations(tx, ctx.businessId, documents)
+    let left = input.amount
+    const plan: { index: number; amount: string }[] = []
+    for (const [index, d] of documents.entries()) {
+      const owed = obligations.get(d.id)?.owed ?? '0'
+      if (compareDecimal(owed, '0') === 0) {
+        throw invalid(`documents: nothing is owed on ${d.kind} ${d.id}`)
+      }
+      if (compareDecimal(left, '0') === 0) continue
+      const amount = compareDecimal(left, owed) > 0 ? owed : left
+      plan.push({ index, amount })
+      left = subtractDecimals(left, amount)
+    }
+    if (compareDecimal(left, '0') > 0) throw new AppError('exceeds_outstanding')
+    for (const { index, amount } of plan) {
+      const d = documents[index]
+      const head = d ? heads.get(d.id) : undefined
+      if (!d || !head) continue
+      await recordCustomerPaymentInTx(tx, ctx, d, head, {
+        id: d.paymentId,
+        kind: 'payment',
+        businessDate: input.businessDate,
+        method: input.method,
+        amount,
+        note: input.note,
+        requestHash: hashOf(index),
+      })
+    }
+    return answer()
+  })
 }

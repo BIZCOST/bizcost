@@ -24,7 +24,8 @@ import {
 // step (business.createFromSetup), and members join through real invitations. Then each business gets
 // its Costing Core data (demo/costing.ts): suppliers, materials, products, recipes, posted purchases,
 // returns, payments, running costs and expenses, and (M3 Step 2, previewed) its sales channels and
-// sales, through the same API.
+// sales, and (M3 Step 5, previewed) its customers and orders with deposits, payments and refunds,
+// through the same API.
 
 interface Row {
   business: string
@@ -231,6 +232,7 @@ const COSTING_COLUMNS: [keyof CostingSummary, string][] = [
   ['runningCosts', 'running costs'],
   ['expenses', 'final expenses'],
   ['sales', 'finalized sales'],
+  ['orders', 'orders'],
 ]
 
 async function main() {

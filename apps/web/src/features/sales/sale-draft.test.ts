@@ -83,6 +83,8 @@ describe('One sale', () => {
       deliveryArea: 'Al Barsha',
       deliveryCost: '25',
       notes: null,
+      customerId: null,
+      payLater: false,
       lines: [
         {
           kind: 'item',
@@ -220,5 +222,21 @@ describe('One sale', () => {
     // Another product on the line: its own name, not the old one.
     const other = { ...draft, lines: [{ ...draft.lines[0]!, productId: GUIDE }] }
     expect(checkSale(other, context()).fields?.lines?.[0]).toMatchObject({ description: undefined })
+  })
+
+  it('names its customer and "they\'ll pay later" only with the customer (M3 Step 5)', () => {
+    const customer = {
+      id: '0190a4f2-7b5c-7c3e-9b1a-2f3c4d5e6f29',
+      name: 'Al Noor Cafe',
+      kind: 'business' as const,
+      phone: null,
+      phoneLast4: '1234',
+      archived: false,
+    }
+    const later = checkSale({ ...designerSale(), customer, payLater: true }, context())
+    expect(later.fields).toMatchObject({ customerId: customer.id, payLater: true })
+    // Without the customer, nobody owes it: paid when made.
+    const nobody = checkSale({ ...designerSale(), customer: null, payLater: true }, context())
+    expect(nobody.fields).toMatchObject({ customerId: null, payLater: false })
   })
 })

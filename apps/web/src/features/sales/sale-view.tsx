@@ -15,8 +15,11 @@ import {
   ArrowLeftIcon,
   CalendarCheckIcon,
   CheckCheckIcon,
+  ClipboardListIcon,
   CopyIcon,
   FileSpreadsheetIcon,
+  ReceiptTextIcon,
+  RotateCcwIcon,
   Trash2Icon,
   TruckIcon,
   Undo2Icon,
@@ -45,7 +48,12 @@ import { can } from '@/features/settings/sections'
 import { useLocale, useTerminology } from '@/lib/i18n/client'
 import { useBusinessContext } from '@/lib/trpc/client'
 import { cn } from '@/lib/utils'
+import { maySeeCustomers } from '@/features/customers/data'
+import { mayRecordPayments } from '@/features/orders/data'
+import { CustomerPaymentsPanel } from '@/features/receivables/payments-panel'
 import { useCountedAmount, useRefreshSales } from './data'
+import { RefundSheet } from './refund-sheet'
+import { refundableLines } from './refund-draft'
 import { sheetHref } from './sheet-params'
 
 // A sale as it was recorded (M3 Step 2; D-227, D-230, D-231): a finalized or reversed one, or a draft
@@ -72,29 +80,38 @@ function Detail({ label, children }: { label: string; children: ReactNode }) {
 export function useSaleTitle() {
   const { t } = useTranslation()
   const businessDate = useBusinessDate()
-  return (sale: Pick<SaleDto, 'source' | 'businessDate' | 'periodFrom' | 'netTotal'>) =>
+  return (
+    sale: Pick<SaleDto, 'source' | 'businessDate' | 'periodFrom' | 'netTotal' | 'orderNumber'>,
+  ) =>
     sale.source === 'single'
       ? t('sales.view.title', { date: businessDate(sale.businessDate) })
-      : sale.source === 'import'
-        ? sale.periodFrom
-          ? t(
-              sale.netTotal.startsWith('-')
-                ? 'sales.view.importedRefundPeriodTitle'
-                : 'sales.view.importedPeriodTitle',
-              { from: businessDate(sale.periodFrom), to: businessDate(sale.businessDate) },
-            )
-          : t(
-              sale.netTotal.startsWith('-')
-                ? 'sales.view.importedRefundTitle'
-                : 'sales.view.importedTitle',
-              { date: businessDate(sale.businessDate) },
-            )
-        : sale.periodFrom
-          ? t('sales.view.sheetPeriodTitle', {
-              from: businessDate(sale.periodFrom),
-              to: businessDate(sale.businessDate),
-            })
-          : t('sales.view.sheetTitle', { date: businessDate(sale.businessDate) })
+      : sale.source === 'order'
+        ? t('orders.sale.orderTitle', {
+            number: isolate(sale.orderNumber ?? ''),
+            date: businessDate(sale.businessDate),
+          })
+        : sale.source === 'refund'
+          ? t('orders.sale.refundTitle', { date: businessDate(sale.businessDate) })
+          : sale.source === 'import'
+            ? sale.periodFrom
+              ? t(
+                  sale.netTotal.startsWith('-')
+                    ? 'sales.view.importedRefundPeriodTitle'
+                    : 'sales.view.importedPeriodTitle',
+                  { from: businessDate(sale.periodFrom), to: businessDate(sale.businessDate) },
+                )
+              : t(
+                  sale.netTotal.startsWith('-')
+                    ? 'sales.view.importedRefundTitle'
+                    : 'sales.view.importedTitle',
+                  { date: businessDate(sale.businessDate) },
+                )
+            : sale.periodFrom
+              ? t('sales.view.sheetPeriodTitle', {
+                  from: businessDate(sale.periodFrom),
+                  to: businessDate(sale.businessDate),
+                })
+              : t('sales.view.sheetTitle', { date: businessDate(sale.businessDate) })
 }
 
 /** A product sold without what it uses while Materials is on: its cost is not known (D-223). */
@@ -303,7 +320,7 @@ export function SaleView({
   const post = useMutation(trpc.sale.post.mutationOptions())
   const discard = useMutation(trpc.sale.discard.mutationOptions())
   const [confirm, setConfirm] = useState<
-    'reverse' | 'correct' | 'finalize' | 'discard' | 'fill' | null
+    'reverse' | 'correct' | 'finalize' | 'discard' | 'fill' | 'refund' | null
   >(null)
   const [confirmError, setConfirmError] = useState<I18nKey | null>(null)
   const [busy, setBusy] = useState(false)
@@ -317,6 +334,16 @@ export function SaleView({
   const seesCosts = context.visibleCategories.includes('cost')
   const listHref = `/b/${businessId}/sales`
   const posted = sale.status === 'posted'
+  // M3 Step 5: an order's sale is taken back only by undoing its delivery, and refunded through its
+  // order; a refund is reversed, never corrected or refunded (D-265, D-266).
+  const fromOrder = sale.source === 'order'
+  const isRefund = sale.source === 'refund'
+  const standingRefunds = sale.refunds.filter((refund) => refund.status === 'posted')
+  const canRefund =
+    posted &&
+    canReverse &&
+    (sale.source === 'single' || sale.source === 'day_sheet') &&
+    refundableLines(sale.lines, 'amount').length > 0
   // What was sold: the items, and an imported service charge (a sale with no cost, M3 Step 4).
   const items = sale.lines.filter((line) => line.kind === 'item' || line.kind === 'charge')
   const imported = sale.source === 'import'
@@ -339,12 +366,16 @@ export function SaleView({
   // The delivery cost: one's own sale shows what was typed (D-181); otherwise it needs the costs
   // switch (undefined: hidden).
   const shownDeliveryCost = sale.mine ? sale.ownDeliveryCost : sale.deliveryCost
-  const canFill =
+  const costMissing =
     sale.status !== 'draft' &&
     sale.deliveryNeeded &&
     canManage &&
     seesCosts &&
     sale.deliveryCost === null
+  // An order's sale whose delivery was undone counts nowhere: what the delivery cost goes on the order
+  // (the API refuses it here, D-273).
+  const costOnOrder = costMissing && fromOrder && sale.status === 'reversed'
+  const canFill = costMissing && !costOnOrder
   // What the delivery earned or cost the business, before VAT (D-223): a free one charged nothing.
   const deliveryMargin =
     sale.deliveryNeeded && typeof shownDeliveryCost === 'string'
@@ -498,13 +529,35 @@ export function SaleView({
               </Link>
             </Button>
           ) : null}
-          {posted && canReverse && canManage && !imported ? (
+          {fromOrder && sale.orderId ? (
+            <Button asChild variant="outline">
+              <Link href={`/b/${businessId}/orders/${sale.orderId}`}>
+                <ClipboardListIcon aria-hidden />
+                {t('orders.sale.openOrder')}
+              </Link>
+            </Button>
+          ) : null}
+          {isRefund && sale.refundOfId ? (
+            <Button asChild variant="outline">
+              <Link href={`${listHref}/${sale.refundOfId}`}>
+                <ReceiptTextIcon aria-hidden />
+                {t('orders.sale.openRefunded')}
+              </Link>
+            </Button>
+          ) : null}
+          {canRefund ? (
+            <Button variant="outline" onClick={() => open('refund')}>
+              <RotateCcwIcon aria-hidden />
+              {t('orders.view.refund')}
+            </Button>
+          ) : null}
+          {posted && canReverse && canManage && !imported && !fromOrder && !isRefund ? (
             <Button variant="outline" onClick={() => open('correct')}>
               <CopyIcon aria-hidden />
               {t('sales.view.correct')}
             </Button>
           ) : null}
-          {posted && canReverse && !imported ? (
+          {posted && canReverse && !imported && !fromOrder ? (
             <Button variant="destructive" onClick={() => open('reverse')}>
               <Undo2Icon aria-hidden />
               {t('sales.view.reverse')}
@@ -576,6 +629,15 @@ export function SaleView({
           <p className="text-sm text-muted-foreground">{t('sales.view.costsHidden')}</p>
         ) : null}
 
+        {posted && standingRefunds.length > 0 && canReverse && !fromOrder ? (
+          <p data-reverse-refunds-first className="text-sm text-muted-foreground">
+            {t('orders.sale.reverseRefundsFirst')}
+          </p>
+        ) : null}
+        {fromOrder && posted ? (
+          <FormAlert tone="info">{t('orders.sale.fromOrderNote')}</FormAlert>
+        ) : null}
+
         <Panel title={t('sales.editor.details')}>
           <dl className="grid grid-cols-2 gap-4 lg:grid-cols-3">
             <Detail label={sale.periodFrom ? t('sales.view.days') : t('sales.editor.date')}>
@@ -605,9 +667,37 @@ export function SaleView({
                   ? 'sales.view.kindSheet'
                   : sale.source === 'import'
                     ? 'sales.view.kindImport'
-                    : 'sales.view.kindSingle',
+                    : sale.source === 'order'
+                      ? 'orders.sale.kindOrder'
+                      : sale.source === 'refund'
+                        ? sale.refundBy === 'amount'
+                          ? 'orders.sale.kindRefundAmount'
+                          : 'orders.sale.kindRefundQty'
+                        : 'sales.view.kindSingle',
               )}
             </Detail>
+            {sale.customerName ? (
+              <Detail label={t('orders.editor.customer')}>
+                {sale.customerId && maySeeCustomers(context) ? (
+                  <Link
+                    href={`/b/${businessId}/customers/${sale.customerId}`}
+                    className="text-primary underline-offset-4 hover:underline"
+                  >
+                    <bdi>{sale.customerName}</bdi>
+                  </Link>
+                ) : (
+                  <bdi>{sale.customerName}</bdi>
+                )}
+                {sale.customerPhoneLast4 ? (
+                  <span className="block text-sm font-normal text-muted-foreground">
+                    <bdi dir="ltr">…{sale.customerPhoneLast4}</bdi>
+                  </span>
+                ) : null}
+              </Detail>
+            ) : null}
+            {sale.payLater ? (
+              <Detail label={t('orders.payLater.label')}>{t('orders.payLater.yes')}</Detail>
+            ) : null}
           </dl>
           {sale.periodFrom ? (
             <p className="mt-4 text-sm text-muted-foreground">
@@ -747,6 +837,11 @@ export function SaleView({
                 {t('sales.view.fillDeliveryCost')}
               </Button>
             ) : null}
+            {costOnOrder ? (
+              <p data-delivery-cost-on-order className="mt-4 text-sm text-muted-foreground">
+                {t('orders.sale.deliveryCostOnOrder')}
+              </p>
+            ) : null}
           </Panel>
         ) : null}
 
@@ -807,8 +902,72 @@ export function SaleView({
             </div>
           ) : null}
         </Panel>
+
+        {sale.payLater && sale.payment && sale.status !== 'draft' ? (
+          <CustomerPaymentsPanel
+            document={{
+              kind: 'sale',
+              id: sale.id,
+              businessDate: sale.businessDate,
+              label: saleTitle(sale),
+            }}
+            canRecord={mayRecordPayments(context)}
+            canPay={posted}
+            today={today}
+            closedThrough={closedThrough}
+          />
+        ) : null}
+
+        {sale.refunds.length > 0 ? (
+          <Panel title={t('orders.view.refunds')}>
+            <ul aria-label={t('orders.view.refunds')} className="divide-y">
+              {sale.refunds.map((refund) => (
+                <li
+                  key={refund.id}
+                  data-refund
+                  className="flex items-start justify-between gap-3 py-3 first:pt-0 last:pb-0"
+                >
+                  <div className="min-w-0">
+                    <Link
+                      href={`${listHref}/${refund.id}`}
+                      className="font-medium text-primary underline-offset-4 hover:underline"
+                    >
+                      {t(`orders.view.refundBy.${refund.by}`)}
+                    </Link>
+                    <p className="mt-0.5 text-sm text-muted-foreground">
+                      {businessDate(refund.businessDate)}
+                      {refund.status === 'reversed' ? (
+                        <> · {t('orders.view.refundReversed')}</>
+                      ) : null}
+                    </p>
+                  </div>
+                  <bdi
+                    className={cn(
+                      'shrink-0 font-medium tabular-nums',
+                      refund.status === 'reversed' && 'text-muted-foreground line-through',
+                    )}
+                  >
+                    {money(refund.total, sale.currency)}
+                  </bdi>
+                </li>
+              ))}
+            </ul>
+          </Panel>
+        ) : null}
       </div>
 
+      {confirm === 'refund' ? (
+        <RefundSheet
+          sale={sale}
+          label={saleTitle(sale)}
+          owed={sale.payLater ? sale.payment : null}
+          canGiveBack={mayRecordPayments(context)}
+          today={today}
+          closedThrough={closedThrough}
+          onDone={() => void refresh()}
+          onClose={() => setConfirm(null)}
+        />
+      ) : null}
       <ConfirmDialog
         open={confirm === 'reverse'}
         icon={Undo2Icon}

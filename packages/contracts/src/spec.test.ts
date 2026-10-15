@@ -340,6 +340,12 @@ describe('APP_ERROR_CODES', () => {
     'import_unmatched',
     'import_replace_partial',
     'statement_overlap',
+    'sale_has_payments',
+    'sale_has_refunds',
+    'exceeds_sale',
+    'order_cancelled',
+    'below_paid',
+    'payment_has_money_back',
     'internal',
   ]
 

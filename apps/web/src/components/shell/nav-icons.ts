@@ -3,6 +3,7 @@ import {
   CalculatorIcon,
   CalendarCheckIcon,
   ChartLineIcon,
+  ClipboardListIcon,
   HandCoinsIcon,
   LayoutDashboardIcon,
   LayoutGridIcon,
@@ -14,6 +15,8 @@ import {
   ShoppingCartIcon,
   TagIcon,
   TruckIcon,
+  UsersRoundIcon,
+  WalletIcon,
   type LucideIcon,
 } from 'lucide-react'
 
@@ -44,6 +47,10 @@ const NAV_ICONS: Readonly<Record<string, LucideIcon>> = {
   'calendar-check': CalendarCheckIcon,
   // Reports → Real profit (M3 Step 3; the preview until Release A).
   'chart-line': ChartLineIcon,
+  // Customers, Orders and What customers owe (M3 Step 5; the preview until Release A).
+  users: UsersRoundIcon,
+  'clipboard-list': ClipboardListIcon,
+  wallet: WalletIcon,
 }
 
 export const FALLBACK_NAV_ICON: LucideIcon = LayoutGridIcon

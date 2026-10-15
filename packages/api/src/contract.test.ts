@@ -56,6 +56,18 @@ describe('appRouter contract', () => {
       'costCategory.list',
       'costCategory.unarchive',
       'costCategory.update',
+      'customer.archive',
+      'customer.create',
+      'customer.get',
+      'customer.list',
+      'customer.pick',
+      'customer.similar',
+      'customer.unarchive',
+      'customer.update',
+      'customerPayment.list',
+      'customerPayment.record',
+      'customerPayment.recordMany',
+      'customerPayment.reverse',
       'dashboard.cards',
       'dashboard.checklist',
       'expense.approve',
@@ -111,6 +123,13 @@ describe('appRouter contract', () => {
       'member.transferOwnership',
       'member.updateLocations',
       'member.updatePermissions',
+      'order.cancel',
+      'order.create',
+      'order.deliver',
+      'order.get',
+      'order.list',
+      'order.undoDelivery',
+      'order.update',
       'payable.list',
       'payable.mine',
       'product.archive',
@@ -144,6 +163,7 @@ describe('appRouter contract', () => {
       'purchaseReturn.post',
       'purchaseReturn.reverse',
       'purchaseReturn.update',
+      'receivable.list',
       'recipe.get',
       'recipe.save',
       'role.list',
@@ -161,6 +181,7 @@ describe('appRouter contract', () => {
       'sale.get',
       'sale.list',
       'sale.post',
+      'sale.refund',
       'sale.reverse',
       'sale.update',
       'saleImport.addRows',
@@ -184,7 +205,49 @@ describe('appRouter contract', () => {
   it('every procedure has a Zod output, runs redact, and keeps sensitive fields in business envelopes', () => {
     expect(procedureContractViolations(appRouter)).toEqual([])
   })
+
+  // What customers owe (M3 Step 5, A2): one figure per obligation, named `owed`; no answer carries a
+  // field named `balance` (a running balance is not what BizCost keeps).
+  it('has no output field named balance', () => {
+    const named: string[] = []
+    const owedIn = new Set<string>()
+    for (const path of Object.keys(appRouter._def.procedures)) {
+      const procedure = (
+        appRouter._def.procedures as unknown as Record<string, { _def: { output?: unknown } }>
+      )[path]
+      walkKeys(procedure?._def.output, (key) => {
+        if (/^balance$/i.test(key)) named.push(path)
+        if (key === 'owed') owedIn.add(path)
+      })
+    }
+    expect(named).toEqual([])
+    // The walk reaches the nested figures (it is not vacuous).
+    expect([...owedIn]).toEqual(
+      expect.arrayContaining(['receivable.list', 'order.get', 'customerPayment.record']),
+    )
+  })
 })
+
+/** Calls `visit` with every object key of a Zod schema, however deep (wrappers, arrays, unions). */
+function walkKeys(schema: unknown, visit: (key: string) => void, seen = new Set<unknown>()): void {
+  if (typeof schema !== 'object' || schema === null || seen.has(schema)) return
+  seen.add(schema)
+  const def = (schema as { _zod?: { def?: Record<string, unknown> } })._zod?.def
+  if (!def) return
+  const shape = def.shape as Record<string, unknown> | undefined
+  if (shape) {
+    for (const [key, field] of Object.entries(shape)) {
+      visit(key)
+      walkKeys(field, visit, seen)
+    }
+  }
+  for (const inner of [def.innerType, def.element, def.in, def.out, def.valueType, def.catchall]) {
+    walkKeys(inner, visit, seen)
+  }
+  for (const option of (def.options as unknown[] | undefined) ?? []) walkKeys(option, visit, seen)
+  for (const side of [def.left, def.right]) walkKeys(side, visit, seen)
+  if (typeof def.getter === 'function') walkKeys((def.getter as () => unknown)(), visit, seen)
+}
 
 // Every quantity and price field accepts Arabic-Indic digits, and no number is a float (ROADMAP.md
 // M2 definition of done). Every input field of every procedure is walked (test/hardening/schema.ts):

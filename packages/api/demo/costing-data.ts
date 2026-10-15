@@ -1,4 +1,8 @@
 import type {
+  CreditBy,
+  CustomerKind,
+  Emirate,
+  PaymentKind,
   PaymentMethod,
   PurchaseDocumentType,
   RunningCostFrequency,
@@ -192,6 +196,60 @@ export interface DemoSale {
   readonly lines: readonly (readonly [product: string, qty: string, price?: string])[]
 }
 
+/** A customer (M3 Step 5, previewed until Release A): a person, a company or a government body. */
+export interface DemoCustomer {
+  readonly key: string
+  readonly name: string
+  readonly kind?: CustomerKind
+  readonly phone?: string
+  readonly email?: string
+  /** 15 digits (a VAT-registered company's). */
+  readonly trn?: string
+  /** A company's or government body's trade licence. */
+  readonly tradeLicenceNo?: string
+  readonly emirate?: Emirate
+}
+
+/** A payment by the customer on an order (or money given back to them, `kind: 'refund'`). */
+export interface DemoOrderPayment {
+  readonly key: string
+  readonly daysAgo: number
+  readonly method: SettlementMethod
+  readonly amount: string
+  readonly kind?: PaymentKind
+}
+
+/**
+ * An order (M3 Step 5, previewed until Release A): entered `daysAgo`, due `dueIn` days after, for a
+ * customer (with their LPO number, `customerRef`), with a deposit paid with it; delivered on its day
+ * (`deliveredDaysAgo`: a sale of that day, its cost frozen then) or cancelled; then paid, and
+ * refunded (by amount or quantity of one product's line, the money given back with it).
+ */
+export interface DemoOrder {
+  readonly key: string
+  readonly daysAgo: number
+  readonly dueIn?: number
+  readonly customer: string
+  readonly customerRef?: string
+  readonly delivery?: { readonly area: string; readonly charged: string; readonly cost?: string }
+  readonly lines: readonly (readonly [product: string, qty: string, price?: string])[]
+  readonly deposit?: { readonly method: SettlementMethod; readonly amount: string }
+  readonly deliveredDaysAgo?: number
+  readonly cancelledDaysAgo?: number
+  readonly payments?: readonly DemoOrderPayment[]
+  readonly refund?: {
+    readonly key: string
+    readonly daysAgo: number
+    readonly by: CreditBy
+    readonly product: string
+    /** The quantity (by quantity) or the amount (by amount) taken off. */
+    readonly value: string
+    readonly notes?: string
+    /** The money given back with it, in full. */
+    readonly payBack?: SettlementMethod
+  }
+}
+
 export interface DemoCosting {
   readonly suppliers?: readonly DemoSupplier[]
   readonly materials?: readonly DemoMaterial[]
@@ -208,6 +266,10 @@ export interface DemoCosting {
   readonly channels?: readonly DemoChannel[]
   /** Its sales, entered after the purchases of their days (M3 Step 2). */
   readonly sales?: readonly DemoSale[]
+  /** Its customers (M3 Step 5). */
+  readonly customers?: readonly DemoCustomer[]
+  /** Its orders, with deposits, payments and refunds (M3 Step 5). */
+  readonly orders?: readonly DemoOrder[]
 }
 
 const pack = (key: string, name: string, qty: string, of: UnitOrPack): DemoPack => ({
@@ -1106,6 +1168,64 @@ export const BAKER_COSTING: DemoCosting = {
       lines: [['cupcakes', '2']],
     },
   ],
+  // M3 Step 5: orders taken on WhatsApp with a deposit; one delivered, paid and partly refunded (the
+  // cake arrived a little damaged), one waiting, one cancelled and its deposit given back.
+  customers: [
+    { key: 'fatima', name: 'فاطمة المنصوري', phone: '050 123 4567', emirate: 'dubai' },
+    { key: 'mariam', name: 'مريم الشامسي', phone: '055 765 4321' },
+    {
+      key: 'events',
+      name: 'لمسات للمناسبات',
+      kind: 'business',
+      phone: '04 333 2211',
+      tradeLicenceNo: '1029384',
+      emirate: 'dubai',
+    },
+  ],
+  orders: [
+    {
+      key: 'birthday',
+      daysAgo: 6,
+      dueIn: 3,
+      customer: 'fatima',
+      delivery: { area: 'البرشاء', charged: '20', cost: '25' },
+      lines: [['cake', '1', '150']],
+      deposit: { method: 'bank_transfer', amount: '50' },
+      deliveredDaysAgo: 3,
+      payments: [{ key: 'rest', daysAgo: 3, method: 'cash', amount: '120' }],
+      refund: {
+        key: 'damaged',
+        daysAgo: 2,
+        by: 'amount',
+        product: 'cake',
+        value: '20',
+        notes: 'وصلت الكيكة متضررة قليلًا',
+        payBack: 'cash',
+      },
+    },
+    {
+      key: 'party',
+      daysAgo: 2,
+      dueIn: 4,
+      customer: 'events',
+      customerRef: 'PO-2291',
+      lines: [
+        ['cupcakes', '4'],
+        ['cake', '1'],
+      ],
+      deposit: { method: 'card', amount: '100' },
+    },
+    {
+      key: 'cancelled',
+      daysAgo: 5,
+      dueIn: 2,
+      customer: 'mariam',
+      lines: [['cake', '1']],
+      deposit: { method: 'cash', amount: '40' },
+      cancelledDaysAgo: 4,
+      payments: [{ key: 'deposit-back', daysAgo: 4, method: 'cash', amount: '40', kind: 'refund' }],
+    },
+  ],
 }
 
 // ---------------------------------------------------------------------------------------------------
@@ -1589,6 +1709,41 @@ export const WORKSHOP_COSTING: DemoCosting = {
     payment: 'card',
   })),
   sales: [{ key: 'table', daysAgo: 3, source: 'single', lines: [['table', '1', '2350']] }],
+  // M3 Step 5: a developer's LPO for two wardrobes, delivered and paid in part by bank transfer; a
+  // dining table for a family with half paid by cheque, waiting.
+  customers: [
+    {
+      key: 'developer',
+      name: 'مجموعة الريم العقارية',
+      kind: 'business',
+      phone: '02 555 0101',
+      email: 'procurement@alreem.example',
+      trn: '100456789000003',
+      tradeLicenceNo: 'CN-2234567',
+      emirate: 'abu_dhabi',
+    },
+    { key: 'hamdan', name: 'حمدان الكعبي', phone: '050 999 1212', emirate: 'sharjah' },
+  ],
+  orders: [
+    {
+      key: 'wardrobes',
+      daysAgo: 12,
+      dueIn: 10,
+      customer: 'developer',
+      customerRef: 'LPO-4471',
+      lines: [['cabinet', '2', '4100']],
+      deliveredDaysAgo: 2,
+      payments: [{ key: 'first', daysAgo: 1, method: 'bank_transfer', amount: '5000' }],
+    },
+    {
+      key: 'table',
+      daysAgo: 4,
+      dueIn: 14,
+      customer: 'hamdan',
+      lines: [['table', '1', '2400']],
+      deposit: { method: 'cheque', amount: '1260' },
+    },
+  ],
 }
 
 // ---------------------------------------------------------------------------------------------------
@@ -1841,6 +1996,48 @@ export const FACTORY_COSTING: DemoCosting = {
     },
   ],
   sales: [{ key: 'floor-500', daysAgo: 4, source: 'single', lines: [['floor', '500', '7.25']] }],
+  // M3 Step 5: a hotel's LPO delivered by the factory's truck, paid in part; a school's LPO waiting.
+  customers: [
+    {
+      key: 'hotel',
+      name: 'فندق اللؤلؤة',
+      kind: 'business',
+      phone: '04 222 9090',
+      email: 'purchasing@lulu-hotel.example',
+      trn: '100234567800003',
+      tradeLicenceNo: '778899',
+      emirate: 'dubai',
+    },
+    {
+      key: 'school',
+      name: 'مدرسة الأجيال الخاصة',
+      kind: 'business',
+      phone: '06 544 7788',
+      tradeLicenceNo: '552211',
+      emirate: 'sharjah',
+    },
+  ],
+  orders: [
+    {
+      key: 'hotel-lpo',
+      daysAgo: 9,
+      dueIn: 5,
+      customer: 'hotel',
+      customerRef: 'LPO-88120',
+      delivery: { area: 'جميرا', charged: '150', cost: '120' },
+      lines: [['floor', '1200', '7']],
+      deliveredDaysAgo: 5,
+      payments: [{ key: 'transfer', daysAgo: 2, method: 'bank_transfer', amount: '4000' }],
+    },
+    {
+      key: 'school-lpo',
+      daysAgo: 1,
+      dueIn: 7,
+      customer: 'school',
+      customerRef: 'LPO-2026-031',
+      lines: [['floor', '300']],
+    },
+  ],
 }
 
 // ---------------------------------------------------------------------------------------------------

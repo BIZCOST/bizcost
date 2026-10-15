@@ -155,8 +155,15 @@ export const minePayableListDto = z.object({
   outstanding: zDecimal,
   /** How many of them are still owed (all pages). */
   owedCount: z.int().nonnegative(),
-  /** Σ paid back on them (all pages). */
+  /** Σ paid back on them (all pages), net of money back from suppliers recorded on them. */
   paidBack: zDecimal,
+  /**
+   * The money back from suppliers the caller received for the business (M3 Step 5, Q18): it counts
+   * against what the business owes them (D-181).
+   */
+  moneyBack: zDecimal,
+  /** outstanding − moneyBack: below zero when the caller holds more than they are owed. */
+  owedAfterMoneyBack: zDecimal,
   /** This page, newest business day first. */
   items: z.array(minePayableDto),
   nextCursor: z.string().nullable(),

@@ -302,12 +302,16 @@ describe('business.context', () => {
         all: false,
         // The owner's answers of 2026-09-29 (D-179, D-180): recipes (quantities) and their
         // materials, and entering expenses; nothing sensitive. Entering and finalizing their own
-        // sales (M3 Step 2, Q10): held already, served once Sales is (its module gate).
+        // sales (M3 Step 2, Q10): held already, served once Sales is (its module gate). Adding
+        // customers, entering and delivering their own orders (M3 Step 5, Q10; D-269) likewise.
         keys: [
+          'customers.items.manage',
           'dashboard.home.view',
           'expenses.documents.manage',
           'expenses.documents.view',
           'materials.items.view',
+          'orders.documents.deliver',
+          'orders.documents.manage',
           'products.items.view',
           'products.recipes.view',
           'sales.documents.manage',

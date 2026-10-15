@@ -7,10 +7,12 @@ import {
   BanknoteIcon,
   CalendarCheckIcon,
   ChevronDownIcon,
+  ClipboardListIcon,
   FileSpreadsheetIcon,
   FileUpIcon,
   PlusIcon,
   ReceiptTextIcon,
+  RotateCcwIcon,
   SearchXIcon,
   SlidersHorizontalIcon,
 } from 'lucide-react'
@@ -19,6 +21,7 @@ import { useParams, usePathname, useRouter, useSearchParams } from 'next/navigat
 import { useId, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { FormAlert } from '@/components/form/form-alert'
+import { isolate } from '@/components/form/use-message'
 import { ModuleGate } from '@/components/shell/module-gate'
 import { PageContainer } from '@/components/shell/page-container'
 import { LoadError } from '@/components/states/query-state'
@@ -30,7 +33,7 @@ import { NBSP } from '@/features/catalog/units'
 import { useBusinessDate, useMoney } from '@/features/documents/amounts'
 import { SearchBox } from '@/features/documents/search-box'
 import { StatusBadge } from '@/features/documents/status-badge'
-import { useLocationOptions } from '@/features/purchasing/data'
+import { hasModule, useLocationOptions } from '@/features/purchasing/data'
 import { useBusinessContext } from '@/lib/trpc/client'
 import { cn } from '@/lib/utils'
 import { mayEnterSales, useBooks, useChannels } from './data'
@@ -78,6 +81,7 @@ function FilterBar({
   const { data: context } = useBusinessContext()
   const { channels } = useChannels('all')
   const locationOptions = useLocationOptions(context)
+  const ordersOn = context !== undefined && hasModule(context, 'orders')
   const narrowing = [
     filters.source,
     filters.channelId,
@@ -159,6 +163,8 @@ function FilterBar({
             <option value="day_sheet">{t('sales.list.filters.day_sheet')}</option>
             <option value="single">{t('sales.list.filters.single')}</option>
             <option value="import">{t('sales.list.filters.import')}</option>
+            {ordersOn ? <option value="order">{t('orders.sale.filterOrder')}</option> : null}
+            <option value="refund">{t('orders.sale.filterRefund')}</option>
           </NativeSelect>
         </div>
         {channels.length > 1 ? (
@@ -290,29 +296,40 @@ function SaleRow({
   // An imported day's refund (more refunded than sold of something) is a sale of negative amounts.
   const refund = sale.source === 'import' && sale.netTotal.startsWith('-')
   const title =
-    sale.source === 'import'
-      ? sale.periodFrom
-        ? t(refund ? 'sales.list.importedRefundPeriod' : 'sales.list.importedPeriod', {
-            from: businessDate(sale.periodFrom),
-            to: businessDate(sale.businessDate),
-          })
-        : t(refund ? 'sales.list.importedRefund' : 'sales.list.imported', {
-            date: businessDate(sale.businessDate),
-          })
-      : sale.source === 'day_sheet'
-        ? sale.periodFrom
-          ? t('sales.list.sheetPeriod', {
-              from: businessDate(sale.periodFrom),
-              to: businessDate(sale.businessDate),
-            })
-          : t('sales.list.sheet', { date: businessDate(sale.businessDate) })
-        : items
+    sale.source === 'order'
+      ? t('orders.sale.orderTitle', {
+          number: isolate(sale.orderNumber ?? ''),
+          date: businessDate(sale.businessDate),
+        })
+      : sale.source === 'refund'
+        ? t('orders.sale.refundTitle', { date: businessDate(sale.businessDate) })
+        : sale.source === 'import'
+          ? sale.periodFrom
+            ? t(refund ? 'sales.list.importedRefundPeriod' : 'sales.list.importedPeriod', {
+                from: businessDate(sale.periodFrom),
+                to: businessDate(sale.businessDate),
+              })
+            : t(refund ? 'sales.list.importedRefund' : 'sales.list.imported', {
+                date: businessDate(sale.businessDate),
+              })
+          : sale.source === 'day_sheet'
+            ? sale.periodFrom
+              ? t('sales.list.sheetPeriod', {
+                  from: businessDate(sale.periodFrom),
+                  to: businessDate(sale.businessDate),
+                })
+              : t('sales.list.sheet', { date: businessDate(sale.businessDate) })
+            : items
   const Icon =
     sale.source === 'day_sheet'
       ? CalendarCheckIcon
       : sale.source === 'import'
         ? FileSpreadsheetIcon
-        : ReceiptTextIcon
+        : sale.source === 'order'
+          ? ClipboardListIcon
+          : sale.source === 'refund'
+            ? RotateCcwIcon
+            : ReceiptTextIcon
   return (
     <Link
       href={href}
@@ -348,10 +365,27 @@ function SaleRow({
               <bdi>{sale.enteredByName}</bdi>
             </>
           ) : null}
-          {sale.source !== 'single' ? (
+          {sale.customerName ? (
+            <>
+              {' · '}
+              <bdi>{sale.customerName}</bdi>
+            </>
+          ) : null}
+          {sale.source === 'order' || sale.source === 'refund' ? (
+            <>
+              {' · '}
+              <bdi>{items}</bdi>
+            </>
+          ) : sale.source !== 'single' ? (
             <>
               {' · '}
               {t('sales.list.items', { count: sale.lineCount }).replaceAll(' ', NBSP)}
+            </>
+          ) : null}
+          {sale.payLater ? (
+            <>
+              {' · '}
+              {t('orders.payLater.badge')}
             </>
           ) : null}
         </span>

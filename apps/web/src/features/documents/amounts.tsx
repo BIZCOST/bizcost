@@ -36,6 +36,24 @@ export function useBusinessDate() {
     formatDate(locale, `${day}T00:00:00Z`, { dateStyle: 'medium', timeZone: 'UTC' })
 }
 
+/**
+ * A business day with its weekday and without the year (an order's delivery day, M3 Step 5): "Thu, 8
+ * Oct"; with the year when it is not this one ("Thu, 8 Oct 2026").
+ */
+export function useBusinessWeekday() {
+  const { locale } = useLocale()
+  return (day: string, thisYear?: string) =>
+    formatDate(locale, `${day}T00:00:00Z`, {
+      weekday: 'short',
+      day: 'numeric',
+      month: 'short',
+      ...(thisYear !== undefined && day.slice(0, 4) === thisYear.slice(0, 4)
+        ? {}
+        : { year: 'numeric' as const }),
+      timeZone: 'UTC',
+    })
+}
+
 /** A month (YYYY-MM) as the page's language writes it: "September 2026" (an expense's month, D-194). */
 export function useBusinessMonth() {
   const { locale } = useLocale()

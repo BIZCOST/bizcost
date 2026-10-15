@@ -253,6 +253,8 @@ interface MineTotalsRecord extends Record<string, unknown> {
   outstanding: string
   owed_count: number
   paid_back: string
+  money_back: string
+  owed_after: string
 }
 
 interface MinePaymentRecord extends Record<string, unknown> {
@@ -286,8 +288,10 @@ function paidByMe(businessId: string, kinds: readonly PayableKindDto[]): SQL {
                select sum(r.total) from app.purchase_returns r
                 where r.business_id = d.business_id and r.purchase_id = d.id
                   and r.status = 'posted' and r.deleted_at is null), 0) as returned_n,
+             -- Paid back to the caller, net of the money back from the supplier recorded on it (Q18).
              coalesce((
-               select sum(p.amount) from app.purchase_payments p
+               select sum(case p.kind when 'refund' then -p.amount else p.amount end)
+                 from app.purchase_payments p
                 where p.business_id = d.business_id and p.purchase_id = d.id
                   and p.reversed_at is null and p.deleted_at is null), 0) as paid_n
         from app.purchases d
@@ -340,17 +344,36 @@ export function listMinePayables(
         outstanding: '0',
         owedCount: 0,
         paidBack: '0',
+        moneyBack: '0',
+        owedAfterMoneyBack: '0',
         items: [],
         nextCursor: null,
       }
     }
     const documents = paidByMe(ctx.businessId, kinds)
+    // The money back from suppliers the caller received for the business (Q18): it counts against
+    // what the business owes them (D-181). Purchases only.
+    const moneyBack = kinds.includes('purchase')
+      ? sql`(select coalesce(sum(pp.amount), 0) from app.purchase_payments pp
+              where pp.business_id = ${ctx.businessId} and pp.kind = 'refund'
+                and pp.reversed_at is null and pp.deleted_at is null
+                and pp.received_by_member_id in (
+                  select m.id from app.business_members m
+                   where m.business_id = pp.business_id and m.user_id = app.current_user_id()))`
+      : sql`0::numeric`
     const [totals] = (await tx.execute(sql`
-      select trim_scale(coalesce(sum(greatest(o.total_n - o.returned_n - o.paid_n, 0)), 0))::text
-               as outstanding,
-             (count(*) filter (where o.total_n - o.returned_n - o.paid_n > 0))::int as owed_count,
-             trim_scale(coalesce(sum(o.paid_n), 0))::text as paid_back
-        from (${documents}) o
+      select trim_scale(t.outstanding)::text as outstanding, t.owed_count,
+             trim_scale(t.paid_back)::text as paid_back,
+             trim_scale(t.money_back)::text as money_back,
+             trim_scale(t.outstanding - t.money_back)::text as owed_after
+        from (
+          select coalesce(sum(greatest(o.total_n - o.returned_n - o.paid_n, 0)), 0) as outstanding,
+                 (count(*) filter (where o.total_n - o.returned_n - o.paid_n > 0))::int
+                   as owed_count,
+                 coalesce(sum(o.paid_n), 0) as paid_back,
+                 ${moneyBack} as money_back
+            from (${documents}) o
+        ) t
     `)) as unknown as MineTotalsRecord[]
     const after = key
       ? sql`where (o.business_date, o.created_at, o.kind, o.document_id)
@@ -377,6 +400,8 @@ export function listMinePayables(
       outstanding: totals?.outstanding ?? '0',
       owedCount: totals?.owed_count ?? 0,
       paidBack: totals?.paid_back ?? '0',
+      moneyBack: totals?.money_back ?? '0',
+      owedAfterMoneyBack: totals?.owed_after ?? '0',
       items: page.map((r): MinePayableDto => ({
         kind: r.kind,
         documentId: r.document_id,
@@ -422,6 +447,7 @@ async function paymentsOf(
              p.method, p.amount, p.created_at
         from app.purchase_payments p
        where p.business_id = ${businessId} and p.reversed_at is null and p.deleted_at is null
+         and p.kind = 'payment'
          and p.purchase_id in (${sql.join(
            purchases.map((id) => sql`${id}::uuid`),
            sql`, `,

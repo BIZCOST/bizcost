@@ -32,7 +32,8 @@
       "product": "Product",
       "product_services": "Service",
       "channel": "Channel",
-      "branch": "Branch"
+      "branch": "Branch",
+      "order": "Order"
     },
     "show": {
       "label": "Show",
@@ -163,7 +164,8 @@
       "removed": "No longer listed",
       "incomplete": "Not complete",
       "beforeRunning": "before running costs",
-      "parts": "Where it went"
+      "parts": "Where it went",
+      "noOrder": "Not from an order"
     },
     "empty": {
       "title": "No sales in these days",

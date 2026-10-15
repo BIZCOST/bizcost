@@ -33,8 +33,19 @@ const amount = z.string().regex(/^-?\d+(?:\.\d+)?$/)
 const costAmount = () => sensitive(amount.nullable(), 'cost')
 const profitAmount = () => sensitive(amount.nullable(), 'profit_margin')
 
-/** How profit.summary groups its sales (by order comes with Orders, Step 5). */
-export const PROFIT_GROUPS = ['month', 'week', 'day', 'product', 'channel', 'branch'] as const
+/**
+ * How profit.summary groups its sales. `order` (M3 Step 5): each order's sale and its refunds; the sales
+ * that came from no order are one group, key `none`.
+ */
+export const PROFIT_GROUPS = [
+  'month',
+  'week',
+  'day',
+  'product',
+  'channel',
+  'branch',
+  'order',
+] as const
 export type ProfitGroup = (typeof PROFIT_GROUPS)[number]
 
 /**
@@ -114,7 +125,10 @@ export const profitGroupDto = profitPartsDto.extend({
    * product, a channel or a branch.
    */
   key: z.string(),
-  /** A product's, channel's or branch's name as it is now; null for months, weeks and days. */
+  /**
+   * A product's, channel's or branch's name as it is now, an order's number ("#1001"); null for
+   * months, weeks and days, and the sales from no order.
+   */
   name: z.string().nullable(),
   /** The days of the period it covers (a week or a month cut by the period: its days in it). */
   from: zBusinessDate.nullable(),
@@ -124,6 +138,8 @@ export const profitGroupDto = profitPartsDto.extend({
   /** By product: its unit; by channel: its kind; null otherwise. */
   unit: z.string().nullable(),
   channelKind: z.string().nullable(),
+  /** By order: its customer's name as it is now (null without one, and for the other groups). */
+  customerName: z.string().nullable(),
 })
 export type ProfitGroupDto = z.infer<typeof profitGroupDto>
 
