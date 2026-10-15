@@ -16,7 +16,7 @@
 -- The starter channels of the businesses that existed are run on their own fixtures by
 -- packages/db/test/sales-channels.db.test.ts (it executes the migration's own statement).
 begin;
-select plan(79);
+select plan(80);
 
 do $$
 begin
@@ -114,7 +114,7 @@ select col_type_is('app', 'sales', 'delivery_cost', 'numeric(20,4)',
 select has_index('app', 'sales', 'sales_day_sheet_key',
                  'one live day sheet per member × days × channel × location');
 
--- 2. Fixtures (15) ------------------------------------------------------------------------------
+-- 2. Fixtures (16) ------------------------------------------------------------------------------
 
 select is(
   pg_temp.api_value(v.u, null, format($f$
@@ -140,6 +140,9 @@ select is(pg_temp.api_exec(v.u, v.b, v.stmt), 'ok 1', 'setup: ' || v.what)
     ('user A', 'biz A', 'a material of A', $$
       insert into app.materials (id, business_id, name, dimension, unit)
       values (pg_temp.id('milk A'), pg_temp.id('biz A'), 'Milk', 'volume', 'l') $$),
+    ('user A', 'biz A', 'another material of A', $$
+      insert into app.materials (id, business_id, name, dimension, unit)
+      values (pg_temp.id('sugar A'), pg_temp.id('biz A'), 'Sugar', 'mass', 'kg') $$),
     ('user B', 'biz B', 'a location of B', $$
       insert into app.locations (id, business_id, name, is_default)
       values (pg_temp.id('loc B'), pg_temp.id('biz B'), 'Main', true) $$),
@@ -299,7 +302,7 @@ select is(pg_temp.state_of(pg_temp.api_exec('user A', 'biz A', v.stmt)), v.state
       insert into app.sale_line_materials (id, business_id, sale_id, sale_line_id, material_id,
                                            base_qty)
       values (pg_temp.id('late mat'), pg_temp.id('biz A'), pg_temp.id('sale A'),
-              pg_temp.id('line A'), pg_temp.id('latte A'), 1) $$),
+              pg_temp.id('line A'), pg_temp.id('sugar A'), 1) $$),
     (10, 'ok 1', 'a material without a price takes one, once (the first purchase that prices it)', $$
       update app.sale_line_materials set unit_cost = 0.006, cost = 2.4, basis = 'first_purchase'
        where id = pg_temp.id('mat A') $$),

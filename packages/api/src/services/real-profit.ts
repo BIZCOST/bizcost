@@ -7,6 +7,7 @@ import {
   channelFeesOf,
   compareDecimal,
   costPool,
+  costRatio,
   costsSpanOf,
   daysIn,
   firstDayOf,
@@ -18,6 +19,7 @@ import {
   rateSourceOf,
   saleRate,
   soldLinesProfit,
+  statementParts,
   subtractDecimals,
   sumDecimals,
   sumRealProfit,
@@ -68,9 +70,10 @@ import { uuidArray } from './stock'
 //     days of sales. The costs: costPool (running costs for the days they ran, finalized expenses
 //     counted once, D-216; never an expense marked as a channel's fees or delivery, Q8; the materials no
 //     product uses, Q13 A), whole or so far (monthCostsSoFar).
-//   - Fees (channelFeesOf): the expenses marked as the channel's fees for the month (statements come
-//     with Step 4), else the channel's commission %, else "before app fees" for a delivery app or a
-//     marketplace. Marked fees with no sales of their channel that month to sit on, and what reversals
+//   - Fees (channelFeesOf): the posted statement covering a line's day (its part in the line's
+//     month over the channel's item sales of the same days, M3 Step 4), else the expenses marked as
+//     the channel's fees for the month, else the channel's commission %, else "before app fees" for a
+//     delivery app or a marketplace. Marked fees with no sales of their channel that month to sit on, and what reversals
 //     of earlier months' take back, come off at the business level (feesNotCarried, D-250).
 //   - The business level (businessRealProfit) subtracts the month's costs over the days counted (whole
 //     in a finished month, so far in the running one, from the first sale in a first month) in place
@@ -145,7 +148,20 @@ export interface ProfitEnv {
     costInputs: CostInputs | null
     channelSales: Map<BusinessMonth, Map<string, string>>
     feeExpenses: Map<BusinessMonth, ChannelFeeExpenses>
+    /** The posted channel statements (M3 Step 4), read once when a question needs them. */
+    statements: Map<string, ProfitStatement> | null
+    /** Each channel's item sales over some days (`from|to`), every branch. */
+    channelSalesBetween: Map<string, Map<string, string>>
   }
+}
+
+/** A posted statement of a channel (Q8): its days and its fees (everything the app kept). */
+export interface ProfitStatement {
+  readonly id: string
+  readonly channelId: string
+  readonly from: string
+  readonly to: string
+  readonly fees: string
 }
 
 /**
@@ -273,6 +289,8 @@ export async function profitEnvOf(tx: Tx, ctx: BusinessCtx): Promise<ProfitEnv> 
       costInputs: null,
       channelSales: new Map(),
       feeExpenses: new Map(),
+      statements: null,
+      channelSalesBetween: new Map(),
     },
   }
 }
@@ -711,6 +729,119 @@ export async function channelFeesFor(
   return fees
 }
 
+/** The business's posted channel statements (M3 Step 4), read once per request. */
+async function statementsOf(tx: Tx, env: ProfitEnv): Promise<Map<string, ProfitStatement>> {
+  if (env.cache.statements) return env.cache.statements
+  const rows = (await tx.execute(sql`
+    select s.id, s.channel_id, s.period_from::text as period_from, s.period_to::text as period_to,
+           trim_scale(s.commission + s.payment_fees + s.other_fees + s.ads + s.refunds_charged)::text
+             as fees
+      from app.channel_statements s
+     where s.business_id = ${env.businessId} and s.status = 'posted' and s.deleted_at is null
+  `)) as unknown as {
+    id: string
+    channel_id: string
+    period_from: string
+    period_to: string
+    fees: string
+  }[]
+  const statements = new Map(
+    rows.map((r) => [
+      r.id,
+      { id: r.id, channelId: r.channel_id, from: r.period_from, to: r.period_to, fees: r.fees },
+    ]),
+  )
+  env.cache.statements = statements
+  return statements
+}
+
+/** Each channel's item sales before VAT over the days `from` … `to` (every branch). */
+async function channelSalesBetweenOf(
+  tx: Tx,
+  env: ProfitEnv,
+  from: string,
+  to: string,
+): Promise<Map<string, string>> {
+  const key = `${from}|${to}`
+  const cached = env.cache.channelSalesBetween.get(key)
+  if (cached) return cached
+  const rows = (await tx.execute(sql`
+    select p.channel_id, trim_scale(sum(p.sign * l.net))::text as sales
+      from ${piecesOf(env.businessId, { from, to })} p
+      join app.sale_lines l
+        on l.business_id = ${env.businessId} and l.sale_id = p.sale_id and l.deleted_at is null
+       and l.kind = 'item'
+     group by 1
+  `)) as unknown as { channel_id: string; sales: string }[]
+  const result = new Map(rows.map((r) => [r.channel_id, r.sales] as const))
+  env.cache.channelSalesBetween.set(key, result)
+  return result
+}
+
+/**
+ * The fees of a line of `month` whose day a posted statement covers (Q8, D-223): the statement's part
+ * in the month (statementParts: split by days, the last part the rest) over the channel's item sales
+ * in the same days, every branch.
+ */
+async function statementFeesFor(
+  tx: Tx,
+  env: ProfitEnv,
+  statementId: string,
+  month: BusinessMonth,
+): Promise<ChannelFees> {
+  const key = `statement|${statementId}|${month}`
+  const cached = env.cache.fees.get(key)
+  if (cached) return cached
+  const statement = (await statementsOf(tx, env)).get(statementId)
+  if (!statement) throw new AppError('internal', { message: 'statement not read' })
+  const channel = env.channels.get(statement.channelId)
+  const part = statementParts(statement).find((p) => p.month === month)
+  const sales = part
+    ? ((await channelSalesBetweenOf(tx, env, part.from, part.to)).get(statement.channelId) ?? '0')
+    : '0'
+  const fees = part
+    ? channelFeesOf({
+        feesExpected: channel ? FEES_EXPECTED.has(channel.kind) : false,
+        commissionPercent: channel?.feePercent ?? null,
+        statement: { fees: part.fees, sales },
+        expenses: null,
+      })
+    : await channelFeesFor(tx, env, statement.channelId, month)
+  env.cache.fees.set(key, fees)
+  return fees
+}
+
+/**
+ * What posted statements of `month` no sold line carries (D-250's rule, for statements): a
+ * statement's part in the month whose channel sold nothing in its days, counted for the days
+ * `from` … `to` of it (its fees × those days ÷ its days, one division).
+ */
+async function statementFeesNotCarried(
+  tx: Tx,
+  env: ProfitEnv,
+  month: BusinessMonth,
+  from: string,
+  to: string,
+): Promise<string> {
+  const amounts: string[] = []
+  for (const statement of (await statementsOf(tx, env)).values()) {
+    const part = statementParts(statement).find((p) => p.month === month)
+    if (!part) continue
+    const sold = (await channelSalesBetweenOf(tx, env, part.from, part.to)).get(statement.channelId)
+    if (sold !== undefined && compareDecimal(sold, '0') > 0) continue
+    const lo = part.from > from ? part.from : from
+    const hi = part.to < to ? part.to : to
+    if (lo > hi) continue
+    const days = (Date.parse(`${hi}T00:00:00Z`) - Date.parse(`${lo}T00:00:00Z`)) / DAY_MS + 1
+    amounts.push(
+      days === part.days
+        ? part.fees
+        : (costRatio([part.fees, String(days)], [String(part.days)]) ?? '0'),
+    )
+  }
+  return amounts.length === 0 ? zero : sumDecimals(amounts)
+}
+
 // ---------------------------------------------------------------------------------------------------
 // Sold lines as sums, and a report of them
 // ---------------------------------------------------------------------------------------------------
@@ -745,6 +876,8 @@ interface BucketRow extends Record<string, unknown> {
   key: string
   month: string
   channel_id: string
+  /** The posted statement covering the lines' day (item lines; M3 Step 4), null without one. */
+  statement_id: string | null
   kind: SaleLineKind
   net: string
   qty: string | null
@@ -838,7 +971,7 @@ export async function profitGroups(
        group by x.sale_line_id
     )
     select ${key.line} as key, to_char(p.day, 'YYYY-MM') as month, p.channel_id::text as channel_id,
-           l.kind,
+           st.id::text as statement_id, l.kind,
            trim_scale(sum(p.sign * l.net))::text as net,
            trim_scale(sum(p.sign * l.qty) filter (where l.kind = 'item'))::text as qty,
            trim_scale(sum(p.sign * m.priced))::text as materials,
@@ -867,7 +1000,13 @@ export async function profitGroups(
       left join m on m.sale_line_id = l.id
       left join app.products_services pr
         on pr.business_id = l.business_id and pr.id = l.product_id
-     group by 1, 2, 3, 4
+      -- The posted statement covering the line's day (they never overlap: one at most), for item
+      -- lines only: a line's fees come from it first (Q8).
+      left join app.channel_statements st
+        on st.business_id = ${businessId} and st.channel_id = p.channel_id and l.kind = 'item'
+       and st.status = 'posted' and st.deleted_at is null
+       and p.day between st.period_from and st.period_to
+     group by 1, 2, 3, 4, 5
   `)) as unknown as BucketRow[]
   const deliveries = (await tx.execute(sql`
     with p as ${pieces}
@@ -903,9 +1042,11 @@ export async function profitGroups(
     }
     for (const row of rows) {
       const fees =
-        row.kind === 'item'
-          ? await channelFeesFor(tx, env, row.channel_id, row.month)
-          : ({ state: 'none' } as const)
+        row.kind !== 'item'
+          ? ({ state: 'none' } as const)
+          : row.statement_id !== null
+            ? await statementFeesFor(tx, env, row.statement_id, row.month)
+            : await channelFeesFor(tx, env, row.channel_id, row.month)
       const rate = rates.get(row.month)!.rate
       const piece = soldLinesProfit({
         kind: row.kind,
@@ -965,8 +1106,12 @@ async function feesNotCarriedOf(
   to: string,
 ): Promise<string> {
   const fees = await feeExpensesOf(tx, env, month)
-  if (fees.marked.size === 0 && compareDecimal(fees.takenBack, '0') === 0) return zero
-  return feesNotCarried(month, from, to, fees, await channelSalesOf(tx, env, month))
+  const statements = await statementFeesNotCarried(tx, env, month, from, to)
+  if (fees.marked.size === 0 && compareDecimal(fees.takenBack, '0') === 0) return statements
+  return sumDecimals([
+    feesNotCarried(month, from, to, fees, await channelSalesOf(tx, env, month)),
+    statements,
+  ])
 }
 
 /** A month of the business level: its costs, what its sales did not carry, and the fees no line did. */

@@ -64,6 +64,26 @@ export function jsonRecords(rows: readonly Record<string, string | boolean | nul
   return sql`${JSON.stringify(rows)}::text::jsonb`
 }
 
+/** The types a column of rows may be read as (columnArray). */
+type ColumnType = 'uuid' | 'int' | 'date' | 'text' | 'numeric' | 'boolean'
+
+/** What an element of an array literal escapes inside its double quotes. */
+const ARRAY_ESCAPED = /[\\"]/g
+
+/**
+ * One column of many rows for raw SQL as ONE array parameter, the columns read together with
+ * `unnest(a, b, …) as v(…)`: an import's tens of thousands of staged rows and sale lines send each
+ * value once (jsonRecords sends every key with every value, and Postgres reads it as jsonb first).
+ * Every element is quoted, its backslashes and double quotes escaped, and null is NULL; decimal
+ * strings stay text until `numeric` reads them. `type` is one of a fixed few, never input.
+ */
+export function columnArray(values: readonly (string | boolean | null)[], type: ColumnType) {
+  const elements = values.map((value) =>
+    value === null ? 'NULL' : `"${String(value).replace(ARRAY_ESCAPED, '\\$&')}"`,
+  )
+  return sql`${`{${elements.join(',')}}`}::text::${sql.raw(type)}[]`
+}
+
 /** An instant from raw SQL (the driver hands timestamps over as text) as an ISO string. */
 export function isoOf(value: Date | string): string
 export function isoOf(value: Date | string | null): string | null

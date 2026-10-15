@@ -1,3 +1,4 @@
+import { randomBytes } from 'node:crypto'
 import type {
   AttachmentUploadUrlDto,
   BusinessProfileDto,
@@ -342,6 +343,81 @@ async function newSale(post = false): Promise<SaleDto> {
         id: draft.id,
         version: draft.version,
       }),
+    )
+  ).data
+}
+
+/** An import of today's sales of the tenant's product (M3 Step 4): another file, a channel of its own. */
+function importInput(channelId?: string) {
+  return {
+    id: newId(),
+    channelId: channelId ?? tenant.channel.id,
+    locationId: tenant.branch.id,
+    fileName: `audit ${newId()}.csv`,
+    fileHash: randomBytes(32).toString('hex'),
+    fingerprint: randomBytes(32).toString('hex'),
+    shape: 'summary',
+    periodFrom: tenant.sale.businessDate,
+    periodTo: tenant.sale.businessDate,
+    mapping: { headerRow: 0, columns: { name: 0, total: 1 }, headers: {}, dateOrder: 'dmy' },
+    amountsIncludeVat: false,
+    rowsRead: 1,
+    rowsLeftOut: 0,
+    feesTotal: '2.5',
+    rowCount: 1,
+  }
+}
+
+const importRow = () => ({
+  position: 0,
+  businessDate: tenant.sale.businessDate,
+  name: tenant.product.name,
+  qty: '1',
+  amount: '15.5',
+  fileRows: 1,
+})
+
+/** A draft import (with its row sent, unless `withRow` is false) in a channel of its own. */
+async function newImport(withRow = true): Promise<{ id: string; version: number }> {
+  const channel = await newChannel()
+  const created = (
+    await ok(
+      call<{ data: { id: string; version: number } }>(
+        tenant.owner,
+        'saleImport.create',
+        'mutation',
+        importInput(channel.id),
+      ),
+    )
+  ).data
+  if (!withRow) return created
+  await ok(
+    call(tenant.owner, 'saleImport.addRows', 'mutation', { id: created.id, rows: [importRow()] }),
+  )
+  return created
+}
+
+/** A statement's input for today in `channelId` (a draft). */
+function statementInput(channelId: string) {
+  return {
+    id: newId(),
+    channelId,
+    periodFrom: tenant.sale.businessDate,
+    periodTo: tenant.sale.businessDate,
+    commission: '3.25',
+  }
+}
+
+async function newStatement(): Promise<{ id: string; version: number; channelId: string }> {
+  const channel = await newChannel()
+  return (
+    await ok(
+      call<{ data: { id: string; version: number; channelId: string } }>(
+        tenant.owner,
+        'channelStatement.create',
+        'mutation',
+        statementInput(channel.id),
+      ),
     )
   ).data
 }
@@ -1026,6 +1102,103 @@ const AUDIT: Record<string, AuditProbe> = {
   'sale.fillDeliveryCost': {
     run: async () =>
       asOwner('sale.fillDeliveryCost', { id: (await newSale(true)).id, deliveryCost: '6' }),
+  },
+  // Importing sales from a file (M3 Step 4): each probe its own file (hash) and channel.
+  'saleImport.create': { run: async () => asOwner('saleImport.create', importInput()) },
+  'saleImport.addRows': {
+    run: async () => {
+      const created = await newImport(false)
+      return asOwner('saleImport.addRows', { id: created.id, rows: [importRow()] })
+    },
+  },
+  'saleImport.match': {
+    run: async () => {
+      const draft = await newImport()
+      return asOwner('saleImport.match', {
+        id: draft.id,
+        answers: [{ name: `Tips ${newId()}`, target: 'skip' }],
+      })
+    },
+  },
+  'saleImport.setOverlap': {
+    run: async () => {
+      const draft = await newImport()
+      return asOwner('saleImport.setOverlap', {
+        id: draft.id,
+        version: draft.version,
+        overlap: 'replace',
+      })
+    },
+  },
+  'saleImport.discard': {
+    run: async () => {
+      const draft = await newImport()
+      return asOwner('saleImport.discard', { id: draft.id, version: draft.version })
+    },
+  },
+  'saleImport.post': {
+    run: async () => {
+      const draft = await newImport()
+      return asOwner('saleImport.post', { id: draft.id, version: draft.version })
+    },
+  },
+  'saleImport.reverse': {
+    run: async () => {
+      const draft = await newImport()
+      await ok(
+        call(tenant.owner, 'saleImport.post', 'mutation', { id: draft.id, version: draft.version }),
+      )
+      return asOwner('saleImport.reverse', { id: draft.id })
+    },
+  },
+  'importProfile.remove': {
+    run: async () => {
+      await newImport(false)
+      const { items } = await ok(
+        call<{ items: { id: string }[] }>(tenant.owner, 'importProfile.list', 'query'),
+      )
+      return asOwner('importProfile.remove', { id: items[0]!.id })
+    },
+  },
+  'channelStatement.create': {
+    run: async () => asOwner('channelStatement.create', statementInput((await newChannel()).id)),
+  },
+  'channelStatement.update': {
+    run: async () => {
+      const draft = await newStatement()
+      const fields: Record<string, unknown> = statementInput(draft.channelId)
+      delete fields.channelId
+      return asOwner('channelStatement.update', {
+        ...fields,
+        id: draft.id,
+        version: draft.version,
+        ads: '2',
+      })
+    },
+  },
+  'channelStatement.discard': {
+    run: async () => {
+      const draft = await newStatement()
+      return asOwner('channelStatement.discard', { id: draft.id, version: draft.version })
+    },
+  },
+  'channelStatement.post': {
+    run: async () => {
+      const draft = await newStatement()
+      return asOwner('channelStatement.post', { id: draft.id, version: draft.version })
+    },
+  },
+  'channelStatement.reverse': {
+    run: async () => {
+      const draft = await newStatement()
+      await ok(
+        call(tenant.owner, 'channelStatement.post', 'mutation', {
+          id: draft.id,
+          version: draft.version,
+        }),
+      )
+      return asOwner('channelStatement.reverse', { id: draft.id })
+    },
   },
   'member.updateLocations': {
     run: async () => {

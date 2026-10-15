@@ -1,4 +1,9 @@
+import { randomBytes } from 'node:crypto'
 import type {
+  ChannelStatementDto,
+  ImportProfileDto,
+  ImportProfileListDto,
+  SaleImportDto,
   AttachmentDto,
   AttachmentUploadUrlDto,
   BooksDto,
@@ -262,6 +267,17 @@ export interface Tenant {
   sale: SaleDto
   /** A draft of Today's sales in the channel. */
   draftSale: SaleDto
+  /**
+   * A finalized import of the product in the channel at the branch (M3 Step 4), its fee column the
+   * channel's statement for today.
+   */
+  saleImport: SaleImportDto
+  /** The statement made from its fee column. */
+  statement: ChannelStatementDto
+  /** A draft import with its row sent (another file). */
+  draftImport: SaleImportDto
+  /** The layout its file was imported with. */
+  importProfile: ImportProfileDto
 }
 
 function ok<T>(result: CallResult<T>, what: string): T {
@@ -684,6 +700,80 @@ export async function createTenant(api: Api, label: string): Promise<Tenant> {
     ) as { data: SaleDto }
   ).data
 
+  // An import (M3 Step 4): a file of today's sales of the product at the branch, with a fee column.
+  const importInput = (fileName: string) => ({
+    id: newId(),
+    channelId: channel.id,
+    locationId: branch.id,
+    fileName,
+    fileHash: randomBytes(32).toString('hex'),
+    fingerprint: randomBytes(32).toString('hex'),
+    shape: 'lines',
+    periodFrom: today,
+    periodTo: today,
+    mapping: {
+      headerRow: 0,
+      columns: { date: 0, name: 1, code: 2, qty: 3, total: 4, fee: 5 },
+      headers: { date: 'Date', name: 'Item', code: 'SKU', qty: 'Qty', total: 'Total', fee: 'Fee' },
+      dateOrder: 'dmy',
+    },
+    amountsIncludeVat: false,
+    rowsRead: 2,
+    rowsLeftOut: 0,
+    errors: [],
+    feesTotal: '4.5',
+    rowCount: 1,
+  })
+  const importRows = (importId: string) => ({
+    id: importId,
+    rows: [
+      {
+        position: 0,
+        businessDate: today,
+        name: product.name,
+        code: `SKU-${label}-${tag}`,
+        qty: '2',
+        amount: '31',
+        refunds: '0',
+        fileRows: 2,
+      },
+    ],
+  })
+  const importDraft = (
+    ok(
+      await as('saleImport.create', 'mutation', importInput(`talabat-${label}-${tag}.csv`)),
+      'saleImport.create',
+    ) as { data: SaleImportDto }
+  ).data
+  ok(await as('saleImport.addRows', 'mutation', importRows(importDraft.id)), 'saleImport.addRows')
+  const saleImport = (
+    ok(
+      await as('saleImport.post', 'mutation', { id: importDraft.id, version: importDraft.version }),
+      'saleImport.post',
+    ) as { data: SaleImportDto }
+  ).data
+  const statement = (
+    ok(
+      await as('channelStatement.get', 'query', { id: saleImport.statementId }),
+      'channelStatement.get',
+    ) as { data: ChannelStatementDto }
+  ).data
+  const draftCreated = (
+    ok(
+      await as('saleImport.create', 'mutation', importInput(`draft-${label}-${tag}.csv`)),
+      'saleImport.create (draft)',
+    ) as { data: SaleImportDto }
+  ).data
+  ok(await as('saleImport.addRows', 'mutation', importRows(draftCreated.id)), 'addRows (draft)')
+  const draftImport = (
+    ok(await as('saleImport.get', 'query', { id: draftCreated.id }), 'saleImport.get') as {
+      data: SaleImportDto
+    }
+  ).data
+  const importProfile = (
+    ok(await as('importProfile.list', 'query'), 'importProfile.list') as ImportProfileListDto
+  ).items[0]!
+
   return {
     id,
     label,
@@ -725,6 +815,10 @@ export async function createTenant(api: Api, label: string): Promise<Tenant> {
     channel,
     sale,
     draftSale,
+    saleImport,
+    statement,
+    draftImport,
+    importProfile,
   }
 }
 
@@ -752,6 +846,9 @@ export function queryInputOf(path: string, tenant: Tenant): unknown {
   if (path === 'member.permissions') return { memberId: tenant.employeeMemberId }
   if (path === 'member.locations') return { memberId: tenant.employeeMemberId }
   if (path === 'sale.get') return { id: tenant.sale.id }
+  if (path === 'saleImport.get') return { id: tenant.saleImport.id }
+  if (path === 'channelStatement.list') return { channelId: tenant.channel.id }
+  if (path === 'channelStatement.get') return { id: tenant.statement.id }
   if (path === 'profit.summary') {
     return { from: `${tenant.sale.businessDate.slice(0, 7)}-01`, to: tenant.sale.businessDate }
   }
@@ -824,6 +921,12 @@ export function markersOf(tenant: Tenant): string[] {
     tenant.sale.deliveryArea ?? tenant.sale.id,
     tenant.sale.notes ?? tenant.sale.id,
     tenant.draftSale.id,
+    tenant.saleImport.id,
+    tenant.saleImport.fileName,
+    tenant.statement.id,
+    tenant.draftImport.id,
+    tenant.draftImport.fileName,
+    tenant.importProfile.id,
     ...Object.values(tenant.roles).map((role) => role.id),
     ...[tenant.owner, tenant.admin, tenant.employee].flatMap(({ user }) => [
       user.id,

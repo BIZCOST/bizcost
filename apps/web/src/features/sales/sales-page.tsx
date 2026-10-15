@@ -7,6 +7,8 @@ import {
   BanknoteIcon,
   CalendarCheckIcon,
   ChevronDownIcon,
+  FileSpreadsheetIcon,
+  FileUpIcon,
   PlusIcon,
   ReceiptTextIcon,
   SearchXIcon,
@@ -32,6 +34,8 @@ import { useLocationOptions } from '@/features/purchasing/data'
 import { useBusinessContext } from '@/lib/trpc/client'
 import { cn } from '@/lib/utils'
 import { mayEnterSales, useBooks, useChannels } from './data'
+import { mayImport } from './import/data'
+import { ImportsList } from './import/imports-list'
 import {
   isFiltered,
   listInput,
@@ -154,6 +158,7 @@ function FilterBar({
             <option value="">{t('sales.list.filters.anySource')}</option>
             <option value="day_sheet">{t('sales.list.filters.day_sheet')}</option>
             <option value="single">{t('sales.list.filters.single')}</option>
+            <option value="import">{t('sales.list.filters.import')}</option>
           </NativeSelect>
         </div>
         {channels.length > 1 ? (
@@ -282,16 +287,32 @@ function SaleRow({
             count: more,
           })
         : names.join(t('sales.list.namesSeparator'))
+  // An imported day's refund (more refunded than sold of something) is a sale of negative amounts.
+  const refund = sale.source === 'import' && sale.netTotal.startsWith('-')
   const title =
-    sale.source === 'day_sheet'
+    sale.source === 'import'
       ? sale.periodFrom
-        ? t('sales.list.sheetPeriod', {
+        ? t(refund ? 'sales.list.importedRefundPeriod' : 'sales.list.importedPeriod', {
             from: businessDate(sale.periodFrom),
             to: businessDate(sale.businessDate),
           })
-        : t('sales.list.sheet', { date: businessDate(sale.businessDate) })
-      : items
-  const Icon = sale.source === 'day_sheet' ? CalendarCheckIcon : ReceiptTextIcon
+        : t(refund ? 'sales.list.importedRefund' : 'sales.list.imported', {
+            date: businessDate(sale.businessDate),
+          })
+      : sale.source === 'day_sheet'
+        ? sale.periodFrom
+          ? t('sales.list.sheetPeriod', {
+              from: businessDate(sale.periodFrom),
+              to: businessDate(sale.businessDate),
+            })
+          : t('sales.list.sheet', { date: businessDate(sale.businessDate) })
+        : items
+  const Icon =
+    sale.source === 'day_sheet'
+      ? CalendarCheckIcon
+      : sale.source === 'import'
+        ? FileSpreadsheetIcon
+        : ReceiptTextIcon
   return (
     <Link
       href={href}
@@ -327,7 +348,7 @@ function SaleRow({
               <bdi>{sale.enteredByName}</bdi>
             </>
           ) : null}
-          {sale.source === 'day_sheet' ? (
+          {sale.source !== 'single' ? (
             <>
               {' · '}
               {t('sales.list.items', { count: sale.lineCount }).replaceAll(' ', NBSP)}
@@ -360,6 +381,9 @@ function SalesList() {
   const { businessId } = useParams<{ businessId: string }>()
   const { data: context } = useBusinessContext()
   const { filters, set } = useFilters()
+  const searchParams = useSearchParams()
+  const router = useRouter()
+  const pathname = usePathname()
   const list = useInfiniteQuery(
     trpc.sale.list.infiniteQueryOptions(listInput(filters), {
       getNextPageParam: (page) => page.nextCursor,
@@ -370,6 +394,8 @@ function SalesList() {
   const locationOptions = useLocationOptions(context)
   if (!context) return null
   const canEnter = mayEnterSales(context)
+  const canImport = mayImport(context)
+  const showImports = canImport && searchParams.get('view') === 'imports'
   const locationNames =
     locationOptions.enabled && locationOptions.locations.length > 1
       ? new Map(locationOptions.locations.map((location) => [location.id, location.name]))
@@ -386,6 +412,14 @@ function SalesList() {
 
   const buttons = canEnter ? (
     <div className="flex shrink-0 flex-wrap gap-2">
+      {canImport ? (
+        <Button asChild size="lg" variant="outline">
+          <Link href={`${base}/import`} data-import-start>
+            <FileUpIcon aria-hidden />
+            {t('sales.import.start')}
+          </Link>
+        </Button>
+      ) : null}
       <Button asChild size="lg">
         <Link href={`${base}/today`}>
           <CalendarCheckIcon aria-hidden />
@@ -425,97 +459,136 @@ function SalesList() {
             {canEnter ? t('sales.list.intro') : t('sales.list.introViewer')}
           </p>
         </div>
-        {firstTime ? null : buttons}
+        {firstTime && !showImports ? null : buttons}
       </header>
+      {canImport ? (
+        <div
+          role="tablist"
+          aria-label={t('sales.import.tabs.label')}
+          className="mb-4 flex rounded-lg bg-muted p-1 sm:inline-flex"
+        >
+          {(['sales', 'imports'] as const).map((view) => {
+            const selected = (view === 'imports') === showImports
+            return (
+              <button
+                key={view}
+                type="button"
+                role="tab"
+                aria-selected={selected}
+                data-view={view}
+                onClick={() => {
+                  const query = new URLSearchParams(searchParams.toString())
+                  if (view === 'imports') query.set('view', 'imports')
+                  else query.delete('view')
+                  const next = query.toString()
+                  router.replace(next ? `${pathname}?${next}` : pathname, { scroll: false })
+                }}
+                className={cn(
+                  'flex h-9 flex-1 items-center justify-center rounded-md px-4 text-sm font-medium whitespace-nowrap sm:flex-none',
+                  selected ? 'bg-card text-foreground shadow-sm' : 'text-muted-foreground',
+                )}
+              >
+                {t(`sales.import.tabs.${view}`)}
+              </button>
+            )
+          })}
+        </div>
+      ) : null}
       {books.data?.closedThrough ? (
         <FormAlert tone="info" className="mb-4">
           {t('sales.list.booksClosed', { date: businessDate(books.data.closedThrough) })}
         </FormAlert>
       ) : null}
-      {firstTime ? null : <FilterBar filters={filters} onChange={set} />}
-      {list.isPending ? (
-        <ListSkeleton />
-      ) : list.isError && !list.data ? (
-        <LoadError error={list.error} onRetry={() => void list.refetch()} />
-      ) : items.length === 0 && totals.length === 0 ? (
-        filtered ? (
-          <ListEmpty
-            icon={SearchXIcon}
-            title={t('sales.list.filters.noMatches')}
-            body={t('sales.list.filters.noMatchesHint')}
-          />
-        ) : (
-          <ListEmpty
-            icon={BanknoteIcon}
-            title={t('sales.list.empty.title')}
-            body={canEnter ? t('sales.list.empty.body') : t('sales.list.empty.viewer')}
-          >
-            {buttons}
-          </ListEmpty>
-        )
+      {showImports ? (
+        <ImportsList />
       ) : (
-        <div className="space-y-5">
-          {byDay(items, totals).map((day) => (
-            <section key={day.businessDate} aria-labelledby={`day-${day.businessDate}`}>
-              <div className="mb-2 flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1 px-1">
-                <h2 id={`day-${day.businessDate}`} className="font-semibold">
-                  {businessDate(day.businessDate)}
-                </h2>
-                {day.total && (day.total.count > 0 || day.sales.length === 0) ? (
-                  <p data-day-total className="text-sm text-muted-foreground">
-                    <bdi className="font-medium text-foreground tabular-nums">
-                      {money(day.total.netTotal)}
-                    </bdi>
-                    {vatShown ? ` ${t('sales.list.beforeVat')}` : null}
-                    {day.total.count > 0 ? (
-                      <>
-                        {' · '}
-                        {t('sales.list.daySales', { count: day.total.count })}
-                      </>
-                    ) : null}
-                  </p>
-                ) : null}
-              </div>
-              {day.sales.length === 0 ? (
-                <p
-                  data-taken-back
-                  className="rounded-2xl bg-card px-4 py-3.5 text-sm text-muted-foreground shadow-sm ring-1 ring-foreground/[0.06] sm:px-5"
-                >
-                  {t('sales.list.takenBack')}
-                </p>
-              ) : (
-                <ul
-                  aria-labelledby={`day-${day.businessDate}`}
-                  className="divide-y overflow-hidden rounded-2xl bg-card shadow-sm ring-1 ring-foreground/[0.06]"
-                >
-                  {day.sales.map((sale) => (
-                    <li key={sale.id}>
-                      <SaleRow
-                        sale={sale}
-                        href={hrefOf(sale)}
-                        vatShown={vatShown}
-                        locationName={locationNames?.get(sale.locationId)}
-                      />
-                    </li>
-                  ))}
-                </ul>
-              )}
-            </section>
-          ))}
-          {list.isError ? (
-            <LoadError error={list.error} onRetry={() => void list.fetchNextPage()} />
-          ) : list.hasNextPage ? (
-            <div className="flex justify-center">
-              <Button
-                variant="outline"
-                disabled={list.isFetchingNextPage}
-                onClick={() => void list.fetchNextPage()}
+        <>
+          {firstTime ? null : <FilterBar filters={filters} onChange={set} />}
+          {list.isPending ? (
+            <ListSkeleton />
+          ) : list.isError && !list.data ? (
+            <LoadError error={list.error} onRetry={() => void list.refetch()} />
+          ) : items.length === 0 && totals.length === 0 ? (
+            filtered ? (
+              <ListEmpty
+                icon={SearchXIcon}
+                title={t('sales.list.filters.noMatches')}
+                body={t('sales.list.filters.noMatchesHint')}
+              />
+            ) : (
+              <ListEmpty
+                icon={BanknoteIcon}
+                title={t('sales.list.empty.title')}
+                body={canEnter ? t('sales.list.empty.body') : t('sales.list.empty.viewer')}
               >
-                {list.isFetchingNextPage ? t('status.loading') : t('catalog.list.showMore')}
-              </Button>
+                {buttons}
+              </ListEmpty>
+            )
+          ) : (
+            <div className="space-y-5">
+              {byDay(items, totals).map((day) => (
+                <section key={day.businessDate} aria-labelledby={`day-${day.businessDate}`}>
+                  <div className="mb-2 flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1 px-1">
+                    <h2 id={`day-${day.businessDate}`} className="font-semibold">
+                      {businessDate(day.businessDate)}
+                    </h2>
+                    {day.total && (day.total.count > 0 || day.sales.length === 0) ? (
+                      <p data-day-total className="text-sm text-muted-foreground">
+                        <bdi className="font-medium text-foreground tabular-nums">
+                          {money(day.total.netTotal)}
+                        </bdi>
+                        {vatShown ? ` ${t('sales.list.beforeVat')}` : null}
+                        {day.total.count > 0 ? (
+                          <>
+                            {' · '}
+                            {t('sales.list.daySales', { count: day.total.count })}
+                          </>
+                        ) : null}
+                      </p>
+                    ) : null}
+                  </div>
+                  {day.sales.length === 0 ? (
+                    <p
+                      data-taken-back
+                      className="rounded-2xl bg-card px-4 py-3.5 text-sm text-muted-foreground shadow-sm ring-1 ring-foreground/[0.06] sm:px-5"
+                    >
+                      {t('sales.list.takenBack')}
+                    </p>
+                  ) : (
+                    <ul
+                      aria-labelledby={`day-${day.businessDate}`}
+                      className="divide-y overflow-hidden rounded-2xl bg-card shadow-sm ring-1 ring-foreground/[0.06]"
+                    >
+                      {day.sales.map((sale) => (
+                        <li key={sale.id}>
+                          <SaleRow
+                            sale={sale}
+                            href={hrefOf(sale)}
+                            vatShown={vatShown}
+                            locationName={locationNames?.get(sale.locationId)}
+                          />
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                </section>
+              ))}
+              {list.isError ? (
+                <LoadError error={list.error} onRetry={() => void list.fetchNextPage()} />
+              ) : list.hasNextPage ? (
+                <div className="flex justify-center">
+                  <Button
+                    variant="outline"
+                    disabled={list.isFetchingNextPage}
+                    onClick={() => void list.fetchNextPage()}
+                  >
+                    {list.isFetchingNextPage ? t('status.loading') : t('catalog.list.showMore')}
+                  </Button>
+                </div>
+              ) : null}
             </div>
-          ) : null}
-        </div>
+          )}
+        </>
       )}
     </PageContainer>
   )

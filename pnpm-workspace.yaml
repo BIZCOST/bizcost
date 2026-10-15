@@ -54,6 +54,9 @@ catalog:
   uuid: 14.0.2
   vite: 8.3.1
   vitest: 5.0.1
+  # SheetJS Community Edition from its official tarball (the npm registry's xlsx stops at 0.18.5,
+  # which has known advisories). Read only in the browser, on the import route (D-252).
+  xlsx: https://cdn.sheetjs.com/xlsx-0.20.3/xlsx-0.20.3.tgz
   zod: 4.6.5
 
 # One React version repo-wide (docs/ARCHITECTURE.md §Stack).

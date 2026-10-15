@@ -361,7 +361,7 @@ Release rule:
     - `profit.spec.ts` on the preview: owner and employee, AR/EN, phone and desktop.
   - Depends on: Step 2; D-216's screen round merged (`month-costs.tsx`).
 
-- [ ] **Step 4: Import sales from a file, and app fees by channel** (APPROVED; decision Q15). Files are read in the browser and never uploaded:
+- [x] **Step 4: Import sales from a file, and app fees by channel** (DONE 2026-10-10; decision Q15; built as D-252–D-258, posting speed D-259, review fixes D-260, D-261, and the second fix pass after their check D-262 (a shop's month of 31,000 day × item totals finalized in about 4.5 s). Checks at the end: `pnpm check` 31/31 tasks with 1,752 unit tests, `pnpm db:test` 1,374 pgTAP + 59 database tests, `pnpm api:test` 2,539 tests in 87 files, `pnpm e2e` 142 passed; named POS presets wait for the owner's sample files; ROADMAP.md holds the status). Files are read in the browser and never uploaded:
   - the `business-files` bucket keeps its four file types (DATA_MODEL §1.8);
   - no background job is needed: rows reach the API in chunks of up to 1,000 (within the batch limit), and only day totals are posted.
   - **Domain** (pure, `sales/import/`; it runs in the browser):

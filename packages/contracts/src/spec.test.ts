@@ -336,6 +336,10 @@ describe('APP_ERROR_CODES', () => {
     'expense_has_payments',
     'running_cost_choice_required',
     'last_channel',
+    'already_imported',
+    'import_unmatched',
+    'import_replace_partial',
+    'statement_overlap',
     'internal',
   ]
 

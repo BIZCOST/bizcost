@@ -61,8 +61,8 @@ create temp view policy_tables as
 
 select is(
   (select count(*)::int from policy_tables),
-  36,
-  'sanity: 36 tables with business_id to explain'
+  41,
+  'sanity: 41 tables with business_id to explain'
 );
 
 -- SELECT ------------------------------------------------------------------------------

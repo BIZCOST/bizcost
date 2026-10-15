@@ -1,3 +1,4 @@
+import { randomBytes } from 'node:crypto'
 import type {
   BooksDto,
   BusinessContextDto,
@@ -83,6 +84,7 @@ const RECEIPTS: Gate = [
   ['files', 'expenses'],
 ]
 const SALES: Gate = [['sales']]
+const SALES_AND_PRODUCTS: Gate = [['sales', 'products']]
 /** The books-closed date: purchases, expenses and sales obey it (D-227, D-236). */
 const BOOKS: Gate = [['purchases'], ['expenses'], ['sales']]
 
@@ -107,6 +109,14 @@ const MODULE_GATES: Record<string, Gate> = {
   'channel.list': SALES,
   'channel.unarchive': SALES,
   'channel.update': SALES,
+  // A channel's statements (M3 Step 4).
+  'channelStatement.create': SALES,
+  'channelStatement.discard': SALES,
+  'channelStatement.get': SALES,
+  'channelStatement.list': SALES,
+  'channelStatement.post': SALES,
+  'channelStatement.reverse': SALES,
+  'channelStatement.update': SALES,
   'costCategory.archive': EXPENSES_OR_RUNNING_COSTS,
   'costCategory.create': EXPENSES_OR_RUNNING_COSTS,
   'costCategory.list': EXPENSES_OR_RUNNING_COSTS,
@@ -135,6 +145,9 @@ const MODULE_GATES: Record<string, Gate> = {
   'expensePayment.list': EXPENSES,
   'expensePayment.record': EXPENSES,
   'expensePayment.reverse': EXPENSES,
+  // The layouts of files imported (M3 Step 4).
+  'importProfile.list': SALES,
+  'importProfile.remove': SALES,
   'invitation.create': NONE,
   'invitation.list': NONE,
   'invitation.resend': NONE,
@@ -217,6 +230,16 @@ const MODULE_GATES: Record<string, Gate> = {
   'sale.post': SALES,
   'sale.reverse': SALES,
   'sale.update': SALES,
+  // Importing sales from a file (M3 Step 4): the names are matched to products.
+  'saleImport.addRows': SALES_AND_PRODUCTS,
+  'saleImport.create': SALES_AND_PRODUCTS,
+  'saleImport.discard': SALES_AND_PRODUCTS,
+  'saleImport.get': SALES_AND_PRODUCTS,
+  'saleImport.list': SALES_AND_PRODUCTS,
+  'saleImport.match': SALES_AND_PRODUCTS,
+  'saleImport.post': SALES_AND_PRODUCTS,
+  'saleImport.reverse': SALES_AND_PRODUCTS,
+  'saleImport.setOverlap': SALES_AND_PRODUCTS,
   'supplier.archive': SUPPLIERS,
   'supplier.create': SUPPLIERS,
   'supplier.get': SUPPLIERS,
@@ -814,6 +837,14 @@ const HIDDEN_FIELDS: Record<string, HiddenField | { notHidden: string }> = {
     capability: 'multi_location',
     input: (b) => saleUpdate(b, { locationId: otherLocation(b) }),
   },
+  'saleImport.create locationId': {
+    capability: 'multi_location',
+    input: async (b) => importCreate(b, { locationId: otherLocation(b) }),
+  },
+  'saleImport.create amountsIncludeVat': {
+    capability: 'vat_registered',
+    input: async (b) => importCreate(b, { amountsIncludeVat: true }),
+  },
   'sale.create lines.*.amountIncludesVat': {
     capability: 'vat_registered',
     input: (b) => create('sale.create', saleInput(b, deliveryWithVat())),
@@ -854,6 +885,32 @@ async function saleUpdate(b: Business, extra: object) {
   ).data
   const fields = updateFieldsOf(saleInput(b, extra))
   return { path: 'sale.update', input: { ...fields, id: draft.id, version: draft.version } }
+}
+
+/** A file of one day's sales to import (M3 Step 4): another file (its hash) each time. */
+async function importCreate(b: Business, extra: object) {
+  const channels = ok(
+    await as<{ data: { items: { id: string }[] } }>(b.owner, b.id, 'channel.list', {}),
+  ).data.items
+  return {
+    path: 'saleImport.create',
+    input: {
+      id: newId(),
+      channelId: channels[0]!.id,
+      fileName: 'sales.csv',
+      fileHash: randomBytes(32).toString('hex'),
+      fingerprint: randomBytes(32).toString('hex'),
+      shape: 'summary',
+      periodFrom: b.today,
+      periodTo: b.today,
+      mapping: { headerRow: 0, columns: { name: 0, total: 1 }, headers: {}, dateOrder: 'dmy' },
+      amountsIncludeVat: false,
+      rowsRead: 1,
+      rowsLeftOut: 0,
+      rowCount: 1,
+      ...extra,
+    },
+  }
 }
 
 /** Field names about what a capability turns on or off. */

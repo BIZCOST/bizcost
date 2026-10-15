@@ -44,6 +44,13 @@ describe('appRouter contract', () => {
       'channel.list',
       'channel.unarchive',
       'channel.update',
+      'channelStatement.create',
+      'channelStatement.discard',
+      'channelStatement.get',
+      'channelStatement.list',
+      'channelStatement.post',
+      'channelStatement.reverse',
+      'channelStatement.update',
       'costCategory.archive',
       'costCategory.create',
       'costCategory.list',
@@ -73,6 +80,8 @@ describe('appRouter contract', () => {
       'expensePayment.record',
       'expensePayment.reverse',
       'health',
+      'importProfile.list',
+      'importProfile.remove',
       'invitation.accept',
       'invitation.create',
       'invitation.list',
@@ -154,6 +163,15 @@ describe('appRouter contract', () => {
       'sale.post',
       'sale.reverse',
       'sale.update',
+      'saleImport.addRows',
+      'saleImport.create',
+      'saleImport.discard',
+      'saleImport.get',
+      'saleImport.list',
+      'saleImport.match',
+      'saleImport.post',
+      'saleImport.reverse',
+      'saleImport.setOverlap',
       'supplier.archive',
       'supplier.create',
       'supplier.get',
@@ -247,9 +265,19 @@ describe('numbers a client sends', () => {
   })
 
   it('the only number fields are whole counters, never a quantity or price', () => {
+    // M3 Step 4: an import's counts, its rows' positions and the file's columns and rows (whole).
     expect([...new Set(numbers.map((leaf) => leaf.name))].sort()).toEqual([
+      'column',
+      'columns',
+      'fileRows',
+      'headerRow',
       'limit',
+      'position',
       'questionSetVersion',
+      'row',
+      'rowCount',
+      'rowsLeftOut',
+      'rowsRead',
       'version',
     ])
     expect(numbers.filter((leaf) => parseLeaf(leaf.schema, 1.5).ok).map((l) => l.at)).toEqual([])

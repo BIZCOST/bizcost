@@ -841,6 +841,13 @@ function SheetLoader({ today, channels }: { today: string; channels: readonly Sa
           <span data-sheets-note>{sheetsNote}</span>
         </FormAlert>
       ) : null}
+      {data?.imported ? (
+        <FormAlert tone="info" className="mb-4">
+          <span data-imported-note>
+            {t('sales.sheet.imported', { channel: isolate(data.channelName) })}
+          </span>
+        </FormAlert>
+      ) : null}
       {sheet.isPending ? (
         <SectionSkeleton cards={2} />
       ) : sheet.isError ? (

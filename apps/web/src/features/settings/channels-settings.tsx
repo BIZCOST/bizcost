@@ -25,11 +25,13 @@ import {
   MessageCircleIcon,
   PencilIcon,
   PlusIcon,
+  ReceiptTextIcon,
   ShoppingBagIcon,
   StoreIcon,
   TagIcon,
   type LucideIcon,
 } from 'lucide-react'
+import Link from 'next/link'
 import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
@@ -60,7 +62,7 @@ import { readPercent, withLatinDigits } from '@/features/catalog/numbers'
 import { useBusinessContext } from '@/lib/trpc/client'
 import { cn } from '@/lib/utils'
 import { invalidateProfit } from '@/features/reports/refresh'
-import { isSectionVisible } from './sections'
+import { isSectionVisible, sectionPath } from './sections'
 import { SectionPage } from './settings-shell'
 
 // Settings → Sales channels (M3 Step 2; D-226): every way the business sells (its shop, WhatsApp and
@@ -319,11 +321,14 @@ function ChannelDialog({
 function ChannelRow({
   channel,
   seesCosts,
+  statementsHref,
   onEdit,
   onArchive,
 }: {
   channel: SalesChannelDto
   seesCosts: boolean
+  /** Its statements' page (M3 Step 4), for members who see costs. */
+  statementsHref: string
   onEdit: () => void
   onArchive: () => void
 }) {
@@ -362,6 +367,16 @@ function ChannelRow({
             </>
           ) : null}
         </p>
+        {seesCosts && KEEPS_A_PART.has(channel.kind) ? (
+          <Link
+            href={statementsHref}
+            data-channel-statements
+            className="mt-1 inline-flex min-h-8 items-center gap-1 text-sm font-medium text-primary underline-offset-4 hover:underline"
+          >
+            <ReceiptTextIcon aria-hidden className="size-4" />
+            {t('settings.channels.statements.link')}
+          </Link>
+        ) : null}
       </div>
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
@@ -380,6 +395,14 @@ function ChannelRow({
               {t('settings.channels.edit')}
             </DropdownMenuItem>
           )}
+          {seesCosts ? (
+            <DropdownMenuItem asChild className="py-2">
+              <Link href={statementsHref}>
+                <ReceiptTextIcon aria-hidden />
+                {t('settings.channels.statements.link')}
+              </Link>
+            </DropdownMenuItem>
+          ) : null}
           <DropdownMenuItem className="py-2" onSelect={onArchive}>
             {archived ? <ArchiveRestoreIcon aria-hidden /> : <ArchiveIcon aria-hidden />}
             {archived ? t('settings.channels.unarchive') : t('settings.channels.archive')}
@@ -457,6 +480,7 @@ export function ChannelsSettings({ businessId }: { businessId: string }) {
                 key={channel.id}
                 channel={channel}
                 seesCosts={seesCosts}
+                statementsHref={`${sectionPath(businessId, 'channels')}/${channel.id}`}
                 onEdit={() => setEditing({ kind: 'edit', channel })}
                 onArchive={() => void toggleArchive(channel)}
               />
@@ -476,6 +500,7 @@ export function ChannelsSettings({ businessId }: { businessId: string }) {
                     key={channel.id}
                     channel={channel}
                     seesCosts={seesCosts}
+                    statementsHref={`${sectionPath(businessId, 'channels')}/${channel.id}`}
                     onEdit={() => setEditing({ kind: 'edit', channel })}
                     onArchive={() => void toggleArchive(channel)}
                   />

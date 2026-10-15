@@ -22,6 +22,7 @@ import { recipeRouter } from './recipe'
 import { roleRouter } from './role'
 import { runningCostRouter } from './running-cost'
 import { channelRouter, saleRouter } from './sale'
+import { channelStatementRouter, importProfileRouter, saleImportRouter } from './sale-import'
 import { supplierRouter } from './supplier'
 
 /**
@@ -55,6 +56,9 @@ export const appRouter = router({
   productCost: productCostRouter,
   sale: saleRouter,
   channel: channelRouter,
+  saleImport: saleImportRouter,
+  importProfile: importProfileRouter,
+  channelStatement: channelStatementRouter,
   profit: profitRouter,
 })
 

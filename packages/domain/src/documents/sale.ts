@@ -5,8 +5,8 @@ import { saleVatRate } from '../costing/product-cost'
 import { exactProduct, fixed, pow10, roundHalfUp, toDec } from '../numbers/decimal'
 import { DECIMAL_COLUMNS, type Money, type Percent, type Quantity } from '../numbers/kinds'
 import { currencyMinorUnit, type CurrencyCode } from '../numbers/rounding'
-import { computeLine, lineError, type LineDiscount, type LineError } from './line'
-import { splitByWeights } from './split'
+import type { LineDiscount, LineError } from './line'
+import { splitDecimals } from './split'
 import { vatIn } from './vat'
 
 // What a sale, an order, a quotation, an invoice and a credit note come to (M3 Step 1, D-220; the
@@ -176,15 +176,33 @@ export interface SaleError {
 }
 
 const ZERO = '0'
+/** Zero as a Decimal (one for every sum: a Decimal never changes). */
+const NONE = toDec(ZERO)
 
-/** The line as the line maths read it: its quantity as a positive number, no VAT (worked out later). */
-function lineMaths(line: SaleLineInput, qty: string) {
-  return {
-    qty: qty as Quantity,
-    unitPrice: line.unitPrice,
-    discount: line.discount,
-    vatRate: ZERO as Percent,
-  }
+/**
+ * A line's own amounts on its quantity made positive: line.ts's maths (computeLine with no VAT, its
+ * checks as lineError makes them, in that order) on Decimals, for a sale of thousands of lines.
+ */
+function lineBase(
+  line: SaleLineInput,
+  qty: Decimal,
+  digits: number,
+): { subtotal: Decimal; discount: Decimal; net: Decimal } | LineError {
+  const unitPrice = toDec(line.unitPrice)
+  if (unitPrice.lt(0)) return 'negative_price'
+  const subtotal = roundHalfUp(qty.times(unitPrice), digits)
+  const typed = line.discount
+  if (!typed) return { subtotal, discount: NONE, net: subtotal }
+  const value = toDec('percent' in typed ? typed.percent : typed.amount)
+  if (value.lt(0)) return 'negative_discount'
+  if ('percent' in typed) {
+    if (value.gt(100)) return 'discount_over_100_percent'
+  } else if (roundHalfUp(value, digits).gt(subtotal)) return 'discount_over_subtotal'
+  const discount = roundHalfUp(
+    'percent' in typed ? subtotal.times(value).dividedBy(100) : value,
+    digits,
+  )
+  return { subtotal, discount, net: subtotal.minus(discount) }
 }
 
 /** -1 for a refund or credit (its first line's quantity is negative), 1 otherwise. */
@@ -216,14 +234,17 @@ function categoryOf(line: SaleLineInput, vatRegistered: boolean): VatCategory | 
   return line.kind === 'delivery' ? 'standard' : line.vatCategory
 }
 
-/** Splits a signed `amount` by `weights` (zero or more): the split of |amount|, in its sign. */
+/**
+ * Splits a signed `amount` by `weights` (zero or more), each rounded to the minor unit: the split of
+ * |amount|, in its sign (splitByWeights, on Decimals).
+ */
 function splitSigned(amount: Decimal, weights: readonly Decimal[], digits: number): Decimal[] {
-  const parts = splitByWeights(
-    fixed(amount.abs(), digits),
-    weights.map((w) => fixed(w, digits)),
+  const parts = splitDecimals(
+    roundHalfUp(amount.abs(), digits),
+    weights.map((w) => roundHalfUp(w, digits)),
     digits,
   )
-  return parts.map((part) => (amount.lt(0) ? toDec(part).negated() : toDec(part)))
+  return amount.lt(0) ? parts.map((part) => part.negated()) : parts
 }
 
 /** Works the document out on its absolute values (see above), or says what is wrong with it. */
@@ -238,22 +259,16 @@ function work(input: SaleInput, currency: CurrencyCode): Worked | SaleError {
     const qty = toDec(line.qty)
     if (qty.isZero()) return { code: 'zero_quantity', line: index }
     if (qty.lt(0) !== (sign === -1)) return { code: 'mixed_signs', line: index }
-    const maths = lineMaths(line, qty.abs().toString())
-    const error = lineError(maths, currency)
-    if (error) return { code: error as SaleErrorCode, line: index }
-    const amounts = computeLine(maths, currency)
-    base.push({
-      subtotal: toDec(amounts.subtotal),
-      discount: toDec(amounts.discount),
-      net: toDec(amounts.net),
-    })
+    const amounts = lineBase(line, qty.abs(), digits)
+    if (typeof amounts === 'string') return { code: amounts as SaleErrorCode, line: index }
+    base.push(amounts)
   }
 
   // The document discount, typed like the prices, off the item lines by their net.
   const items = input.lines.flatMap((line, i) => (line.kind === 'item' ? [i] : []))
-  const itemNet = items.reduce((acc, i) => acc.plus(base[i]!.net), toDec(ZERO))
+  const itemNet = items.reduce((acc, i) => acc.plus(base[i]!.net), NONE)
   const discount = input.discount
-  let documentDiscount = toDec(ZERO)
+  let documentDiscount = NONE
   if (discount) {
     if (items.length === 0) return { code: 'no_item_line' }
     const value = toDec('percent' in discount ? discount.percent : discount.amount)
@@ -270,17 +285,23 @@ function work(input: SaleInput, currency: CurrencyCode): Worked | SaleError {
       return { code: 'document_discount_mixed_prices' }
     }
   }
+  // (No discount: every share is zero, nothing to split.)
   const discountShares = new Map<number, Decimal>()
-  splitSigned(
-    documentDiscount,
-    items.map((i) => base[i]!.net),
-    digits,
-  ).forEach((share, k) => discountShares.set(items[k]!, share))
-  const left = base.map((b, i) => b.net.minus(discountShares.get(i) ?? toDec(ZERO)))
+  if (!documentDiscount.isZero()) {
+    splitSigned(
+      documentDiscount,
+      items.map((i) => base[i]!.net),
+      digits,
+    ).forEach((share, k) => discountShares.set(items[k]!, share))
+  }
+  const left = base.map((b, i) => {
+    const share = discountShares.get(i)
+    return share === undefined ? b.net : b.net.minus(share)
+  })
 
   // "Round the total" and the rounding difference, as on the document (made positive here).
   const typed = (value: Money | null | undefined): Decimal | null => {
-    if (value === null || value === undefined) return toDec(ZERO)
+    if (value === null || value === undefined) return NONE
     const amount = toDec(value)
     if (amount.decimalPlaces() > digits) return null
     return sign === -1 ? amount.negated() : amount
@@ -306,41 +327,48 @@ function work(input: SaleInput, currency: CurrencyCode): Worked | SaleError {
   // VAT once per rate: the exact VAT of its lines rounded once; the part in the prices that include
   // it, rounded once on their gross, keeps their total exact. Each part is split back over its lines.
   const net = left.map((value) => value)
-  const vat = left.map(() => toDec(ZERO))
+  const vat = left.map(() => NONE)
   const inclusive = (i: number) => input.vatRegistered && input.lines[i]!.priceIncludesVat
   for (const group of groups) {
     const r = toDec(group.rate)
     const incl = group.indexes.filter((i) => inclusive(i) && r.gt(0))
-    const excl = group.indexes.filter((i) => !incl.includes(i))
-    const gross = incl.reduce((acc, i) => acc.plus(left[i]!), toDec(ZERO))
-    const before = excl.reduce((acc, i) => acc.plus(left[i]!), toDec(ZERO))
+    const inGrossLines = new Set(incl)
+    const excl = group.indexes.filter((i) => !inGrossLines.has(i))
+    const gross = incl.reduce((acc, i) => acc.plus(left[i]!), NONE)
+    const before = excl.reduce((acc, i) => acc.plus(left[i]!), NONE)
     const inGross = vatIn(gross, group.rate, digits)
     // (before × rate × (100 + rate) + gross × rate × 100) ÷ (100 × (100 + rate)), divided once.
     const exact = exactProduct([before, r, r.plus(100)])
       .plus(exactProduct([gross, r, toDec('100')]))
       .dividedBy(r.plus(100).times(100))
     const total = round(exact)
-    splitSigned(
-      inGross,
-      incl.map((i) => left[i]!),
-      digits,
-    ).forEach((share, k) => {
-      vat[incl[k]!] = share
-      net[incl[k]!] = left[incl[k]!]!.minus(share)
-    })
-    splitSigned(
-      total.minus(inGross),
-      excl.map((i) => left[i]!),
-      digits,
-    ).forEach((share, k) => (vat[excl[k]!] = share))
+    // (A part of zero leaves its lines' VAT at zero and their net as it is: nothing to split.)
+    if (!inGross.isZero()) {
+      splitSigned(
+        inGross,
+        incl.map((i) => left[i]!),
+        digits,
+      ).forEach((share, k) => {
+        vat[incl[k]!] = share
+        net[incl[k]!] = left[incl[k]!]!.minus(share)
+      })
+    }
+    const outside = total.minus(inGross)
+    if (!outside.isZero()) {
+      splitSigned(
+        outside,
+        excl.map((i) => left[i]!),
+        digits,
+      ).forEach((share, k) => (vat[excl[k]!] = share))
+    }
   }
 
   // "Round the total": over the rates by their net, then over each rate's lines by their net; a rate
   // it changes works its VAT out again on its new net.
-  const shares = left.map(() => toDec(ZERO))
+  const shares = left.map(() => NONE)
   if (!adjustment.isZero()) {
-    const groupNet = groups.map((g) => g.indexes.reduce((acc, i) => acc.plus(net[i]!), toDec(ZERO)))
-    const allNet = groupNet.reduce((acc, value) => acc.plus(value), toDec(ZERO))
+    const groupNet = groups.map((g) => g.indexes.reduce((acc, i) => acc.plus(net[i]!), NONE))
+    const allNet = groupNet.reduce((acc, value) => acc.plus(value), NONE)
     if (adjustment.lt(0) && adjustment.abs().gt(allNet)) return { code: 'adjustment_over_net' }
     splitSigned(adjustment, groupNet, digits).forEach((part, g) => {
       if (part.isZero()) return
@@ -370,7 +398,7 @@ function work(input: SaleInput, currency: CurrencyCode): Worked | SaleError {
     base: base.map((b, i) => ({
       subtotal: b.subtotal,
       discount: b.discount,
-      documentDiscount: discountShares.get(i) ?? toDec(ZERO),
+      documentDiscount: discountShares.get(i) ?? NONE,
     })),
     adjustment: shares,
     net,
@@ -417,7 +445,7 @@ export function computeSale(input: SaleInput, currency: CurrencyCode): SaleAmoun
     }
   })
   const sum = (indexes: readonly number[], values: readonly Decimal[]) =>
-    indexes.reduce((acc, i) => acc.plus(values[i]!), toDec(ZERO))
+    indexes.reduce((acc, i) => acc.plus(values[i]!), NONE)
   const all = input.lines.map((_, i) => i)
   const rates: SaleVatRate[] = worked.groups.map((group) => ({
     vatCategory: group.key === 'none' ? null : group.key,

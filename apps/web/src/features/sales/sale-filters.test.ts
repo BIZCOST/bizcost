@@ -44,8 +44,10 @@ describe('sales list filters', () => {
       search: 'latte',
     })
     expect(isFiltered(filters)).toBe(true)
-    expect(readSaleFilters(new URLSearchParams('status=paid&kind=import')).status).toBe('all')
-    expect(readSaleFilters(new URLSearchParams('kind=import')).source).toBeNull()
+    expect(readSaleFilters(new URLSearchParams('status=paid&kind=order')).status).toBe('all')
+    expect(readSaleFilters(new URLSearchParams('kind=order')).source).toBeNull()
+    // M3 Step 4: imported sales are a kind of their own.
+    expect(readSaleFilters(new URLSearchParams('kind=import')).source).toBe('import')
   })
 
   it('writes the changes, leaving the defaults out', () => {

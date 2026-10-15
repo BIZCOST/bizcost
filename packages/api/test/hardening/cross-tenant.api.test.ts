@@ -1713,6 +1713,203 @@ const PROBES: Record<string, Probe> = {
       { input: { id: victim.sale.id, deliveryCost: '1' }, own: ['not_found'] },
     ],
   },
+  // Importing sales from a file (M3 Step 4).
+  'saleImport.list': {
+    base: 'business',
+    reason: NO_ROWS,
+    variants: () => [{ input: {} }],
+  },
+  'saleImport.get': {
+    base: 'business',
+    reason: 'looked up in the x-business-id business',
+    variants: (victim) => [{ input: { id: victim.saleImport.id }, own: ['not_found'] }],
+  },
+  'saleImport.create': {
+    base: 'business',
+    reason:
+      'its channel and branch are looked up in the x-business-id business; an id used anywhere is ' +
+      'CONFLICT (a file hash names no row: it is compared within the business)',
+    variants: (victim, attacker) => {
+      const fields = {
+        fileName: 'attack.csv',
+        fileHash: 'a'.repeat(64),
+        fingerprint: 'b'.repeat(64),
+        shape: 'summary',
+        periodFrom: attacker.sale.businessDate,
+        periodTo: attacker.sale.businessDate,
+        mapping: { headerRow: 0, columns: { name: 0, total: 1 }, headers: {}, dateOrder: 'dmy' },
+        amountsIncludeVat: false,
+        rowsRead: 1,
+        rowsLeftOut: 0,
+        rowCount: 1,
+      }
+      return [
+        {
+          input: { ...fields, id: victim.saleImport.id, channelId: attacker.channel.id },
+          own: ['conflict'],
+        },
+        { input: { ...fields, id: newId(), channelId: victim.channel.id }, own: ['not_found'] },
+        {
+          input: {
+            ...fields,
+            id: newId(),
+            channelId: attacker.channel.id,
+            locationId: victim.branch.id,
+          },
+          own: ['not_found'],
+        },
+      ]
+    },
+  },
+  'saleImport.addRows': {
+    base: 'business',
+    reason: 'the import is looked up (and locked) in the x-business-id business',
+    variants: (victim, attacker) => [
+      {
+        input: {
+          id: victim.draftImport.id,
+          rows: [
+            {
+              position: 0,
+              businessDate: attacker.sale.businessDate,
+              name: 'Attack',
+              qty: '1',
+              amount: '1',
+              fileRows: 1,
+            },
+          ],
+        },
+        own: ['not_found'],
+      },
+    ],
+  },
+  'saleImport.match': {
+    base: 'business',
+    reason:
+      'the import is looked up (and locked) and each product named is looked up in the ' +
+      'x-business-id business',
+    variants: (victim, attacker) => [
+      {
+        input: {
+          id: victim.draftImport.id,
+          answers: [{ name: 'Attack', target: 'skip' }],
+        },
+        own: ['not_found'],
+      },
+      {
+        input: {
+          id: attacker.draftImport.id,
+          answers: [{ name: 'Attack', target: 'product', productId: victim.product.id }],
+        },
+        own: ['not_found'],
+      },
+    ],
+  },
+  'saleImport.setOverlap': {
+    base: 'business',
+    reason: 'looked up (and locked) in the x-business-id business',
+    variants: (victim) => [
+      {
+        input: { id: victim.draftImport.id, version: victim.draftImport.version, overlap: 'skip' },
+        own: ['not_found'],
+      },
+    ],
+  },
+  'saleImport.discard': {
+    base: 'business',
+    reason: 'looked up (and locked) in the x-business-id business',
+    variants: (victim) => [
+      {
+        input: { id: victim.draftImport.id, version: victim.draftImport.version },
+        own: ['not_found'],
+      },
+    ],
+  },
+  'saleImport.post': {
+    base: 'business',
+    reason: 'looked up (and locked) in the x-business-id business',
+    variants: (victim) => [
+      {
+        input: { id: victim.draftImport.id, version: victim.draftImport.version },
+        own: ['not_found'],
+      },
+    ],
+  },
+  'saleImport.reverse': {
+    base: 'business',
+    reason: 'looked up (and locked) in the x-business-id business',
+    variants: (victim) => [{ input: { id: victim.saleImport.id }, own: ['not_found'] }],
+  },
+  'importProfile.list': { base: 'business', reason: NO_ROWS },
+  'importProfile.remove': {
+    base: 'business',
+    reason: 'looked up in the x-business-id business',
+    variants: (victim) => [{ input: { id: victim.importProfile.id }, own: ['not_found'] }],
+  },
+  // A channel's statements (M3 Step 4).
+  'channelStatement.list': {
+    base: 'business',
+    reason: 'the channel is looked up in the x-business-id business',
+    variants: (victim) => [{ input: { channelId: victim.channel.id }, own: ['not_found'] }],
+  },
+  'channelStatement.get': {
+    base: 'business',
+    reason: 'looked up in the x-business-id business',
+    variants: (victim) => [{ input: { id: victim.statement.id }, own: ['not_found'] }],
+  },
+  'channelStatement.create': {
+    base: 'business',
+    reason:
+      'its channel is looked up in the x-business-id business; an id used anywhere is CONFLICT',
+    variants: (victim, attacker) => {
+      const fields = {
+        periodFrom: attacker.sale.businessDate,
+        periodTo: attacker.sale.businessDate,
+        commission: '1',
+      }
+      return [
+        {
+          input: { ...fields, id: victim.statement.id, channelId: attacker.channel.id },
+          own: ['conflict'],
+        },
+        { input: { ...fields, id: newId(), channelId: victim.channel.id }, own: ['not_found'] },
+      ]
+    },
+  },
+  'channelStatement.update': {
+    base: 'business',
+    reason: 'looked up (and locked) in the x-business-id business',
+    variants: (victim, attacker) => [
+      {
+        input: {
+          id: victim.statement.id,
+          version: victim.statement.version,
+          periodFrom: attacker.sale.businessDate,
+          periodTo: attacker.sale.businessDate,
+        },
+        own: ['not_found'],
+      },
+    ],
+  },
+  'channelStatement.discard': {
+    base: 'business',
+    reason: 'looked up (and locked) in the x-business-id business',
+    variants: (victim) => [
+      { input: { id: victim.statement.id, version: victim.statement.version }, own: ['not_found'] },
+    ],
+  },
+  'channelStatement.post': {
+    base: 'business',
+    reason: 'looked up (and locked) in the x-business-id business',
+    variants: (victim) => [
+      { input: { id: victim.statement.id, version: victim.statement.version }, own: ['not_found'] },
+    ],
+  },
+  'channelStatement.reverse': {
+    base: 'business',
+    reason: 'looked up (and locked) in the x-business-id business',
+    variants: (victim) => [{ input: { id: victim.statement.id }, own: ['not_found'] }],
+  },
   'member.locations': {
     base: 'business',
     reason: 'the member is looked up in the x-business-id business',

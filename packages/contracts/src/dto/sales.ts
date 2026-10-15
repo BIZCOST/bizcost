@@ -379,6 +379,11 @@ export const saleDto = z.object({
   reversalBusinessDate: zBusinessDate.nullable(),
   /** A draft made by "correct": the reversed sale it replaces. */
   copiedFromId: zUuid.nullable(),
+  /**
+   * An imported sale (source import, M3 Step 4): the import it came from. It is reversed through
+   * its import (a day, or the whole file), never on its own.
+   */
+  importId: zUuid.nullable(),
   createdAt: isoTimestamp,
   version: z.int().positive(),
 })
@@ -488,6 +493,11 @@ export const daySheetDto = withMeta(
      * default first, then by name. Null for a business without branches (multi_location).
      */
     locations: z.array(saleLocationDto).nullable(),
+    /**
+     * An imported file already covers these days, channel and branch (M3 Step 4): its sales count too,
+     * so the screen warns before the same sales are typed twice.
+     */
+    imported: z.boolean(),
   }),
 )
 export type DaySheetDto = z.infer<typeof daySheetDto>

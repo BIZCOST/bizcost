@@ -288,16 +288,91 @@ export {
 } from './purchasing/keys'
 // Sales (M3 Step 2): channels, how a sale came in, the starter channels and the presets.
 export {
+  IMPORT_OVERLAPS,
+  SALE_IMPORT_STATUSES,
   SALE_LINE_QTY_MAX,
   SALE_SOURCES,
   SALES_CHANNEL_KINDS,
   SALES_CHANNEL_PRESETS,
   STARTER_SALES_CHANNELS,
+  type ImportOverlap,
+  type SaleImportStatus,
   type SaleSource,
   type SalesChannelKind,
   type SalesChannelPreset,
   type StarterSalesChannel,
 } from './sales/keys'
+// Importing sales from a file (M3 Step 4; it runs in the browser): the header row and the columns,
+// the values (amounts, quantities, days), the file summed into day × item totals, the names matched
+// to products, and the lines each imported day becomes.
+export {
+  AMOUNT_FIELDS,
+  autoMap,
+  cellText,
+  fieldsOfHeader,
+  findHeaderRow,
+  HEADER_SEARCH_ROWS,
+  headerFingerprintSource,
+  headerKey,
+  IMPORT_FIELDS,
+  IMPORT_SHAPES,
+  isTotalRow,
+  mappingError,
+  shapeOf,
+  type ImportCell,
+  type ImportField,
+  type ImportMapping,
+  type ImportShape,
+  type MappingError,
+} from './sales/import/headers'
+export {
+  DATE_ORDERS,
+  dateOrderOf,
+  IMPORT_DAY_MIN,
+  importDate,
+  importNumber,
+  serialDate,
+  type DateOrder,
+  type ImportDateResult,
+} from './sales/import/values'
+export {
+  amountsIncludeVatOf,
+  IMPORT_ERRORS_KEPT,
+  IMPORT_ROW_ERRORS,
+  importSales,
+  readImportRows,
+  vatQuestionAsked,
+  type ImportItem,
+  type ImportProblem,
+  type ImportRead,
+  type ImportReadOptions,
+  type ImportRowError,
+  type ImportRowErrorCode,
+} from './sales/import/read'
+export {
+  ALIAS_KINDS,
+  ALIAS_TARGETS,
+  aliasKeyOfCode,
+  aliasKeyOfName,
+  IMPORT_SOURCE_FILE,
+  looksNotSold,
+  MATCH_SUGGESTIONS,
+  matchIndexOf,
+  matchName,
+  suggestionsFor,
+  type AliasKind,
+  type AliasTarget,
+  type ImportAlias,
+  type MatchIndex,
+  type MatchProduct,
+  type NameMatch,
+} from './sales/import/match'
+export {
+  importDayLines,
+  type ImportDayEntry,
+  type ImportDayLines,
+  type ImportSaleLine,
+} from './sales/import/lines'
 // Expenses and running costs (M2 Step 5): statuses and approval, amounts, monthly amounts.
 export {
   EXPENSE_PAYS,

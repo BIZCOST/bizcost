@@ -101,6 +101,21 @@ export const APP_ERROR_CODES = [
   'running_cost_choice_required',
   /** Archiving the business's last active sales channel: a sale always names one (M3 Step 2). */
   'last_channel',
+  /**
+   * Importing a file already imported (its SHA-256, among imports not reversed: M3 Step 4, Q15). The
+   * error names the day it was imported and the import's id.
+   */
+  'already_imported',
+  /** Finalizing an import while a name it sold is not settled (matched, added, or not sold, Q15). */
+  'import_unmatched',
+  /**
+   * Finalizing an import that replaces days, when one of them is part of an earlier import's sale of
+   * several days (a summary) this import does not post all of: its other days would be lost (D-260).
+   * The error names that sale's first and last day.
+   */
+  'import_replace_partial',
+  /** Finalizing a channel statement whose days a finalized statement of the channel already covers. */
+  'statement_overlap',
   'internal',
 ] as const
 export type AppErrorCode = (typeof APP_ERROR_CODES)[number]

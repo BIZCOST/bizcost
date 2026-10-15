@@ -1,6 +1,9 @@
 import {
   DOCUMENT_STATUSES,
+  IMPORT_OVERLAPS,
+  IMPORT_SHAPES,
   SALE_COST_BASES,
+  SALE_IMPORT_STATUSES,
   SALE_LINE_KINDS,
   SALE_MATERIAL_BASES,
   SALE_SOURCES,
@@ -8,7 +11,10 @@ import {
   STANDARD_UNITS,
   VAT_CATEGORIES,
   type DocumentStatus,
+  type ImportOverlap,
+  type ImportShape,
   type SaleCostBasis,
+  type SaleImportStatus,
   type SaleLineKind,
   type SaleMaterialBasis,
   type SaleSource,
@@ -25,6 +31,7 @@ import {
   foreignKey,
   index,
   integer,
+  jsonb,
   numeric,
   text,
   unique,
@@ -82,6 +89,97 @@ export const salesChannels = tenantTable(
 )
 
 /**
+ * A file of sales imported (M3 Step 4; the owner's answer Q15 of D-218). The file is read in the
+ * browser and never uploaded or stored: only its SHA-256 (`file_hash`: the same file twice is refused
+ * among imports not reversed, H7), the fingerprint of its headers (its layout, as import_profiles),
+ * the columns chosen (`mapping`: the header row, each field's column and header, the order of its
+ * days), what its amounts are (`amounts_include_vat`), the counts and the errors of the rows it left
+ * out (row and column, at most 50), the sum of its fee column (`fees_total`: the channel's statement
+ * for its days) and its staged rows (sale_import_rows, cleared at posting). One channel and one
+ * location; its days within one month (the running-cost rate is monthly, D-202): a `lines` file posts
+ * one sale per day, a `summary` one sale on its last day covering the days named (Q9). A draft until
+ * finalized; `reversed` once every sale of it is. `replaced_days`: the days of earlier imports it
+ * replaced ("replace" when finalized); `overlap` the choice for days already imported (skip, the
+ * default, or replace).
+ */
+export const saleImports = tenantTable(
+  'sale_imports',
+  {
+    channelId: uuid('channel_id').notNull(),
+    locationId: uuid('location_id').notNull(),
+    fileName: text('file_name').notNull(),
+    fileHash: char('file_hash', { length: 64 }).notNull(),
+    fingerprint: char('fingerprint', { length: 64 }).notNull(),
+    shape: text('shape').$type<ImportShape>().notNull(),
+    periodFrom: date('period_from', { mode: 'string' }).notNull(),
+    periodTo: date('period_to', { mode: 'string' }).notNull(),
+    mapping: jsonb('mapping').$type<Record<string, unknown>>().notNull(),
+    amountsIncludeVat: boolean('amounts_include_vat').notNull().default(false),
+    rowsRead: integer('rows_read').notNull(),
+    rowsLeftOut: integer('rows_left_out').notNull().default(0),
+    errors: jsonb('errors')
+      .$type<readonly Record<string, unknown>[]>()
+      .notNull()
+      .default(sql`'[]'::jsonb`),
+    feesTotal: money('fees_total'),
+    // How many staged rows the browser sends (sale_import_rows.position 0 … row_count − 1).
+    rowCount: integer('row_count').notNull(),
+    overlap: text('overlap').$type<ImportOverlap>().notNull().default('skip'),
+    status: text('status').$type<SaleImportStatus>().notNull().default('draft'),
+    postedAt: timestamptz('posted_at'),
+    postedBy: uuid('posted_by'),
+    reversedAt: timestamptz('reversed_at'),
+    reversedBy: uuid('reversed_by'),
+    replacedDays: date('replaced_days', { mode: 'string' }).array(),
+    // The days left out when it was finalized: another import already had them (`overlap` skip).
+    skippedDays: date('skipped_days', { mode: 'string' }).array(),
+  },
+  (t) => [
+    tenantRef('sale_imports_channel_fk', [t.businessId, t.channelId], salesChannels),
+    tenantRef('sale_imports_location_fk', [t.businessId, t.locationId], locations),
+    // The same file twice is refused among imports not reversed (a reversed one frees it, H7).
+    uniqueIndex('sale_imports_file_key')
+      .on(t.businessId, t.fileHash)
+      .where(sql`status <> 'reversed' and deleted_at is null`),
+    index('sale_imports_list_idx').on(t.businessId, t.createdAt, t.id),
+    index('sale_imports_channel_idx').on(t.businessId, t.channelId),
+    index('sale_imports_location_idx').on(t.businessId, t.locationId),
+    check('sale_imports_shape_check', sql`shape in (${quoted(IMPORT_SHAPES)})`),
+    check('sale_imports_status_check', sql`status in (${quoted(SALE_IMPORT_STATUSES)})`),
+    check('sale_imports_overlap_check', sql`overlap in (${quoted(IMPORT_OVERLAPS)})`),
+    check('sale_imports_file_hash_check', sql`file_hash ~ '^[0-9a-f]{64}$'`),
+    check('sale_imports_fingerprint_check', sql`fingerprint ~ '^[0-9a-f]{64}$'`),
+    check(
+      'sale_imports_file_name_check',
+      sql`btrim(file_name) <> '' and char_length(file_name) <= 255`,
+    ),
+    check(
+      'sale_imports_period_check',
+      sql`period_from <= period_to
+        and date_trunc('month', period_from) = date_trunc('month', period_to)`,
+    ),
+    check('sale_imports_mapping_check', sql`jsonb_typeof(mapping) = 'object'`),
+    check(
+      'sale_imports_errors_check',
+      sql`jsonb_typeof(errors) = 'array' and jsonb_array_length(errors) <= 50`,
+    ),
+    check(
+      'sale_imports_counts_check',
+      sql`rows_read >= 0 and rows_left_out >= 0 and row_count between 1 and 100000`,
+    ),
+    check(
+      'sale_imports_posted_check',
+      sql`(status = 'draft') = (posted_at is null) and (status = 'draft') = (posted_by is null)`,
+    ),
+    check(
+      'sale_imports_reversed_check',
+      sql`(status = 'reversed') = (reversed_at is not null)
+        and (status = 'reversed') = (reversed_by is not null)`,
+    ),
+  ],
+)
+
+/**
  * A sale: Today's sales (`day_sheet`: one member's sheet for a day, or for several days within one
  * month posted on its last day, `period_from` its first, Q9) or One sale (`single`), on a business
  * day, at a location (the default one unless the business has branches), through a channel. Its
@@ -122,6 +220,8 @@ export const sales = tenantTable(
     reversalBusinessDate: date('reversal_business_date', { mode: 'string' }),
     // A draft made by "correct": the reversed sale it replaces.
     copiedFromId: uuid('copied_from_id'),
+    // An imported sale (source `import`, M3 Step 4): the import it came from.
+    importId: uuid('import_id'),
   },
   (t) => [
     tenantRef('sales_location_fk', [t.businessId, t.locationId], locations),
@@ -131,6 +231,8 @@ export const sales = tenantTable(
       columns: [t.businessId, t.copiedFromId],
       foreignColumns: [t.businessId, t.id],
     }),
+    tenantRef('sales_import_fk', [t.businessId, t.importId], saleImports),
+    index('sales_import_idx').on(t.businessId, t.importId),
     // Lists: newest business day first; a member's own sales; a channel's or a location's.
     index('sales_business_date_idx').on(t.businessId, t.businessDate, t.id),
     index('sales_created_by_idx').on(t.businessId, t.createdBy, t.businessDate),
@@ -152,7 +254,7 @@ export const sales = tenantTable(
     check('sales_currency_check', sql`currency ~ '^[A-Z]{3}$'`),
     check(
       'sales_period_check',
-      sql`period_from is null or (source = 'day_sheet' and period_from < business_date
+      sql`period_from is null or (source in ('day_sheet', 'import') and period_from < business_date
         and date_trunc('month', period_from) = date_trunc('month', business_date))`,
     ),
     check(
@@ -176,6 +278,7 @@ export const sales = tenantTable(
         and (status = 'reversed') = (reversal_business_date is not null)`,
     ),
     check('sales_copied_from_check', sql`copied_from_id <> id`),
+    check('sales_import_check', sql`(source = 'import') = (import_id is not null)`),
   ],
 )
 
@@ -312,3 +415,5 @@ export type SaleLine = typeof saleLines.$inferSelect
 export type NewSaleLine = typeof saleLines.$inferInsert
 export type SaleLineMaterial = typeof saleLineMaterials.$inferSelect
 export type NewSaleLineMaterial = typeof saleLineMaterials.$inferInsert
+export type SaleImport = typeof saleImports.$inferSelect
+export type NewSaleImport = typeof saleImports.$inferInsert

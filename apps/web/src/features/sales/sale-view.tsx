@@ -16,6 +16,7 @@ import {
   CalendarCheckIcon,
   CheckCheckIcon,
   CopyIcon,
+  FileSpreadsheetIcon,
   Trash2Icon,
   TruckIcon,
   Undo2Icon,
@@ -64,19 +65,36 @@ function Detail({ label, children }: { label: string; children: ReactNode }) {
   )
 }
 
-/** The sale's title: "Sale of 8 Oct 2026", "Sales of 8 Oct 2026", "Sales of 1–30 Sep 2026". */
+/**
+ * The sale's title: "Sale of 8 Oct 2026", "Sales of 8 Oct 2026", "Sales of 1–30 Sep 2026"; an imported
+ * day's refund (a sale of negative amounts) "Imported refund of 8 Oct 2026".
+ */
 export function useSaleTitle() {
   const { t } = useTranslation()
   const businessDate = useBusinessDate()
-  return (sale: Pick<SaleDto, 'source' | 'businessDate' | 'periodFrom'>) =>
+  return (sale: Pick<SaleDto, 'source' | 'businessDate' | 'periodFrom' | 'netTotal'>) =>
     sale.source === 'single'
       ? t('sales.view.title', { date: businessDate(sale.businessDate) })
-      : sale.periodFrom
-        ? t('sales.view.sheetPeriodTitle', {
-            from: businessDate(sale.periodFrom),
-            to: businessDate(sale.businessDate),
-          })
-        : t('sales.view.sheetTitle', { date: businessDate(sale.businessDate) })
+      : sale.source === 'import'
+        ? sale.periodFrom
+          ? t(
+              sale.netTotal.startsWith('-')
+                ? 'sales.view.importedRefundPeriodTitle'
+                : 'sales.view.importedPeriodTitle',
+              { from: businessDate(sale.periodFrom), to: businessDate(sale.businessDate) },
+            )
+          : t(
+              sale.netTotal.startsWith('-')
+                ? 'sales.view.importedRefundTitle'
+                : 'sales.view.importedTitle',
+              { date: businessDate(sale.businessDate) },
+            )
+        : sale.periodFrom
+          ? t('sales.view.sheetPeriodTitle', {
+              from: businessDate(sale.periodFrom),
+              to: businessDate(sale.businessDate),
+            })
+          : t('sales.view.sheetTitle', { date: businessDate(sale.businessDate) })
 }
 
 /** A product sold without what it uses while Materials is on: its cost is not known (D-223). */
@@ -299,7 +317,9 @@ export function SaleView({
   const seesCosts = context.visibleCategories.includes('cost')
   const listHref = `/b/${businessId}/sales`
   const posted = sale.status === 'posted'
-  const items = sale.lines.filter((line) => line.kind === 'item')
+  // What was sold: the items, and an imported service charge (a sale with no cost, M3 Step 4).
+  const items = sale.lines.filter((line) => line.kind === 'item' || line.kind === 'charge')
+  const imported = sale.source === 'import'
   const delivery = sale.lines.find((line) => line.kind === 'delivery')
   const names = formatList(
     locale,
@@ -470,13 +490,21 @@ export function SaleView({
           </p>
         </div>
         <div className="flex flex-wrap gap-2">
-          {posted && canReverse && canManage ? (
+          {imported && sale.importId ? (
+            <Button asChild variant="outline">
+              <Link href={`${listHref}/import/${sale.importId}`}>
+                <FileSpreadsheetIcon aria-hidden />
+                {t('sales.view.openImport')}
+              </Link>
+            </Button>
+          ) : null}
+          {posted && canReverse && canManage && !imported ? (
             <Button variant="outline" onClick={() => open('correct')}>
               <CopyIcon aria-hidden />
               {t('sales.view.correct')}
             </Button>
           ) : null}
-          {posted && canReverse ? (
+          {posted && canReverse && !imported ? (
             <Button variant="destructive" onClick={() => open('reverse')}>
               <Undo2Icon aria-hidden />
               {t('sales.view.reverse')}
@@ -521,6 +549,9 @@ export function SaleView({
       </header>
 
       <div className="space-y-5">
+        {imported && posted ? (
+          <FormAlert tone="info">{t('sales.view.importedNote')}</FormAlert>
+        ) : null}
         {sale.status === 'reversed' ? (
           <FormAlert tone="info">
             {t('sales.view.reversedNote', {
@@ -569,7 +600,13 @@ export function SaleView({
               </Detail>
             ) : null}
             <Detail label={t('sales.view.kind')}>
-              {t(sale.source === 'day_sheet' ? 'sales.view.kindSheet' : 'sales.view.kindSingle')}
+              {t(
+                sale.source === 'day_sheet'
+                  ? 'sales.view.kindSheet'
+                  : sale.source === 'import'
+                    ? 'sales.view.kindImport'
+                    : 'sales.view.kindSingle',
+              )}
             </Detail>
           </dl>
           {sale.periodFrom ? (
@@ -634,7 +671,7 @@ export function SaleView({
                           </>
                         ) : null}
                       </p>
-                      {sale.status !== 'draft' ? (
+                      {sale.status !== 'draft' && line.kind === 'item' ? (
                         <LineCost
                           line={line}
                           currency={sale.currency}

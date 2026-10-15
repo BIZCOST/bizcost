@@ -727,6 +727,8 @@ export const booksDto = z.object({
   closedThrough: zBusinessDate.nullable(),
   /** Today in the business's time zone (a document dated later cannot be posted). */
   today: zBusinessDate,
+  /** The business's time zone (IANA): a file's times with an offset are read as its days (M3 Step 4). */
+  timeZone: z.string(),
 })
 export type BooksDto = z.infer<typeof booksDto>
 

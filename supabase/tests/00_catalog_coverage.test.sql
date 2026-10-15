@@ -5,7 +5,7 @@
 -- business_id, and the touch/audit/owner triggers. Checks are catalog-driven,
 -- so a new tenant table is covered without editing this file.
 begin;
-select plan(38);
+select plan(40);
 
 -- Tables of schema app, and the subset carrying business_id.
 create temp view app_tables as
@@ -38,15 +38,16 @@ select tables_are(
     'stock_movements', 'material_costs', 'stock_balances', 'attachments',
     'recipes', 'recipe_lines', 'purchase_payments',
     'cost_categories', 'expenses', 'expense_payments', 'running_costs',
-    'sales_channels', 'sales', 'sale_lines', 'sale_line_materials'
+    'sales_channels', 'sales', 'sale_lines', 'sale_line_materials',
+    'sale_imports', 'sale_import_rows', 'import_profiles', 'product_aliases', 'channel_statements'
   ],
   'app contains exactly the Milestone 1 and M2 tables and those of M3 so far'
 );
 
 select is(
   (select count(*)::int from business_tables),
-  36,
-  'sanity: 36 app tables carry business_id (the checks below are not vacuous)'
+  41,
+  'sanity: 41 app tables carry business_id (the checks below are not vacuous)'
 );
 
 -- 2. Row level security ---------------------------------------------------------
@@ -372,6 +373,9 @@ select is_empty(
   'businesses and every tenant table run app.touch_row() BEFORE UPDATE FOR EACH ROW'
 );
 
+-- A table written in bulk may write the same audit rows per statement instead: app.audit_rows() over
+-- its transition tables, AFTER INSERT, UPDATE and DELETE (D-259); an import's staged rows write one
+-- per statement and import, app.audit_staged_rows() (D-262).
 select is_empty(
   $$ select t.table_name
        from (select relid, table_name from tenant_tables
@@ -385,8 +389,40 @@ select is_empty(
                  and g.tgfoid = to_regprocedure('app.audit_row()')
                  and (g.tgtype::int & 1) = 1
                  and (g.tgtype::int & 2) = 0
-                 and (g.tgtype::int & 64) = 0), 0) <> 28 $$,
-  'businesses and every tenant table run app.audit_row() AFTER INSERT, UPDATE and DELETE FOR EACH ROW'
+                 and (g.tgtype::int & 64) = 0), 0) <> 28
+        and coalesce((
+              select bit_or(g.tgtype::int & 28)
+                from pg_trigger g
+               where g.tgrelid = t.relid
+                 and not g.tgisinternal
+                 and g.tgfoid in (to_regprocedure('app.audit_rows()'),
+                                  to_regprocedure('app.audit_staged_rows()'))
+                 and (g.tgtype::int & 1) = 0
+                 and (g.tgtype::int & 2) = 0
+                 and (g.tgtype::int & 64) = 0
+                 and (g.tgtype::int & 4 = 0 or g.tgnewtable is not null)
+                 and (g.tgtype::int & 8 = 0 or g.tgoldtable is not null)
+                 and (g.tgtype::int & 16 = 0 or (g.tgoldtable is not null and g.tgnewtable is not null))), 0) <> 28 $$,
+  'businesses and every tenant table run app.audit_row() AFTER INSERT, UPDATE and DELETE FOR EACH ROW, or app.audit_rows() or app.audit_staged_rows() per statement over their transition tables'
+);
+
+select is(
+  (select array_agg(c.relname::text order by c.relname)
+     from pg_class c
+    where exists (select 1 from pg_trigger g
+                   where g.tgrelid = c.oid and g.tgfoid = to_regprocedure('app.audit_rows()'))),
+  array['sale_line_materials', 'sale_lines'],
+  'only the tables written in bulk audit per statement'
+);
+
+select is(
+  (select array_agg(c.relname::text order by c.relname)
+     from pg_class c
+    where exists (select 1 from pg_trigger g
+                   where g.tgrelid = c.oid
+                     and g.tgfoid = to_regprocedure('app.audit_staged_rows()'))),
+  array['sale_import_rows'],
+  'only the staged rows of an import audit by what each statement did to an import''s rows'
 );
 
 select is_empty(

@@ -31,6 +31,30 @@ export function splitByWeights(
     if (value.lt(0)) throw new RangeError(`A split weight must not be negative: "${w}"`)
     return value
   })
+  return largestRemainder(total, values, digits).map((part) => fixed(part, digits))
+}
+
+/**
+ * splitByWeights on Decimals, with its checks: the very shares, each a Decimal of at most `digits`
+ * decimals (the sales engine splits thousands of lines' amounts, never printing and reading each).
+ */
+export function splitDecimals(
+  total: Decimal,
+  values: readonly Decimal[],
+  digits: number,
+): Decimal[] {
+  if (total.lt(0)) throw new RangeError(`A split amount must not be negative: "${plain(total)}"`)
+  if (total.decimalPlaces() > digits) {
+    throw new RangeError(`A split amount has more than ${digits} decimals: "${plain(total)}"`)
+  }
+  for (const value of values) {
+    if (value.lt(0)) throw new RangeError(`A split weight must not be negative: "${plain(value)}"`)
+  }
+  return largestRemainder(total, values, digits)
+}
+
+/** The split itself (see above), on an amount and weights already checked. */
+function largestRemainder(total: Decimal, values: readonly Decimal[], digits: number): Decimal[] {
   if (values.length === 0) {
     if (!total.isZero()) throw new RangeError('Nothing to split the amount over')
     return []
@@ -41,19 +65,20 @@ export function splitByWeights(
   )
   // Each share cut down to the minor unit (never below zero: neither the amount nor a weight is).
   const parts = exact.map((share) => share.toDecimalPlaces(digits, Dec.ROUND_DOWN))
+  let missing = total.minus(parts.reduce((acc, part) => acc.plus(part), toDec('0')))
+  if (missing.isZero()) return parts
   const unit = pow10(-digits)
   // Fewer minor units than lines are missing (each line lost less than one in the cut); they go to
   // the lines that lost the most, one each.
   const order = values
     .map((value, index) => ({ index, value, lost: exact[index]!.minus(parts[index]!) }))
     .sort((a, b) => b.lost.comparedTo(a.lost) || b.value.comparedTo(a.value) || a.index - b.index)
-  let missing = total.minus(parts.reduce((acc, part) => acc.plus(part), toDec('0')))
   for (let k = 0; missing.gt(0); k = (k + 1) % order.length) {
     const index = order[k]!.index
     parts[index] = parts[index]!.plus(unit)
     missing = missing.minus(unit)
   }
-  return parts.map((part) => fixed(part, digits))
+  return parts
 }
 
 /** Sum of decimal strings, as a plain decimal string. */

@@ -50,11 +50,23 @@ export type SalesChannelPreset = (typeof SALES_CHANNEL_PRESETS)[number]['key']
 
 /**
  * `sales.source`: how a sale came in. M3 Step 2: Today's sales (`day_sheet`, one sheet per member,
- * day or days, channel and branch, Q10) and One sale (`single`, a job or one customer). Later steps
- * add `import`, `order`, `invoice` and `credit_note`.
+ * day or days, channel and branch, Q10) and One sale (`single`, a job or one customer). M3 Step 4: a
+ * file imported (`import`: one sale per day × branch × channel, a summary's days on its last day).
+ * Later steps add `order`, `invoice` and `credit_note`.
  */
-export const SALE_SOURCES = ['day_sheet', 'single'] as const
+export const SALE_SOURCES = ['day_sheet', 'single', 'import'] as const
 export type SaleSource = (typeof SALE_SOURCES)[number]
+
+/**
+ * `sale_imports.status` and `channel_statements.status`: a draft until finalized; `reversed` once
+ * taken back whole (an import's every day: its file may then be imported again).
+ */
+export const SALE_IMPORT_STATUSES = ['draft', 'posted', 'reversed'] as const
+export type SaleImportStatus = (typeof SALE_IMPORT_STATUSES)[number]
+
+/** Days already imported when an import is finalized: skipped (the default) or replaced (Q15). */
+export const IMPORT_OVERLAPS = ['skip', 'replace'] as const
+export type ImportOverlap = (typeof IMPORT_OVERLAPS)[number]
 
 /** The most a sold line's quantity may be (the DTO caps it; the column is numeric(24,6)). */
 export const SALE_LINE_QTY_MAX = '1000000000'

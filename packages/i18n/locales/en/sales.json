@@ -49,8 +49,13 @@
       "to": "To",
       "clear": "Clear filters",
       "noMatches": "No sales match",
-      "noMatchesHint": "Try other filters, or clear them."
-    }
+      "noMatchesHint": "Try other filters, or clear them.",
+      "import": "Imported from a file"
+    },
+    "imported": "Imported sales of {{date}}",
+    "importedPeriod": "Imported sales of {{from}} – {{to}}",
+    "importedRefund": "Imported refund of {{date}}",
+    "importedRefundPeriod": "Imported refund of {{from}} – {{to}}"
   },
   "sheet": {
     "title": "Today's sales",
@@ -96,7 +101,8 @@
     "final": "Finalized: {{amount}}. These sales now count.",
     "finalAction": "See the sales",
     "finalMore": "More sales of this day? Enter them as one sale.",
-    "finalHint": "A final sheet changes only by a correction."
+    "finalHint": "A final sheet changes only by a correction.",
+    "imported": "A file imported for {{channel}} already has sales of these days. Enter here only what the file does not have, or the same sales count twice."
   },
   "editor": {
     "newTitle": "One sale",
@@ -202,7 +208,14 @@
     "correct": "Correct",
     "reverse": "Reverse",
     "notFound": "Sale not found",
-    "notFoundBody": "It may have been discarded, or it isn't one you can see."
+    "notFoundBody": "It may have been discarded, or it isn't one you can see.",
+    "importedTitle": "Imported sales of {{date}}",
+    "importedPeriodTitle": "Imported sales of {{from}} – {{to}}",
+    "importedRefundTitle": "Imported refund of {{date}}",
+    "importedRefundPeriodTitle": "Imported refund of {{from}} – {{to}}",
+    "openImport": "Open its import",
+    "kindImport": "Imported from a file",
+    "importedNote": "These sales came from a file. To take them back, reverse this day (or the whole file) from its import."
   },
   "confirm": {
     "finalizeTitle": "Finalize this sale?",
@@ -239,5 +252,299 @@
     "fillNote": "It is entered once and then stays as it is.",
     "fillAction": "Save",
     "filled": "Delivery cost saved."
+  },
+  "import": {
+    "title": "Import sales from a file",
+    "pageTitle": "Imported file",
+    "intro": "Bring in the sales your POS, delivery app or online store exported. The file is read on this device and never uploaded.",
+    "start": "Import from a file",
+    "stepsLabel": "The steps of importing",
+    "steps": {
+      "file": "The file",
+      "columns": "The columns",
+      "period": "The days",
+      "vat": "VAT",
+      "names": "The names",
+      "preview": "Check and finalize"
+    },
+    "notOpen": "Importing sales needs the permission to import sales from a file. Ask the owner.",
+    "backToImports": "Imports",
+    "optional": "(optional)",
+    "tabs": {
+      "label": "Sales or imports",
+      "sales": "Sales",
+      "imports": "Imports"
+    },
+    "templates": {
+      "intro": "No file from your system? Download a template, fill it in, then import it.",
+      "daily": "Daily sales by product",
+      "lines": "Sales lines",
+      "statement": "Channel statement"
+    },
+    "fileRows_one": "{{count}} row",
+    "fileRows_other": "{{count}} rows",
+    "otherFile": "Choose another file",
+    "reading": "Reading the file…",
+    "pick": "Choose a file",
+    "pickHint": "Excel (.xlsx, .xls) or CSV. You can also drop it here.",
+    "sheet": "Sheet",
+    "privacy": "The file stays on this device. Only the totals of each day and item are sent: customer names and phones never leave it.",
+    "channel": "Sold through",
+    "channelHint": "All the sales in this file are for this channel.",
+    "branch": "Branch",
+    "readErrors": {
+      "too_large": "This file is too large. Import up to 25 MB at a time (one month, or one branch).",
+      "empty": "This file is empty.",
+      "unreadable": "This file can't be read. Save it again as .xlsx or .csv, then try again.",
+      "not_supported": "Choose an Excel file (.xlsx or .xls) or a CSV file."
+    },
+    "alreadyImported": "This file was already imported on {{date}}. To import it again, reverse that import first.",
+    "alreadyImportedDraft": "This file is already being imported: a draft from {{date}}. Continue it, or delete it to import the file again.",
+    "alreadyImportedHidden": "This file is already in an import from {{date}} that you can't open. Ask the owner about it.",
+    "openThatImport": "Open that import",
+    "openThatDraft": "Open that draft",
+    "columns": {
+      "intro": "We matched the columns by their names. Check each one, and change any that is wrong.",
+      "none": "Not in the file",
+      "named": "{{letter}} · {{header}}",
+      "unnamed": "Column {{letter}}",
+      "savedFound": "You imported a file with these same columns before.",
+      "savedUsed": "Using the columns you chose last time.",
+      "useSaved": "Use the columns from last time",
+      "headerRow": "The column names are on",
+      "rowOption": "Row {{row}}: {{cells}}",
+      "more": "More columns"
+    },
+    "fields": {
+      "name": "Item name",
+      "qty": "Quantity",
+      "qtyHint": "Without it, each row counts as 1.",
+      "amount": "Amount",
+      "amountKind": "This amount is",
+      "date": "Day of the sale",
+      "dateHint": "Without it, you say which days the file covers.",
+      "code": "Item code (SKU)",
+      "codeHint": "Shops match their items by code.",
+      "variant": "Size or option",
+      "variantHint": "Added to the name: \"Latte · Large\".",
+      "tax": "VAT amount",
+      "taxHint": "Taken off the amount, so the sales are before VAT.",
+      "fee": "What the app kept (commission)",
+      "feeHint": "Its total becomes this channel's statement for the file's days.",
+      "order": "Order number",
+      "orderHint": "An order's later rows take its first row's day."
+    },
+    "amountKinds": {
+      "net": "Sales before VAT",
+      "total": "What the customer paid",
+      "price": "The price of one item",
+      "totalPlain": "The amount of the row",
+      "pricePlain": "The price of one item"
+    },
+    "dateOrder": {
+      "legend": "Days like {{example}} mean",
+      "dmy": "Day first, then month",
+      "mdy": "Month first, then day"
+    },
+    "mappingErrors": {
+      "name_missing": "Choose the column with the item names.",
+      "amount_missing": "Choose the column with the amounts.",
+      "amounts_twice": "Choose one amount column only.",
+      "column_twice": "One column is chosen twice. Each column goes with one thing only."
+    },
+    "period": {
+      "intro": "This file has no day column, so say which days its sales are for.",
+      "legend": "These sales are for",
+      "day": "One day",
+      "range": "Several days",
+      "rangeHint": "Within one month. They are saved as one sale on the last day.",
+      "theDay": "The day",
+      "from": "From",
+      "to": "To",
+      "onLastDay": "Saved as one sale on {{date}}, covering these days.",
+      "errors": {
+        "order": "The first day must come before the last.",
+        "month": "Choose days within one month.",
+        "future": "Choose today or an earlier day."
+      }
+    },
+    "vat": {
+      "legend": "Do these amounts include VAT?",
+      "yes": "Yes, they include VAT",
+      "yesHint": "For example, a latte at {{gross}} with VAT is {{net}} before VAT.",
+      "no": "No, they are before VAT",
+      "noHint": "VAT is added on top of them."
+    },
+    "problems": {
+      "name_missing": "Choose the column with the item names.",
+      "amount_missing": "Choose the column with the amounts.",
+      "amounts_twice": "Choose one amount column only.",
+      "column_twice": "One column is chosen twice.",
+      "no_rows": "No sales were found in this file with these columns. Check the columns and the row of names.",
+      "period_missing": "Say which days these sales are for.",
+      "period_over_month": "This file covers more than one month. Import one month at a time.",
+      "vat_answer_missing": "Say whether these amounts include VAT."
+    },
+    "summary": {
+      "title": "What we read",
+      "rows": "Rows read",
+      "days": "Days",
+      "daysRange": "{{from}} – {{to}}",
+      "names": "Names",
+      "amount": "Sales",
+      "amountBeforeVat": "Sales before VAT",
+      "amountWithVat": "Sales with VAT",
+      "totalRows_one": "{{count}} total row was skipped, so nothing counts twice.",
+      "totalRows_other": "{{count}} total rows were skipped, so nothing counts twice."
+    },
+    "leftOut": {
+      "title_one": "{{count}} row was left out:",
+      "title_other": "{{count}} rows were left out:",
+      "row": "Row {{row}}: {{why}}",
+      "rowColumn": "Row {{row}}, column {{column}}: {{why}}"
+    },
+    "rowErrors": {
+      "name_missing": "no item name",
+      "date_missing": "no day",
+      "date_invalid": "not a day",
+      "number_invalid": "not a number",
+      "qty_too_large": "the quantity is too large"
+    },
+    "sending": "Sending {{done}} of {{total}} rows…",
+    "back": "Back",
+    "next": "Next",
+    "send": "Send and check the names",
+    "status": {
+      "draft": "Draft",
+      "posted": "Imported",
+      "reversed": "Reversed"
+    },
+    "names": {
+      "intro": "Each name in the file must be one of your products, or not something you sell. Your answers are remembered for the next files.",
+      "fileAmounts": "Amounts here are as the file gives them, with VAT.",
+      "settled": "{{done}} of {{total}} settled",
+      "showToSettle": "To settle",
+      "showAll": "All names",
+      "addAll": "Add as new products ({{number}})",
+      "addAllLeft": "Names that look like one of your products, or like tips, a service charge or delivery, are left for you to settle: {{number}}.",
+      "allSettled": "Every name is settled.",
+      "is": "Is",
+      "via": {
+        "alias": "your answer",
+        "code": "by its code",
+        "name": "same name"
+      },
+      "treatments": {
+        "skip": "Not counted (tips and the like)",
+        "charge": "Service charge",
+        "delivery": "Delivery charged"
+      },
+      "treatmentHints": {
+        "skip": "Left out of your sales: tips, a discount line, something you don't sell.",
+        "charge": "Counts as sales, with no cost.",
+        "delivery": "Counts in what deliveries earn or cost you."
+      },
+      "toSettle": "Not settled",
+      "sold": "{{qty}} sold",
+      "change": "Change",
+      "keep": "Keep it as it is",
+      "didYouMean": "Did you mean",
+      "looksLike": "This looks like",
+      "pick": "Or choose the product",
+      "pickPlaceholder": "Choose…",
+      "addNew": "Add as new",
+      "notSold": "Not something I sell",
+      "notSoldLegend": "How it counts"
+    },
+    "days": {
+      "new": "New",
+      "imported": "Already imported",
+      "posted": "Imported",
+      "reversed": "Reversed",
+      "skipped": "Skipped: already imported",
+      "importedBy": "from {{file}}",
+      "otherSales": "Sales were also entered for this day in Today's sales or One sale. If they are the same sales as in this file, they count twice: reverse them first, or take this day out of the file."
+    },
+    "preview": {
+      "intro": "Check what will be finalized. Nothing counts until you finalize.",
+      "days": "Days",
+      "salesBeforeVat": "Sales before VAT",
+      "sales": "Sales",
+      "afterNames": "Shown once every name is settled",
+      "refunds": "Refunds",
+      "matched": "Names matched",
+      "fees": "App fees",
+      "daysTitle": "Days",
+      "costsNote": "What each item cost is worked out from the purchases entered so far.",
+      "unpriced": "No price yet: {{names}}. Their cost is added when you enter their purchases.",
+      "feesNote": "{{amount}} of fees become {{channel}}'s statement for {{from}} – {{to}}."
+    },
+    "overlap": {
+      "legend_one": "{{count}} day is already imported from another file",
+      "legend_other": "{{count}} days are already imported from another file",
+      "skip": "Skip those days",
+      "skipHint": "Keep what was imported before.",
+      "replace": "Replace them with this file",
+      "replaceHint": "Their earlier sales are reversed, and this file counts instead.",
+      "replaceLocked": "Replacing days reverses finalized sales, so it needs the permission to reverse sales. Ask the owner."
+    },
+    "toSettleFirst_one": "Settle {{count}} name first, then finalize.",
+    "toSettleFirst_other": "Settle {{count}} names first, then finalize.",
+    "rowsMissing": "Not all rows of this file arrived. Discard it and import the file again.",
+    "discard": "Discard",
+    "finalize": "Finalize",
+    "finalizing": "Finalizing…",
+    "discarding": "Discarding…",
+    "finalized": "{{file}} is imported.",
+    "discarded": "The import was discarded.",
+    "conflict": "This import was changed somewhere else. Check it again, then finalize.",
+    "confirm": {
+      "title": "Finalize these sales?",
+      "body_one": "This adds {{count}} day of {{channel}} sales: {{amount}}.",
+      "body_other": "This adds {{count}} days of {{channel}} sales: {{amount}}.",
+      "bodyPeriod": "This adds {{channel}}'s sales of {{from}} – {{to}}, saved as one sale on {{date}}: {{amount}}.",
+      "note": "Each day's cost is worked out on that day. To take them back later, reverse a day or the whole file.",
+      "skipNote_one": "{{count}} day already imported is skipped.",
+      "skipNote_other": "{{count}} days already imported are skipped.",
+      "replaceNote_one": "{{count}} day already imported is replaced: its earlier sales are reversed.",
+      "replaceNote_other": "{{count}} days already imported are replaced: their earlier sales are reversed.",
+      "otherSalesNote": "Some of these days also have sales entered in Today's sales or One sale. If they are the same sales as in the file, they count twice.",
+      "discardTitle": "Discard this import?",
+      "discardBody": "The rows sent from this file are removed. Your answers for its names are kept.",
+      "addAllTitle": "Add these names as new products?",
+      "addAllBody": "Each becomes a product sold by the piece, at its average price in the file.",
+      "addAllMore": "And {{number}} more.",
+      "addAllNote": "They stay in your products even if you delete this import.",
+      "addAllAction": "Add them",
+      "reverseTitle": "Reverse this whole import?",
+      "reverseBody": "Every sale imported from {{file}} is reversed, as if it was never finalized.",
+      "reverseDayTitle": "Reverse this day?",
+      "reverseDayBody": "The sales of {{date}} from this file are reversed, as if never finalized.",
+      "reverseNote": "A day in closed books is taken back on the first open day. The file can then be imported again."
+    },
+    "finalizedTitle": "What this file added",
+    "reverseAll": "Reverse the whole import",
+    "reverseDay": "Reverse this day",
+    "reversing": "Reversing…",
+    "reversed": "The import is reversed.",
+    "reversedDay": "The day is reversed.",
+    "reversedNote": "This import is reversed: its sales no longer count. You can import its file again.",
+    "replacedNote": "It replaced earlier imported sales of: {{days}}.",
+    "statementMade": "Its fee column became {{channel}}'s statement.",
+    "openStatements": "Open the statements",
+    "openSale": "Open the sale",
+    "openRefund": "Open the refund",
+    "notFound": "We couldn't find this import",
+    "notFoundBody": "It may have been discarded, or it is not open to you.",
+    "list": {
+      "title": "Imported files",
+      "days_one": "{{count}} day imported",
+      "days_other": "{{count}} days imported",
+      "daysReversed_one": "{{count}} reversed",
+      "daysReversed_other": "{{count}} reversed",
+      "continue": "Draft: continue settling its names",
+      "empty": "No imports yet",
+      "emptyBody": "Import the sales your POS, delivery app or online store exported, one file at a time."
+    }
   }
 }

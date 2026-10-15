@@ -1,5 +1,7 @@
+import { randomBytes } from 'node:crypto'
 import type {
   BusinessProfileDto,
+  ChannelStatementDto,
   CostCategoryDto,
   ExpenseDto,
   LocationDto,
@@ -12,6 +14,7 @@ import type {
   RoleDto,
   RunningCostDto,
   SaleDto,
+  SaleImportDto,
   SalesChannelDto,
   SupplierDto,
 } from '@bizcost/contracts'
@@ -263,6 +266,87 @@ async function newChannel(): Promise<SalesChannelDto> {
   ).data
 }
 
+/** An import of a one-day summary (M3 Step 4): another file (its hash) each time. */
+function importInput(extra: object = {}) {
+  return {
+    id: newId(),
+    channelId,
+    fileName: `sales ${tag()}.csv`,
+    fileHash: randomBytes(32).toString('hex'),
+    fingerprint: randomBytes(32).toString('hex'),
+    shape: 'summary',
+    periodFrom: today,
+    periodTo: today,
+    mapping: {
+      headerRow: 0,
+      columns: { name: 0, total: 1 },
+      headers: { name: 'Item', total: 'Total' },
+      dateOrder: 'dmy',
+    },
+    amountsIncludeVat: false,
+    rowsRead: 1,
+    rowsLeftOut: 0,
+    errors: [],
+    feesTotal: '12.5',
+    rowCount: 1,
+    ...extra,
+  }
+}
+
+/** A staged row of the latte (matched by its name). */
+const importRow = (extra: object = {}) => ({
+  position: 0,
+  businessDate: today,
+  name: latte.name,
+  code: null,
+  qty: '2.5',
+  amount: '45.75',
+  refunds: '0.5',
+  fileRows: 1,
+  ...extra,
+})
+
+/** A draft import with its one row sent. */
+async function importDraft(): Promise<SaleImportDto> {
+  const created = ok(
+    await shop.run<{ data: SaleImportDto }>('saleImport.create', importInput()),
+  ).data
+  ok(await shop.run('saleImport.addRows', { id: created.id, rows: [importRow()] }))
+  return ok(await shop.run<{ data: SaleImportDto }>('saleImport.get', { id: created.id })).data
+}
+
+/** A channel statement's input (a draft), in its own channel unless given. */
+function statementInput(channel: string, extra: object = {}) {
+  return {
+    id: newId(),
+    channelId: channel,
+    periodFrom: today,
+    periodTo: today,
+    sales: '1000.5',
+    commission: '150.25',
+    paymentFees: '10.5',
+    otherFees: '2.25',
+    ads: '3',
+    refundsCharged: '1.5',
+    payout: '832.99',
+    notes: null,
+    ...extra,
+  }
+}
+
+async function statementDraft(): Promise<ChannelStatementDto> {
+  const channel = await newChannel()
+  return ok(
+    await shop.run<{ data: ChannelStatementDto }>(
+      'channelStatement.create',
+      statementInput(channel.id),
+    ),
+  ).data
+}
+
+/** The import the last digits case made (its rows are read back through it). */
+let lastImportId = ''
+
 // ---------------------------------------------------------------------------------------------------
 // Digits
 // ---------------------------------------------------------------------------------------------------
@@ -442,6 +526,33 @@ const DIGITS: Record<string, Variant[]> = {
       }),
     },
   ],
+  'saleImport.create': [{ input: async () => importInput() }],
+  'saleImport.addRows': [
+    {
+      input: async () => {
+        lastImportId = ok(
+          await shop.run<{ data: SaleImportDto }>('saleImport.create', importInput()),
+        ).data.id
+        return { id: lastImportId, rows: [importRow()] }
+      },
+      readBack: async () =>
+        ok(await shop.run<{ data: SaleImportDto }>('saleImport.get', { id: lastImportId })).data
+          .names,
+    },
+  ],
+  'channelStatement.create': [{ input: async () => statementInput(channelId) }],
+  'channelStatement.update': [
+    {
+      input: async () => {
+        const draft = await statementDraft()
+        const fields: Record<string, unknown> = statementInput(draft.channelId, {
+          commission: '99.75',
+        })
+        delete fields.channelId
+        return { ...fields, id: draft.id, version: draft.version }
+      },
+    },
+  ],
   // A phone number is not a quantity, but it is typed with the same keyboard.
   'supplier.create': [
     { input: async () => ({ id: newId(), name: `Dairy ${tag()}`, phone: '0501234567' }) },
@@ -597,6 +708,14 @@ const CREATES: Record<string, Create> = {
     input: async () => ({ id: (await postedSale()).id, newId: newId() }),
     other: async (input) => ({ ...input, id: (await postedSale()).id }),
   },
+  'saleImport.create': {
+    input: async () => importInput(),
+    other: async (input) => ({ ...input, fileName: `other ${tag()}.csv` }),
+  },
+  'channelStatement.create': {
+    input: async () => statementInput(channelId),
+    other: async (input) => ({ ...input, commission: '1' }),
+  },
 }
 
 /** Not a create although its input names a row: why. */
@@ -606,6 +725,12 @@ const NOT_CREATES: Record<string, string> = {
     'idempotent on businessId, proven below in its own business (setup.api.test.ts has the rest)',
   'sale.fillDeliveryCost':
     'fills a finalized sale’s missing delivery cost once (DOCUMENT_POSTED after), never makes a row',
+  'saleImport.addRows':
+    'adds a draft import’s rows by their position (a position sent again adds nothing), never a draft',
+  'saleImport.match':
+    'saves the answers for a draft import’s names (an alias a name or code; a new product by its own client id)',
+  'saleImport.reverse':
+    'reverses a finalized import or one of its days (idempotent), never makes a row of its own',
 }
 
 function topLevelKeys(path: string): Set<string> {
@@ -871,6 +996,32 @@ const VERSIONED: Record<string, Versioned> = {
   },
   'sale.post': async () => {
     const draft = await saleDraft()
+    return { id: draft.id, version: draft.version }
+  },
+  'saleImport.setOverlap': async () => {
+    const draft = await importDraft()
+    return { id: draft.id, version: draft.version, overlap: 'replace' }
+  },
+  'saleImport.discard': async () => {
+    const draft = await importDraft()
+    return { id: draft.id, version: draft.version }
+  },
+  'saleImport.post': async () => {
+    const draft = await importDraft()
+    return { id: draft.id, version: draft.version }
+  },
+  'channelStatement.update': async () => {
+    const draft = await statementDraft()
+    const fields: Record<string, unknown> = statementInput(draft.channelId, { ads: '4' })
+    delete fields.channelId
+    return { ...fields, id: draft.id, version: draft.version }
+  },
+  'channelStatement.discard': async () => {
+    const draft = await statementDraft()
+    return { id: draft.id, version: draft.version }
+  },
+  'channelStatement.post': async () => {
+    const draft = await statementDraft()
     return { id: draft.id, version: draft.version }
   },
   'member.updateLocations': async () => {

@@ -22,3 +22,30 @@ export const DAY_SHEET_ORDER_DAYS = 30
 
 /** Most branches a member may be limited to (a business has fewer locations). */
 export const MEMBER_LOCATIONS_MAX = 100
+
+/** Most rows one `saleImport.addRows` carries (2,500: fewer calls for a big file, D-261). */
+export const IMPORT_ROWS_CHUNK = 2500
+
+/** Most staged rows (day × item totals) one import may have. */
+export const IMPORT_ROWS_MAX = 100_000
+
+/** Longest file name kept for an import. */
+export const IMPORT_FILE_NAME_MAX_LENGTH = 255
+
+/** Longest item name read from a file (a name and its variant together). */
+export const IMPORT_NAME_MAX_LENGTH = 300
+
+/** Longest item code read from a file. */
+export const IMPORT_CODE_MAX_LENGTH = 100
+
+/** Most answers one `saleImport.match` saves. */
+export const IMPORT_ANSWERS_MAX = 1000
+
+/** Longest header text kept in a mapping. */
+export const IMPORT_HEADER_MAX_LENGTH = 200
+
+/** Imports listed per page. */
+export const IMPORT_PAGE_SIZE = 20
+
+/** Longest notes of a channel statement. */
+export const STATEMENT_NOTES_MAX_LENGTH = 1000

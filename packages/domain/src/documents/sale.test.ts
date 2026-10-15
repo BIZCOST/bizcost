@@ -673,5 +673,7 @@ describe('properties of sales documents', () => {
       ),
       { numRuns: 300 },
     )
-  })
+    // About 1 s alone; `pnpm check` runs every package's tasks at once, which can stretch it past
+    // the 5 s default on a loaded laptop (the same 300 runs, the same checks).
+  }, 30_000)
 })

@@ -522,7 +522,7 @@ describe('the books-closed date (D-114 rule 6)', () => {
     const draft = await scope.draft(purchaseInput(day, [line(milk.id, '10', '6')]))
 
     const closed = ok(await scope.run<BooksDto>('books.close', { closedThrough: day }))
-    expect(closed).toEqual({ closedThrough: day, today })
+    expect(closed).toEqual({ closedThrough: day, today, timeZone: 'Asia/Dubai' })
     expect(codeOf(await scope.run('books.close', { closedThrough: '2999-01-01' }))).toBe(
       'future_date',
     )

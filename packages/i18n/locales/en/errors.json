@@ -41,5 +41,9 @@
   "running_cost_choice_required": "Say what this expense pays first: the bill of one of your running costs, or an extra expense. Then finalize it.",
   "internal": "Something went wrong on our side. Please try again.",
   "network": "Can't connect. Check your internet and try again.",
-  "last_channel": "This is your only active sales channel. Add another channel first, then archive this one."
+  "last_channel": "This is your only active sales channel. Add another channel first, then archive this one.",
+  "already_imported": "This file was already imported. To bring it in again, reverse that import first.",
+  "import_unmatched": "Some names in this file aren't settled yet. Match each one, add it as new, or mark it as not something you sell, then finalize.",
+  "import_replace_partial": "A day you replace is part of an earlier file's sales of several days, and this file doesn't have all of them. Reverse that import first, or keep the days already imported.",
+  "statement_overlap": "A final statement of this channel already covers some of these days. Reverse it first, or change the days."
 }

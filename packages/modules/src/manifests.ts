@@ -443,6 +443,7 @@ const SALES = {
     'sales.documents.post',
     'sales.documents.reverse',
     'sales.channels.manage',
+    'sales.imports.manage',
   ],
   nav: [
     {

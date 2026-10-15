@@ -63,13 +63,26 @@ export function roundHalfUp(value: Decimal, places: number): Decimal {
 
 /** Rounds half away from zero to `places` decimals and prints exactly that many ("1.20"). */
 export function fixed(value: Decimal, places: number): string {
-  const [whole = '0', fraction = ''] = plain(roundHalfUp(value, places)).split('.')
-  return places === 0 ? whole : `${whole}.${fraction.padEnd(places, '0')}`
+  const text = plain(roundHalfUp(value, places))
+  if (places === 0) return text
+  const dot = text.indexOf('.')
+  if (dot < 0) return `${text}.${'0'.repeat(places)}`
+  const missing = places - (text.length - dot - 1)
+  return missing === 0 ? text : text + '0'.repeat(missing)
 }
+
+/** The powers of ten worked out so far (a Decimal never changes once made). */
+const POWERS_OF_TEN = new Map<number, Decimal>()
 
 /** 10 to the power `exponent` (exact): pow10(3) = 1000, pow10(-2) = 0.01. */
 export function pow10(exponent: number): Decimal {
-  return new Dec(10).toPower(exponent)
+  let power = POWERS_OF_TEN.get(exponent)
+  if (power === undefined) {
+    power = new Dec(10).toPower(exponent)
+    // The scales of the columns and currencies: a handful of exponents, each kept once.
+    if (Number.isInteger(exponent) && Math.abs(exponent) <= 64) POWERS_OF_TEN.set(exponent, power)
+  }
+  return power
 }
 
 export function min(a: Decimal, b: Decimal): Decimal {

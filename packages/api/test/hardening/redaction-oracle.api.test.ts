@@ -1,3 +1,4 @@
+import { randomBytes } from 'node:crypto'
 import {
   isWithMeta,
   withMeta,
@@ -632,8 +633,197 @@ async function readableSale(persona: Persona, extra?: object): Promise<string> {
   return draft.id
 }
 
+// Imports (M3 Step 4): a one-day summary of the costed product at its price, its fee column 13.57
+// (`cost`), each in a channel of its own (a finalized import's fee column becomes that channel's
+// statement for its day, and statements of a channel never cover a day twice). A channel's statement
+// typed in a form: a commission of 23.41 and sales of 312.87 (`cost`), also each in its own channel.
+const IMPORT_FEES = '13.57'
+const STATEMENT_COMMISSION = '23.41'
+const STATEMENT_SALES = '312.87'
+
+function importInput(channelId: string, withFees = true) {
+  return {
+    id: newId(),
+    channelId,
+    fileName: `oracle ${newId()}.csv`,
+    fileHash: randomBytes(32).toString('hex'),
+    fingerprint: randomBytes(32).toString('hex'),
+    shape: 'summary',
+    periodFrom: today,
+    periodTo: today,
+    mapping: { headerRow: 0, columns: { name: 0, total: 1 }, headers: {}, dateOrder: 'dmy' },
+    amountsIncludeVat: false,
+    rowsRead: 1,
+    rowsLeftOut: 0,
+    feesTotal: withFees ? IMPORT_FEES : null,
+    rowCount: 1,
+  }
+}
+
+/**
+ * A draft import of the owner's, its row of the costed product sent; with its fee column unless
+ * `withFees` is false (a fee column's statement is finalized and reversed only by a member who sees
+ * costs and manages the channel's statements, D-260).
+ */
+async function newImportDraft(withFees = true): Promise<{ id: string; version: number }> {
+  const created = (
+    await asOwner<{ data: { id: string } }>(
+      'saleImport.create',
+      'mutation',
+      importInput((await newChannel()).id, withFees),
+    )
+  ).data
+  await asOwner('saleImport.addRows', 'mutation', {
+    id: created.id,
+    rows: [
+      {
+        position: 0,
+        businessDate: today,
+        name: costed.name,
+        qty: '1',
+        amount: PRODUCT_PRICE,
+        fileRows: 1,
+      },
+    ],
+  })
+  return (
+    await asOwner<{ data: { id: string; version: number } }>('saleImport.get', 'query', {
+      id: created.id,
+    })
+  ).data
+}
+
+async function newPostedImport(withFees = true): Promise<string> {
+  const draft = await newImportDraft(withFees)
+  await asOwner('saleImport.post', 'mutation', { id: draft.id, version: draft.version })
+  return draft.id
+}
+
+function statementInput(channelId: string) {
+  return {
+    id: newId(),
+    channelId,
+    periodFrom: today,
+    periodTo: today,
+    sales: STATEMENT_SALES,
+    commission: STATEMENT_COMMISSION,
+  }
+}
+
+async function newStatementDraft(): Promise<{ id: string; version: number; channelId: string }> {
+  return (
+    await asOwner<{ data: { id: string; version: number; channelId: string } }>(
+      'channelStatement.create',
+      'mutation',
+      statementInput((await newChannel()).id),
+    )
+  ).data
+}
+
+async function newPostedStatement(): Promise<{ id: string; channelId: string }> {
+  const draft = await newStatementDraft()
+  await asOwner('channelStatement.post', 'mutation', { id: draft.id, version: draft.version })
+  return draft
+}
+
+const IMPORT = { cost: [IMPORT_FEES] }
+const STATEMENT = { cost: [STATEMENT_COMMISSION, STATEMENT_SALES] }
+
 /** Production procedures with sensitive output (M2 Step 3). */
 const PRODUCTION_ORACLE: Record<string, OracleEntry> = {
+  // Imports (M3 Step 4): every import is seen by a member who sees every sale (the import key needs
+  // entering and finalizing sales; the members who hold it see every sale).
+  'saleImport.get': {
+    permission: 'sales.imports.manage',
+    prepare: async () => ({ id: (await newImportDraft()).id }),
+    valuesOf: IMPORT,
+  },
+  // The fee column's total is sent only by a member who sees costs (FORBIDDEN otherwise).
+  'saleImport.create': {
+    permission: 'sales.imports.manage',
+    prepare: async (persona) =>
+      importInput((await newChannel()).id, visibleTo(persona).includes('cost')),
+    valuesOf: IMPORT,
+  },
+  'saleImport.match': {
+    permission: 'sales.imports.manage',
+    prepare: async () => ({
+      id: (await newImportDraft()).id,
+      answers: [{ name: costed.name, target: 'product', productId: costed.id }],
+    }),
+    valuesOf: IMPORT,
+  },
+  'saleImport.setOverlap': {
+    permission: 'sales.imports.manage',
+    prepare: async () => {
+      const draft = await newImportDraft()
+      return { id: draft.id, version: draft.version, overlap: 'replace' }
+    },
+    valuesOf: IMPORT,
+  },
+  // Finalizing or reversing an import with a fee column finalizes or reverses its statement: a member
+  // without the costs switch is given one without (the members who hold the import key and see costs
+  // also manage the channel's statements).
+  'saleImport.post': {
+    permission: 'sales.imports.manage',
+    prepare: async (persona) => {
+      const draft = await newImportDraft(visibleTo(persona).includes('cost'))
+      return { id: draft.id, version: draft.version }
+    },
+    valuesOf: IMPORT,
+  },
+  'saleImport.reverse': {
+    permission: 'sales.imports.manage',
+    prepare: async (persona) => ({
+      id: await newPostedImport(visibleTo(persona).includes('cost')),
+    }),
+    valuesOf: IMPORT,
+  },
+  // A channel's statements: every amount is a cost (FORBIDDEN without the costs switch).
+  'channelStatement.list': {
+    permission: 'sales.channels.manage',
+    prepare: async () => ({ channelId: (await newPostedStatement()).channelId }),
+    valuesOf: STATEMENT,
+    needsVisible: 'cost',
+  },
+  'channelStatement.get': {
+    permission: 'sales.channels.manage',
+    prepare: async () => ({ id: (await newPostedStatement()).id }),
+    valuesOf: STATEMENT,
+    needsVisible: 'cost',
+  },
+  'channelStatement.create': {
+    permission: 'sales.channels.manage',
+    prepare: async () => statementInput((await newChannel()).id),
+    valuesOf: STATEMENT,
+    needsVisible: 'cost',
+  },
+  'channelStatement.update': {
+    permission: 'sales.channels.manage',
+    prepare: async () => {
+      const draft = await newStatementDraft()
+      const fields: Record<string, unknown> = statementInput(draft.channelId)
+      delete fields.channelId
+      return { ...fields, id: draft.id, version: draft.version }
+    },
+    valuesOf: STATEMENT,
+    needsVisible: 'cost',
+  },
+  'channelStatement.post': {
+    permission: 'sales.channels.manage',
+    prepare: async () => {
+      const draft = await newStatementDraft()
+      return { id: draft.id, version: draft.version }
+    },
+    valuesOf: STATEMENT,
+    needsVisible: 'cost',
+  },
+  'channelStatement.reverse': {
+    permission: 'sales.channels.manage',
+    prepare: async () => ({ id: (await newPostedStatement()).id }),
+    valuesOf: STATEMENT,
+    needsVisible: 'cost',
+  },
   'material.costs': {
     permission: 'materials.items.view',
     prepare: () => Promise.resolve({ ids: [material.id] }),

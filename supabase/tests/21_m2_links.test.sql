@@ -432,6 +432,8 @@ select is(
     'app.accept_invitation(text,uuid)',
     'app.anonymize_my_memberships(text)',
     'app.audit_row()',
+    'app.audit_rows()',
+    'app.audit_staged_rows()',
     'app.create_business(uuid,text,text,text,uuid,uuid)',
     'app.enforce_active_owner()',
     'app.file_upload_limits()',
@@ -441,7 +443,7 @@ select is(
     'app.my_business_ids()',
     'app.preview_invitation(text)'
   ],
-  'the SECURITY DEFINER functions of app are exactly the known ones: the Costing Core added none (its triggers run as the caller)'
+  'the SECURITY DEFINER functions of app are exactly the known ones: the Costing Core added none (its triggers run as the caller), M3 Step 4 the audit per statement (D-259) and of the staged rows by import (D-262)'
 );
 
 select is_empty(

@@ -100,19 +100,44 @@ export function matchNames<T>(
   nameOf: (record: T) => string,
   limit = 3,
 ): NameMatches<T> {
+  return matchKeyedNames(name, keyedNames(records, nameOf), limit)
+}
+
+/** A record with its name's key and the key's letters worked out once (many names compared to it). */
+export interface KeyedName<T> {
+  readonly record: T
+  readonly key: string
+  readonly letters: readonly string[]
+}
+
+/** `records` with their keys, to compare many names to them (matchKeyedNames). */
+export function keyedNames<T>(
+  records: readonly T[],
+  nameOf: (record: T) => string,
+): KeyedName<T>[] {
+  return records.map((record) => {
+    const key = nameKey(nameOf(record))
+    return { record, key, letters: lettersOf(key) }
+  })
+}
+
+/** matchNames over records whose keys are worked out already (keyedNames). */
+export function matchKeyedNames<T>(
+  name: string,
+  records: readonly KeyedName<T>[],
+  limit = 3,
+): NameMatches<T> {
   const key = nameKey(name)
   const letters = lettersOf(key)
   let same: T | null = null
   const alike: { record: T; rank: number; distance: number; key: string }[] = []
   if (key === '') return { same, similar: [] }
-  for (const record of records) {
-    const other = nameKey(nameOf(record))
+  for (const { record, key: other, letters: otherLetters } of records) {
     if (other === '') continue
     if (other === key) {
       same ??= record
       continue
     }
-    const otherLetters = lettersOf(other)
     const shorter = Math.min(letters.length, otherLetters.length)
     const prefix = key.startsWith(other) || other.startsWith(key)
     const inside = key.includes(other) || other.includes(key)

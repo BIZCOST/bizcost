@@ -1,5 +1,3 @@
-import { DECIMAL_PATTERN, pow10, toDec } from './decimal'
-
 // Branded decimal strings, one per kind of number (docs/DATA_MODEL.md §1.4). A brand stops a value of
 // one kind from being passed where another is expected (a Quantity is not Money) at compile time;
 // at run time they are plain decimal strings, exactly as they travel on the wire.
@@ -48,17 +46,30 @@ export const QUANTITY_SCALE = DECIMAL_COLUMNS.quantity.scale
 
 export type DecimalCheckError = 'invalid' | 'too_many_decimals' | 'too_large'
 
+/** DECIMAL_PATTERN with its whole part and its decimals captured. */
+const DECIMAL_PARTS = /^-?(\d+)(?:\.(\d+))?$/
+const ZERO_CODE = 48
+
 /**
  * Checks a wire-form decimal string against a kind's column: 'invalid' (not a decimal string),
  * 'too_many_decimals' (more significant decimals than the column's scale; trailing zeros are fine)
  * or 'too_large' (more integer digits than precision − scale). null when it fits.
  */
 export function checkDecimal(value: string, kind: DecimalKind): DecimalCheckError | null {
-  if (!DECIMAL_PATTERN.test(value)) return 'invalid'
+  // On the digits themselves (an import sends tens of thousands of values): its decimals without
+  // trailing zeros, its whole part without leading zeros. |value| ≥ 10^(precision − scale) exactly
+  // when that whole part has more than precision − scale digits.
+  const parts = DECIMAL_PARTS.exec(value)
+  if (!parts) return 'invalid'
   const { precision, scale } = DECIMAL_COLUMNS[kind]
-  const decimal = toDec(value)
-  if (decimal.decimalPlaces() > scale) return 'too_many_decimals'
-  if (decimal.abs().gte(pow10(precision - scale))) return 'too_large'
+  const fraction = parts[2] ?? ''
+  let decimals = fraction.length
+  while (decimals > 0 && fraction.charCodeAt(decimals - 1) === ZERO_CODE) decimals--
+  if (decimals > scale) return 'too_many_decimals'
+  const whole = parts[1]!
+  let first = 0
+  while (first < whole.length && whole.charCodeAt(first) === ZERO_CODE) first++
+  if (whole.length - first > precision - scale) return 'too_large'
   return null
 }
 

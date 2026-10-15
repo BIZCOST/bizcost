@@ -16,12 +16,12 @@ type CloseInput = z.output<typeof closeBooksInput>
 async function readBooks(tx: Tx, businessId: string): Promise<BooksDto> {
   const [row] = (await tx.execute(sql`
     select b.books_closed_through::text as closed_through,
-           (now() at time zone b.timezone)::date::text as today
+           (now() at time zone b.timezone)::date::text as today, b.timezone
       from app.businesses b
      where b.id = ${businessId} and b.deleted_at is null
-  `)) as unknown as { closed_through: string | null; today: string }[]
+  `)) as unknown as { closed_through: string | null; today: string; timezone: string }[]
   if (!row) throw new AppError('forbidden')
-  return { closedThrough: row.closed_through, today: row.today }
+  return { closedThrough: row.closed_through, today: row.today, timeZone: row.timezone }
 }
 
 /**

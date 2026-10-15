@@ -13,7 +13,7 @@ import { PERMISSION_CATALOG, type PermissionKey } from './permissions'
 // keys of M2 Step 6, sales_security for the sales keys of M3 Step 2, by the plan's Q10 table: an
 // Employee enters and finalizes their own sales only, D-218; reports_access for the reports keys of M3
 // Step 3: Real profit's sales figures for those who see every sale, its profit for the Manager and the
-// Accountant).
+// Accountant; sale_imports_security for the import key of M3 Step 4, the Manager's).
 
 export const ROLE_TEMPLATE_KEYS = [
   OWNER_TEMPLATE_KEY,
@@ -76,6 +76,7 @@ export const ROLE_TEMPLATES: readonly RoleTemplate[] = [
       'sales.documents.post',
       'sales.documents.reverse',
       'sales.channels.manage',
+      'sales.imports.manage',
       'reports.sales.view',
       'reports.profit.view',
       'data.cost.view',

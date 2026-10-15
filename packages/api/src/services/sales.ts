@@ -146,6 +146,7 @@ interface SaleRecord extends Record<string, unknown> {
   reversed_at: Date | string | null
   reversal_business_date: string | null
   copied_from_id: string | null
+  import_id: string | null
   created_at: Date | string
   version: number
 }
@@ -217,7 +218,7 @@ export async function readSale(tx: Tx, ctx: BusinessCtx, id: string): Promise<Sa
            ${enteredByName} as entered_by_name,
            s.created_by = app.current_user_id() as mine,
            s.posted_at, s.reversed_at, s.reversal_business_date::text as reversal_business_date,
-           s.copied_from_id, s.created_at, s.version
+           s.copied_from_id, s.import_id, s.created_at, s.version
       from app.sales s
       join app.locations l on l.business_id = s.business_id and l.id = s.location_id
       join app.sales_channels c on c.business_id = s.business_id and c.id = s.channel_id
@@ -329,6 +330,7 @@ export async function readSale(tx: Tx, ctx: BusinessCtx, id: string): Promise<Sa
     reversedAt: isoOf(head.reversed_at),
     reversalBusinessDate: head.reversal_business_date,
     copiedFromId: head.copied_from_id,
+    importId: head.import_id,
     createdAt: isoOf(head.created_at),
     version: head.version,
   }
@@ -1243,6 +1245,7 @@ export function postSale(ctx: BusinessCtx, input: VersionInput): Promise<SaleRes
  */
 async function reverseInTx(tx: Tx, ctx: BusinessCtx, id: string): Promise<void> {
   const head = await lockSale(tx, ctx, id)
+  if (head.source === 'import') throw invalid('an imported sale is reversed from its import')
   if (head.status === 'reversed') return
   if (head.status !== 'posted') throw new AppError('document_not_posted')
   const business = await lockPostingBusiness(tx, ctx.businessId)
@@ -1297,6 +1300,8 @@ export function correctSale(ctx: BusinessCtx, input: CorrectInput): Promise<Sale
       return result(await readSale(tx, ctx, input.newId))
     }
     if (head.status === 'draft') throw new AppError('document_not_posted')
+    if (head.source === 'import')
+      throw invalid('an imported sale is corrected by importing it again')
     const [source] = await tx
       .select()
       .from(sales)
@@ -1499,6 +1504,16 @@ export function daySheet(ctx: BusinessCtx, input: DaySheetInput): Promise<DayShe
         mine: r.mine,
       }))
     }
+    // An import of these days, channel and branch: its sales count too (the plan's warning).
+    const [imported] = (await tx.execute(sql`
+      select exists (
+        select 1 from app.sales s
+         where s.business_id = ${ctx.businessId} and s.deleted_at is null and s.source = 'import'
+           and s.status = 'posted' and s.channel_id = ${channel.id} and s.location_id = ${locationId}
+           and s.business_date >= ${firstDay}::date
+           and coalesce(s.period_from, s.business_date) <= ${input.businessDate}::date
+      ) as imported
+    `)) as unknown as { imported: boolean }[]
     let locations: DaySheetDto['data']['locations'] = null
     if (ctx.access.capabilities.multi_location) {
       const scope = ctx.access.locationScope
@@ -1532,6 +1547,7 @@ export function daySheet(ctx: BusinessCtx, input: DaySheetInput): Promise<DayShe
         })),
         sheets,
         locations,
+        imported: imported?.imported === true,
       },
       meta: { redacted: [] },
     }
