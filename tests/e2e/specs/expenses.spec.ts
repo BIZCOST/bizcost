@@ -981,7 +981,12 @@ test('what an expense pays: a bonus as an extra, the electricity bill, and the e
   await owner.getByRole('combobox', { name: 'How it was paid' }).selectOption({ label: 'Cash' })
   await owner.getByRole('textbox', { name: 'What it was for' }).fill('Eid bonus')
   const question = owner.getByRole('group', { name: 'What does this expense pay for?' })
-  await expect(question.getByRole('radio')).toHaveCount(2)
+  // The bill, an extra, and since Release A (Sales on, the owner sees costs) delivery already on
+  // the sales and orders (D-239).
+  await expect(question.getByRole('radio')).toHaveCount(3)
+  await expect(
+    question.getByRole('radio', { name: 'Delivery already on my sales and orders' }),
+  ).toHaveCount(1)
   const salariesBill = payOption(question, withValue('Bill for ', 'Staff salaries'))
   await expect(salariesBill).toContainText(
     `It takes the place of its regular amount for ${monthName(lastMonth, 'en')}.`,
@@ -1028,7 +1033,11 @@ test('what an expense pays: a bonus as an extra, the electricity bill, and the e
     .getByRole('combobox', { name: 'Category', exact: true })
     .selectOption({ label: 'Maintenance' })
   await maintenanceRead
-  await expect(owner.locator('[data-pays-choice]')).toHaveCount(0)
+  // Maintenance has no running cost: no bill to choose. With Sales on (Release A) the owner may still
+  // say it is delivery already on the sales; unless said, it is an ordinary expense (D-249).
+  const maintenance = owner.locator('[data-pays-choice]')
+  await expect(maintenance.getByRole('radio', { name: /^Bill for/ })).toHaveCount(0)
+  await expect(maintenance.getByRole('radio', { name: 'An ordinary expense' })).toHaveCount(1)
   await owner.getByRole('combobox', { name: 'For which month?' }).selectOption(lastMonth)
   await owner.getByRole('combobox', { name: 'How it was paid' }).selectOption({ label: 'Cash' })
   await owner.getByRole('textbox', { name: 'What it was for' }).fill('Saw repair')
@@ -1190,7 +1199,7 @@ test('what an expense pays: a bonus as an extra, the electricity bill, and the e
   await owner.getByRole('button', { name: 'Approve and finalize' }).click()
   const finalize = owner.getByRole('alertdialog', { name: 'Finalize this expense?' })
   const review = finalize.getByRole('group', { name: 'What does this expense pay for?' })
-  await expect(review.getByRole('radio')).toHaveCount(2)
+  await expect(review.getByRole('radio')).toHaveCount(3)
   await finalize.getByRole('button', { name: 'Finalize' }).click()
   await expect(review.getByRole('alert')).toHaveText('Choose what this expense pays for.')
   await expect(finalize).toBeVisible()

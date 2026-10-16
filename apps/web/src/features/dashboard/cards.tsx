@@ -2,7 +2,7 @@
 
 import type { BusinessContextDto, DashboardCardsDto } from '@bizcost/contracts'
 import { compareDecimal, costRatio, sumDecimals, type StandardUnit } from '@bizcost/domain'
-import { formatList, formatPercent, type I18nKey } from '@bizcost/i18n'
+import { formatList, formatPercent, hasKey, type I18nKey } from '@bizcost/i18n'
 import {
   ArrowUpRightIcon,
   BanknoteIcon,
@@ -20,7 +20,7 @@ import Link from 'next/link'
 import { useId, useState, type ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
 import { isolate } from '@/components/form/use-message'
-import { moduleAccess } from '@/components/shell/nav'
+import { businessWording, moduleAccess, type NavWording } from '@/components/shell/nav'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { useUnitQuantity } from '@/features/catalog/unit-parts'
@@ -37,12 +37,13 @@ import { hasModule } from '@/features/purchasing/data'
 import { can, sectionPath } from '@/features/settings/sections'
 import { useLocale, useTerminology } from '@/lib/i18n/client'
 import { cn } from '@/lib/utils'
+import { LOOK_KINDS, lookWords, type LookKind } from './needs-look'
 import { SalesProfitChart } from './profit-chart'
 
 // The Dashboard's decision cards (M3 Step 3; PRODUCT.md §9; Q14 of D-218): what the business made this
 // month so far, from `dashboard.cards` (worked out on read, D-242). Only the cards it has data for
-// and the member may see: the API sends null for any other, and none at all while Sales is not
-// served (a released business sees no change before Release A) or before the first final sale.
+// and the member may see: the API sends null for any other, and none at all before the first final
+// sale.
 // Stacked on a phone, a grid on a desktop: real profit and sales against last month, where the money
 // went, "Sales and real profit by day" (the one chart, drawn in-house), the top sellers, what sold at
 // a loss or a low margin, cost increases, sales by channel and what needs a look. Profit and every
@@ -210,9 +211,12 @@ type MoneyPart = keyof typeof PART_COLORS
 function MoneyWent({
   money,
   context,
+  incomplete,
 }: {
   money: NonNullable<Cards['moneyWent']>
   context: BusinessContextDto
+  /** Some cost of the month is not known yet (the profit card's `complete` is false). */
+  incomplete: boolean
 }) {
   const { t } = useTranslation()
   const term = useTerminology()
@@ -229,14 +233,18 @@ function MoneyWent({
         profit: money.profit,
       }[part],
     )
-  // A part the business has (materials with Materials on, the owner's time without a team, the
-  // others when they are not 0), and the profit always.
+  // The parts Real profit shows (partsShown): one that is not 0, materials at 0 too while some cost
+  // of the month is missing (Materials on), the owner's time without a team, running costs and the
+  // profit always. Materials at 0 with nothing missing (services, job materials counted with running
+  // costs, Q13 A) is left out, as in Real profit (M3 Step 6 review).
   const parts = (['materials', 'fees', 'delivery', 'running', 'time', 'profit'] as const).filter(
     (part) => {
       const amount = value(part)
       if (amount === null) return false
       if (part === 'profit' || part === 'running') return true
-      if (part === 'materials') return hasModule(context, 'materials') || nonZero(amount)
+      if (part === 'materials') {
+        return nonZero(amount) || (incomplete && hasModule(context, 'materials'))
+      }
       if (part === 'time') return ownerTime
       return nonZero(amount)
     },
@@ -279,9 +287,11 @@ function MoneyWent({
                     value={withoutMinus(amount)}
                     className={cn('font-medium', loss && 'text-loss')}
                   />
+                  {/* One decimal, as the profit card and Real profit say shares (whole ones
+                      rounded each on its own could add up to 102 %). */}
                   {share !== null ? (
-                    <span className="ms-2 inline-block min-w-9 text-xs text-muted-foreground">
-                      <bdi>{percent(share, 0)}</bdi>
+                    <span className="ms-2 inline-block min-w-12 text-xs text-muted-foreground">
+                      <bdi>{percent(share)}</bdi>
                     </span>
                   ) : null}
                 </span>
@@ -519,37 +529,32 @@ function Channels({ channels }: { channels: NonNullable<Cards['byChannel']> }) {
   )
 }
 
-type LookKind = keyof NonNullable<Cards['needsLook']>
-
 function NeedsLook({
   look,
   hrefs,
+  wording,
 }: {
   look: NonNullable<Cards['needsLook']>
   hrefs: Readonly<Record<LookKind, string | null>>
+  /** The business's words (a recipe only for food; the button names the page as the nav does). */
+  wording: NavWording
 }) {
   const { t } = useTranslation()
   const { locale } = useLocale()
-  const kinds = (
-    [
-      'unpricedMaterials',
-      'channelsWithoutFees',
-      'productsWithoutRecipe',
-      'materialsInNoRecipe',
-    ] as const
-  ).filter((kind) => look[kind].length > 0)
+  const kinds = LOOK_KINDS.filter((kind) => look[kind].length > 0)
   return (
     <Card id="needs-look" title={t('dashboard.cards.needsLook.title')} icon={SearchCheckIcon}>
       <ul className="space-y-3">
         {kinds.map((kind) => {
           const href = hrefs[kind]
+          const words = lookWords(kind, wording)
           return (
             <li
               key={kind}
               data-needs-look={kind}
               className="rounded-xl bg-muted/50 px-3 py-2.5 text-sm"
             >
-              <p className="font-medium">{t(`dashboard.cards.needsLook.${kind}`)}</p>
+              <p className="font-medium">{t(words.title)}</p>
               <p className="mt-0.5 break-words">
                 {formatList(
                   locale,
@@ -557,11 +562,11 @@ function NeedsLook({
                 )}
               </p>
               <p className="mt-0.5 text-xs leading-relaxed text-muted-foreground">
-                {t(`dashboard.cards.needsLook.${kind}Hint`)}
+                {t(words.hint)}
               </p>
               {href ? (
                 <Button asChild variant="outline" size="sm" className="mt-2 h-9 bg-card">
-                  <Link href={href}>{t(`dashboard.cards.needsLook.actions.${kind}`)}</Link>
+                  <Link href={href}>{t(words.action)}</Link>
                 </Button>
               ) : null}
             </li>
@@ -801,7 +806,7 @@ export function DecisionCards({
   businessId: string
   context: BusinessContextDto
 }) {
-  const { t } = useTranslation()
+  const { t, i18n } = useTranslation()
   const monthName = useBusinessMonth()
   const businessDate = useBusinessDate()
   const money = useMoney()
@@ -949,7 +954,13 @@ export function DecisionCards({
             }
           />
         ) : null}
-        {moneyWent ? <MoneyWent money={moneyWent} context={context} /> : null}
+        {moneyWent ? (
+          <MoneyWent
+            money={moneyWent}
+            context={context}
+            incomplete={profit !== null && shown(profit.complete) === false}
+          />
+        ) : null}
       </div>
       {days.length > 0 ? (
         <Card
@@ -994,7 +1005,19 @@ export function DecisionCards({
         {cards.byChannel && cards.byChannel.length > 1 ? (
           <Channels channels={cards.byChannel} />
         ) : null}
-        {needsLook ? <NeedsLook look={needsLook} hrefs={lookHrefs} /> : null}
+        {needsLook ? (
+          <NeedsLook
+            look={needsLook}
+            hrefs={lookHrefs}
+            wording={businessWording(
+              {
+                profile: context.terminologyProfile,
+                servicesOnly: context.sellsOnlyServices,
+              },
+              (key) => hasKey(i18n, key),
+            )}
+          />
+        ) : null}
         {cards.deliveryMargin && shown(cards.deliveryMargin.margin) !== null ? (
           <DeliveryMargin margin={cards.deliveryMargin} />
         ) : null}

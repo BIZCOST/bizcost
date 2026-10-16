@@ -563,7 +563,7 @@ Release rule:
     - `orders.spec.ts`: the baker in Arabic on a phone, the workshop in English on a desktop.
   - Depends on: Step 3. It does not need Step 4.
 
-- [ ] **Step 6: Release A: Sales & Profit** (APPROVED; decision Q1; the owner reviews it, as after M2 Step 7).
+- [x] **Step 6: Release A: Sales & Profit** (DONE 2026-10-16; decision Q1; built as D-275–D-279 (the release) and D-280 (the demo data), review fixes D-281 (rules) and D-282 (screens and demo). Checks at the end: `pnpm check --force` 31/31 tasks (1,927 unit tests: domain 609, web 404, api 313, modules 176, app-core 144, contracts 84, config 73, tokens 62, i18n 59, db 3); `pnpm db:test` 29 pgTAP files (1,516 checks) and 59 database tests; `pnpm api:test` 94 files, 2,825 tests; `pnpm e2e` 151 passed, every spec on the production build; the web build; Prettier; the migrations match the Drizzle schema; `pnpm demo:reset` then `pnpm demo:seed` (left seeded for the owner's review). The owner reviews it on the demo data, as after M2 Step 7).
   - **Manifests:** `sales`, `reports`, `customers`, `payments` and `orders` become `released`.
     - **Sidebar:** the group "Sales" holds Sales, Orders, Customers and What customers owe. "Reports" holds Real profit.
     - **The phone's tab bar,** through the D-189 claims (Q14): the owner gets Home | Sales | + | Costs | More. Orders takes the Sales place for an orders business, and Products moves to More.

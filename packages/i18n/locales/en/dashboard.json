@@ -226,15 +226,26 @@
       "unpricedMaterialsHint": "Materials behind your sales that were never bought: enter a purchase so their cost counts.",
       "channelsWithoutFees": "Before app fees",
       "channelsWithoutFeesHint": "Channels that keep part of each sale, with nothing entered for it: add what they keep.",
-      "productsWithoutRecipe": "Sold without a recipe",
-      "productsWithoutRecipeHint": "Their materials can't be counted: add what goes into them.",
-      "materialsInNoRecipe": "Bought, but in no recipe",
-      "materialsInNoRecipeHint": "They count with your running costs. Add them to a recipe to make them that item's own cost.",
+      "productsWithoutRecipe": "Sold, but no materials added yet",
+      "productsWithoutRecipe_food": "Sold without a recipe",
+      "productsWithoutRecipe_retail": "Sold, but no items added yet",
+      "productsWithoutRecipeHint": "Their materials can't be counted: add the materials each one uses.",
+      "productsWithoutRecipeHint_food": "Their ingredients can't be counted: write their recipes.",
+      "productsWithoutRecipeHint_retail": "Their items can't be counted: add the items each one uses.",
+      "materialsInNoRecipe": "Bought, but used in nothing you sell",
+      "materialsInNoRecipe_food": "Bought, but in no recipe",
+      "materialsInNoRecipeHint": "For now they count with your running costs. If something you sell uses them, add them to its materials used, so they count in its own cost.",
+      "materialsInNoRecipeHint_food": "For now they count with your running costs. If something you sell uses them, add them to its recipe, so they count in its own cost.",
+      "materialsInNoRecipeHint_retail": "For now they count with your running costs. If something you sell uses them, add them to its items used, so they count in its own cost.",
       "actions": {
         "unpricedMaterials": "Enter a purchase",
         "channelsWithoutFees": "Sales channels",
-        "productsWithoutRecipe": "Add recipes",
-        "materialsInNoRecipe": "See your products"
+        "productsWithoutRecipe": "Add materials used",
+        "productsWithoutRecipe_food": "Add recipes",
+        "productsWithoutRecipe_retail": "Add items used",
+        "materialsInNoRecipe": "See your products",
+        "materialsInNoRecipe_services": "See your services",
+        "materialsInNoRecipe_projects": "See your services and work items"
       }
     },
     "orders": {

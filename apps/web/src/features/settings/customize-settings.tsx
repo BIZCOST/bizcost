@@ -205,7 +205,11 @@ export function CustomizeSettings({ businessId }: { businessId: string }) {
       toast.success(t('settings.modules.saved'))
     } catch (error) {
       const code = apiErrorCode(error)
-      if (code === 'team_in_use' || code === 'locations_in_use') {
+      if (
+        code === 'team_in_use' ||
+        code === 'locations_in_use' ||
+        code === 'branch_limits_in_use'
+      ) {
         setBlocked({ id: itemId(item), key: `errors.${code}` })
         await queryClient.invalidateQueries({ queryKey: key })
         return
@@ -349,15 +353,23 @@ export function CustomizeSettings({ businessId }: { businessId: string }) {
     )
   }
 
+  /**
+   * Why a switch that is on can't go off yet (the API refuses the same): other members, other
+   * branches, or members who work only at some branches (a limit never outlives the branches).
+   */
+  function inUseText(key: StatementKey): string | null {
+    if (key === 'has_team') return data?.teamInUse ? t('settings.modules.teamInUse') : null
+    if (key !== 'multi_location') return null
+    if (data?.locationsInUse) return t('settings.modules.locationsInUse')
+    return data?.branchLimitsInUse ? t('settings.modules.branchLimitsInUse') : null
+  }
+
   function statementRow(key: StatementKey) {
     const item: SetupItem = { kind: 'capability', key }
     const enabled = data?.capabilities[key] === true
     const id = `${ids}-${key}`
     const Icon = STATEMENT_ICONS[key]
-    const inUse =
-      enabled &&
-      ((key === 'has_team' && data?.teamInUse) ||
-        (key === 'multi_location' && data?.locationsInUse))
+    const inUse = enabled ? inUseText(key) : null
     return (
       <li
         key={key}
@@ -381,9 +393,7 @@ export function CustomizeSettings({ businessId }: { businessId: string }) {
           </p>
           {inUse ? (
             <p id={`${id}-in-use`} className="mt-1.5 text-sm text-muted-foreground">
-              {key === 'has_team'
-                ? t('settings.modules.teamInUse')
-                : t('settings.modules.locationsInUse')}
+              {inUse}
             </p>
           ) : null}
           {effectsOf(item)}

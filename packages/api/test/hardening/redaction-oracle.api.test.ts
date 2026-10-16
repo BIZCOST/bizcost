@@ -1862,6 +1862,9 @@ describe('masked pickers: without customers.items.view, the name and the phoneâ€
     'sales.documents.manage',
     'payments.customers.record',
   ]
+  /** A UUID or an ISO time in an answer. */
+  const UUID_OR_TIME =
+    /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}|\d{4}-\d{2}-\d{2}T[\d:.]+(?:Z|[+-]\d{2}:\d{2})?/gi
 
   it.each(PERSONAS)('%s', async (persona) => {
     const person = members.get(persona)!
@@ -1891,7 +1894,10 @@ describe('masked pickers: without customers.items.view, the name and the phoneâ€
       expect(found, `${path}: ${result.raw}`).toBeDefined()
       expect(found?.phoneLast4).toBe('2020')
       expect(found?.phone).toBe(sees ? '050 888 2020' : null)
-      expect(result.raw.includes('888'), path).toBe(sees)
+      // The phone's middle digits, in any form, only for who sees customers. Ids and times are
+      // taken out first: a random id or a time's milliseconds may hold "888" too.
+      const text = result.raw.replace(UUID_OR_TIME, '')
+      expect(text.includes('888'), path).toBe(sees)
     }
     // Listing and reading customers need customers.items.view.
     for (const [path, input] of [

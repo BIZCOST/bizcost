@@ -1,16 +1,26 @@
 import type {
+  BooksDto,
   ProductCostListDto,
   ProductCostRowDto,
+  ProfitSummaryDto,
   PurchaseDto,
   PurchaseReturnDto,
 } from '@bizcost/contracts'
 import { businessMembers, withTenantTx } from '@bizcost/db'
-import { compareDecimal, newId, replayWac, type WacMovement } from '@bizcost/domain'
+import {
+  compareDecimal,
+  newId,
+  replayWac,
+  subtractDecimals,
+  sumDecimals,
+  type WacMovement,
+} from '@bizcost/domain'
 import { NO_ADJUSTMENTS, QUESTION_SET_VERSION } from '@bizcost/modules'
 import fc from 'fast-check'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { DemoApi } from '../demo/client'
 import { seedCosting } from '../demo/costing'
+import { lastMonthOf } from '../demo/days'
 import { DEMO_EMAIL_DOMAIN, DEMO_PERSONAS, type DemoPersona } from '../demo/personas'
 import { mutate, tenant } from './helpers'
 import { ledgerDrift } from './ledger'
@@ -29,10 +39,12 @@ import { templateRoleId, WORKSHOP } from './settings'
 // The ledger rebuild equals the projections (M2 Step 8; D-110 rule 2, D-135): replaying every
 // material's ledger in posting order (replayWac) gives its stored cost row, last movement, every
 // movement's adjustment and every balance (ledgerDrift, test/ledger.ts), for
-//   - the demo businesses: each persona's Costing Core data (demo/costing-data.ts) entered into a new
-//     business of the persona's own Smart Setup answers, through the API exactly as `pnpm demo:seed`
-//     enters it (seedCosting); and the demo businesses `pnpm demo:seed` made on this database, when
-//     there are any;
+//   - the demo businesses: each persona's data (demo/costing-data.ts) entered into a new business of
+//     the persona's own Smart Setup answers, through the API exactly as `pnpm demo:seed` enters it
+//     (seedCosting); and the demo businesses `pnpm demo:seed` made on this database, when there are
+//     any. Each persona then shows a complete real profit for last month (M3 Step 6, Release A): every
+//     cost known, the month's running costs carried by its sales, nothing negative, the parts adding
+//     up to the profit, and a margin a business of its kind makes;
 //   - generated sequences (fast-check) of purchases, returns, credit notes and reversals of purchases,
 //     returns and credit notes on two shared materials at two locations, through the API one after
 //     the other. There an independent model (replayWac over what each posted document says, in the
@@ -121,8 +133,113 @@ async function personaBusiness(persona: DemoPersona) {
   return { owner, businessId, tokens }
 }
 
+type ProfitSummary = ProfitSummaryDto['data']
+
+/** A figure the owner sees (a part that does not apply, such as no materials, is 0). */
+const shown = (value: string | null | undefined) => value ?? '0'
+
+/** |a − b| is under a fil (figures carry 12 decimals; the screens round to fils). */
+function closeTo(a: string, b: string, what: string) {
+  const gap = subtractDecimals(a, b)
+  const abs = gap.startsWith('-') ? gap.slice(1) : gap
+  expect(compareDecimal(abs, '0.01'), `${what}: ${a} vs ${b}`).toBe(-1)
+}
+
+/**
+ * Last month's real profit of a demo business as its owner sees it (Reports → Real profit by
+ * product): complete, at the business level, its month's rate its own, every part known and none
+ * negative, the parts adding up to the profit and the shares to the month's running costs.
+ */
+function expectCompleteMonth(persona: DemoPersona, report: ProfitSummary) {
+  const data = persona.costing!
+  const { total } = report
+  const name = persona.title
+  expect(report.profitShown, name).toBe(true)
+  expect(report.businessLevel, name).toBe(true)
+  // Every cost known: no reason anywhere, 100 % of the sales complete.
+  expect({ complete: total.complete, reasons: total.reasons }, name).toEqual({
+    complete: true,
+    reasons: [],
+  })
+  expect(compareDecimal(shown(report.completeness?.percent), '100'), name).toBe(0)
+  for (const group of report.groups) {
+    expect({ group: group.name, complete: group.complete }, name).toEqual({
+      group: group.name,
+      complete: true,
+    })
+  }
+  // A finished month, its rate its own (costs ÷ its item sales), and that rate applied.
+  expect(report.months, name).toHaveLength(1)
+  const [month] = report.months
+  expect({ state: month!.state, basis: month!.basis }, name).toEqual({
+    state: 'applied',
+    basis: 'month',
+  })
+  // Nothing negative: sales, materials, fees, delivery cost, shares, the owner's time.
+  const parts = ['sales', 'materials', 'fees', 'deliveryCost', 'runningCosts', 'ownerTime'] as const
+  for (const group of report.groups) {
+    for (const part of parts) {
+      const value = shown(group[part])
+      expect(compareDecimal(value, '0'), `${name}: ${group.name} ${part} ${value}`).not.toBe(-1)
+    }
+  }
+  // The groups add up to the total (its fees less those no sale carried), and the shares to the
+  // month's running costs, all of them carried by the month's sales.
+  for (const part of parts) {
+    const sum = sumDecimals(report.groups.map((g) => shown(g[part])))
+    const whole =
+      part === 'fees'
+        ? subtractDecimals(shown(total.fees), shown(total.feesNotCarried))
+        : shown(total[part])
+    closeTo(sum, whole, `${name}: ${part}`)
+  }
+  closeTo(
+    subtractDecimals(shown(total.monthCosts), shown(total.runningCosts)),
+    shown(total.notCarried),
+    name,
+  )
+  closeTo(shown(total.notCarried), '0', `${name}: running costs not carried by the month's sales`)
+  // sales − materials − app fees − delivery cost − the month's running costs − the owner's time.
+  closeTo(
+    subtractDecimals(
+      total.sales,
+      shown(total.materials),
+      shown(total.fees),
+      shown(total.deliveryCost),
+      shown(total.monthCosts),
+      shown(total.ownerTime),
+    ),
+    shown(total.profit),
+    `${name}: profit`,
+  )
+  // A month a business of its kind makes: a profit of 5–45 % of its sales.
+  const margin = shown(total.marginPercent)
+  expect(compareDecimal(margin, '5'), `${name}: margin ${margin}`).toBe(1)
+  expect(compareDecimal(margin, '45'), `${name}: margin ${margin}`).toBe(-1)
+  // Each part the persona has is there: its materials, app fees, delivery and the owner's time.
+  const positive = (value: string | null | undefined) => compareDecimal(shown(value), '0') === 1
+  const fees = (data.statements ?? []).length > 0 || (data.imports ?? []).some((i) => i.feePercent)
+  const delivered = [...(data.orders ?? []), ...(data.sales ?? [])].some((d) => d.delivery?.cost)
+  expect(
+    {
+      materials: positive(total.materials),
+      fees: positive(total.fees),
+      deliveryCost: positive(total.deliveryCost),
+      ownerTime: positive(total.ownerTime),
+    },
+    name,
+  ).toEqual({
+    materials: (data.recipes ?? []).length > 0 || (data.products ?? []).some((p) => p.resale),
+    fees,
+    deliveryCost: delivered,
+    ownerTime: data.ownerHourlyRate !== undefined,
+  })
+}
+
 describe('the demo businesses: the rebuild from the ledger equals the projections', () => {
   const personas = DEMO_PERSONAS.filter((p) => p.costing)
+  /** Each persona's business, once seeded. */
+  const seededBusinesses = new Map<string, { owner: Person; businessId: string }>()
 
   it.each(personas.map((p) => [p.title, p] as const))(
     '%s, entered as demo:seed enters it',
@@ -145,6 +262,23 @@ describe('the demo businesses: the rebuild from the ledger equals the projection
         persona.costing!,
       )
       expect(seeded.warnings).toEqual([])
+      seededBusinesses.set(persona.title, { owner, businessId })
+      // A file's names that are no product's name are answered once (by item code when it has
+      // codes, its tips "not something I sell"); the next files match those answers (M3 Step 4).
+      const names = new Map((persona.costing!.products ?? []).map((p) => [p.key, p.name]))
+      const asked = new Set<string>()
+      for (const imp of persona.costing!.imports ?? []) {
+        if (!seeded.answered.has(imp.key)) continue
+        const keys = imp.items.flatMap((item) => {
+          if (item.code !== undefined) return [`code ${item.code}`]
+          const name = item.name ?? names.get(item.product)
+          return name === names.get(item.product) ? [] : [`name ${name}`]
+        })
+        if (imp.tips) keys.push('tips')
+        const fresh = keys.filter((key) => !asked.has(key))
+        for (const key of fresh) asked.add(key)
+        expect(seeded.answered.get(imp.key), imp.key).toBe(fresh.length)
+      }
       const [count] = await api.admin<{ n: number }[]>`
         select count(*)::int as n from app.stock_movements where business_id = ${businessId}`
       const bought = (persona.costing!.purchases ?? []).length
@@ -178,7 +312,26 @@ describe('the demo businesses: the rebuild from the ledger equals the projection
           expect(row.cost.total, `${persona.title}: ${row.name}`).not.toBeNull()
       }
     },
-    120_000,
+    180_000,
+  )
+
+  it.each(personas.map((p) => [p.title, p] as const))(
+    '%s: last month shows a complete, plausible real profit (Release A)',
+    async (title, persona) => {
+      const seeded = seededBusinesses.get(title)
+      expect(seeded, `${title} was not seeded`).toBeDefined()
+      const { owner, businessId } = seeded!
+      const { today } = ok(await api.call<BooksDto>(owner, businessId, 'books.get'))
+      const { from, to } = lastMonthOf(today)
+      const report = ok(
+        await api.call<ProfitSummaryDto>(owner, businessId, 'profit.summary', {
+          from,
+          to,
+          groupBy: 'product',
+        }),
+      ).data
+      expectCompleteMonth(persona, report)
+    },
   )
 
   it('the demo businesses on this database (pnpm demo:seed), if any', async () => {

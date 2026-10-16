@@ -115,7 +115,7 @@ export type ExpenseStatusDto = z.infer<typeof expenseStatusDto>
 // may see running costs (running_costs.items.view, with Running Costs on) says it: for anyone else it
 // is said by the one who approves or finalizes the expense (expense.approve and expense.post take it).
 //
-// While Sales is served (M3 Step 3, Q8), any expense may also say it pays "App fees of [channel]"
+// With Sales on (M3 Step 3, Q8), any expense may also say it pays "App fees of [channel]"
 // (`channel_fees`: that channel's fees for its month when no statement covers it) or "Delivery already
 // on my sales and orders" (`delivery`), from `expense.payableChannels`. Neither counts in the month's
 // costs. Only a member who sees costs (the costs switch) says them, with Sales on.
@@ -285,7 +285,7 @@ export type PayableRunningCostsDto = z.infer<typeof payableRunningCostsDto>
  * `expense.payableChannels` (Expenses and Sales on, expenses.documents.view and the costs switch; M3
  * Step 3, Q8): the business's active sales channels by name, for "App fees of {name}"
  * («عمولات تطبيق {name}»), with their kind (a delivery app or a marketplace first keeps a part of
- * each sale). Never a commission %. With Sales off or not served the choice does not show.
+ * each sale). Never a commission %. With Sales off the choice does not show.
  */
 export const payableChannelsDto = z.object({
   items: z.array(z.object({ id: zUuid, name: z.string(), kind: z.enum(SALES_CHANNEL_KINDS) })),

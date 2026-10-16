@@ -280,7 +280,7 @@ export function ExpenseView({
   // approve it may wait, to finalize it is needed.
   const paysOptions = choosesPays && notFinal ? payable.data?.items : undefined
   const paysAsks = paysOptions !== undefined && paysOptions.length > 0
-  // While Sales is served (M3 Step 3): a channel's app fees or delivery already on the sales, offered
+  // With Sales on (M3 Step 3): a channel's app fees or delivery already on the sales, offered
   // with the running costs to a member who sees costs.
   const saysSalesPays = context !== undefined && maySaySalesPays(context)
   const channels = usePayableChannels(saysSalesPays && paysAsks)

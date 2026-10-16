@@ -50,9 +50,11 @@ test('a solo home business sees only its own settings; team screens are refused'
   await page.getByRole('link', { name: 'Settings' }).click()
   await expect(page).toHaveURL(settings())
   await expect(page.getByRole('heading', { level: 1, name: 'Settings' })).toBeVisible()
-  // With the Costing Core (released in M2 Step 7): closing the books and how costs are worked out.
+  // With the Costing Core (released in M2 Step 7): closing the books and how costs are worked out;
+  // with Sales (Release A, M3 Step 6): its sales channels.
   await expect(sectionLinks(page)).toHaveText([
     /^Business profile/,
+    /^Sales channels/,
     /^Customize BizCost/,
     /^Closing the books/,
     /^How costs are worked out/,
@@ -209,8 +211,8 @@ test('Customize BizCost: dependency warnings, Team and Branches appear, guards',
   await products.click()
   let confirm = page.getByRole('alertdialog', { name: /Turn off .*Products & Services/ })
   // Invoices came with VAT (the profile test above). True Cost needs Products & Services too (its
-  // product costs, M2 Step 6), and so does Sales (a sale line names one, M3 Step 2, D-231): planned
-  // like Orders and Invoices, it is named as they are.
+  // product costs, M2 Step 6), and so do Sales (a sale line names one, M3 Step 2, D-231) and Orders
+  // (released with Release A), and Invoices (planned).
   await expect(confirm.getByRole('listitem')).toHaveText([
     'True Cost',
     'Sales',

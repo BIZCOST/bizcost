@@ -8,8 +8,7 @@ import { getT } from '@/lib/i18n/server'
 import { isModuleServed } from '@/lib/trpc/server'
 
 // A sales channel's statements (M3 Step 4; Q8): Settings → Sales channels → a channel. Part of Sales,
-// so the page exists only while that module is served on this server (the dev-only preview until
-// Release A, D-125).
+// so the page exists only while that module is released on this server (since Release A, M3 Step 6).
 
 export async function generateMetadata(): Promise<Metadata> {
   const t = await getT()

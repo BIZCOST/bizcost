@@ -242,6 +242,16 @@ export function costsReadyKeys({
   } as const
 }
 
+/**
+ * Whether the checklist is the way to the first real profit (PRODUCT.md §10): it has a sales step,
+ * "Add or import your sales" or "See your real profit". Then it is titled "Let's calculate your first
+ * real profit", also for a member who enters sales but does not see profit (an employee, Release A);
+ * "Your real profit is ready" still needs the last step (see the Dashboard).
+ */
+export function leadsToProfit(ids: readonly CostStepId[]): boolean {
+  return ids.includes('sales') || ids.includes('real_profit')
+}
+
 /** "n of m done", whether all are done, and the first step still open (the next one). */
 export function costProgress(steps: readonly CostStepDto[]): {
   done: number

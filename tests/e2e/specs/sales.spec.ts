@@ -22,10 +22,10 @@ import {
   withValue,
   type TestUser,
 } from '../helpers'
-import { previewBaseURL } from '../stack'
+import { baseURL } from '../stack'
 
-// Sales (ROADMAP.md M3 Step 2), on the dev-only preview (D-125, D-127: the `preview` project, a
-// `next dev` server with BIZCOST_PREVIEW_MODULES=sales). Sales stays `planned` until Release A.
+// Sales (ROADMAP.md M3 Step 2), on the production build since Release A released it (M3 Step 6, as
+// D-199 after M2).
 //
 //   - A café's Today's sales in Arabic on a phone, typed in Arabic-Indic digits (the plan's definition
 //     of done: 40 lattes × 18.00 + 25 croissants × 9.00 = 945.00 before VAT, VAT 47.25, total 992.25):
@@ -86,18 +86,11 @@ async function openAs(
   displayName: string,
 ): Promise<Page> {
   const context = await browser.newContext({
-    baseURL: previewBaseURL,
+    baseURL,
     locale: locale === 'ar' ? 'ar-AE' : 'en-US',
     viewport,
   })
   contexts.push(context)
-  // The development server's own badge and overlay are not part of the app (D-127).
-  await context.addInitScript(() => {
-    // A sheet the page adopts: React never removes it, as it may a <style> in <head>.
-    const sheet = new CSSStyleSheet()
-    sheet.replaceSync('[data-nextjs-dev-overlay] { display: none !important; }')
-    document.adoptedStyleSheets = [...document.adoptedStyleSheets, sheet]
-  })
   await useLanguage(context, 'en')
   const page = await context.newPage()
   await signIn(page, user)
@@ -347,10 +340,14 @@ test("a café's Today's sales in Arabic on a phone, typed in Arabic-Indic digits
     'purchase.post',
   )
 
-  // The phone's tab bar has Sales, and "+" offers Today's sales and One sale (the preview).
+  // The café has no POS, so it takes orders too: Orders has the Sales place on the phone's tab bar
+  // and Sales is under "More" (Release A, Q14); "+" offers Today's sales and One sale.
   await page.goto(`/b/${businessId}`)
   const tabs = page.getByRole('navigation', { name: 'القائمة الرئيسية' })
-  await expect(tabs.getByRole('link', { name: 'المبيعات' })).toBeVisible()
+  await expect(tabs.getByRole('link', { name: 'الطلبات' })).toBeVisible()
+  await tabs.getByRole('button', { name: 'المزيد' }).click()
+  await expect(page.getByRole('menuitem', { name: 'المبيعات' })).toBeVisible()
+  await page.keyboard.press('Escape')
   await tabs.getByRole('button', { name: 'إضافة جديد' }).click()
   await expect(page.getByRole('menuitem', { name: 'عملية بيع جديدة' })).toBeVisible()
   await shot(page, 'sales-ar-390-plus')
@@ -396,7 +393,7 @@ test("a café's Today's sales in Arabic on a phone, typed in Arabic-Indic digits
 
   // Leaving with changes asks first (D-161); keep editing stays.
   const unsaved = page.getByRole('alertdialog', { name: 'لديك تغييرات لم تُحفظ' })
-  await tabs.getByRole('link', { name: 'المبيعات' }).click()
+  await tabs.getByRole('link', { name: 'الرئيسية' }).click()
   await expect(unsaved).toBeVisible()
   await unsaved.getByRole('button', { name: 'متابعة التعديل' }).click()
   await expect(page).toHaveURL(new RegExp('/sales/today$'))
@@ -572,7 +569,10 @@ test("the designer's One sale in English on a desktop", async ({ browser }) => {
   // Leaving with changes asks first.
   await page.getByRole('textbox', { name: 'Notes' }).fill('Logo and brand guide for Al Noor')
   const unsaved = page.getByRole('alertdialog', { name: 'You have unsaved changes' })
-  await page.getByRole('navigation', { name: 'Main' }).getByRole('link', { name: 'Sales' }).click()
+  await page
+    .getByRole('navigation', { name: 'Main' })
+    .getByRole('link', { name: 'Sales', exact: true })
+    .click()
   await expect(unsaved).toBeVisible()
   await unsaved.getByRole('button', { name: 'Keep editing' }).click()
 

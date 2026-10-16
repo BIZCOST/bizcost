@@ -8,24 +8,16 @@ import type {
 } from '@bizcost/contracts'
 import { newId } from '@bizcost/domain'
 import type { SetupAnswers } from '@bizcost/modules'
-import { handlerFor, SECRET_KEY } from './helpers'
 import { tag } from './product-costs'
 import { ProfitScope } from './profit'
 import { ok, PurchasingApi, type Person } from './purchasing'
 
-// Helpers of the orders tests (ROADMAP.md M3 Step 5): Customers, Payments and Orders are planned until
-// Release A (Step 6), so the API runs with the dev-only preview of them and of Sales and Reports
-// (D-125), as a local server does. Customers, orders, payments and refunds are made through the API.
+// Helpers of the orders tests (ROADMAP.md M3 Step 5): the API as deployed (Customers, Payments and
+// Orders are released since Release A, M3 Step 6). Customers, orders, payments and refunds are made
+// through the API.
 
-/** The modules the orders suites preview (D-125). */
-export const ORDERS_PREVIEW = ['customers', 'sales', 'payments', 'reports', 'orders'] as const
-
-export class OrdersApi extends PurchasingApi {
-  override readonly handler = handlerFor(this.db, undefined, {
-    supabaseSecretKey: SECRET_KEY,
-    previewModules: ORDERS_PREVIEW,
-  })
-}
+/** The API of the orders suites: the purchasing suites' (as deployed). */
+export class OrdersApi extends PurchasingApi {}
 
 /** A small factory with a team, VAT and invoices to companies (orders on credit with LPOs). */
 export const FACTORY: SetupAnswers = {

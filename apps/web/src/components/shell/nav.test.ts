@@ -5,16 +5,18 @@ import {
   MODULES,
   PERMISSION_CATALOG,
   releasedModules,
+  resolveEnabledModules,
   roleTemplateByKey,
   type ModuleManifest,
 } from '@bizcost/modules'
-import { hasMessage, terminologyKey, type I18nKey } from '@bizcost/i18n'
+import { createI18n, hasMessage, terminologyKey, type I18nKey } from '@bizcost/i18n'
 import { describe, expect, it } from 'vitest'
 import {
   bottomTabs,
   businessSubpath,
   moduleAccess,
   navSlots,
+  repeatsGroupTitle,
   shellNav,
   shellQuickActions,
   TAB_SLOTS,
@@ -43,21 +45,23 @@ function canFor(templateKey: string) {
 const owner = canFor(OWNER_TEMPLATE_KEY)
 const nothing = new Set<string>()
 
-/** Orders, released: a nav entry that needs its permission, and a "+" action. */
-const ORDERS: ModuleManifest = {
-  ...moduleById('orders')!,
+/** Quotations (planned until Release B), released: a nav entry that needs its permission, and "+". */
+const QUOTATIONS: ModuleManifest = {
+  ...moduleById('quotations')!,
   availability: 'released',
   nav: [
     {
-      id: 'orders',
-      labelKey: 'nav.orders',
-      path: 'orders',
-      icon: 'shopping-bag',
+      id: 'quotations',
+      labelKey: 'nav.quotations',
+      path: 'quotations',
+      icon: 'file-signature',
       group: 'main',
-      permission: 'orders.view',
+      permission: 'quotations.view',
     },
   ],
-  quickActions: [{ id: 'orders.new', labelKey: 'nav.newOrder', path: 'orders/new', icon: 'plus' }],
+  quickActions: [
+    { id: 'quotations.new', labelKey: 'nav.newQuote', path: 'quotations/new', icon: 'plus' },
+  ],
 }
 
 function released(...manifests: ModuleManifest[]): readonly ModuleManifest[] {
@@ -122,20 +126,20 @@ describe('shellNav with the M1 registry', () => {
 })
 
 describe('a module released later shows with no change to the shell', () => {
-  const registry = released(ORDERS)
+  const registry = released(QUOTATIONS)
 
   it('in the sidebar, the rail and the tabs, before Settings, once the business turns it on', () => {
-    const on = buildModuleNav(new Set(['orders']), owner, registry)
-    const items = shellNav(on, ID, `${ROOT}/orders/123`)
+    const on = buildModuleNav(new Set(['quotations']), owner, registry)
+    const items = shellNav(on, ID, `${ROOT}/quotations/123`)
     expect(items.map((item) => [item.id, item.href])).toEqual([
       ['dashboard', ROOT],
-      ['orders', `${ROOT}/orders`],
+      ['quotations', `${ROOT}/quotations`],
       ['settings', `${ROOT}/settings`],
     ])
-    expect(active(items)).toBe('orders')
+    expect(active(items)).toBe('quotations')
     expect(labels(bottomTabs(items, shellQuickActions(on, ID)).tabs)).toEqual([
       'dashboard',
-      'orders',
+      'quotations',
       'settings',
     ])
     // Not turned on for this business: not there.
@@ -146,16 +150,16 @@ describe('a module released later shows with no change to the shell', () => {
   })
 
   it('only for members with its permission; its "+" action brings the "+" tab', () => {
-    const on = new Set(['orders'])
+    const on = new Set(['quotations'])
     const employee = buildModuleNav(on, canFor('employee'), registry)
     expect(labels(shellNav(employee, ID, ROOT))).toEqual(['dashboard', 'settings'])
     const ownerModules = buildModuleNav(on, owner, registry)
     const actions = shellQuickActions(ownerModules, ID)
     expect(actions).toEqual([
       {
-        id: 'orders.new',
-        labelKey: 'common.nav.newOrder',
-        href: `${ROOT}/orders/new`,
+        id: 'quotations.new',
+        labelKey: 'common.nav.newQuote',
+        href: `${ROOT}/quotations/new`,
         icon: 'plus',
       },
     ])
@@ -163,19 +167,27 @@ describe('a module released later shows with no change to the shell', () => {
   })
 
   it('with a neutral icon until the shell knows its icon', () => {
-    expect(navIcon('shopping-bag')).toBe(FALLBACK_NAV_ICON)
+    expect(navIcon('file-signature')).toBe(FALLBACK_NAV_ICON)
     expect(navIcon('settings')).not.toBe(FALLBACK_NAV_ICON)
   })
 
   it('and the page states follow: off for a business without it, not open without permission', () => {
-    const on = new Set(['orders'])
-    expect(moduleAccess(buildModuleNav(on, owner, registry), 'orders', 'orders')).toBe('open')
-    expect(moduleAccess(buildModuleNav(nothing, owner, registry), 'orders', 'orders')).toBe('off')
-    expect(moduleAccess(buildModuleNav(on, canFor('employee'), registry), 'orders', 'orders')).toBe(
-      'forbidden',
+    const on = new Set(['quotations'])
+    expect(moduleAccess(buildModuleNav(on, owner, registry), 'quotations', 'quotations')).toBe(
+      'open',
     )
+    expect(moduleAccess(buildModuleNav(nothing, owner, registry), 'quotations', 'quotations')).toBe(
+      'off',
+    )
+    expect(
+      moduleAccess(buildModuleNav(on, canFor('employee'), registry), 'quotations', 'quotations'),
+    ).toBe('forbidden')
     // Still planned in the real registry: off, whatever the business chose.
-    expect(moduleAccess(buildModuleNav(on, owner), 'orders', 'orders')).toBe('off')
+    expect(moduleAccess(buildModuleNav(on, owner), 'quotations', 'quotations')).toBe('off')
+    // Released with Release A (M3 Step 6): Orders is open in the real registry once turned on.
+    expect(moduleAccess(buildModuleNav(new Set(['orders']), owner), 'orders', 'orders')).toBe(
+      'open',
+    )
   })
 })
 
@@ -309,12 +321,13 @@ describe('a page two modules share: Amounts owed (Purchases and Expenses, D-166)
       'settings',
     ])
     expect(moduleAccess(owedTo, shared, 'payables')).toBe('open')
+    // The tabs in their claims' order: Home, Expenses, Products, Materials.
     const bar = bottomTabs(items, [])
     expect(bar.tabs.map((item) => item.id)).toEqual([
       'dashboard',
+      'expenses',
       'products',
       'materials',
-      'expenses',
     ])
     expect(bar.more.map((item) => item.id)).toEqual(['payables', 'settings'])
   })
@@ -322,10 +335,10 @@ describe('a page two modules share: Amounts owed (Purchases and Expenses, D-166)
 
 describe('wayBack', () => {
   it("leads from a module's state to another section: the first in the nav, else Settings", () => {
-    const registry = released(ORDERS)
-    const items = shellNav(buildModuleNav(new Set(['orders']), owner, registry), ID, ROOT)
-    expect(wayBack(items, 'orders')?.id).toBe('dashboard')
-    expect(wayBack(items, 'dashboard')?.id).toBe('orders')
+    const registry = released(QUOTATIONS)
+    const items = shellNav(buildModuleNav(new Set(['quotations']), owner, registry), ID, ROOT)
+    expect(wayBack(items, 'quotations')?.id).toBe('dashboard')
+    expect(wayBack(items, 'dashboard')?.id).toBe('quotations')
     // Without the Dashboard: the business root sends the member to Settings.
     const noDashboard = shellNav(
       buildModuleNav(nothing, (key) => key !== 'dashboard.home.view'),
@@ -339,10 +352,13 @@ describe('wayBack', () => {
 
 describe('navSlots: the placeholder while a business loads', () => {
   it('has a place for each released entry, by group', () => {
-    // Home, the Costing Core's eight sections (Amounts owed once) and Settings.
-    expect(navSlots(releasedModules())).toEqual({ main: 9, system: 1 })
-    expect(navSlots(released(ORDERS).filter((m) => m.availability === 'released'))).toEqual({
+    // Home and the Costing Core's eight sections (Amounts owed once); Release A's "Sales" group
+    // (Sales, Orders, Customers, What customers owe) and "Reports" (Real profit); Settings.
+    expect(navSlots(releasedModules())).toEqual({ main: 9, sales: 4, reports: 1, system: 1 })
+    expect(navSlots(released(QUOTATIONS).filter((m) => m.availability === 'released'))).toEqual({
       main: 10,
+      sales: 4,
+      reports: 1,
       system: 1,
     })
   })
@@ -403,19 +419,13 @@ describe('Product costs (the Cost Engine, M2 Step 6; released in Step 7)', () =>
   })
 })
 
-describe('the phone tab bar and "+" of the Costing Core (M2 Step 7, D-189)', () => {
-  const costing = new Set([
-    'products',
-    'materials',
-    'suppliers',
-    'purchases',
-    'expenses',
-    'running_costs',
-    'files',
-    'cost_engine',
-  ])
-  const bar = (template: string) => {
-    const modules = buildModuleNav(costing, canFor(template))
+describe('the phone tab bar and "+" since Release A (M3 Step 6; D-189, Q14)', () => {
+  // A business with the core modules on (Sales, Customers, Payments and Reports with the Costing
+  // Core), and one that also turned Orders on.
+  const core = resolveEnabledModules([])
+  const withOrders = resolveEnabledModules([{ key: 'orders', enabled: true }])
+  const bar = (template: string, enabled: ReadonlySet<string> = core) => {
+    const modules = buildModuleNav(enabled, canFor(template))
     const items = shellNav(modules, ID, ROOT)
     const actions = shellQuickActions(modules, ID)
     const tabs = bottomTabs(items, actions)
@@ -428,7 +438,7 @@ describe('the phone tab bar and "+" of the Costing Core (M2 Step 7, D-189)', () 
     }
   }
 
-  it('gives the owner and a manager Home | Products | + | Product costs | More', () => {
+  it('gives the owner and a manager Home | Sales | + | Costs | More, Products under "More"', () => {
     for (const template of [OWNER_TEMPLATE_KEY, 'admin', 'manager']) {
       const shown = bar(template)
       expect(shown.items, template).toEqual([
@@ -441,43 +451,121 @@ describe('the phone tab bar and "+" of the Costing Core (M2 Step 7, D-189)', () 
         'expenses',
         'running_costs',
         'product_costs',
+        'sales',
+        'customers',
+        'receivables',
+        'real_profit',
         'settings',
       ])
-      expect(shown.tabs, template).toEqual(['dashboard', 'products', 'product_costs'])
+      expect(shown.tabs, template).toEqual(['dashboard', 'sales', 'product_costs'])
       expect(shown.more, template).toEqual([
+        'products',
         'materials',
         'suppliers',
         'purchases',
         'payables',
         'expenses',
         'running_costs',
+        'customers',
+        'receivables',
+        'real_profit',
         'settings',
       ])
       expect(shown.quickAdd, template).toBe(true)
-      expect(shown.actions, template).toEqual(['new_product', 'new_purchase', 'new_expense'])
+      expect(shown.actions, template).toEqual([
+        'new_product',
+        'new_purchase',
+        'new_expense',
+        'today_sales',
+        'new_sale',
+        'new_customer',
+      ])
     }
   })
 
-  it('keeps Expenses in an employee bar, with "+" for a new expense only', () => {
+  it('puts Orders in the Sales place for a business with Orders on, and Sales under "More"', () => {
+    const shown = bar(OWNER_TEMPLATE_KEY, withOrders)
+    // The "Sales" group: Sales, Orders, Customers and What customers owe; then Reports.
+    expect(shown.items.slice(-7)).toEqual([
+      'product_costs',
+      'sales',
+      'orders',
+      'customers',
+      'receivables',
+      'real_profit',
+      'settings',
+    ])
+    expect(shown.tabs).toEqual(['dashboard', 'orders', 'product_costs'])
+    expect(shown.more).toContain('sales')
+    expect(shown.actions).toEqual([
+      'new_product',
+      'new_purchase',
+      'new_expense',
+      'today_sales',
+      'new_sale',
+      'new_order',
+      'new_customer',
+    ])
+  })
+
+  it('keeps a group title for screen readers only when its one entry says it ("Sales" under "Sales")', () => {
+    for (const locale of ['ar', 'en'] as const) {
+      const i18n = createI18n({ locale })
+      const label = (key: I18nKey) => i18n.t(key)
+      const group = (enabled: ReadonlySet<string>, name: 'sales' | 'reports') =>
+        shellNav(buildModuleNav(enabled, owner), ID, ROOT).filter((item) => item.group === name)
+      const title = (name: 'sales' | 'reports') => i18n.t(`common.nav.groups.${name}`)
+      // A café (Smart Setup leaves Customers and Payments off without Orders): Sales alone.
+      const cafe = resolveEnabledModules([
+        { key: 'customers', enabled: false },
+        { key: 'payments', enabled: false },
+      ])
+      expect(repeatsGroupTitle(group(cafe, 'sales'), title('sales'), label), locale).toBe(true)
+      expect(repeatsGroupTitle(group(core, 'sales'), title('sales'), label), locale).toBe(false)
+      // With Orders: Sales, Orders, Customers and What customers owe.
+      expect(repeatsGroupTitle(group(withOrders, 'sales'), title('sales'), label), locale).toBe(
+        false,
+      )
+      // "Real profit" under "Reports" says something else.
+      expect(repeatsGroupTitle(group(core, 'reports'), title('reports'), label), locale).toBe(false)
+    }
+  })
+
+  it('keeps Expenses in an employee bar (D-184), with "+" for what they enter', () => {
     const shown = bar('employee')
-    expect(shown.tabs).toEqual(['dashboard', 'products', 'expenses'])
-    expect(shown.more).toEqual(['materials', 'settings'])
-    expect(shown.actions).toEqual(['new_expense'])
+    expect(shown.tabs).toEqual(['dashboard', 'sales', 'expenses'])
+    expect(shown.more).toEqual(['products', 'materials', 'settings'])
+    expect(shown.actions).toEqual(['new_expense', 'today_sales', 'new_sale'])
+    const orders = bar('employee', withOrders)
+    expect(orders.tabs).toEqual(['dashboard', 'orders', 'expenses'])
+    expect(orders.more).toEqual(['products', 'materials', 'sales', 'settings'])
+    // They add customers from an order's picker: no Customers page, no "New customer".
+    expect(orders.actions).toEqual(['new_expense', 'today_sales', 'new_sale', 'new_order'])
   })
 
   it('gives an accountant four tabs and no "+" (they enter nothing)', () => {
     const shown = bar('accountant')
     expect(shown.quickAdd).toBe(false)
     expect(shown.actions).toEqual([])
-    expect(shown.tabs).toEqual(['dashboard', 'products', 'expenses', 'product_costs'])
+    expect(shown.tabs).toEqual(['dashboard', 'sales', 'product_costs', 'expenses'])
     expect(shown.more[shown.more.length - 1]).toBe('settings')
   })
 
-  it('shows every section of a member whose sections fit (Sales)', () => {
-    const shown = bar('sales')
-    expect(shown.tabs).toEqual(['dashboard', 'products', 'settings'])
+  it('gives Sales and a supervisor Home | Sales | + | Products | More', () => {
+    for (const template of ['sales', 'supervisor']) {
+      const shown = bar(template)
+      expect(shown.tabs, template).toEqual(['dashboard', 'sales', 'products'])
+      expect(shown.quickAdd, template).toBe(true)
+      expect(shown.actions, template).toEqual(['today_sales', 'new_sale', 'new_customer'])
+    }
+    expect(bar('sales').more).toEqual(['customers', 'receivables', 'real_profit', 'settings'])
+  })
+
+  it('shows every section, in the order of their claims, when they all fit', () => {
+    const modules = buildModuleNav(new Set(['products', 'sales']), canFor('sales'))
+    const shown = bottomTabs(shellNav(modules, ID, ROOT), shellQuickActions(modules, ID))
+    expect(labels(shown.tabs)).toEqual(['dashboard', 'sales', 'products', 'settings'])
     expect(shown.more).toEqual([])
-    expect(shown.quickAdd).toBe(false)
   })
 
   it('offers only what the business has on: no purchase without Purchases', () => {
@@ -489,13 +577,17 @@ describe('the phone tab bar and "+" of the Costing Core (M2 Step 7, D-189)', () 
   })
 
   it('names "+" actions in the business wording', () => {
-    const modules = buildModuleNav(costing, owner)
+    const modules = buildModuleNav(withOrders, owner)
     const projects = (key: I18nKey) =>
       terminologyKey(key, 'projects', (overlay) => hasMessage('en', overlay))
     expect(shellQuickActions(modules, ID, projects).map((action) => action.labelKey)).toEqual([
       'common.nav.new_product_projects',
       'common.nav.new_purchase',
       'common.nav.new_expense',
+      'common.nav.today_sales',
+      'common.nav.new_sale',
+      'common.nav.new_order',
+      'common.nav.new_customer',
     ])
     for (const action of shellQuickActions(modules, ID)) {
       expect(navIcon(action.icon)).not.toBe(FALLBACK_NAV_ICON)
@@ -505,7 +597,7 @@ describe('the phone tab bar and "+" of the Costing Core (M2 Step 7, D-189)', () 
   })
 
   it('marks "More" when the page is under it (Purchases on an owner phone)', () => {
-    const modules = buildModuleNav(costing, owner)
+    const modules = buildModuleNav(core, owner)
     const tabs = bottomTabs(
       shellNav(modules, ID, `${ROOT}/purchases/new`),
       shellQuickActions(modules, ID),

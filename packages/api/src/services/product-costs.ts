@@ -280,8 +280,7 @@ async function materialNamesOf(
  * Step 3): the rate the running month's sales carry (Q6: the last full month that sold, `last_month`;
  * a first month's costs from its first sale ÷ its sales so far, `so_far`, shown after 7 days of
  * sales; awaiting sales without any), which every product's share is worked out at (its price before
- * VAT × costs ÷ item sales, at the price it is sold for in real profit). Sales count only while Sales
- * is served (services/real-profit.ts): a released business keeps "awaiting sales" (the plan's D3). The
+ * VAT × costs ÷ item sales, at the price it is sold for in real profit; services/real-profit.ts). The
  * costs shown: those the rate divides (a month's pool, or its days so far), or without sales the last
  * full calendar month's. The amounts are withheld from the DTO (never from what the costs are worked
  * out with) unless mayReadMonthCosts, the item sales with them (costs ÷ rate gives them: D-250).

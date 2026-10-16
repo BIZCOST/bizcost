@@ -1,5 +1,6 @@
+import { hasMessage, LOCALES } from '@bizcost/i18n'
 import { describe, expect, it } from 'vitest'
-import { isSectionVisible, sectionOfPath, visibleSections } from './sections'
+import { isSectionVisible, sectionDescription, sectionOfPath, visibleSections } from './sections'
 
 // Which settings sections a member is offered (the API enforces the same rules).
 
@@ -62,6 +63,31 @@ describe('settings sections', () => {
       true,
     )
     expect(isSectionVisible(access('all'), 'books')).toBe(false)
+    // Sales and orders obey it too (Release A): a business with neither Purchases nor Expenses.
+    for (const id of ['sales', 'orders']) {
+      const only = { ...access('all'), modules: [{ id }] }
+      expect(isSectionVisible(only, 'books'), id).toBe(true)
+      expect(sectionDescription(only, 'books'), id).toBe('settings.books.descriptions.sales')
+    }
+    // It names only what the business keeps (M3 Step 6 review): a designer without Purchases.
+    const described = (ids: string[]) =>
+      sectionDescription({ ...access('all'), modules: ids.map((id) => ({ id })) }, 'books')
+    expect(described(['purchases'])).toBe('settings.books.descriptions.purchases')
+    expect(described(['expenses', 'sales', 'reports'])).toBe(
+      'settings.books.descriptions.expenses_sales',
+    )
+    expect(described(['purchases', 'expenses'])).toBe(
+      'settings.books.descriptions.purchases_expenses',
+    )
+    expect(described(['purchases', 'expenses', 'sales', 'orders'])).toBe(
+      'settings.books.descriptions.purchases_expenses_sales',
+    )
+    // Every mix of the three is written in both languages.
+    const ids = ['purchases', 'expenses', 'sales']
+    for (let mask = 1; mask < 8; mask++) {
+      const key = described(ids.filter((_, i) => (mask >> i) & 1))
+      for (const locale of LOCALES) expect(hasMessage(locale, key), `${locale} ${key}`).toBe(true)
+    }
     expect(
       isSectionVisible({ ...access(['purchases.documents.view']), ...purchases }, 'books'),
     ).toBe(false)

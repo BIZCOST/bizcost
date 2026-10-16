@@ -386,6 +386,13 @@
       "when": 1792084787480,
       "tag": "20261015171947_undone_order_sale_takes_no_cost",
       "breakpoints": true
+    },
+    {
+      "idx": 55,
+      "version": "7",
+      "when": 1792093042694,
+      "tag": "20261015191810_sales_release",
+      "breakpoints": true
     }
   ]
 }

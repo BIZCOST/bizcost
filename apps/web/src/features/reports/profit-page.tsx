@@ -89,8 +89,6 @@ import {
 // switch and Product costs; Q11): the API withholds them from anyone else, who reads the sales only,
 // and "Show" and "Sort by" never offer what they cannot see (the API refuses it). A member limited to
 // some branches sees their branches at the shares their sales carry, without the business's costs.
-// Released businesses never reach this page: Reports is served only under the dev-only preview until
-// Release A (its layout says "Page not found" otherwise).
 
 type Summary = ProfitSummaryDto['data']
 

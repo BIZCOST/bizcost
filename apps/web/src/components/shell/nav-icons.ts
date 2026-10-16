@@ -15,6 +15,7 @@ import {
   ShoppingCartIcon,
   TagIcon,
   TruckIcon,
+  UserRoundPlusIcon,
   UsersRoundIcon,
   WalletIcon,
   type LucideIcon,
@@ -42,13 +43,14 @@ const NAV_ICONS: Readonly<Record<string, LucideIcon>> = {
   repeat: RepeatIcon,
   // Product costs (the Cost Engine, M2 Step 6).
   calculator: CalculatorIcon,
-  // Sales, a new sale and Today's sales (M3 Step 2; the preview until Release A).
+  // Sales, a new sale and Today's sales (M3 Step 2; released with Release A, Step 6).
   banknote: BanknoteIcon,
   'calendar-check': CalendarCheckIcon,
-  // Reports → Real profit (M3 Step 3; the preview until Release A).
+  // Reports → Real profit (M3 Step 3; Release A).
   'chart-line': ChartLineIcon,
-  // Customers, Orders and What customers owe (M3 Step 5; the preview until Release A).
+  // Customers, Orders and What customers owe (M3 Step 5; Release A), and a new customer.
   users: UsersRoundIcon,
+  'user-round-plus': UserRoundPlusIcon,
   'clipboard-list': ClipboardListIcon,
   wallet: WalletIcon,
 }

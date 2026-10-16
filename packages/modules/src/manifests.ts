@@ -9,7 +9,7 @@ import type { CapabilityKey } from './capabilities'
 // gates count only released modules (the dev-only preview of registry.ts aside, D-125). Modules not
 // being built carry no permission keys, nav or actions. M2 Step 7 released the Costing Core
 // (Products & Services, Materials, Suppliers, Purchases, Expenses, Running Costs, Files and the Cost
-// Engine) together.
+// Engine) together, and Release A (M3 Step 6) Sales, Orders, Customers, Payments and Reports.
 
 export const MODULE_IDS = [
   'dashboard',
@@ -22,11 +22,11 @@ export const MODULE_IDS = [
   'running_costs',
   'files',
   'cost_engine',
-  'customers',
   'sales',
+  'orders',
+  'customers',
   'payments',
   'reports',
-  'orders',
   'quotations',
   'invoices',
   'inventory',
@@ -52,13 +52,20 @@ export type ModuleAvailability = 'released' | 'planned'
 /**
  * A navigation entry (sidebar, tabs). Without `permission` every member of the business sees it.
  * `labelKey` is a common `nav.*` key; `icon` a lucide icon name the web app maps to its icon (an
- * unknown name gets a neutral one, so a new module shows without changes to the shell). `tab`: its
- * claim to a place in the phone's tab bar when the member's entries do not all fit (1 first); without
- * it the entry goes under "More" then. The tabs keep the nav's order (M2 Step 7: an owner gets Home,
- * Products, "+", Product costs, More; an employee keeps Expenses, D-184).
+ * unknown name gets a neutral one, so a new module shows without changes to the shell). `group`: where
+ * the sidebar lists it (the business's sections, a named group such as "Sales", or Settings at the
+ * foot). `tab`: its claim to a place in the phone's tab bar when the member's entries do not all fit
+ * (1 first); without it the entry goes under "More" then. The tabs come in their claims' order (Release
+ * A: an owner gets Home | Sales | + | Costs | More; an employee keeps Expenses, D-184).
  */
 export interface NavEntry extends Omit<NavEntryDto, 'tab'> {
   readonly tab?: number
+  /**
+   * Entries that claim the same place share it: the one with the lowest rank (0 without one) among
+   * those the member may use takes it, and the others are as if they claimed nothing. Orders takes the
+   * Sales place for a business with Orders on (Q14).
+   */
+  readonly tabRank?: number
   readonly permission?: string
   /**
    * Also shown, whatever the member's keys, to a member the business owes (or paid back) for
@@ -70,6 +77,11 @@ export interface NavEntry extends Omit<NavEntryDto, 'tab'> {
 
 export interface QuickAction extends QuickActionDto {
   readonly permission?: string
+  /**
+   * Keys the action needs besides `permission`, all of them: "New customer" opens Customers, so it is
+   * for whoever sees customers as well as adds them.
+   */
+  readonly alsoNeeds?: readonly string[]
 }
 
 export interface ModuleManifest {
@@ -170,7 +182,7 @@ const PRODUCTS = {
       path: 'products',
       icon: 'tag',
       group: 'main',
-      tab: 4,
+      tab: 5,
       permission: 'products.items.view',
     },
   ],
@@ -320,7 +332,7 @@ const EXPENSES = {
       path: 'expenses',
       icon: 'receipt',
       group: 'main',
-      tab: 5,
+      tab: 4,
       permission: 'expenses.documents.view',
     },
     {
@@ -420,21 +432,20 @@ const FILES = {
   requiresCapabilities: [],
 } as const satisfies ModuleManifest
 
-// Sales (M3 Step 2; planned until Release A in Step 6, served before that only under the dev-only
-// preview, D-125): Today's sales (one sheet per member, day and channel and branch, Q9, Q10) and One
-// sale, finalized with the cost of what was sold frozen on the sale's day (D-219, D-222), and the
-// business's sales channels. `sales.documents.view` sees every sale, and so the sales totals (H1);
-// without it a member who enters sales sees only their own (D-181, D-214). A member limited to some
-// branches sees and enters only theirs (Q12, member_locations). The cost snapshot, a delivery's cost
-// and a channel's commission are `cost`. Its page is reached with either "see every sale" or "enter
-// sales" (two entries of one page, listed once by buildModuleNav). Its screens (D-233): the phone's
-// tab bar of Q14 (Home | Sales | + | Costs | More: claim 2, before Product costs and Products, whose
-// claims keep their order, so a business without Sales keeps its tabs), and "+" for Today's sales
-// and a new sale, for those who enter sales.
+// Sales (M3 Step 2; released with Release A in Step 6): Today's sales (one sheet per member, day and
+// channel and branch, Q9, Q10) and One sale, finalized with the cost of what was sold frozen on the
+// sale's day (D-219, D-222), and the business's sales channels. `sales.documents.view` sees every
+// sale, and so the sales totals (H1); without it a member who enters sales sees only their own (D-181,
+// D-214). A member limited to some branches sees and enters only theirs (Q12, member_locations). The
+// cost snapshot, a delivery's cost and a channel's commission are `cost`. Its page is reached with
+// either "see every sale" or "enter sales" (two entries of one page, listed once by buildModuleNav),
+// first in the sidebar's "Sales" group. The phone's tab bar of Q14 (Home | Sales | + | Costs | More):
+// claim 2, which it yields to Orders when the business has Orders on (Orders takes the Sales place).
+// "+": Today's sales and a new sale, for those who enter sales.
 const SALES = {
   id: 'sales',
   kind: 'core',
-  availability: 'planned',
+  availability: 'released',
   phase: 3,
   deps: ['products'],
   permissionKeys: [
@@ -451,8 +462,9 @@ const SALES = {
       labelKey: 'nav.sales',
       path: 'sales',
       icon: 'banknote',
-      group: 'main',
+      group: 'sales',
       tab: 2,
+      tabRank: 1,
       permission: 'sales.documents.view',
     },
     {
@@ -460,8 +472,9 @@ const SALES = {
       labelKey: 'nav.sales',
       path: 'sales',
       icon: 'banknote',
-      group: 'main',
+      group: 'sales',
       tab: 2,
+      tabRank: 1,
       permission: 'sales.documents.manage',
     },
   ],
@@ -485,103 +498,23 @@ const SALES = {
   requiresCapabilities: [],
 } as const satisfies ModuleManifest
 
-// Reports (M3 Step 3; planned until Release A in Step 6, served before that only under the dev-only
-// preview, D-125): Reports → Real profit («الربح الحقيقي»), worked out on read from the posted sales,
-// their frozen costs, the month's costs, the channels' fees and the owner's time (nothing stored,
-// D-223). `reports.sales.view` opens it with the sales figures (which need every sale seen, H1);
-// `reports.profit.view` adds the profit and what it is made of (Q11: with the costs switch and Product
-// costs, PERMISSION_NEEDS). Profit is `profit_margin`, costs are `cost`. No deps: sales already posted
-// still count with Sales switched off (Orders and Invoices post sales too, M9).
-const REPORTS = {
-  id: 'reports',
-  kind: 'core',
-  availability: 'planned',
-  phase: 3,
-  deps: [],
-  permissionKeys: ['reports.sales.view', 'reports.profit.view'],
-  nav: [
-    {
-      id: 'real_profit',
-      labelKey: 'nav.real_profit',
-      path: 'reports/profit',
-      icon: 'chart-line',
-      group: 'main',
-      permission: 'reports.sales.view',
-    },
-  ],
-  quickActions: [],
-  sensitiveFields: ['cost', 'profit_margin'],
-  requiresCapabilities: [],
-} as const satisfies ModuleManifest
-
-// Customers (M3 Step 5; planned until Release A in Step 6, served before that only under the dev-only
-// preview, D-125): one list of the business's customers, apart from suppliers (D-112), names that may
-// repeat ("Did you mean", Q2). `customers.items.view` lists them with their details; `.manage` adds
-// and changes them. A member without `.view` who adds them (the Employee's quick add, Q10) changes
-// none, and picks a customer by name and the phone's last 4 digits only (customer.pick). Nothing on a
-// customer is a redaction category: their personal data is a permission.
-const CUSTOMERS = {
-  id: 'customers',
-  kind: 'core',
-  availability: 'planned',
-  phase: 3,
-  deps: [],
-  permissionKeys: ['customers.items.view', 'customers.items.manage'],
-  nav: [
-    {
-      id: 'customers',
-      labelKey: 'nav.customers',
-      path: 'customers',
-      icon: 'users',
-      group: 'main',
-      permission: 'customers.items.view',
-    },
-  ],
-  quickActions: [],
-  sensitiveFields: [],
-  requiresCapabilities: [],
-} as const satisfies ModuleManifest
-
-// Payments (M3 Step 5; planned until Release A): what customers pay on their orders and on sales
-// "they'll pay later", and "What customers owe" («مستحقات العملاء»), one figure per obligation (Q17,
-// A2). `payments.customers.view` (it needs every sale seen, H1) lists them; `.record` records and
-// reverses payments and money given back. Amounts are sales amounts: who sees them is a permission.
-const PAYMENTS = {
-  id: 'payments',
-  kind: 'core',
-  availability: 'planned',
-  phase: 3,
-  deps: [],
-  permissionKeys: ['payments.customers.view', 'payments.customers.record'],
-  nav: [
-    {
-      id: 'receivables',
-      labelKey: 'nav.receivables',
-      path: 'receivables',
-      icon: 'wallet',
-      group: 'main',
-      permission: 'payments.customers.view',
-    },
-  ],
-  quickActions: [],
-  sensitiveFields: [],
-  requiresCapabilities: [],
-} as const satisfies ModuleManifest
-
-// Orders (M3 Step 5; planned until Release A): a customer's order with delivery, deposits and
+// Orders (M3 Step 5; released with Release A): a customer's order with delivery, deposits and
 // refunds, Pending → Delivered (it counts as a sale on its delivery day) or Cancelled, "Undo delivery"
 // (Q16). "Orders / الطلبات" in every wording profile (Q19). `orders.documents.view` sees every order
 // (it needs every sale seen, H1); without it a member who enters orders sees, changes and delivers only
 // their own (Q10, D-214). `.manage` enters and changes pending orders and cancels them, `.deliver`
 // delivers them, `.reverse` undoes a delivery and refunds a delivered order. Its page is reached with
-// "see every order" or "enter orders" (two entries of one path, listed once), and "+" offers a new
-// order to those who enter them. The delivery cost is `cost`, the order's profit `profit_margin`.
+// "see every order" or "enter orders" (two entries of one path, listed once), in the "Sales" group; on
+// a phone it takes the Sales place (claim 2, rank 0, Q14). "+" offers a new order to those who enter
+// them. The delivery cost is `cost`, the order's profit `profit_margin`. It needs Sales (Release A): a
+// delivery is a sale of its day, refunded and reversed as a sale (sale.refund, the sale's page), so
+// Customize turns Orders off with Sales and Sales on with Orders.
 const ORDERS = {
   id: 'orders',
   kind: 'optional',
-  availability: 'planned',
+  availability: 'released',
   phase: 3,
-  deps: ['products', 'customers', 'payments'],
+  deps: ['products', 'sales', 'customers', 'payments'],
   permissionKeys: [
     'orders.documents.view',
     'orders.documents.manage',
@@ -594,7 +527,8 @@ const ORDERS = {
       labelKey: 'nav.orders',
       path: 'orders',
       icon: 'clipboard-list',
-      group: 'main',
+      group: 'sales',
+      tab: 2,
       permission: 'orders.documents.view',
     },
     {
@@ -602,7 +536,8 @@ const ORDERS = {
       labelKey: 'nav.orders',
       path: 'orders',
       icon: 'clipboard-list',
-      group: 'main',
+      group: 'sales',
+      tab: 2,
       permission: 'orders.documents.manage',
     },
   ],
@@ -615,6 +550,100 @@ const ORDERS = {
       permission: 'orders.documents.manage',
     },
   ],
+  sensitiveFields: ['cost', 'profit_margin'],
+  requiresCapabilities: [],
+} as const satisfies ModuleManifest
+
+// Customers (M3 Step 5; released with Release A): one list of the business's customers, apart from
+// suppliers (D-112), names that may repeat ("Did you mean", Q2). `customers.items.view` lists them
+// with their details; `.manage` adds and changes them. A member without `.view` who adds them (the
+// Employee's quick add, Q10) changes none, and picks a customer by name and the phone's last 4 digits
+// only (customer.pick). Nothing on a customer is a redaction category: their personal data is a
+// permission. "+": a new customer, which opens Customers with its form, so it is for those who see
+// customers and add them (the Employee adds one from an order's customer picker).
+const CUSTOMERS = {
+  id: 'customers',
+  kind: 'core',
+  availability: 'released',
+  phase: 3,
+  deps: [],
+  permissionKeys: ['customers.items.view', 'customers.items.manage'],
+  nav: [
+    {
+      id: 'customers',
+      labelKey: 'nav.customers',
+      path: 'customers',
+      icon: 'users',
+      group: 'sales',
+      permission: 'customers.items.view',
+    },
+  ],
+  quickActions: [
+    {
+      id: 'new_customer',
+      labelKey: 'nav.new_customer',
+      path: 'customers/new',
+      icon: 'user-round-plus',
+      permission: 'customers.items.manage',
+      alsoNeeds: ['customers.items.view'],
+    },
+  ],
+  sensitiveFields: [],
+  requiresCapabilities: [],
+} as const satisfies ModuleManifest
+
+// Payments (M3 Step 5; released with Release A): what customers pay on their orders and on sales
+// "they'll pay later", and "What customers owe" («مستحقات العملاء»), one figure per obligation (Q17,
+// A2), in the "Sales" group. `payments.customers.view` (it needs every sale seen, H1) lists them;
+// `.record` records and reverses payments and money given back. Amounts are sales amounts: who sees
+// them is a permission.
+const PAYMENTS = {
+  id: 'payments',
+  kind: 'core',
+  availability: 'released',
+  phase: 3,
+  deps: [],
+  permissionKeys: ['payments.customers.view', 'payments.customers.record'],
+  nav: [
+    {
+      id: 'receivables',
+      labelKey: 'nav.receivables',
+      path: 'receivables',
+      icon: 'wallet',
+      group: 'sales',
+      permission: 'payments.customers.view',
+    },
+  ],
+  quickActions: [],
+  sensitiveFields: [],
+  requiresCapabilities: [],
+} as const satisfies ModuleManifest
+
+// Reports (M3 Step 3; released with Release A): Reports → Real profit («الربح الحقيقي»), the sidebar's
+// "Reports" group, worked out on read from the posted sales, their frozen costs, the month's costs, the
+// channels' fees and the owner's time (nothing stored, D-223). `reports.sales.view` opens it with the
+// sales figures (which need every sale seen, H1); `reports.profit.view` adds the profit and what it is
+// made of (Q11: with the costs switch and Product costs, PERMISSION_NEEDS). Profit is `profit_margin`,
+// costs are `cost`. No deps: sales already posted still count with Sales switched off (Orders and
+// Invoices post sales too, M9).
+const REPORTS = {
+  id: 'reports',
+  kind: 'core',
+  availability: 'released',
+  phase: 3,
+  deps: [],
+  permissionKeys: ['reports.sales.view', 'reports.profit.view'],
+  nav: [
+    {
+      id: 'real_profit',
+      labelKey: 'nav.real_profit',
+      path: 'reports/profit',
+      icon: 'chart-line',
+      group: 'reports',
+      permission: 'reports.sales.view',
+    },
+  ],
+  quickActions: [],
   sensitiveFields: ['cost', 'profit_margin'],
   requiresCapabilities: [],
 } as const satisfies ModuleManifest
@@ -662,11 +691,11 @@ export const MODULES = [
   RUNNING_COSTS,
   FILES,
   COST_ENGINE,
-  CUSTOMERS,
   SALES,
+  ORDERS,
+  CUSTOMERS,
   PAYMENTS,
   REPORTS,
-  ORDERS,
   planned('quotations', 'optional', 3, { deps: ['products', 'customers'] }),
   // No requiresCapabilities: a business that is not VAT-registered sends plain invoices (§6.6).
   planned('invoices', 'optional', 3, { deps: ['products', 'customers', 'payments'] }),

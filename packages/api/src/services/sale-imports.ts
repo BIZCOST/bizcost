@@ -94,7 +94,7 @@ import {
 } from './stock'
 
 // Importing sales from a file (ROADMAP.md M3 Step 4; DATA_MODEL.md §6; the owner's answer Q15 of
-// D-218). Module `sales` (planned until Release A: served under the dev-only preview only, D-125) and
+// D-218). Module `sales` (released with Release A, M3 Step 6) and
 // Products & Services; `sales.imports.manage`, which needs sales.documents.manage and .post (the
 // router checks them). The file is read in the browser and never sent: only what sale_imports keeps
 // and its rows summed into day × item totals (sale_import_rows, staged until it is finalized).

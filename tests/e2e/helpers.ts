@@ -3,7 +3,7 @@ import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { crc32, deflateSync } from 'node:zlib'
 import { RAW_KEY } from '@bizcost/i18n/namespaces'
-import { expect, type BrowserContext, type Page } from '@playwright/test'
+import { expect, type BrowserContext, type Locator, type Page } from '@playwright/test'
 import postgres from 'postgres'
 import { baseURL, repoRoot, stack } from './stack'
 
@@ -345,6 +345,18 @@ export async function signIn(page: Page, user: TestUser): Promise<void> {
 
 function escapeRegExp(value: string): string {
   return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+}
+
+/**
+ * The elements of `locator` that are on the screen. A page the server streams holds, for a moment,
+ * two copies of what its loading state shows too (the Dashboard's, D-093): React 19.2 reveals the
+ * streamed parts in a batch, up to some 300 ms after they arrive, and until then the loading state's
+ * copy and the page's own wait side by side in hidden containers (Release A's flake: a card that
+ * "resolved to 2 elements"). Role locators skip hidden elements; CSS locators do not, so a CSS
+ * locator on such a page goes through this. Two copies on the screen still resolve to 2.
+ */
+export function onScreen(locator: Locator): Locator {
+  return locator.filter({ visible: true })
 }
 
 /**

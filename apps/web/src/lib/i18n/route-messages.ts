@@ -95,8 +95,8 @@ export const RUNNING_COSTS_MESSAGES: readonly MessageSpec[] = [
 export const PRODUCT_COSTS_MESSAGES: readonly MessageSpec[] = ['costing', 'catalog', 'units']
 
 /**
- * Sales (M3 Step 2; its layout; shown only under the dev-only preview until Release A): the sales
- * messages, the catalog's words and the unit names (a sale line names a product or service, and its
+ * Sales (M3 Step 2; its layout; released with Release A, Step 6): the sales messages, the catalog's
+ * words and the unit names (a sale line names a product or service, and its
  * quick-add opens the product form), and the purchasing words of the document parts they share (the
  * line editor, the totals, a line's discount; features/documents).
  */
@@ -127,8 +127,8 @@ const PAYMENT_WORDS: MessageSpec = {
 }
 
 /**
- * Orders (M3 Step 5; its layout; shown only under the dev-only preview until Release A): the orders
- * messages and the sales ones (an order's lines, delivery and refunds are a sale's), the catalog's
+ * Orders (M3 Step 5; its layout; released with Release A, Step 6): the orders messages and the sales
+ * ones (an order's lines, delivery and refunds are a sale's), the catalog's
  * words and the unit names (a line names a product; its quick-add opens the product form), and the
  * purchasing words of the shared document parts, payments and files.
  */
@@ -171,8 +171,8 @@ export const RECEIVABLES_MESSAGES: readonly MessageSpec[] = [
 ]
 
 /**
- * Reports → Real profit (M3 Step 3; its layout; shown only under the dev-only preview until Release
- * A): its own words and the unit names (a product's quantity sold).
+ * Reports → Real profit (M3 Step 3; its layout; released with Release A, Step 6): its own words and
+ * the unit names (a product's quantity sold).
  */
 export const REPORTS_MESSAGES: readonly MessageSpec[] = ['reports', 'units']
 

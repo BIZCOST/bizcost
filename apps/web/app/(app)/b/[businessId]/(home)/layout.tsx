@@ -19,15 +19,13 @@ import {
   getDashboardCards,
   getDashboardChecklist,
   getMe,
-  isModuleServed,
 } from '@/lib/trpc/server'
 
 /**
  * The Dashboard's messages and server data, for the page and its loading state (D-090, D-091): the
- * checklist, the decision cards (only while Sales is served, M3 Step 3) and whether "You're all set"
- * was hidden are known before anything is sent, so the page never shows a placeholder that moves (the
- * page itself does not wait on anything). A member who may not use the Dashboard goes to their first
- * section instead.
+ * checklist, the decision cards (M3 Step 3) and whether "You're all set" was hidden are known before
+ * anything is sent, so the page never shows a placeholder that moves (the page itself does not wait
+ * on anything). A member who may not use the Dashboard goes to their first section instead.
  */
 export default async function DashboardLayout({
   children,
@@ -47,9 +45,6 @@ export default async function DashboardLayout({
   let allSetHidden = false
   let costsReadyHidden = false
   let profitReadyHidden = false
-  // The decision cards exist only while Sales is served (a released business sees no change before
-  // Release A): elsewhere they are never asked for.
-  const cardsServed = isModuleServed('sales')
   // A refused business or an ended session: the business layout shows what they get.
   if (typeof context === 'object' && me) {
     if (moduleAccess(context.modules, 'dashboard', 'dashboard') !== 'open') {
@@ -61,7 +56,7 @@ export default async function DashboardLayout({
         costStepIdsFor(context).length > 0
       ;[checklist, cards] = await Promise.all([
         wantsChecklist ? getDashboardChecklist(businessId) : null,
-        cardsServed ? getDashboardCards(businessId) : null,
+        getDashboardCards(businessId),
       ])
     }
     allSetHidden = isAllSetHidden(cookieStore.get(ALL_SET_HIDDEN_COOKIE)?.value, me.profile.id)
@@ -79,7 +74,6 @@ export default async function DashboardLayout({
       <DashboardServerDataProvider
         checklist={checklist}
         cards={cards}
-        cardsServed={cardsServed}
         allSetHidden={allSetHidden}
         costsReadyHidden={costsReadyHidden}
         profitReadyHidden={profitReadyHidden}

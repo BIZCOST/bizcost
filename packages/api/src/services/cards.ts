@@ -30,7 +30,6 @@ import {
   profitGroups,
   profitShown,
   ratesOf,
-  salesServed,
   seesSalesTotals,
   usedMaterials,
   type ProfitEnv,
@@ -42,9 +41,8 @@ import { uuidArray } from './stock'
 
 // The Dashboard's decision cards (ROADMAP.md M3 Step 3; PRODUCT.md §9; Q14 of D-218):
 // `dashboard.cards`, worked out on read by services/real-profit.ts (nothing stored). Only the cards
-// the business has data for and the member may see: none while Sales is not served (a released
-// business sees no change before Release A, the plan's D3), none before the first finalized sale,
-// none for a member who sees neither the sales totals (every sale, H1) nor profit. Sales figures with
+// the business has data for and the member may see: none before the first finalized sale, none for
+// a member who sees neither the sales totals (every sale, H1) nor profit. Sales figures with
 // sales.documents.view; profit and every cost fact (where the money went, a loss or a low margin, cost
 // increases, what needs a look) with reports.profit.view (Q11), withheld otherwise (null), and tagged.
 // A member limited to some branches sees their branches' sales at the shares those carry, never the
@@ -87,7 +85,7 @@ export async function getCards(ctx: BusinessCtx): Promise<DashboardCardsDto> {
       deliveryMargin: null,
     }
     const answer = (data: Cards): DashboardCardsDto => ({ data, meta: { redacted: [] } })
-    if (!salesServed(ctx) || env.firstSaleDay === null || (!sees && !shown)) return answer(none)
+    if (env.firstSaleDay === null || (!sees && !shown)) return answer(none)
     const locations = ctx.access.locationScope
     const scope = locations.all ? null : [...locations.ids]
     const from = firstDayOf(month)
@@ -417,7 +415,7 @@ const RECENT_ORDERS = 5
 /**
  * "Recent orders" (the mockup: #1001, its first item, amount, Pending/Delivered): the newest orders
  * the member may see (every order with orders.documents.view, else their own; their branches), while
- * Orders is served and on; null otherwise. Paid / Deposit paid / Not paid with
+ * Orders is on; null otherwise. Paid / Deposit paid / Not paid with
  * payments.customers.view.
  */
 async function recentOrdersOf(tx: Tx, ctx: BusinessCtx): Promise<Cards['recentOrders']> {
@@ -476,7 +474,7 @@ async function recentOrdersOf(tx: Tx, ctx: BusinessCtx): Promise<Cards['recentOr
 
 /**
  * "What customers owe": every customer's orders and sales "they'll pay later" (the member's
- * branches), with payments.customers.view and Payments served and on; null otherwise.
+ * branches), with payments.customers.view and Payments on; null otherwise.
  */
 async function customersOweOf(tx: Tx, ctx: BusinessCtx): Promise<Cards['customersOwe']> {
   if (!passes(ctx, ['payments', 'payments.customers.view'])) return null

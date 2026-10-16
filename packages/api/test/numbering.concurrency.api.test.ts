@@ -3,7 +3,7 @@ import type { Db } from '@bizcost/db'
 import { newId } from '@bizcost/domain'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { connectApi, handlerFor, mutate, SECRET_KEY, type CallResult } from './helpers'
-import { ORDERS_PREVIEW, OrderScope, OrdersApi } from './orders'
+import { OrderScope, OrdersApi } from './orders'
 import { ok, type Handler } from './purchasing'
 import { BAKER } from './settings'
 
@@ -22,9 +22,7 @@ let handlers: Handler[]
 beforeAll(() => {
   api = new OrdersApi()
   dbs = Array.from({ length: INSTANCES }, () => connectApi())
-  handlers = dbs.map((db) =>
-    handlerFor(db, undefined, { supabaseSecretKey: SECRET_KEY, previewModules: ORDERS_PREVIEW }),
-  )
+  handlers = dbs.map((db) => handlerFor(db, undefined, { supabaseSecretKey: SECRET_KEY }))
 })
 
 afterAll(async () => {

@@ -5,7 +5,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { tag } from './product-costs'
 import { connectApi, handlerFor, SECRET_KEY } from './helpers'
 import { codeOf, ok } from './purchasing'
-import { dayOf, lastOf, PROFIT_PREVIEW, ProfitApi, ProfitScope } from './profit'
+import { dayOf, lastOf, ProfitApi, ProfitScope } from './profit'
 import { CAFE } from './sales'
 
 // Import correctness, adversarial (M3 Step 4): cases the step's own suites do not reach. Each test
@@ -278,10 +278,7 @@ describe('two imports of one channel, branch and day finalized at once', () => {
     const [va, vb] = await Promise.all([importOf(a.id), importOf(b.id)])
     // Two API instances, each with its own database connection (as two servers, or two requests).
     const db = connectApi()
-    const second = handlerFor(db, undefined, {
-      supabaseSecretKey: SECRET_KEY,
-      previewModules: PROFIT_PREVIEW,
-    })
+    const second = handlerFor(db, undefined, { supabaseSecretKey: SECRET_KEY })
     try {
       await Promise.all([
         cafe.run('saleImport.post', { id: a.id, version: va.version }),

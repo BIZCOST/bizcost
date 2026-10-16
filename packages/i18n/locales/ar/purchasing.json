@@ -417,6 +417,7 @@
     "recordedByFormer": "التسجيل: عضو سابق",
     "reversedTag": "مُبطلة",
     "reversedOn": "أُبطلت في {{date}} (الإبطال: {{name}}). لم تعد تُحسب.",
+    "reversedOnAlone": "أُبطلت في {{date}}. لم تعد تُحسب.",
     "reverse": "إبطال",
     "reverseTitle": "إبطال هذه الدفعة؟",
     "reverseBody": "يصبح {{amount}} مستحقًا من جديد. تبقى الدفعة في القائمة بعلامة «مُبطلة».",

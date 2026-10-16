@@ -115,6 +115,17 @@ describe('toggleBusinessItem', () => {
     expect(result.state.modules.has('payments')).toBe(true)
   })
 
+  it('turns Orders off with Sales, and Sales on with Orders: a delivery is a sale (Release A)', () => {
+    expect(baker.modules.has('orders')).toBe(true)
+    const off = ok(toggleBusinessItem(baker, mod('sales'), false))
+    expect(off.turnedOff).toEqual([mod('orders')])
+    expect(off.state.modules.has('customers')).toBe(true)
+    expect(off.state.modules.has('payments')).toBe(true)
+    const on = ok(toggleBusinessItem(off.state, mod('orders'), true))
+    expect(on.turnedOn).toEqual([mod('sales')])
+    expect(isValidSetupState(on.state)).toBe(true)
+  })
+
   it('VAT follows the same rules when the business profile switches it', () => {
     const off = ok(toggleBusinessItem(workshop, cap('vat_registered'), false))
     expect(off.state.vatRegistered).toBe(false)

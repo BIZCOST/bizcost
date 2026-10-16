@@ -92,6 +92,8 @@ function InvoiceRow({
   const { t } = useTranslation()
   const { locale } = useLocale()
   const businessDate = useBusinessDate()
+  const { data: context } = useBusinessContext()
+  const team = context?.capabilities.has_team === true
   // A purchase: its first items ("Milk and Sugar"); an expense: its category · what it was for.
   const items =
     invoice.kind === 'expense'
@@ -131,11 +133,14 @@ function InvoiceRow({
           ) : null}
           {items}
         </p>
-        <p className="mt-0.5 text-sm text-muted-foreground">
-          {invoice.enteredBy.name
-            ? t('purchasing.payables.enteredBy', { name: isolate(invoice.enteredBy.name) })
-            : t('purchasing.payables.enteredByFormer')}
-        </p>
+        {/* Who entered it: only in a business with a team (D-278). */}
+        {team ? (
+          <p className="mt-0.5 text-sm text-muted-foreground">
+            {invoice.enteredBy.name
+              ? t('purchasing.payables.enteredBy', { name: isolate(invoice.enteredBy.name) })
+              : t('purchasing.payables.enteredByFormer')}
+          </p>
+        ) : null}
       </div>
       <dl
         className={cn(

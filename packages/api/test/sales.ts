@@ -8,24 +8,16 @@ import type {
 } from '@bizcost/contracts'
 import { newId } from '@bizcost/domain'
 import type { SetupAnswers } from '@bizcost/modules'
-import { handlerFor, SECRET_KEY } from './helpers'
 import { CostScope, tag } from './product-costs'
 import { ok, PurchasingApi, purchaseInput, type Person } from './purchasing'
 
-// Helpers of the sales tests (ROADMAP.md M3 Step 2): Sales is planned until Release A (Step 6), so the
-// API runs with the dev-only preview of it (D-125), as a local server does. Businesses, products,
-// recipes and purchases are made through the API; sales are entered, finalized, reversed and
-// corrected through it; the database is read as postgres to check what a sale froze.
+// Helpers of the sales tests (ROADMAP.md M3 Step 2): the API as deployed (Sales is released since
+// Release A, M3 Step 6: no dev-only preview). Businesses, products, recipes and purchases are made
+// through the API; sales are entered, finalized, reversed and corrected through it; the database is
+// read as postgres to check what a sale froze.
 
-/** The modules the sales suites preview (D-125). */
-export const PREVIEW_MODULES = ['sales'] as const
-
-export class SalesApi extends PurchasingApi {
-  override readonly handler = handlerFor(this.db, undefined, {
-    supabaseSecretKey: SECRET_KEY,
-    previewModules: PREVIEW_MODULES,
-  })
-}
+/** The API of the sales suites: the purchasing suites' (as deployed). */
+export class SalesApi extends PurchasingApi {}
 
 /** A coffee shop with a POS and staff, VAT-registered (persona 2): terminology profile `food`. */
 export const CAFE: SetupAnswers = {

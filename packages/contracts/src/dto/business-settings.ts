@@ -120,6 +120,11 @@ export const customizationDto = z.object({
   teamInUse: z.boolean(),
   /** The business has more than one location: multi_location cannot be turned off. */
   locationsInUse: z.boolean(),
+  /**
+   * A member works only at some branches, or a pending invitation would make one: multi_location
+   * cannot be turned off (a limit never outlives the branches, M3 Step 6 review).
+   */
+  branchLimitsInUse: z.boolean(),
 })
 export type CustomizationDto = z.infer<typeof customizationDto>
 

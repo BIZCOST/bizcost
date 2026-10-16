@@ -356,7 +356,7 @@
       "pos": "Import your POS sales to see your real profit.",
       "apps": "Bring in sales from your online store or delivery apps, with their fees.",
       "with_orders": "Add the sales you don't record as orders.",
-      "invoices": "Add any sales that don't come from your invoices.",
+      "invoices": "Record your sales to see your real profit. Invoices are coming soon, made from these sales.",
       "default": "Add your sales to see your real profit."
     },
     "payments": {
@@ -366,7 +366,7 @@
       "default": "Know who has paid and who still owes."
     },
     "reports": {
-      "projects": "See your real profit by project, month and more.",
+      "projects": "See your real profit by service, month and more.",
       "default": "See your real profit by product, month and more."
     },
     "orders": {

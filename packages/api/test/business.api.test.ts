@@ -272,6 +272,11 @@ describe('business.context', () => {
       ['running_costs', ['running_costs'], []],
       ['files', [], []],
       ['cost_engine', ['product_costs'], []],
+      // Release A (M3 Step 6): the core modules of Sales & Profit are on without a row too.
+      ['sales', ['sales'], ['today_sales', 'new_sale']],
+      ['customers', ['customers'], ['new_customer']],
+      ['payments', ['receivables'], []],
+      ['reports', ['real_profit'], []],
     ])
     expect(rest).toEqual({
       roleTemplateKey: 'owner',
@@ -302,8 +307,8 @@ describe('business.context', () => {
         all: false,
         // The owner's answers of 2026-09-29 (D-179, D-180): recipes (quantities) and their
         // materials, and entering expenses; nothing sensitive. Entering and finalizing their own
-        // sales (M3 Step 2, Q10): held already, served once Sales is (its module gate). Adding
-        // customers, entering and delivering their own orders (M3 Step 5, Q10; D-269) likewise.
+        // sales (M3 Step 2, Q10); adding customers, entering and delivering their own orders (M3
+        // Step 5, Q10; D-269), served since Release A (M3 Step 6).
         keys: [
           'customers.items.manage',
           'dashboard.home.view',
@@ -332,7 +337,12 @@ describe('business.context', () => {
       ['running_costs', []],
       ['files', []],
       ['cost_engine', []],
+      ['sales', ['sales']],
+      ['customers', []],
+      ['payments', []],
+      ['reports', []],
     ])
+    // A new customer opens Customers, which they may not see: they add customers from an order.
     expect(result.data?.modules.flatMap((m) => m.quickActions)).toEqual([
       {
         id: 'new_expense',
@@ -340,6 +350,13 @@ describe('business.context', () => {
         path: 'expenses/new',
         icon: 'receipt',
       },
+      {
+        id: 'today_sales',
+        labelKey: 'nav.today_sales',
+        path: 'sales/today',
+        icon: 'calendar-check',
+      },
+      { id: 'new_sale', labelKey: 'nav.new_sale', path: 'sales/new', icon: 'banknote' },
     ])
   })
 
@@ -371,8 +388,10 @@ describe('business.context', () => {
   })
 
   it('shows released modules only, even when planned modules are on', async () => {
-    // Materials (core) is on without a row; Orders (optional) is switched on by its row.
+    // Materials (core) is on without a row; Orders (optional, released with Release A) and
+    // Quotations (optional, planned until Release B) are switched on by their rows.
     await setModule('orders', true)
+    await setModule('quotations', true)
     const result = await query<ContextResult>(handler, 'business.context', as('owner'))
     expect(result.data?.modules.map((m) => m.id)).toEqual([
       'dashboard',
@@ -385,6 +404,11 @@ describe('business.context', () => {
       'running_costs',
       'files',
       'cost_engine',
+      'sales',
+      'orders',
+      'customers',
+      'payments',
+      'reports',
     ])
   })
 

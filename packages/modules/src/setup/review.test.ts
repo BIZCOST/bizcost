@@ -74,8 +74,8 @@ describe('buildSetupReview', () => {
       'running_costs',
       'files',
       'cost_engine',
-      'customers',
       'sales',
+      'customers',
       'payments',
       'reports',
     ])
@@ -208,8 +208,24 @@ describe('buildSetupReview', () => {
     const soon = rows.filter((r) => r.soon).map((r) => rowIds([r])[0])
     const now = rows.filter((r) => !r.soon && r.item.kind === 'module').map((r) => rowIds([r])[0])
     expect(now).toEqual(expect.arrayContaining(['products', 'materials', 'purchases', 'expenses']))
-    expect(soon).toContain('orders')
-    for (const id of ['products', 'materials', 'suppliers', 'purchases', 'running_costs']) {
+    // Release A (M3 Step 6): Sales & Profit are live; Quotations and Invoices stay "soon" until
+    // Release B (Step 9).
+    expect(now).toEqual(
+      expect.arrayContaining(['sales', 'orders', 'customers', 'payments', 'reports']),
+    )
+    expect(soon).toEqual(expect.arrayContaining(['quotations', 'invoices']))
+    for (const id of [
+      'products',
+      'materials',
+      'suppliers',
+      'purchases',
+      'running_costs',
+      'sales',
+      'orders',
+      'customers',
+      'payments',
+      'reports',
+    ]) {
       expect(soon, id).not.toContain(id)
     }
   })

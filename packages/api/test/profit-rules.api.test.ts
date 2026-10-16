@@ -3,7 +3,7 @@ import { addMonths, daysIn, newId } from '@bizcost/domain'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { handlerFor, SECRET_KEY } from './helpers'
 import { tag } from './product-costs'
-import { dayOf, lastOf, ProfitApi, ProfitScope, type Summary } from './profit'
+import { dayOf, lastOf, ProfitApi, ProfitScope, type Cards, type Summary } from './profit'
 import { codeOf, ok, purchaseInput } from './purchasing'
 import { bought, CAFE, CAFE_BRANCHES, item } from './sales'
 import { WORKSHOP } from './settings'
@@ -285,8 +285,8 @@ describe('a member limited to some branches (Q12): their branches, no business-l
   })
 })
 
-describe('a released business sees no change before Release A (the plan’s D3)', () => {
-  it('without the preview: Product costs await sales, no cards, Reports is not served', async () => {
+describe('Release A (M3 Step 6): released code serves real profit, without the dev-only preview', () => {
+  it('Product costs carry the share, the cards show, and Reports is served', async () => {
     const shop = await ProfitScope.open(api, CAFE)
     const { last } = await shop.months()
     await shop.monthly('100', dayOf(addMonths(last, -2), 1))
@@ -306,30 +306,23 @@ describe('a released business sees no change before Release A (the plan’s D3)'
         released,
       ),
     ).data
-    expect(breakdown.cost.runningCosts).toEqual({ state: 'awaiting_sales', amount: null })
-    expect(breakdown.monthCosts).toMatchObject({
-      state: 'awaiting_sales',
-      basis: null,
-      month: last,
-    })
+    // Last month's rate, 100 ÷ 400 = 25 %, on its price of 400.
+    expect(breakdown.cost.runningCosts).toEqual({ state: 'applied', amount: '100' })
+    expect(breakdown.monthCosts).toMatchObject({ basis: 'last_month', month: last, rate: '0.25' })
     const cards = ok(
-      await api.call<{ data: Record<string, unknown> }>(
-        shop.owner,
-        shop.id,
-        'dashboard.cards',
-        undefined,
-        released,
-      ),
+      await api.call<{ data: Cards }>(shop.owner, shop.id, 'dashboard.cards', undefined, released),
     ).data
-    expect(cards).toMatchObject({ profit: null, sales: null, byDay: null, needsLook: null })
-    const report = await api.call(
+    expect(cards.profitShown).toBe(true)
+    expect(cards.sales).toMatchObject({ lastMonth: '400' })
+    const report = await api.call<{ data: Summary }>(
       shop.owner,
       shop.id,
       'profit.summary',
       { from: dayOf(last, 1), to: lastOf(last) },
       released,
     )
-    expect(codeOf(report)).toBe('module_disabled')
+    expect(codeOf(report)).toBeUndefined()
+    expect(report.data?.data.total).toMatchObject({ sales: '400' })
   })
 })
 

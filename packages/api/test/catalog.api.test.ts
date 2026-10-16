@@ -134,7 +134,9 @@ describe('the module gate', () => {
     )
     const availability = (id: string) => customization.modules.find((m) => m.id === id)
     expect(availability('materials')).toMatchObject({ availability: 'released', enabled: true })
-    expect(availability('orders')?.availability).toBe('planned')
+    // Released with Release A (M3 Step 6); Quotations waits for Release B.
+    expect(availability('orders')?.availability).toBe('released')
+    expect(availability('quotations')?.availability).toBe('planned')
   })
 
   it('a business that turned the module off gets MODULE_DISABLED; turning it on again brings it back', async () => {

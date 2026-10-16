@@ -387,7 +387,7 @@ describe('what it pays, in a category that has running costs (the owner’s "1أ
   })
 })
 
-describe('what it pays, while Sales is served: a channel’s app fees or delivery (Q8, D-239)', () => {
+describe('what it pays, with Sales on: a channel’s app fees or delivery (Q8, D-239)', () => {
   const TALABAT = '0190a4f2-7b5c-7c3e-9b1a-2f3c4d5e6f75'
   const ARCHIVED = '0190a4f2-7b5c-7c3e-9b1a-2f3c4d5e6f76'
   const CHANNELS = [{ id: TALABAT }]
@@ -410,7 +410,7 @@ describe('what it pays, while Sales is served: a channel’s app fees or deliver
       channelId: TALABAT,
     })
     expect(paysInputOf(DELIVERY, PAYABLE, CHANNELS)).toEqual({ kind: 'delivery' })
-    // Not read (no costs, or Sales not served): left out, the API keeps it.
+    // Not read (no costs, or Sales off): left out, the API keeps it.
     expect(paysInputOf(`${FEES}${TALABAT}`, PAYABLE)).toBeUndefined()
     expect(paysInputOf(DELIVERY, undefined)).toBeUndefined()
     // An archived channel the expense already names: kept as it is.

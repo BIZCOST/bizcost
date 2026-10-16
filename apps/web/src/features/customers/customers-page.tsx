@@ -5,7 +5,7 @@ import type { CustomerDto } from '@bizcost/contracts'
 import { keepPreviousData, useInfiniteQuery, useQuery } from '@tanstack/react-query'
 import { Building2Icon, LandmarkIcon, UserRoundIcon, UsersRoundIcon } from 'lucide-react'
 import Link from 'next/link'
-import { useParams } from 'next/navigation'
+import { useParams, useRouter } from 'next/navigation'
 import { Fragment, useState, type ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
 import { ModuleGate } from '@/components/shell/module-gate'
@@ -93,8 +93,9 @@ function CustomerRow({ customer, href }: { customer: CustomerDto; href: string }
   )
 }
 
-function CustomersList() {
+function CustomersList({ startNew }: { startNew: boolean }) {
   const { t } = useTranslation()
+  const router = useRouter()
   const term = useTerminology()
   const trpc = useTRPC()
   const { businessId } = useParams<{ businessId: string }>()
@@ -116,7 +117,8 @@ function CustomersList() {
     nothingInUse,
     everything.isFetching ? undefined : everything.data,
   )
-  const [adding, setAdding] = useState<string | null>(null)
+  // The "+" action's address (customers/new) opens the list with a new customer's form.
+  const [adding, setAdding] = useState<string | null>(() => (startNew ? 'new-from-address' : null))
   if (!context) return null
   const canAdd = mayAddCustomers(context)
   const profile = context.terminologyProfile
@@ -160,16 +162,29 @@ function CustomersList() {
           <CustomerRow customer={customer} href={`${base}/${customer.id}`} />
         )}
       />
-      {adding ? <CustomerSheet key={adding} onClose={() => setAdding(null)} /> : null}
+      {adding && canAdd ? (
+        <CustomerSheet
+          key={adding}
+          onClose={() => {
+            setAdding(null)
+            // Opened from customers/new: the list's own address once the form is closed.
+            if (startNew) router.replace(base)
+          }}
+        />
+      ) : null}
     </PageContainer>
   )
 }
 
-/** The Customers page: the list inside the module's gate (turned off, or not open to the member). */
-export function CustomersPage() {
+/**
+ * The Customers page: the list inside the module's gate (turned off, or not open to the member).
+ * `startNew`: opened at customers/new (the "+" action "New customer"), with a new customer's form
+ * open; for a member who may not add customers it is the list.
+ */
+export function CustomersPage({ startNew = false }: { startNew?: boolean }) {
   return (
     <ModuleGate moduleId="customers" entryId="customers">
-      <CustomersList />
+      <CustomersList startNew={startNew} />
     </ModuleGate>
   )
 }

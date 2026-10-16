@@ -50,6 +50,7 @@ function canFor(templateKey: string) {
 const dashboard = moduleById('dashboard')!
 const settings = moduleById('settings')!
 const orders = moduleById('orders')!
+const quotations = moduleById('quotations')!
 
 describe('lookups', () => {
   it('moduleById finds manifests and returns undefined for unknown ids', () => {
@@ -70,6 +71,11 @@ describe('lookups', () => {
       'running_costs',
       'files',
       'cost_engine',
+      'sales',
+      'orders',
+      'customers',
+      'payments',
+      'reports',
     ])
     expect(releasedModules().every(isModuleReleased)).toBe(true)
   })
@@ -193,8 +199,9 @@ describe('module gates', () => {
 
   it('never activates a planned module, even when the business enabled it', () => {
     const enabled = new Set(MODULES.map((m) => m.id))
-    expect(isModuleActive(orders, enabled)).toBe(false)
-    expect(isModuleVisible(orders, enabled, everybody)).toBe(false)
+    expect(isModuleActive(quotations, enabled)).toBe(false)
+    expect(isModuleVisible(quotations, enabled, everybody)).toBe(false)
+    expect(isModuleActive(orders, enabled)).toBe(true)
     expect(isModuleActive(dashboard, NONE)).toBe(true)
   })
 
@@ -214,96 +221,103 @@ describe('module gates', () => {
 })
 
 describe('the dev-only preview (D-125)', () => {
-  // No module is being built between M2 Step 7 and Phase 3: a test registry starts the build of Orders
-  // (its keys and nav) while it stays planned.
+  // No module is being built between Release A (M3 Step 6) and Quotations (Step 7): a test registry
+  // starts the build of Quotations (its keys and nav) while it stays planned.
   const building: ModuleManifest = {
-    ...orders,
-    permissionKeys: ['orders.view'],
+    ...quotations,
+    permissionKeys: ['quotations.view'],
     nav: [
       {
-        id: 'orders',
-        labelKey: 'nav.orders',
-        path: 'orders',
-        icon: 'shopping-bag',
-        group: 'main',
-        permission: 'orders.view',
+        id: 'quotations',
+        labelKey: 'nav.quotations',
+        path: 'quotations',
+        icon: 'file-text',
+        group: 'sales',
+        permission: 'quotations.view',
       },
     ],
   }
-  const registry = MODULES.map((m) => (m.id === 'orders' ? building : m))
-  const ordersOn = resolveEnabledModules([{ key: 'orders', enabled: true }])
+  const registry = MODULES.map((m) => (m.id === 'quotations' ? building : m))
+  const quotationsOn = resolveEnabledModules([{ key: 'quotations', enabled: true }])
 
-  it('may show only planned modules whose build started: Sales since M3 Step 2, Reports since Step 3, Customers, Payments and Orders since Step 5', () => {
-    expect(PREVIEWABLE_MODULE_IDS).toEqual(['customers', 'sales', 'payments', 'reports', 'orders'])
+  it('may show only planned modules whose build started: none since Release A (M3 Step 6)', () => {
+    expect(PREVIEWABLE_MODULE_IDS).toEqual([])
   })
 
   it('parses a comma or space separated list, ignores released modules, and names what it cannot preview', () => {
     expect(parsePreviewModules(undefined, registry)).toEqual({ ids: [], released: [], invalid: [] })
     expect(parsePreviewModules('  ', registry)).toEqual({ ids: [], released: [], invalid: [] })
-    expect(parsePreviewModules(' orders , orders', registry)).toEqual({
-      ids: ['orders'],
+    expect(parsePreviewModules(' quotations , quotations', registry)).toEqual({
+      ids: ['quotations'],
       released: [],
       invalid: [],
     })
-    // A list written before the Costing Core's release (a local server's environment): its modules
-    // are released now, so there is nothing to preview and the server keeps starting.
+    // A list written before a release (a local server's environment: the Costing Core's, M2 Step 7, or
+    // Release A's, M3 Step 6): its modules are released now, so there is nothing to preview and the
+    // server keeps starting.
     expect(parsePreviewModules('materials,products', registry)).toEqual({
       ids: [],
       released: ['products', 'materials'],
       invalid: [],
     })
+    expect(parsePreviewModules('customers,sales,payments,reports,orders')).toEqual({
+      ids: [],
+      released: ['sales', 'orders', 'customers', 'payments', 'reports'],
+      invalid: [],
+    })
     // Unknown, or planned without a build: refused by name.
-    expect(parsePreviewModules('orders,quotations,Orders,nope', registry)).toEqual({
-      ids: ['orders'],
+    expect(parsePreviewModules('quotations,invoices,Quotations,nope', registry)).toEqual({
+      ids: ['quotations'],
       released: [],
-      invalid: ['quotations', 'Orders', 'nope'],
+      invalid: ['invoices', 'Quotations', 'nope'],
     })
     // The real registry previews only the modules being built (Quotations is not yet).
-    expect(parsePreviewModules('quotations,materials')).toEqual({
+    expect(parsePreviewModules('quotations,materials,sales')).toEqual({
       ids: [],
-      released: ['materials'],
+      released: ['materials', 'sales'],
       invalid: ['quotations'],
     })
   })
 
   it('counts the named modules as released, and nothing else', () => {
-    const previewed = withPreviewModules(['orders', 'quotations'], registry)
+    const previewed = withPreviewModules(['quotations', 'invoices'], registry)
     expect(
       isModuleActive(
-        previewed.find((m) => m.id === 'orders')!,
-        ordersOn,
+        previewed.find((m) => m.id === 'quotations')!,
+        quotationsOn,
       ),
     ).toBe(true)
-    expect(previewed.find((m) => m.id === 'quotations')?.availability).toBe('planned')
+    expect(previewed.find((m) => m.id === 'invoices')?.availability).toBe('planned')
     // The registry passed in is untouched.
     expect(building.availability).toBe('planned')
-    expect(isModuleActive(building, ordersOn)).toBe(false)
+    expect(isModuleActive(building, quotationsOn)).toBe(false)
     expect(withPreviewModules([], registry)).toBe(registry)
-    // With the real registry nothing changes for a module not being built.
-    expect(withPreviewModules(['quotations', 'materials'])).toBe(MODULES)
+    // With the real registry nothing changes for a module not being built, or released.
+    expect(withPreviewModules(['quotations', 'materials', 'sales'])).toBe(MODULES)
   })
 
   it('still needs the business to have the module on and the member its permission', () => {
-    const previewed = withPreviewModules(['orders'], registry)
+    const previewed = withPreviewModules(['quotations'], registry)
     const entries = (enabled: ReadonlySet<string>, can: (key: string) => boolean) =>
       buildModuleNav(enabled, can, previewed)
-        .find((m) => m.id === 'orders')
+        .find((m) => m.id === 'quotations')
         ?.nav.map((e) => e.id)
-    expect(entries(ordersOn, everybody)).toEqual(['orders'])
-    expect(entries(ordersOn, (key) => key !== 'orders.view')).toEqual([])
+    expect(entries(quotationsOn, everybody)).toEqual(['quotations'])
+    expect(entries(quotationsOn, (key) => key !== 'quotations.view')).toEqual([])
     // An optional module is off until the business turns it on.
     expect(entries(resolveEnabledModules([]), everybody)).toBeUndefined()
   })
 })
 
-describe('the Costing Core, released (M2 Step 7)', () => {
+describe('the Costing Core (M2 Step 7) and Release A (M3 Step 6), released', () => {
   const core = resolveEnabledModules([])
+  const withOrders = resolveEnabledModules([{ key: 'orders', enabled: true }])
   const entries = (enabled: ReadonlySet<string>, can: (key: string) => boolean) =>
     buildModuleNav(enabled, can).map((m): [string, string[]] => [m.id, m.nav.map((e) => e.id)])
   const plus = (enabled: ReadonlySet<string>, can: (key: string) => boolean) =>
     buildModuleNav(enabled, can).flatMap((m) => m.quickActions.map((a) => a.id))
 
-  it('shows without the preview: the owner gets every section and "+" for a product, a purchase and an expense', () => {
+  it('shows without the preview: the owner gets every section and "+" for what they enter', () => {
     expect(entries(core, canFor(OWNER_TEMPLATE_KEY))).toEqual([
       ['dashboard', ['dashboard']],
       ['settings', ['settings']],
@@ -315,52 +329,106 @@ describe('the Costing Core, released (M2 Step 7)', () => {
       ['running_costs', ['running_costs']],
       ['files', []],
       ['cost_engine', ['product_costs']],
+      ['sales', ['sales']],
+      ['customers', ['customers']],
+      ['payments', ['receivables']],
+      ['reports', ['real_profit']],
     ])
     expect(plus(core, canFor(OWNER_TEMPLATE_KEY))).toEqual([
       'new_product',
       'new_purchase',
       'new_expense',
+      'today_sales',
+      'new_sale',
+      'new_customer',
+    ])
+    // Orders is optional: only for a business that turned it on.
+    expect(entries(withOrders, canFor(OWNER_TEMPLATE_KEY))).toContainEqual(['orders', ['orders']])
+    expect(plus(withOrders, canFor(OWNER_TEMPLATE_KEY))).toEqual([
+      'new_product',
+      'new_purchase',
+      'new_expense',
+      'today_sales',
+      'new_sale',
+      'new_order',
+      'new_customer',
     ])
   })
 
   it('is still gated by the module being on and the permission of the member', () => {
-    // An employee: what goes into products, their materials, and entering expenses (D-179, D-180).
-    expect(entries(core, canFor('employee')).filter(([, ids]) => ids.length > 0)).toEqual([
+    // An employee: what goes into products, their materials, entering expenses (D-179, D-180), and
+    // entering their own sales and orders (Q10); they add customers from an order's picker, so no
+    // Customers page and no "New customer".
+    expect(entries(withOrders, canFor('employee')).filter(([, ids]) => ids.length > 0)).toEqual([
       ['dashboard', ['dashboard']],
       ['settings', ['settings']],
       ['products', ['products']],
       ['materials', ['materials']],
       ['expenses', ['expenses']],
+      ['sales', ['sales']],
+      ['orders', ['orders']],
     ])
-    expect(plus(core, canFor('employee'))).toEqual(['new_expense'])
-    expect(plus(core, canFor('sales'))).toEqual([])
-    expect(plus(core, canFor('accountant'))).toEqual([])
+    expect(plus(withOrders, canFor('employee'))).toEqual([
+      'new_expense',
+      'today_sales',
+      'new_sale',
+      'new_order',
+    ])
+    expect(plus(withOrders, canFor('sales'))).toEqual([
+      'today_sales',
+      'new_sale',
+      'new_order',
+      'new_customer',
+    ])
+    expect(plus(withOrders, canFor('supervisor'))).toEqual([
+      'today_sales',
+      'new_sale',
+      'new_order',
+      'new_customer',
+    ])
+    expect(plus(withOrders, canFor('accountant'))).toEqual([])
     // Turned off by the business (a services business without Purchases and Materials): gone.
     const off = resolveEnabledModules([
       { key: 'purchases', enabled: false },
       { key: 'materials', enabled: false },
+      { key: 'sales', enabled: false },
     ])
     expect(entries(off, canFor(OWNER_TEMPLATE_KEY)).map(([id]) => id)).not.toContain('purchases')
-    expect(plus(off, canFor(OWNER_TEMPLATE_KEY))).toEqual(['new_product', 'new_expense'])
+    expect(plus(off, canFor(OWNER_TEMPLATE_KEY))).toEqual([
+      'new_product',
+      'new_expense',
+      'new_customer',
+    ])
   })
 
-  it('claims phone tabs so that an owner keeps Product costs and an employee Expenses', () => {
-    const tabs = (can: (key: string) => boolean) =>
-      buildModuleNav(core, can)
+  it('claims phone tabs: Home, the Sales place (Orders with Orders on), Costs, Expenses, Products (Q14)', () => {
+    const tabs = (enabled: ReadonlySet<string>, can: (key: string) => boolean) =>
+      buildModuleNav(enabled, can)
         .flatMap((m) => m.nav)
-        .map((e) => [e.id, e.tab])
-    expect(tabs(canFor(OWNER_TEMPLATE_KEY))).toEqual([
+        .map((e): [string, number | null] => [e.id, e.tab])
+    expect(tabs(core, canFor(OWNER_TEMPLATE_KEY))).toEqual([
       ['dashboard', 1],
       ['settings', null],
-      ['products', 4],
+      ['products', 5],
       ['materials', 7],
       ['suppliers', null],
       ['purchases', 6],
       ['payables', null],
-      ['expenses', 5],
+      ['expenses', 4],
       ['running_costs', null],
       ['product_costs', 3],
+      ['sales', 2],
+      ['customers', null],
+      ['receivables', null],
+      ['real_profit', null],
     ])
+    // Orders takes the Sales place: Sales claims nothing then.
+    const ordersBusiness = new Map(tabs(withOrders, canFor(OWNER_TEMPLATE_KEY)))
+    expect(ordersBusiness.get('orders')).toBe(2)
+    expect(ordersBusiness.get('sales')).toBeNull()
+    // A member who does not use Orders keeps Sales in its place.
+    const noOrders = (key: string) => canFor('manager')(key) && !key.startsWith('orders.')
+    expect(new Map(tabs(withOrders, noOrders)).get('sales')).toBe(2)
   })
 })
 
@@ -399,7 +467,7 @@ describe('resolveEnabledModules', () => {
 
 describe('buildModuleNav', () => {
   it('lists released + enabled modules with the entries the member may use', () => {
-    const nav = buildModuleNav(new Set(['orders', 'inventory']), canFor('employee'))
+    const nav = buildModuleNav(new Set(['quotations', 'inventory']), canFor('employee'))
     expect(nav).toEqual([
       {
         id: 'dashboard',
@@ -447,37 +515,37 @@ describe('buildModuleNav', () => {
 
   it('adds a module once it is released, only for businesses that turned it on', () => {
     const released: ModuleManifest = {
-      ...moduleById('orders')!,
+      ...quotations,
       availability: 'released',
       nav: [
         {
-          id: 'orders',
-          labelKey: 'nav.orders',
-          path: 'orders',
+          id: 'quotations',
+          labelKey: 'nav.quotations',
+          path: 'quotations',
           icon: 'shopping-bag',
           group: 'main',
-          permission: 'orders.view',
+          permission: 'quotations.view',
         },
       ],
       quickActions: [
-        { id: 'orders.new', labelKey: 'nav.newOrder', path: 'orders/new', icon: 'plus' },
+        { id: 'quotations.new', labelKey: 'nav.newQuote', path: 'quotations/new', icon: 'plus' },
       ],
     }
-    const registry = MODULES.map((m) => (m.id === 'orders' ? released : m))
+    const registry = MODULES.map((m) => (m.id === 'quotations' ? released : m))
     const ids = (enabled: Set<string>, can: (key: string) => boolean) =>
       buildModuleNav(enabled, can, registry).map((m) => [m.id, m.nav.length, m.quickActions.length])
-    expect(ids(new Set(['orders']), everybody)).toEqual([
+    expect(ids(new Set(['quotations']), everybody)).toEqual([
       ['dashboard', 1, 0],
       ['settings', 1, 0],
-      ['orders', 1, 1],
+      ['quotations', 1, 1],
     ])
     expect(ids(NONE, everybody)).toEqual([
       ['dashboard', 1, 0],
       ['settings', 1, 0],
     ])
     // Without the permission the module stays listed, with no entries (the shell hides it).
-    expect(ids(new Set(['orders']), (key) => key !== 'orders.view')).toContainEqual([
-      'orders',
+    expect(ids(new Set(['quotations']), (key) => key !== 'quotations.view')).toContainEqual([
+      'quotations',
       0,
       1,
     ])

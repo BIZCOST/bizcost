@@ -303,6 +303,7 @@
     "recordedByFormer": "سجّلها عضو سابق",
     "reversedTag": "مُلغاة",
     "reversedOn": "أُلغيت في {{date}} بواسطة {{name}}. لم تعد تُحسب.",
+    "reversedOnAlone": "أُلغيت في {{date}}. لم تعد تُحسب.",
     "reverse": "ألغِ",
     "reverseTitle": "إلغاء هذه الدفعة؟",
     "reverseBody": "يعود {{amount}} مستحقًا. تبقى الدفعة في القائمة وتظهر على أنها ملغاة.",

@@ -101,17 +101,20 @@ describe('D-202: every running cost and expense counts once', () => {
     expect((await monthCosts()).total).toBe('3900')
   })
 
-  it('what was bought never counts in them: materials are each product’s own line', async () => {
-    // A released business (no preview): materials no product uses count with the month's costs only
-    // once Sales is served (Q13 A, D-238, D-250; profit-rules.api proves them under the preview).
+  it('what was bought counts in them only while no product uses it: then it is the product’s own line', async () => {
+    // Materials no product uses count with the month's costs (Q13 A, D-238, D-250), for every
+    // business since Release A (M3 Step 6); in a recipe they are each product's own line again.
     const { shop, lastMonth, monthCosts } = await workshop()
     const wood = await shop.newMaterial({ name: `Wood ${tag()}`, unit: 'kg' })
     await shop.buy(purchaseInput(`${lastMonth}-12`, [bought(wood.id, '1000', '30')]))
-    expect((await monthCosts()).total).toBe('3900')
-    expect((await monthCosts()).materials ?? null).toBeNull()
+    expect(await monthCosts()).toMatchObject({
+      total: '33900',
+      materials: [{ materialId: wood.id, name: wood.name, amount: '30000' }],
+    })
     const table = await shop.product({ name: `Table ${tag()}`, defaultPrice: '900' })
     await shop.recipe(table.id, [{ id: newId(), materialId: wood.id, qty: '20', unit: 'kg' }])
     expect((await monthCosts()).total).toBe('3900')
+    expect((await monthCosts()).materials ?? null).toBeNull()
   })
 
   it('a rent that changes on a day of the month counts once', async () => {

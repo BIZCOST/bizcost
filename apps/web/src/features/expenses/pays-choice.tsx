@@ -16,7 +16,7 @@ import { DELIVERY, EXTRA, FEES, ORDINARY } from './expense-draft'
 // amounts. Asked in the expense editor, and of the one who approves or finalizes an expense entered
 // by a member who may not see running costs. Its label shows in the lists and on the expense. Two
 // of the same name (a rent changed that month, D-176) say when each counts (D-217; a bill of either
-// pays for both that month). While Sales is served (M3 Step 3, Q8), a member who sees costs may also
+// pays for both that month). With Sales on (M3 Step 3, Q8), a member who sees costs may also
 // say it pays «عمولات تطبيق…» / "App fees of …" (a delivery app's or marketplace's) or "Delivery
 // already on my sales and orders": neither counts in the month's costs; in a category without running
 // costs the choice then offers "An ordinary expense" too (it counts as itself).
@@ -98,7 +98,7 @@ export function feeChannels(
 
 /**
  * «ماذا يدفع هذا المصروف؟»: the bill of one of `options` (the running costs its category can pay
- * that month, by name), or an extra; while Sales is served, a channel's app fees or delivery already
+ * that month, by name), or an extra; with Sales on, a channel's app fees or delivery already
  * on the sales (`channels`: those offered, for a member who sees costs), and, in a category without
  * running costs, an ordinary expense. `value`: a running cost's id, EXTRA, `fees:<id>`, DELIVERY,
  * ORDINARY, or '' (not chosen yet; an ordinary expense where that is offered). `hint`: a line under

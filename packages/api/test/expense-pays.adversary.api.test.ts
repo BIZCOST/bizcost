@@ -109,10 +109,15 @@ describe('D-216: a running cost is paid only by an expense of its own category',
       }),
     )
     expect(draft.pays?.runningCost?.id).toBe(power.id)
+    // Sales goes off too: since Release A a member who sees costs may also say, with Sales on, that
+    // an expense pays a channel's fees or delivery (or nothing), D-239.
+    const salesModule = (enabled: boolean) =>
+      shop.run('business.customize', { item: { kind: 'module', id: 'sales' }, enabled })
     await runningCostsModule(shop, false)
+    ok(await salesModule(false))
     let posted: ExpenseDto
     try {
-      // Nobody may say what it pays while the module is off.
+      // Nobody may say what it pays while the modules are off.
       expect(
         codeOf(
           await shop.run(
@@ -131,6 +136,7 @@ describe('D-216: a running cost is paid only by an expense of its own category',
       posted = await shop.postExpense(moved)
     } finally {
       await runningCostsModule(shop, true)
+      ok(await salesModule(true))
     }
     const read = ok(await shop.run<Envelope<ExpenseDto>>('expense.get', { id: posted.id })).data
     expect(read).toMatchObject({ status: 'posted', categoryId: category('Rent') })

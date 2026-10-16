@@ -31,7 +31,7 @@ export type ChecklistItemDto = z.infer<typeof checklistItemDto>
 /**
  * "Let's find the real cost of what you sell" (PRODUCT.md §10, M2 Step 7), in the order shown: add
  * what you sell → what you use to make it → purchase prices → your regular running costs → your time
- * (without a team) → see your product costs; and, while Sales and Reports are served (M3 Step 3), it
+ * (without a team) → see your product costs; and, with Sales and Reports on (M3 Step 3), it
  * becomes "Let's calculate your first real profit": → add or import your sales → see your real
  * profit. Which of them a member sees: `costStepIds` in @bizcost/modules (the modules on, the keys to
  * do it, and for the cost steps the costs visible).
@@ -81,9 +81,8 @@ export type DashboardChecklistDto = z.infer<typeof dashboardChecklistDto>
 // ---------------------------------------------------------------------------------------------------
 //
 // Only the cards the business has data for and the member may see: a card is null otherwise (no
-// placeholder), and every card is null while Sales is not served (a released business sees no change
-// before Release A) or before the first finalized sale. Sales figures need every sale seen
-// (sales.documents.view, H1); profit and every cost fact (a loss, cost increases, what needs a look,
+// placeholder), and every card is null before the first finalized sale. Sales figures need every sale
+// seen (sales.documents.view, H1); profit and every cost fact (a loss, cost increases, what needs a look,
 // the parts of "where the money went") need `reports.profit.view` with what it needs (Q11). A member
 // limited to some branches sees only their branches' sales, at the shares their sales carry (no
 // business-level costs). Withheld in the service, and tagged: costs `cost`, profit `profit_margin`.
@@ -278,11 +277,11 @@ export const dashboardCardsDto = withMeta(
     /**
      * M3 Step 5, "Recent orders" (the mockup: #1001, its first item, amount, Pending/Delivered): the
      * latest orders the member may see (every order with orders.documents.view, else their own), while
-     * Orders is served and on; null otherwise.
+     * Orders is on; null otherwise.
      */
     recentOrders: z.array(recentOrderDto).nullable(),
     /**
-     * M3 Step 5, "What customers owe": with payments.customers.view and Payments served and on; null
+     * M3 Step 5, "What customers owe": with payments.customers.view and Payments on; null
      * otherwise.
      */
     customersOwe: customersOweDto.nullable(),

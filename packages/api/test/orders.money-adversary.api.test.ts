@@ -10,7 +10,7 @@ import {
   SECRET_KEY,
   type CallResult,
 } from './helpers'
-import { FACTORY, orderDelivery, orderItem, ORDERS_PREVIEW, OrderScope, OrdersApi } from './orders'
+import { FACTORY, orderDelivery, orderItem, OrderScope, OrdersApi } from './orders'
 import { codeOf, ok, type Handler } from './purchasing'
 import { BAKER } from './settings'
 
@@ -240,9 +240,7 @@ describe('a delivery cost filled while the delivery is undone (forced on the sal
 
   beforeAll(async () => {
     dbs = [connectApi(), connectApi()]
-    handlers = dbs.map((db) =>
-      handlerFor(db, undefined, { supabaseSecretKey: SECRET_KEY, previewModules: ORDERS_PREVIEW }),
-    )
+    handlers = dbs.map((db) => handlerFor(db, undefined, { supabaseSecretKey: SECRET_KEY }))
     baker = await OrderScope.open(api, BAKER)
     serviceId = (await baker.service('100')).id
   }, 60_000)

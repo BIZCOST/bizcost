@@ -1332,9 +1332,10 @@ test('a designer who sells only services: asked for running costs, and her logoâ
     ownerMinutes: '240',
   })
 
-  // Her Dashboard asks for her running costs too: they reach services by their price (D-202).
+  // Her Dashboard asks for her running costs too: they reach services by their price (D-202). With
+  // Sales and Reports (Release A) it is the way to her first real profit.
   await page.goto(`/b/${businessId}`)
-  const checklist = page.getByRole('region', { name: "Let's find the real cost of what you sell" })
+  const checklist = page.getByRole('region', { name: "Let's calculate your first real profit" })
   const step = checklist.locator('[data-cost-step="running_costs"]')
   await expect(step).toContainText(
     'Rent, electricity, salaries and other regular costs, so each service carries its share.',

@@ -1,5 +1,6 @@
-import type { EnabledModuleDto, NavGroup } from '@bizcost/contracts'
-import type { I18nKey } from '@bizcost/i18n'
+import { NAV_GROUPS, type EnabledModuleDto, type NavGroup } from '@bizcost/contracts'
+import type { TerminologyProfile } from '@bizcost/domain'
+import { terminologyKey, type I18nKey } from '@bizcost/i18n'
 
 // The business shell's navigation, derived only from business.context's `modules` (D-089): the
 // released modules the business has on, with the entries this member may use. Nothing here names a
@@ -43,6 +44,27 @@ export type NavWording = (labelKey: I18nKey) => I18nKey
 
 const asIs: NavWording = (labelKey) => labelKey
 
+/**
+ * A business's wording (docs/ARCHITECTURE.md §i18n & RTL): for a business that sells only services
+ * (business.context's `sellsOnlyServices`, D-200) a key's services words when it has them
+ * (`navShort.products_services`: "Services"); else its terminology overlay for the business's profile
+ * when there is one (`nav.materials_food`: "Ingredients & supplies"); else the key itself. `has` says
+ * whether a key has a message (hasKey with the page's instance; hasMessage in tests).
+ */
+export function businessWording(
+  business: {
+    readonly profile: TerminologyProfile | null | undefined
+    readonly servicesOnly: boolean
+  },
+  has: (key: string) => boolean,
+): NavWording {
+  return (labelKey) => {
+    const services = `${labelKey}_services`
+    if (business.servicesOnly && has(services)) return services as I18nKey
+    return terminologyKey(labelKey, business.profile, has)
+  }
+}
+
 /** A business page: `path` is relative to the business root ('' is the root, the Dashboard). */
 export function businessHref(businessId: string, path: string): string {
   return path === '' ? `/b/${businessId}` : `/b/${businessId}/${path}`
@@ -63,9 +85,10 @@ function holds(entryPath: string, subpath: string): boolean {
 }
 
 /**
- * The shell's items: the `main` entries in manifest order, then the `system` ones (Settings). The
- * entry whose path holds the current page is active (the longest, so a module's own pages win).
- * Labels are in the business's wording when `wording` is given.
+ * The shell's items, group by group (NAV_GROUPS: the `main` entries, then the named groups "Sales"
+ * and "Reports", then the `system` ones, Settings), each in manifest order. The entry whose path
+ * holds the current page is active (the longest, so a module's own pages win). Labels are in the
+ * business's wording when `wording` is given.
  */
 export function shellNav(
   modules: readonly EnabledModuleDto[],
@@ -76,10 +99,7 @@ export function shellNav(
   const entries = modules.flatMap((module) =>
     module.nav.map((entry) => ({ ...entry, moduleId: module.id })),
   )
-  const ordered = [
-    ...entries.filter((entry) => entry.group === 'main'),
-    ...entries.filter((entry) => entry.group === 'system'),
-  ]
+  const ordered = NAV_GROUPS.flatMap((group) => entries.filter((entry) => entry.group === group))
   const subpath = businessSubpath(pathname, businessId)
   const active =
     subpath === null
@@ -120,10 +140,7 @@ export function shellQuickActions(
 }
 
 /** How many sections of each group the shell's placeholder shows while a business loads. */
-export interface NavSlots {
-  readonly main: number
-  readonly system: number
-}
+export type NavSlots = Readonly<Record<NavGroup, number>>
 
 /**
  * The placeholder's sections: the released modules' entries (`releasedModules()` of the registry),
@@ -142,10 +159,28 @@ export function navSlots(
     }
   }
   const groups = [...byPath.values()]
-  return {
-    main: groups.filter((group) => group === 'main').length,
-    system: groups.filter((group) => group === 'system').length,
-  }
+  return Object.fromEntries(
+    NAV_GROUPS.map((group) => [group, groups.filter((g) => g === group).length]),
+  ) as NavSlots
+}
+
+/** Every section the placeholder holds, whatever its group. */
+export function slotCount(slots: NavSlots): number {
+  return NAV_GROUPS.reduce((sum, group) => sum + slots[group], 0)
+}
+
+/**
+ * Whether a sidebar group's only entry says the group's title ("Sales" under "Sales", a business
+ * without Orders or Customers): the sidebar then keeps the title for screen readers only, where it
+ * still names the list (M3 Step 6 review).
+ */
+export function repeatsGroupTitle(
+  items: readonly ShellNavItem[],
+  title: string,
+  label: (key: I18nKey) => string,
+): boolean {
+  const [only] = items
+  return items.length === 1 && only !== undefined && label(only.labelKey) === title
 }
 
 /** Places in the phone's tab bar ("+" takes one when a module has actions). */
@@ -161,11 +196,25 @@ export interface BottomTabs {
 }
 
 /**
+ * The items in the order of their claims to a place in the tab bar (`tab`, 1 first), then those
+ * without one in the nav's order.
+ */
+function byClaims(items: readonly ShellNavItem[]): ShellNavItem[] {
+  const claimed = items
+    .map((item, index) => ({ item, index }))
+    .filter(({ item }) => item.tab !== null)
+    .sort((a, b) => (a.item.tab ?? 0) - (b.item.tab ?? 0) || a.index - b.index)
+    .map(({ item }) => item)
+  return [...claimed, ...items.filter((item) => item.tab === null)]
+}
+
+/**
  * The phone's tab bar (D-189): every item when they fit; else the items with the strongest claims
  * (`tab`, 1 first; places the claims leave go to the first items without one) and a "More" tab with
- * the rest. The tabs keep the nav's order, and there is no "+" without actions. With the Costing Core
- * an owner gets Home | Products | + | Product costs | More and an employee Home | Products | + |
- * Expenses | More (docs/PRODUCT.md §9's idea "Home | Sales | + | Costs | More").
+ * the rest. The tabs come in their claims' order (the nav's order for those without one), and there is
+ * no "+" without actions: since Release A an owner gets Home | Sales | + | Costs | More (Orders in the
+ * Sales place with Orders on: the API gives the place to one of them) and an employee Home | Sales |
+ * + | Expenses | More (docs/PRODUCT.md §9, Q14).
  */
 export function bottomTabs(
   items: readonly ShellNavItem[],
@@ -173,22 +222,11 @@ export function bottomTabs(
 ): BottomTabs {
   const quickAdd = quickActions.length > 0
   const slots = TAB_SLOTS - (quickAdd ? 1 : 0)
-  if (items.length <= slots) return { tabs: items, more: [], quickAdd }
-  // One place goes to "More".
-  const places = slots - 1
-  const claimed = items
-    .map((item, index) => ({ item, index }))
-    .filter(({ item }) => item.tab !== null)
-    .sort((a, b) => (a.item.tab ?? 0) - (b.item.tab ?? 0) || a.index - b.index)
-    .slice(0, places)
-    .map(({ item }) => item)
-  const unclaimed = items.filter((item) => item.tab === null)
-  const chosen = new Set([...claimed, ...unclaimed.slice(0, places - claimed.length)])
-  return {
-    tabs: items.filter((item) => chosen.has(item)),
-    more: items.filter((item) => !chosen.has(item)),
-    quickAdd,
-  }
+  const ordered = byClaims(items)
+  if (items.length <= slots) return { tabs: ordered, more: [], quickAdd }
+  // One place goes to "More", which keeps the nav's order.
+  const tabs = ordered.slice(0, slots - 1)
+  return { tabs, more: items.filter((item) => !tabs.includes(item)), quickAdd }
 }
 
 /**

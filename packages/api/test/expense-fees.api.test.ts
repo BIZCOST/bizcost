@@ -70,9 +70,10 @@ describe('the channels an expense can pay the fees of', () => {
     expect(list.items.map((c) => c.id)).not.toContain(theirs.id)
   })
 
-  it('only for a member who sees costs (FORBIDDEN), and only while Sales is served', async () => {
+  it('only for a member who sees costs (FORBIDDEN); released code serves it (Release A)', async () => {
     expect(codeOf(await shop.as(employee, 'expense.payableChannels'))).toBe('forbidden')
     expect(codeOf(await shop.as(manager, 'expense.payableChannels'))).toBeUndefined()
+    // With Sales switched off it is MODULE_DISABLED (hardening/gates.api.test.ts).
     const released = handlerFor(api.db, undefined, { supabaseSecretKey: SECRET_KEY })
     const result = await api.call(
       shop.owner,
@@ -81,7 +82,7 @@ describe('the channels an expense can pay the fees of', () => {
       undefined,
       released,
     )
-    expect(codeOf(result)).toBe('module_disabled')
+    expect(codeOf(result)).toBeUndefined()
   })
 })
 

@@ -49,7 +49,10 @@ test.afterAll(async () => {
 })
 
 const home = () => `/b/${businessId}`
-/** The workshop's sections since the Costing Core's release (M2 Step 7, D-188), in nav order. */
+/**
+ * The workshop's sections since the Costing Core's release (M2 Step 7, D-188) and Release A (M3 Step
+ * 6: the "Sales" group, then "Reports"), in nav order.
+ */
 const SECTIONS = [
   'Dashboard',
   'Products & Services',
@@ -60,6 +63,11 @@ const SECTIONS = [
   'Expenses',
   'Running Costs',
   'Product costs',
+  'Sales',
+  'Orders',
+  'Customers',
+  'What customers owe',
+  'Real profit',
   'Settings',
 ]
 const mainNav = (p: Page, name = 'Main') => p.getByRole('navigation', { name })
@@ -144,6 +152,11 @@ test('desktop in Arabic: the same sections on the right, in Arabic', async () =>
     'المصروفات',
     'المصاريف التشغيلية',
     'تكاليف المنتجات',
+    'المبيعات',
+    'الطلبات',
+    'العملاء',
+    'مستحقات العملاء',
+    'الربح الحقيقي',
     'الإعدادات',
   ])
   await expect(nav.getByRole('link', { name: 'الرئيسية' })).toHaveAttribute('aria-current', 'page')
@@ -179,7 +192,7 @@ test('keyboard: skip link first, then "Add new" and the sidebar in order; Enter 
   await expect(nav.getByRole('link', { name: 'Dashboard' })).toBeFocused()
   for (const name of SECTIONS.slice(1)) {
     await page.keyboard.press('Tab')
-    await expect(nav.getByRole('link', { name })).toBeFocused()
+    await expect(nav.getByRole('link', { name, exact: true })).toBeFocused()
   }
   await page.keyboard.press('Enter')
   await expect(page).toHaveURL(`${home()}/settings`)
@@ -223,8 +236,9 @@ test('phone: tabs at the bottom, 44px tall, "+" and "More", nothing off the scre
   const tabs = mainNav(page)
   const bar = await box(tabs)
   expect(bar.y + bar.height).toBeGreaterThan(800)
-  // The tabs the claims give (D-189), "+" in the middle, the rest under "More".
-  await expect(tabs.getByRole('link')).toHaveText(['Dashboard', 'Products', 'Costs'])
+  // The tabs the claims give (D-189), "+" in the middle, the rest under "More": the workshop takes
+  // orders, so Orders has the Sales place (Release A, Q14).
+  await expect(tabs.getByRole('link')).toHaveText(['Dashboard', 'Orders', 'Costs'])
   await expect(tabs.getByRole('button')).toHaveText(['', 'More'])
   await expect(tabs.getByRole('button').first()).toHaveAccessibleName('Add new')
   for (const tab of [
@@ -443,17 +457,30 @@ test('an employee sees no checklist, and settings sections are not open (403)', 
   ).toBeVisible()
   await expect(employeePage.getByRole('region', { name: 'About your business' })).toBeVisible()
   await expect(checklist(employeePage)).toHaveCount(0)
-  await expect(employeePage.getByRole('progressbar')).toHaveCount(0)
-  expect(
-    (await callApi(employeePage, 'dashboard.checklist', {}, { businessId, query: true })).data,
-  ).toEqual({ items: [], costSteps: [] })
-  // Their one "+" action is a link straight to it above the sections (D-200), then the sections.
+  // Nothing of the setup; of the way to the first real profit, only the sales they enter (Release A).
+  const checklistData = (
+    await callApi<{ items: unknown[]; costSteps: { id: string }[] }>(
+      employeePage,
+      'dashboard.checklist',
+      {},
+      { businessId, query: true },
+    )
+  ).data
+  expect(checklistData?.items).toEqual([])
+  expect(checklistData?.costSteps.map((step) => step.id)).toEqual(['sales'])
+  await expect(
+    employeePage.getByRole('region', { name: "Let's calculate your first real profit" }),
+  ).toContainText('Add or import your sales')
+  await expect(employeePage.getByRole('progressbar')).toHaveCount(1)
+  // "Add new" above the sections (their expenses, sales and orders), then the sections.
+  await expect(mainNav(employeePage).getByRole('button', { name: 'Add new' })).toBeVisible()
   await expect(mainNav(employeePage).getByRole('link')).toHaveText([
-    'New expense',
     'Dashboard',
     'Products & Services',
     'Materials',
     'Expenses',
+    'Sales',
+    'Orders',
     'Settings',
   ])
 
@@ -493,8 +520,8 @@ test('an employee sees no checklist, and settings sections are not open (403)', 
 
 test('an address that does not exist inside the business: "Page not found" inside the shell', async () => {
   await page.setViewportSize({ width: 1440, height: 900 })
-  // A module not released yet (Orders) has no pages: its address is not found, title included.
-  for (const path of ['orders', 'settings/nothing-here']) {
+  // A module not released yet (Quotations) has no pages: its address is not found, title included.
+  for (const path of ['quotations', 'settings/nothing-here']) {
     await page.goto(`${home()}/${path}`)
     await expect(page.getByRole('heading', { level: 1, name: 'Page not found' })).toBeVisible()
     await expect(page).toHaveTitle('Page not found · BizCost')

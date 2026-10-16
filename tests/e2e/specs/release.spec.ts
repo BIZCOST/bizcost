@@ -18,13 +18,10 @@ import {
 import { baseURL } from '../stack'
 
 // The Costing Core's release (ROADMAP.md M2 Step 7; D-188–D-194), on the production build, without
-// the dev-only preview:
-//   - the shell per role: an owner's sidebar with every Costing Core section and "Add new" (a new
-//     product or service, purchase or expense), and on a phone Home | Products | + | Costs | More
-//     (Arabic); an employee's Home | Products | + | Expenses with only "New expense"; an
-//     accountant without "+" (D-189);
-//   - "Let's find the real cost of what you sell" for a new solo café, from nothing to "Your product
-//     costs are ready", each step saying what is still missing (D-193);
+// the dev-only preview (the shell per role moved to release-sales.spec.ts with Release A, M3 Step 6,
+// which gave it Sales):
+//   - "Let's find the real cost of what you sell" for a new solo café without Sales and Reports, from
+//     nothing to "Your product costs are ready", each step saying what is still missing (D-193);
 //   - Roles: "See costs, supplier prices and margins" as one switch, and what the employee sees then
 //     (D-190); a member's own permissions on their page, with "Added" and "Back to their role"
 //     (D-191);
@@ -73,7 +70,6 @@ const contexts: BrowserContext[] = []
 
 let owner: Page
 let employee: Page
-let accountant: Page
 let employeeUser: TestUser
 let cafeId: string
 let soloId: string
@@ -122,15 +118,25 @@ async function joinBusiness(member: Page, user: TestUser, templateKey: string) {
 test.beforeAll(async ({ browser }) => {
   const ownerUser = await createUser('release-owner', { locale: 'en' })
   employeeUser = await createUser('release-employee', { locale: 'en' })
-  const accountantUser = await createUser('release-accountant', { locale: 'en' })
-  users.push(ownerUser, employeeUser, accountantUser)
+  users.push(ownerUser, employeeUser)
   owner = await openAs(browser, ownerUser, 'Layla Haddad')
   employee = await openAs(browser, employeeUser, 'Omar Saleh')
-  accountant = await openAs(browser, accountantUser, 'Huda Nasser')
   cafeId = await createBusiness(owner, 'Qahwa House', CAFE_ANSWERS)
   soloId = await createBusiness(owner, 'Maha Coffee Corner', SOLO_CAFE_ANSWERS)
+  // The M2 checklist is the one of a business without Sales and Reports (with them, since Release A,
+  // it leads on to the first real profit: release-sales.spec.ts).
+  for (const id of ['sales', 'reports']) {
+    await ok(
+      callApi(
+        owner,
+        'business.customize',
+        { item: { kind: 'module', id }, enabled: false },
+        { businessId: soloId },
+      ),
+      `customize ${id}`,
+    )
+  }
   await joinBusiness(employee, employeeUser, 'employee')
-  await joinBusiness(accountant, accountantUser, 'accountant')
 })
 
 test.afterAll(async () => {
@@ -170,151 +176,6 @@ async function expectSound(page: Page, locale: 'en' | 'ar') {
 }
 
 const mainNav = (page: Page, name = 'Main') => page.getByRole('navigation', { name })
-
-// ---------------------------------------------------------------------------------------------------
-// The shell per role (D-189)
-// ---------------------------------------------------------------------------------------------------
-
-test('the owner: every Costing Core section, "Add new" on a desktop, Home | Products | + | Costs | More on a phone', async () => {
-  await owner.setViewportSize(DESKTOP)
-  await owner.goto(`/b/${cafeId}`)
-  const nav = mainNav(owner)
-  await expect(nav.getByRole('link')).toHaveText([
-    'Dashboard',
-    'Products & Services',
-    'Ingredients & supplies',
-    'Suppliers',
-    'Purchases',
-    'Amounts owed',
-    'Expenses',
-    'Running Costs',
-    'Product costs',
-    'Settings',
-  ])
-  await nav.getByRole('button', { name: 'Add new' }).click()
-  await expect(owner.getByRole('menuitem')).toHaveText([
-    'New product or service',
-    'New purchase',
-    'New expense',
-  ])
-  await expectSound(owner, 'en')
-  await shot(owner, 'en-1440-add-new')
-  await owner.getByRole('menuitem', { name: 'New product or service' }).click()
-  await expect(owner).toHaveURL(`/b/${cafeId}/products/new`)
-  const sheet = owner.getByRole('dialog', { name: 'New product or service' })
-  await expect(sheet).toBeVisible()
-  await sheet.getByRole('button', { name: 'Close' }).first().click()
-  await expect(sheet).toHaveCount(0)
-  await expect(owner).toHaveURL(`/b/${cafeId}/products`)
-  await nav.getByRole('button', { name: 'Add new' }).click()
-  await owner.getByRole('menuitem', { name: 'New purchase' }).click()
-  await expect(owner).toHaveURL(`/b/${cafeId}/purchases/new`)
-
-  // On a tablet's rail: "+" with its name in a tooltip, the same actions.
-  await owner.setViewportSize({ width: 768, height: 1024 })
-  await owner.goto(`/b/${cafeId}`)
-  const plus = nav.getByRole('button', { name: 'Add new' })
-  await expect(plus).toHaveText('')
-  await plus.click()
-  await expect(owner.getByRole('menuitem')).toHaveCount(3)
-  await expectSound(owner, 'en')
-  await shot(owner, 'en-768-rail-add-new')
-  await owner.keyboard.press('Escape')
-
-  // On a phone, in Arabic: the tabs the claims give, "+" in the middle, the rest under "More".
-  await setLanguage(owner, 'ar')
-  await owner.setViewportSize(PHONE)
-  await owner.goto(`/b/${cafeId}`)
-  const bar = mainNav(owner, 'القائمة الرئيسية')
-  await expect(bar.getByRole('listitem')).toHaveCount(5)
-  await expect(bar.getByRole('link')).toHaveText(['الرئيسية', 'المنتجات', 'التكاليف'])
-  await expect(bar.getByRole('link', { name: 'تكاليف المنتجات' })).toBeVisible()
-  await expect(bar.getByRole('listitem').nth(2).getByRole('button')).toHaveAccessibleName(
-    'إضافة جديد',
-  )
-  await expectSound(owner, 'ar')
-  await shot(owner, 'ar-390-dashboard-tabs')
-  await bar.getByRole('button', { name: 'إضافة جديد' }).click()
-  await expect(owner.getByRole('menuitem')).toHaveText([
-    'منتج أو خدمة جديدة',
-    'مشتريات جديدة',
-    'مصروف جديد',
-  ])
-  await shot(owner, 'ar-390-add-new')
-  await owner.keyboard.press('Escape')
-  await bar.getByRole('button', { name: 'المزيد' }).click()
-  await expect(owner.getByRole('menuitem')).toHaveText([
-    'المكونات والمستلزمات',
-    'الموردون',
-    'المشتريات',
-    'المستحقات',
-    'المصروفات',
-    'المصاريف التشغيلية',
-    'الإعدادات',
-  ])
-  await shot(owner, 'ar-390-more')
-  await owner.getByRole('menuitem', { name: 'المصروفات' }).click()
-  await expect(owner).toHaveURL(`/b/${cafeId}/expenses`)
-  // The page is under "More": it is the tab marked.
-  await expect(bar.getByRole('button', { name: 'المزيد' })).toBeVisible()
-  await setLanguage(owner, 'en')
-  await owner.setViewportSize(DESKTOP)
-})
-
-test('an employee: Home | Products | + | Expenses, and "+" straight to a new expense', async () => {
-  await employee.setViewportSize(PHONE)
-  await employee.goto(`/b/${cafeId}`)
-  const bar = mainNav(employee)
-  // One action: "+" is a link to it, named after it, not a menu of one (D-200).
-  await expect(bar.getByRole('link')).toHaveText(['Dashboard', 'Products', '', 'Expenses'])
-  await expect(bar.getByRole('button', { name: 'Add new' })).toHaveCount(0)
-  await expect(bar.getByRole('listitem').nth(2).getByRole('link')).toHaveAccessibleName(
-    'New expense',
-  )
-  await expectSound(employee, 'en')
-  await shot(employee, 'en-390-employee-add-new')
-  await bar.getByRole('link', { name: 'New expense' }).click()
-  await expect(employee).toHaveURL(`/b/${cafeId}/expenses/new`)
-  await expect(employee.getByRole('heading', { level: 1, name: 'New expense' })).toBeVisible()
-
-  // A desktop: the same one action beside the sections. No "Product costs" (costs stay locked).
-  await employee.setViewportSize(DESKTOP)
-  await employee.goto(`/b/${cafeId}`)
-  const nav = mainNav(employee)
-  await expect(nav.getByRole('link')).toHaveText([
-    'New expense',
-    'Dashboard',
-    'Products & Services',
-    'Ingredients & supplies',
-    'Expenses',
-    'Settings',
-  ])
-  await expect(nav.getByRole('button', { name: 'Add new' })).toHaveCount(0)
-  await nav.getByRole('link', { name: 'New expense' }).click()
-  await expect(employee).toHaveURL(`/b/${cafeId}/expenses/new`)
-  await employee.goto(`/b/${cafeId}`)
-  // The employee has no cost steps: nothing about costs on their Dashboard.
-  await expect(
-    employee.getByRole('region', { name: "Let's find the real cost of what you sell" }),
-  ).toHaveCount(0)
-})
-
-test('an accountant: four tabs and no "+" (they enter nothing), in Arabic', async () => {
-  await setLanguage(accountant, 'ar')
-  await accountant.setViewportSize(PHONE)
-  await accountant.goto(`/b/${cafeId}`)
-  const bar = mainNav(accountant, 'القائمة الرئيسية')
-  await expect(bar.getByRole('link')).toHaveText(['الرئيسية', 'المنتجات', 'المصروفات', 'التكاليف'])
-  await expect(bar.getByRole('button', { name: 'إضافة جديد' })).toHaveCount(0)
-  await expectSound(accountant, 'ar')
-  await shot(accountant, 'ar-390-accountant-tabs')
-  await accountant.setViewportSize(DESKTOP)
-  await accountant.goto(`/b/${cafeId}`)
-  await expect(
-    mainNav(accountant, 'القائمة الرئيسية').getByRole('button', { name: 'إضافة جديد' }),
-  ).toHaveCount(0)
-  await setLanguage(accountant, 'en')
-})
 
 // ---------------------------------------------------------------------------------------------------
 // "Let's find the real cost of what you sell" (D-193)

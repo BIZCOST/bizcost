@@ -57,8 +57,7 @@ import { uuidArray } from './stock'
 // (its own day was closed, D-227) counts on its day and is taken back on its reversal's day, in that
 // day's month (its sales and the month's item sales too); one reversed on its own day is as if it was
 // never finalized. Posted sales count whether or not Sales is switched on now (M9: they are what was
-// sold), but only while Sales is served (released, or previewed on a local server): a released
-// business sees no change before Release A.
+// sold).
 //
 // Everything is read as sums in SQL (one row per group × month × channel × line kind), so a year of
 // sales costs one division per month and channel, not one per line (soldLinesProfit). The rate is one
@@ -84,11 +83,6 @@ import { uuidArray } from './stock'
 // ---------------------------------------------------------------------------------------------------
 // Who sees what
 // ---------------------------------------------------------------------------------------------------
-
-/** Sales is served on this server (released, or previewed: D-125), whether or not it is on. */
-export function salesServed(ctx: Pick<BusinessCtx, 'modules'>): boolean {
-  return ctx.modules.some((m) => m.id === 'sales' && m.availability === 'released')
-}
 
 /**
  * The member sees real profit and what it is made of (Q11): Reports on and `reports.profit.view`,
@@ -131,10 +125,7 @@ export interface ProfitEnv {
   readonly materialsOn: boolean
   readonly runningOn: boolean
   readonly expensesOn: boolean
-  /**
-   * Purchases is on and Sales is served: the materials no product uses count with the costs (Q13 A).
-   * Without Sales served (a released business before Release A) they never do, as in M2 (D-250).
-   */
+  /** Purchases is on: the materials no product uses count with the costs (Q13 A). */
   readonly purchasesOn: boolean
   /** The day of the first finalized sale that counts (null: none yet). */
   readonly firstSaleDay: string | null
@@ -241,15 +232,14 @@ async function businessFactsOf(
 }
 
 /**
- * What real profit is worked out with (see above). Without Sales served nothing counts: no first
+ * What real profit is worked out with (see above). Without a finalized sale nothing counts: no first
  * sale and no item sales (Product costs then keep their shares awaiting sales).
  */
 export async function profitEnvOf(tx: Tx, ctx: BusinessCtx): Promise<ProfitEnv> {
   const businessId = ctx.businessId
   const facts = await businessFactsOf(tx, businessId)
-  const served = salesServed(ctx)
   const monthItemSales = new Map<BusinessMonth, string>()
-  if (served && facts.firstSaleDay !== null) {
+  if (facts.firstSaleDay !== null) {
     const rows = (await tx.execute(sql`
       select to_char(p.day, 'YYYY-MM') as month, trim_scale(sum(p.sign * l.net))::text as sales
         from ${piecesOf(businessId)} p
@@ -260,27 +250,22 @@ export async function profitEnvOf(tx: Tx, ctx: BusinessCtx): Promise<ProfitEnv> 
     `)) as unknown as { month: string; sales: string }[]
     for (const row of rows) monthItemSales.set(row.month, row.sales)
   }
-  const channels = new Map<string, ProfitChannel>()
-  if (served) {
-    const rows = (await tx.execute(sql`
-      select c.id, c.name, c.kind, trim_scale(c.fee_percent)::text as fee_percent
-        from app.sales_channels c
-       where c.business_id = ${businessId} and c.deleted_at is null
-    `)) as unknown as {
-      id: string
-      name: string
-      kind: SalesChannelKind
-      fee_percent: string | null
-    }[]
-    for (const row of rows) {
-      channels.set(row.id, {
-        id: row.id,
-        name: row.name,
-        kind: row.kind,
-        feePercent: row.fee_percent,
-      })
-    }
-  }
+  const channelRows = (await tx.execute(sql`
+    select c.id, c.name, c.kind, trim_scale(c.fee_percent)::text as fee_percent
+      from app.sales_channels c
+     where c.business_id = ${businessId} and c.deleted_at is null
+  `)) as unknown as {
+    id: string
+    name: string
+    kind: SalesChannelKind
+    fee_percent: string | null
+  }[]
+  const channels = new Map<string, ProfitChannel>(
+    channelRows.map((row) => [
+      row.id,
+      { id: row.id, name: row.name, kind: row.kind, feePercent: row.fee_percent },
+    ]),
+  )
   return {
     businessId,
     today: facts.today,
@@ -289,9 +274,8 @@ export async function profitEnvOf(tx: Tx, ctx: BusinessCtx): Promise<ProfitEnv> 
     materialsOn: passes(ctx, ['materials']),
     runningOn: passes(ctx, ['running_costs']),
     expensesOn: passes(ctx, ['expenses']),
-    // Q13 A is a Step 3 change: a released business's month's costs stay as they were (D-250).
-    purchasesOn: served && passes(ctx, ['purchases']),
-    firstSaleDay: served ? facts.firstSaleDay : null,
+    purchasesOn: passes(ctx, ['purchases']),
+    firstSaleDay: facts.firstSaleDay,
     monthItemSales,
     channels,
     cache: {

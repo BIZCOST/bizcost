@@ -7,7 +7,7 @@ import { connectAdmin, connectApi, handlerFor, mutate, type CallResult } from '.
 import { ledgerDrift } from './ledger'
 import { tag } from './product-costs'
 import { line, ok, purchaseInput, type Handler } from './purchasing'
-import { CAFE, item, PREVIEW_MODULES, SalesApi, SaleScope, shift } from './sales'
+import { CAFE, item, SalesApi, SaleScope, shift } from './sales'
 import { BAKER } from './settings'
 
 // Sales, purchases, their reversals and the fills at once on shared materials (ROADMAP.md M3 Step 2;
@@ -47,7 +47,7 @@ let products: ProductDto[]
 beforeAll(async () => {
   api = new SalesApi()
   dbs = Array.from({ length: INSTANCES }, () => connectApi())
-  handlers = dbs.map((db) => handlerFor(db, undefined, { previewModules: PREVIEW_MODULES }))
+  handlers = dbs.map((db) => handlerFor(db))
   cafe = await SaleScope.open(api, CAFE)
   today = await cafe.today()
   shopId = await cafe.channelId()

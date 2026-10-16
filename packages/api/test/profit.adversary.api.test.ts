@@ -173,13 +173,13 @@ describe('a member limited to some branches sees only their branches (D-231) on 
   })
 })
 
-describe('a released business sees no change before Release A (the plan’s D3)', () => {
-  it('Product costs’ month’s costs do not start counting materials no product uses (Q13 A) without the preview', async () => {
+describe('Release A (M3 Step 6): released code counts what the preview did', () => {
+  it('Product costs’ month’s costs count the materials no product uses (Q13 A) without the preview', async () => {
     const shop = await ProfitScope.open(api, WORKSHOP)
     const { last } = await shop.months()
     await shop.monthly('1000', dayOf(addMonths(last, -2), 1))
     const work = await shop.service('100')
-    // Bought last month, in no recipe: in M2 it never counted in the month's costs.
+    // Bought last month, in no recipe: in M2 it never counted in the month's costs; it does since.
     const gypsum = await shop.newMaterial({ name: `Gypsum ${tag()}`, unit: 'piece' })
     await shop.buy(
       purchaseInput(dayOf(last, 6), [bought(gypsum.id, '10', '40', { unit: 'piece' })]),
@@ -194,9 +194,12 @@ describe('a released business sees no change before Release A (the plan’s D3)'
         released,
       ),
     ).data
-    expect(breakdown.monthCosts).toMatchObject({ state: 'awaiting_sales', month: last })
-    // As on main before Step 3: the running costs only, no materials list.
-    expect(breakdown.monthCosts.total).toBe('1000')
-    expect(breakdown.monthCosts.materials ?? null).toBeNull()
+    // No sale yet: the share awaits sales, and the month's costs hold the gypsum bought in no recipe.
+    expect(breakdown.monthCosts).toMatchObject({
+      state: 'awaiting_sales',
+      month: last,
+      total: '1400',
+      materials: [{ materialId: gypsum.id, name: gypsum.name, amount: '400' }],
+    })
   })
 })

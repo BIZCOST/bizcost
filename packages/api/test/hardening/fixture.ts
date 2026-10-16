@@ -70,13 +70,12 @@ import { CapturedEmails, join, setupBusiness, WORKSHOP } from '../settings'
 // bought on credit with a receipt and a payment, a draft expense, one sent for approval, and a
 // running cost. M2 Step 6: the Cost Engine is previewed too (product costs and their settings).
 //
-// M3 Step 2: Sales is planned until Release A, so the suites run with the dev-only preview of it
-// (D-125), as a local server does, and its procedures are attacked like the others. Each business
+// M3 (released with Release A, Step 6, so the suites run the API as deployed again): each business
 // also has a sales channel of its own (with a commission %), a finalized sale with delivery charged and
-// its cost, and a draft of Today's sales. M3 Step 3: Reports is previewed too (profit.summary), and
-// the Dashboard's cards read the same sale. M3 Step 5: Customers, Payments and Orders are previewed
-// too; each business has a customer, a pending order with its deposit and its LPO, a delivered order
-// refunded by amount (with the money given back), and a One sale "they'll pay later" partly paid.
+// its cost, and a draft of Today's sales (Step 2); Reports' profit.summary and the Dashboard's cards
+// read the same sale (Step 3); a customer, a pending order with its deposit and its LPO, a delivered
+// order refunded by amount (with the money given back), and a One sale "they'll pay later" partly paid
+// (Step 5).
 
 export type Handler = ReturnType<typeof handlerFor>
 
@@ -94,26 +93,12 @@ export interface Api {
   close: () => Promise<void>
 }
 
-/**
- * The modules still being built that the suites preview (D-125): Sales since M3 Step 2, Reports since
- * Step 3, Customers, Payments and Orders since Step 5.
- */
-export const PREVIEW_MODULES = ['customers', 'sales', 'payments', 'reports', 'orders'] as const
-
-/**
- * The API as deployed (secret key for Storage, emails kept instead of sent), with the modules still
- * being built previewed, and its test users.
- */
+/** The API as deployed (secret key for Storage, emails kept instead of sent), and its test users. */
 export function openApi(router?: AnyRouter): Api {
   const db = connectApi()
   const admin = connectAdmin()
   const emails = new CapturedEmails()
-  const handler = handlerFor(
-    db,
-    router,
-    { supabaseSecretKey: SECRET_KEY, previewModules: PREVIEW_MODULES },
-    { emailSender: emails },
-  )
+  const handler = handlerFor(db, router, { supabaseSecretKey: SECRET_KEY }, { emailSender: emails })
   const users: TestUser[] = []
   return {
     db,

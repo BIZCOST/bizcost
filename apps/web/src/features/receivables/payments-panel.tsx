@@ -17,14 +17,15 @@ import { Money, useBusinessDate, useMoney } from '@/features/documents/amounts'
 import { ConfirmDialog } from '@/features/documents/confirm-dialog'
 import { Panel } from '@/features/documents/panel'
 import { useRefreshOrders } from '@/features/orders/data'
+import { useBusinessContext } from '@/lib/trpc/client'
 import { cn } from '@/lib/utils'
 import { CustomerPaymentSheet, type PaidDocument } from './payment-sheet'
 
 // What an order or a sale "they'll pay later" is paid and owes (M3 Step 5; Q17, D-267; one figure per
 // obligation, A2): its total, its refunds, what was paid, money given back, and what is still owed or,
 // paid beyond it, "Money back to the customer" (a refund, or a cancelled order's deposit). Each
-// payment with its day, how it was paid, who recorded it and its note; one recorded by mistake is
-// reversed (it stays listed, marked reversed). Payments are never edited.
+// payment with its day, how it was paid, who recorded it (with a team only, D-278) and its note; one
+// recorded by mistake is reversed (it stays listed, marked reversed). Payments are never edited.
 
 const positive = (value: string) => compareDecimal(value, '0') > 0
 
@@ -86,6 +87,9 @@ export function PaymentRow({
 }) {
   const { t } = useTranslation()
   const businessDate = useBusinessDate()
+  const { data: context } = useBusinessContext()
+  // Who recorded or reversed it only with a team ("Entered by" only with a team, D-278).
+  const team = context?.capabilities.has_team === true
   const reversed = payment.status === 'reversed'
   return (
     <li data-payment className="flex flex-wrap items-start justify-between gap-x-3 gap-y-2 py-3">
@@ -114,10 +118,14 @@ export function PaymentRow({
                 : t('orders.payments.forSale')}
             </>
           ) : null}
-          {' · '}
-          {payment.recordedBy.name
-            ? t('orders.payments.recordedBy', { name: isolate(payment.recordedBy.name) })
-            : t('orders.payments.recordedByFormer')}
+          {team ? (
+            <>
+              {' · '}
+              {payment.recordedBy.name
+                ? t('orders.payments.recordedBy', { name: isolate(payment.recordedBy.name) })
+                : t('orders.payments.recordedByFormer')}
+            </>
+          ) : null}
         </p>
         {payment.note ? (
           <p className="mt-0.5 text-sm whitespace-pre-line [unicode-bidi:plaintext]">
@@ -126,10 +134,14 @@ export function PaymentRow({
         ) : null}
         {reversed ? (
           <p className="mt-0.5 text-sm text-muted-foreground">
-            {t('orders.payments.reversedOn', {
-              date: businessDate(payment.reversalDate ?? payment.businessDate),
-              name: isolate(payment.reversedBy?.name ?? '…'),
-            })}
+            {team
+              ? t('orders.payments.reversedOn', {
+                  date: businessDate(payment.reversalDate ?? payment.businessDate),
+                  name: isolate(payment.reversedBy?.name ?? '…'),
+                })
+              : t('orders.payments.reversedOnAlone', {
+                  date: businessDate(payment.reversalDate ?? payment.businessDate),
+                })}
           </p>
         ) : null}
       </div>

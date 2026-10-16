@@ -46,8 +46,8 @@ import {
 import { businessProcedure, requireModule, requirePermission, router } from '../trpc'
 
 /**
- * Importing sales from a file (services/sale-imports.ts; M3 Step 4): module `sales` (planned until
- * Release A, so served only under the dev-only preview, D-125) and Products & Services (the names are
+ * Importing sales from a file (services/sale-imports.ts; M3 Step 4; released with Release A, Step 6):
+ * module `sales` and Products & Services (the names are
  * matched to products); `sales.imports.manage`, which grants nothing without sales.documents.manage
  * and .post (PERMISSION_NEEDS). Reversing an import's day or the whole of it reverses finalized sales:
  * it needs sales.documents.reverse too, as sale.reverse does (D-260; replacing days asks it in the

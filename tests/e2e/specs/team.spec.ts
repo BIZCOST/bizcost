@@ -228,13 +228,15 @@ test('an employee sees no business settings until the owner changes their role',
   await expect(memberRow(ownerPage, inviteeEmail)).toContainText('Manager')
 
   // The member's next request has the Manager's access: the profile, read-only (and how product
-  // costs are worked out, with the Costing Core released in M2 Step 7).
+  // costs are worked out, with the Costing Core released in M2 Step 7, and the sales channels, with
+  // Sales released in Release A).
   await inviteePage.goto(settings())
   await expect(
     inviteePage.getByRole('list', { name: 'Business settings' }).getByRole('link'),
   ).toHaveText([
     /^Business profile/,
     /^Branches/,
+    /^Sales channels/,
     /^Team/,
     /^How costs are worked out/,
     /^Language/,

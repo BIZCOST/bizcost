@@ -2,6 +2,8 @@ import { createHash } from 'node:crypto'
 import type {
   BooksDto,
   BusinessContextDto,
+  ChannelStatementListDto,
+  ChannelStatementResultDto,
   CostCategoryListDto,
   CustomerDto,
   CustomerPaymentListDto,
@@ -19,47 +21,60 @@ import type {
   RecipeDto,
   RunningCostDto,
   SaleDto,
+  SaleImportDto,
   SalesChannelDto,
   SupplierDto,
   WithMeta,
 } from '@bizcost/contracts'
-import { compareDecimal, STANDARD_UNITS, type Locale, type StandardUnit } from '@bizcost/domain'
+import { IMPORT_ROWS_CHUNK } from '@bizcost/contracts'
+import {
+  compareDecimal,
+  IMPORT_ERRORS_KEPT,
+  STANDARD_UNITS,
+  type Locale,
+  type StandardUnit,
+} from '@bizcost/domain'
 import { createI18n, type I18nKey } from '@bizcost/i18n'
 import { appCodeOf, type DemoApi } from './client'
 import type {
   DemoCategory,
   DemoCosting,
+  DemoCustomerPayment,
   DemoExpense,
+  DemoImport,
   DemoMaterial,
   DemoOrder,
-  DemoOrderPayment,
   DemoPack,
   DemoPayment,
+  DemoProduct,
   DemoPurchase,
   DemoReturn,
   DemoSale,
+  DemoStatement,
   UnitOrPack,
 } from './costing-data'
+import { addDays, dayOf, daysBetween, lastMonthOf, monthStart, type DemoDay } from './days'
+import { amountOfFils, filsOf, percentOf, readSalesFile, salesFile, TIPS_NAME } from './files'
 
-// The Costing Core part of `pnpm demo:seed` (docs/ARCHITECTURE.md §Local setup › Demo data): each
-// demo business's suppliers, materials, products & services, recipes, purchases (posted, so the stock
+// The data part of `pnpm demo:seed` (docs/ARCHITECTURE.md §Local setup › Demo data): each demo
+// business's suppliers, materials, products & services, recipes, purchases (posted, so the stock
 // ledger, the averages and the audit log are real), returns and credit notes, payments, running costs,
-// expenses and the owner's time, entered through the API as its owner (and as a member where a member
-// would enter it), only in the modules the business has on.
+// expenses and the owner's time, and its sales (M3, Release A): channels, Today's sales and One sale,
+// sales files imported and app statements, customers, orders with deposits, deliveries, payments and
+// refunds. Entered through the API as its owner (and as a member where a member would enter it), only
+// in the modules the business has on.
 //
 // Idempotent: every record's id is derived from the business and the record's key, and each is read
 // before it is written, so a second run adds nothing and a run cut short is completed by the next one.
-// Documents are dated back from the business's today and entered in date order (as if on the day);
-// nothing is dated in the future and the books are never closed. A record that cannot be written (the
-// owner changed the business since) is reported and skipped; the rest goes on.
+// Documents are dated back from the business's today (demo/days.ts) and entered in date order (as if
+// on the day); nothing is dated in the future and the books are never closed. A record that cannot be
+// written (the owner changed the business since) is reported and skipped; the rest goes on.
 //
-// M3 Step 2: the channels a business adds and its sales (Today's sales and One sale, previewed until
-// Release A like a local server, D-125), each entered after the purchases of its day and finalized as
-// the member who entered it, so its cost is frozen from the purchases posted by then (D-222).
-//
-// M3 Step 5: customers and their orders (previewed until Release A): each order entered on its day
-// with its deposit, delivered on its delivery day after that day's sales (its cost frozen then) or
-// cancelled, then paid and refunded, in date order like the rest.
+// On a day: purchases, expenses, returns, payments, then sales (each finalized as the member who
+// entered it, so its cost is frozen from the purchases posted by then, D-222) and sales files (the day
+// after their last day: last month's on this month's 1st, this month's on the seed day), then orders
+// (entered with their deposit, delivered after the day's sales, or cancelled), the customers' payments,
+// refunds, and last the apps' statements of the files' days.
 
 type Envelope<T> = WithMeta<T>
 
@@ -71,6 +86,7 @@ export interface CostingSummary {
   runningCosts: string
   expenses: string
   sales: string
+  imports: string
   orders: string
 }
 
@@ -80,6 +96,8 @@ export interface CostingResult {
   notes: string[]
   /** Records that could not be written. */
   warnings: string[]
+  /** How many of its names each file imported now needed an answer for (the others matched). */
+  answered: Map<string, number>
 }
 
 export interface CostingContext {
@@ -91,7 +109,7 @@ export interface CostingContext {
   readonly label: string
   /** The business's language: the starter categories are named in it. */
   readonly locale: Locale
-  /** A token for a demo member of the business (who enters an expense). */
+  /** A token for a demo member of the business (who enters an expense, a sale, a file…). */
   readonly tokenOf: (email: string) => Promise<string>
 }
 
@@ -111,25 +129,11 @@ export function demoId(businessId: string, key: string): string {
   ].join('-')
 }
 
-/** YYYY-MM-DD `days` days after `day` (negative: before). */
-function addDays(day: string, days: number): string {
-  const date = new Date(`${day}T00:00:00Z`)
-  date.setUTCDate(date.getUTCDate() + days)
-  return date.toISOString().slice(0, 10)
-}
-
-/** YYYY-MM-DD of the first day of the month `months` months after the month of `day`. */
-function monthStart(day: string, months: number): string {
-  const date = new Date(`${day.slice(0, 7)}-01T00:00:00Z`)
-  date.setUTCMonth(date.getUTCMonth() + months)
-  return date.toISOString().slice(0, 10)
-}
-
 const isStandardUnit = (value: string): value is StandardUnit => value in STANDARD_UNITS
 
 const VAT_RATE = '5'
 
-/** A document entered on its day; on the same day: purchases, expenses, returns, then payments. */
+/** A document entered on its day, in this order on the same day (see above). */
 interface TimelineEvent {
   order: number
   daysAgo: number
@@ -137,18 +141,36 @@ interface TimelineEvent {
   run: () => Promise<void>
 }
 
+const ORDER = {
+  purchase: 0,
+  expense: 1,
+  return: 2,
+  payment: 3,
+  sale: 4,
+  import: 5,
+  order: 6,
+  delivery: 7,
+  customerPayment: 8,
+  refund: 9,
+  statement: 10,
+} as const
+
 class CostingSeed {
   private readonly notes: string[] = []
   private readonly warnings: string[] = []
+  private readonly answered = new Map<string, number>()
   private modules = new Set<string>()
   private capabilities: Record<string, boolean> = {}
   private today = ''
   private readonly materials = new Map<string, Pick<DemoMaterial, 'key' | 'packs'>>()
+  private readonly products = new Map<string, DemoProduct>()
   private members = new Map<string, string>()
   private locations = new Map<string, string>()
   private categories = new Map<string, string>()
   /** The business's channels: a demo channel's key → id, and a starter channel's kind → id. */
   private channelIds = new Map<string, string>()
+  /** A sale that names no channel: the business's first starter channel, never one the demo adds. */
+  private starterChannelId: string | null = null
 
   constructor(
     private readonly ctx: CostingContext,
@@ -156,6 +178,7 @@ class CostingSeed {
   ) {
     for (const material of data.materials ?? []) this.materials.set(material.key, material)
     for (const product of data.products ?? []) {
+      this.products.set(product.key, product)
       if (product.resale) this.materials.set(product.resale.key, product.resale)
     }
   }
@@ -174,6 +197,11 @@ class CostingSeed {
 
   private mutate<T>(path: string, input?: unknown, token = this.ctx.token): Promise<T> {
     return this.ctx.api.mutate<T>(path, token, this.ctx.businessId, input)
+  }
+
+  /** The token of the member who enters a record (default: the owner). */
+  private tokenFor(email: string | undefined): Promise<string> {
+    return email ? this.ctx.tokenOf(email) : Promise.resolve(this.ctx.token)
   }
 
   /** A record by id, or undefined when there is none. */
@@ -201,8 +229,14 @@ class CostingSeed {
     return modules.every((id) => this.modules.has(id))
   }
 
-  private day(daysAgo: number): string {
-    return addDays(this.today, -daysAgo)
+  /** The day a record is dated (never after today). */
+  private dayOf(when: DemoDay): string {
+    return dayOf(when, this.today)
+  }
+
+  /** How many days before today a day is. */
+  private ago(day: string): number {
+    return daysBetween(day, this.today)
   }
 
   private get vatRegistered(): boolean {
@@ -263,6 +297,19 @@ class CostingSeed {
     if (email === undefined) return null
     const id = this.members.get(email.toLowerCase())
     if (!id) throw new Error(`${email} is not an active member`)
+    return id
+  }
+
+  private locationId(branch: string | undefined): string | null {
+    if (!branch) return null
+    const id = this.locations.get(branch)
+    if (!id) throw new Error(`no location "${branch}"`)
+    return id
+  }
+
+  private channelId(key: string | undefined): string {
+    const id = key ? this.channelIds.get(key) : this.starterChannelId
+    if (!id) throw new Error(`no channel "${key ?? 'starter'}"`)
     return id
   }
 
@@ -340,16 +387,12 @@ class CostingSeed {
     }
   }
 
-  /** The owner's time can be saved: Step 6 is built, and the business works without a team (D-119). */
+  /** The owner's time can be saved: the business works without a team (D-119). */
   private ownerTimeAvailable(): boolean {
-    return (
-      this.ctx.api.hasProcedure('productCost.updateSettings') &&
-      this.active('cost_engine') &&
-      this.capabilities.has_team !== true
-    )
+    return this.active('cost_engine') && this.capabilities.has_team !== true
   }
 
-  private async products(): Promise<void> {
+  private async productsStep(): Promise<void> {
     const products = this.data.products ?? []
     if (this.skipUnless('products & services', products.length, 'products')) return
     const withTime = this.ownerTimeAvailable()
@@ -403,7 +446,7 @@ class CostingSeed {
   }
 
   // -------------------------------------------------------------------------------------------------
-  // Documents, in date order
+  // Purchasing and spending, in date order
   // -------------------------------------------------------------------------------------------------
 
   private purchaseLineId(purchaseKey: string, materialKey: string): string {
@@ -416,22 +459,17 @@ class CostingSeed {
     if (!doc) {
       const document = p.document ?? this.defaultDocument()
       const { vatRate, pricesIncludeVat } = this.vatOf(document)
-      let locationId: string | null = null
-      if (p.branch) {
-        locationId = this.locations.get(p.branch) ?? null
-        if (!locationId) throw new Error(`no location "${p.branch}"`)
-      }
       doc = (
         await this.mutate<Envelope<PurchaseDto>>('purchase.create', {
           id,
           supplierId: this.supplierId(p.supplier),
-          businessDate: this.day(p.daysAgo),
+          businessDate: this.dayOf(p.daysAgo),
           documentType: document,
           reference: p.reference ?? null,
           paymentMethod: p.payment,
           paidByMemberId: null,
           pricesIncludeVat,
-          locationId,
+          locationId: this.locationId(p.branch),
           lines: p.lines.map(([material, qty, unit, price]) => ({
             kind: 'material',
             id: this.purchaseLineId(p.key, material),
@@ -458,7 +496,7 @@ class CostingSeed {
           id,
           purchaseId: this.id(`purchase:${r.purchase}`),
           kind: r.kind,
-          businessDate: this.day(r.daysAgo),
+          businessDate: this.dayOf(r.daysAgo),
           reference: r.reference ?? null,
           notes: r.notes ?? null,
           lines: r.lines.map(([material, value]) => ({
@@ -488,7 +526,7 @@ class CostingSeed {
     await this.mutate(`${path}.record`, {
       id,
       [documentField]: documentId,
-      businessDate: this.day(pay.daysAgo),
+      businessDate: this.dayOf(pay.daysAgo),
       method: pay.method,
       amount,
       note: pay.note ?? null,
@@ -501,14 +539,13 @@ class CostingSeed {
     if (!doc) {
       const document = e.document ?? this.defaultDocument()
       const { vatRate, pricesIncludeVat } = this.vatOf(document)
-      const token = e.enteredBy ? await this.ctx.tokenOf(e.enteredBy) : this.ctx.token
       await this.mutate(
         'expense.create',
         {
           id,
           categoryId: await this.categoryId(e.category),
           supplierId: this.supplierId(e.supplier),
-          businessDate: this.day(e.daysAgo),
+          businessDate: this.dayOf(e.daysAgo),
           documentType: document,
           reference: e.reference ?? null,
           description: e.description,
@@ -522,7 +559,7 @@ class CostingSeed {
             ? {}
             : { periodMonth: monthStart(this.today, -e.monthsBack).slice(0, 7) }),
         },
-        token,
+        await this.tokenFor(e.enteredBy),
       )
       doc = (await this.query<Envelope<ExpenseDto>>('expense.get', { id })).data
     }
@@ -530,12 +567,11 @@ class CostingSeed {
       // Who entered it sends it for approval (approval turned on first), once: a draft only.
       if (doc.status === 'draft') {
         await this.requireApproval()
-        const author = e.enteredBy ? await this.ctx.tokenOf(e.enteredBy) : this.ctx.token
         doc = (
           await this.mutate<Envelope<ExpenseDto>>(
             'expense.submit',
             { id, version: doc.version },
-            author,
+            await this.tokenFor(e.enteredBy),
           )
         ).data
       }
@@ -587,6 +623,8 @@ class CostingSeed {
 
   private async documents(): Promise<void> {
     const events: TimelineEvent[] = []
+    const at = (order: number, day: string, label: string, run: () => Promise<void>) =>
+      events.push({ order, daysAgo: this.ago(day), label, run })
     const purchases = this.data.purchases ?? []
     const returns = this.data.returns ?? []
     const payments = this.data.payments ?? []
@@ -600,69 +638,37 @@ class CostingSeed {
     const spending = !this.skipUnless('expenses and their payments', expenses.length, 'expenses')
     if (purchasing) {
       for (const p of purchases) {
-        events.push({
-          order: 0,
-          daysAgo: p.daysAgo,
-          label: `purchase ${p.key}`,
-          run: () => this.purchase(p),
-        })
+        at(ORDER.purchase, this.dayOf(p.daysAgo), `purchase ${p.key}`, () => this.purchase(p))
       }
       for (const r of returns) {
-        events.push({
-          order: 2,
-          daysAgo: r.daysAgo,
-          label: `${r.kind} ${r.key}`,
-          run: () => this.purchaseReturn(r),
-        })
+        at(ORDER.return, this.dayOf(r.daysAgo), `${r.kind} ${r.key}`, () => this.purchaseReturn(r))
       }
     }
     if (spending) {
       for (const e of expenses) {
-        events.push({
-          order: 1,
-          daysAgo: e.daysAgo,
-          label: `expense ${e.key}`,
-          run: () => this.expense(e),
-        })
+        at(ORDER.expense, this.dayOf(e.daysAgo), `expense ${e.key}`, () => this.expense(e))
       }
     }
     for (const pay of payments) {
       if ((pay.purchase && !purchasing) || (pay.expense && !spending)) continue
-      events.push({
-        order: 3,
-        daysAgo: pay.daysAgo,
-        label: `payment ${pay.key}`,
-        run: () => this.payment(pay),
-      })
+      at(ORDER.payment, this.dayOf(pay.daysAgo), `payment ${pay.key}`, () => this.payment(pay))
     }
-    // Sales last on their day: their cost is frozen from the purchases posted by then (D-222).
-    const sales = this.data.sales ?? []
-    if (!this.skipUnless('sales', sales.length, 'sales', 'products')) {
-      for (const sale of sales) {
-        events.push({
-          order: 4,
-          daysAgo: this.saleDaysAgo(sale),
-          label: `sale ${sale.key}`,
-          run: () => this.sale(sale),
-        })
-      }
-    }
-    events.push(...this.orderEvents())
+    events.push(...this.saleEvents(), ...this.importEvents(), ...this.orderEvents())
     events.sort((a, b) => b.daysAgo - a.daysAgo || a.order - b.order)
     for (const event of events) await this.attempt(event.label, event.run)
   }
 
   // -------------------------------------------------------------------------------------------------
-  // Sales (M3 Step 2)
+  // Sales (M3 Step 2) and what customers pay for them (Step 5)
   // -------------------------------------------------------------------------------------------------
 
   /** The channels the business adds (with their commission, seen and set by the owner). */
   private async channels(): Promise<void> {
     const channels = this.data.channels ?? []
     const sales = this.data.sales ?? []
-    if (this.skipUnless('sales channels and sales', channels.length + sales.length, 'sales')) {
-      return
-    }
+    const imports = this.data.imports ?? []
+    const count = channels.length + sales.length + imports.length
+    if (this.skipUnless('sales channels and sales', count, 'sales')) return
     const listed = async () =>
       (await this.query<Envelope<{ items: SalesChannelDto[] }>>('channel.list', { status: 'all' }))
         .data.items
@@ -681,54 +687,88 @@ class CostingSeed {
     }
     existing = await listed()
     for (const c of channels) this.channelIds.set(c.key, this.id(`channel:${c.key}`))
-    // The starter channels (by kind), the first of each.
+    // The starter channels (by kind), the first of each. A sale naming no channel goes to the first
+    // of them, never to a marketplace or app the demo adds (its commission would be charged).
+    const added = new Set(channels.map((c) => this.id(`channel:${c.key}`)))
     for (const e of existing) {
-      if (!this.channelIds.has(e.kind) && e.archivedAt === null) this.channelIds.set(e.kind, e.id)
+      if (e.archivedAt !== null || added.has(e.id)) continue
+      this.starterChannelId ??= e.id
+      if (!this.channelIds.has(e.kind)) this.channelIds.set(e.kind, e.id)
     }
-  }
-
-  /** The first and last day of the month before the seed day's month. */
-  private lastMonth(): { from: string; to: string } {
-    const from = monthStart(this.today, -1)
-    return { from, to: addDays(monthStart(this.today, 0), -1) }
   }
 
   /**
-   * The day a sale is dated: `daysAgo` before the seed day; a sheet of last month on its last day; a
-   * day of last month (`lastMonthDay`, the last day of a shorter month for a later day).
+   * The days of a sheet that covers several days (`covers`), or null for a sale of one day; null too
+   * for this month's on its 1st (no day before today in it).
    */
-  private saleDay(sale: DemoSale): string {
-    if (sale.lastMonth) return this.lastMonth().to
-    if (sale.lastMonthDay !== undefined) {
-      const { from, to } = this.lastMonth()
-      const day = Math.min(sale.lastMonthDay, Number(to.slice(8, 10)))
-      return `${from.slice(0, 8)}${String(day).padStart(2, '0')}`
+  private sheetDays(sale: DemoSale): { from: string; to: string } | null {
+    if (sale.covers === 'month_before') {
+      return { from: monthStart(this.today, -2), to: addDays(monthStart(this.today, -1), -1) }
     }
-    return this.day(sale.daysAgo)
+    if (sale.covers === 'last_month') return lastMonthOf(this.today)
+    if (sale.covers === 'this_month') {
+      const from = monthStart(this.today, 0)
+      const to = addDays(this.today, -1)
+      return to < from ? null : { from, to }
+    }
+    return null
   }
 
-  /** How many days before the seed day a sale is dated. */
-  private saleDaysAgo(sale: DemoSale): number {
-    const at = new Date(`${this.saleDay(sale)}T00:00:00Z`).getTime()
-    return Math.round((new Date(`${this.today}T00:00:00Z`).getTime() - at) / 86_400_000)
+  /** A sheet of this month so far counts its month's quantities for its days (at least 1). */
+  private qtyOf(sale: DemoSale, qty: string): string {
+    const days = sale.covers === 'this_month' ? this.sheetDays(sale) : null
+    if (!days) return qty
+    const covered = daysBetween(days.from, days.to) + 1
+    return String(Math.max(1, Math.round((Number(qty) * covered) / 30)))
+  }
+
+  private saleEvents(): TimelineEvent[] {
+    const sales = this.data.sales ?? []
+    if (this.skipUnless('sales', sales.length, 'sales', 'products')) return []
+    return sales.flatMap((sale): TimelineEvent[] => {
+      if (sale.covers === 'this_month' && !this.sheetDays(sale)) return []
+      const day = this.saleDay(sale)
+      return [
+        {
+          order: ORDER.sale,
+          daysAgo: this.ago(day),
+          label: `sale ${sale.key}`,
+          run: () => this.sale(sale),
+        },
+        ...(sale.payments ?? []).map((pay) => {
+          const daysAgo = this.ago(this.notBefore(this.dayOf(pay.daysAgo), day))
+          return {
+            order: ORDER.customerPayment,
+            daysAgo,
+            label: `sale ${sale.key}: payment ${pay.key}`,
+            run: () =>
+              this.customerPayment({ saleId: this.id(`sale:${sale.key}`) }, sale.key, {
+                ...pay,
+                daysAgo,
+              }),
+          }
+        }),
+      ]
+    })
+  }
+
+  /** The day a sale is dated: a sheet of several days on its last day, else its own. */
+  private saleDay(sale: DemoSale): string {
+    return this.sheetDays(sale)?.to ?? this.dayOf(sale.daysAgo)
+  }
+
+  /** `day`, or `after` when `day` is before it (a step never comes before the one it follows). */
+  private notBefore(day: string, after: string): string {
+    return day < after ? after : day
   }
 
   private async sale(sale: DemoSale): Promise<void> {
     const id = this.id(`sale:${sale.key}`)
-    const token = sale.enteredBy ? await this.ctx.tokenOf(sale.enteredBy) : this.ctx.token
+    const token = await this.tokenFor(sale.enteredBy)
     let doc = (await this.find<Envelope<SaleDto>>('sale.get', { id }))?.data
     if (!doc) {
-      const channelId = sale.channel
-        ? this.channelIds.get(sale.channel)
-        : [...this.channelIds.values()][0]
-      if (!channelId) throw new Error(`no channel "${sale.channel ?? 'first'}"`)
-      let locationId: string | null = null
-      if (sale.branch) {
-        locationId = this.locations.get(sale.branch) ?? null
-        if (!locationId) throw new Error(`no location "${sale.branch}"`)
-      }
-      const prices = new Map((this.data.products ?? []).map((product) => [product.key, product]))
-      const month = sale.lastMonth ? this.lastMonth() : undefined
+      const days = this.sheetDays(sale)
+      const customer = sale.customer && this.active('customers') ? sale.customer : undefined
       doc = (
         await this.mutate<Envelope<SaleDto>>(
           'sale.create',
@@ -736,19 +776,21 @@ class CostingSeed {
             id,
             source: sale.source,
             businessDate: this.saleDay(sale),
-            periodFrom: month ? month.from : null,
-            locationId,
-            channelId,
+            periodFrom: days && days.from !== days.to ? days.from : null,
+            locationId: this.locationId(sale.branch),
+            channelId: this.channelId(sale.channel),
             deliveryNeeded: sale.delivery !== undefined,
             deliveryArea: sale.delivery?.area ?? null,
             ...(sale.delivery?.cost ? { deliveryCost: sale.delivery.cost } : {}),
+            customerId: customer ? this.id(`customer:${customer}`) : null,
+            payLater: customer !== undefined && sale.payLater === true && this.active('payments'),
             lines: [
               ...sale.lines.map(([product, qty, price]) => ({
                 kind: 'item',
                 id: this.id(`sale:${sale.key}:line:${product}`),
                 productId: this.id(`product:${product}`),
-                qty,
-                unitPrice: price ?? prices.get(product)?.price ?? '0',
+                qty: this.qtyOf(sale, qty),
+                unitPrice: price ?? this.products.get(product)?.price ?? '0',
               })),
               ...(sale.delivery
                 ? [
@@ -770,6 +812,209 @@ class CostingSeed {
     }
   }
 
+  /** A customer's payment on an order or a sale "they'll pay later" (or money given back). */
+  private async customerPayment(
+    document: { orderId: string } | { saleId: string },
+    key: string,
+    pay: DemoCustomerPayment,
+  ): Promise<void> {
+    if (!this.active('payments')) return
+    const id = this.id(`${'orderId' in document ? 'order' : 'sale'}:${key}:payment:${pay.key}`)
+    const listed = await this.query<CustomerPaymentListDto>('customerPayment.list', document)
+    if (listed.items.some((p) => p.id === id)) return
+    const amount = pay.amount === 'outstanding' ? (listed.document?.owed ?? '0') : pay.amount
+    if (compareDecimal(amount, '0') <= 0) return
+    await this.mutate('customerPayment.record', {
+      id,
+      ...document,
+      kind: pay.kind ?? 'payment',
+      businessDate: this.dayOf(pay.daysAgo),
+      method: pay.method,
+      amount,
+    })
+  }
+
+  // -------------------------------------------------------------------------------------------------
+  // Sales files and the apps' statements (M3 Step 4)
+  // -------------------------------------------------------------------------------------------------
+
+  private importEvents(): TimelineEvent[] {
+    const imports = this.data.imports ?? []
+    const statements = this.data.statements ?? []
+    const what = 'sales files and statements'
+    if (this.skipUnless(what, imports.length + statements.length, 'sales', 'products')) return []
+    const events: TimelineEvent[] = []
+    for (const imp of imports) {
+      const file = salesFile(imp, this.products, this.today)
+      if (!file) continue
+      // Imported the day after its last day (this month's, on the seed day).
+      const last = file.rows.reduce((max, row) => (row.day > max ? row.day : max), '')
+      const day = last < this.today ? addDays(last, 1) : this.today
+      events.push({
+        order: ORDER.import,
+        daysAgo: this.ago(day),
+        label: `import ${imp.key}`,
+        run: () => this.importFile(imp),
+      })
+    }
+    // Last month's statements come once its files are in.
+    const firstOfMonth = monthStart(this.today, 0)
+    for (const statement of statements) {
+      events.push({
+        order: ORDER.statement,
+        daysAgo: this.ago(firstOfMonth),
+        label: `statement ${statement.key}`,
+        run: () => this.statement(statement),
+      })
+    }
+    return events
+  }
+
+  /**
+   * A file imported as the import screen sends it (the draft, then its rows in chunks), its names
+   * answered as the owner would (the product it is, by item code when the file has codes; tips "not
+   * something I sell"), then finalized.
+   */
+  private async importFile(imp: DemoImport): Promise<void> {
+    const id = this.id(`import:${imp.key}`)
+    const token = await this.tokenFor(imp.enteredBy)
+    let doc = (await this.find<Envelope<SaleImportDto>>('saleImport.get', { id }))?.data
+    if (!doc) {
+      const file = salesFile(imp, this.products, this.today)
+      if (!file) return
+      const { headerRow, mapping, dateOrder, read, fileHash, fingerprint } = readSalesFile(
+        file,
+        this.vatRegistered,
+      )
+      if (read.problem !== null || read.period === null || read.rowsLeftOut > 0) {
+        throw new Error(`demo data: ${file.name} reads with ${read.problem ?? 'rows left out'}`)
+      }
+      const headers: Record<string, string> = {}
+      for (const [field, column] of Object.entries(mapping)) {
+        headers[field] = String(file.cells[headerRow]?.[column] ?? '')
+      }
+      await this.mutate(
+        'saleImport.create',
+        {
+          id,
+          channelId: this.channelId(imp.channel),
+          locationId: this.locationId(imp.branch),
+          fileName: file.name,
+          fileHash,
+          fingerprint,
+          shape: read.shape,
+          periodFrom: read.period.from,
+          periodTo: read.period.to,
+          mapping: { headerRow, columns: { ...mapping }, headers, dateOrder },
+          amountsIncludeVat: read.amountsIncludeVat,
+          rowsRead: read.rowsRead,
+          rowsLeftOut: read.rowsLeftOut,
+          errors: read.errors.slice(0, IMPORT_ERRORS_KEPT),
+          feesTotal: read.fees,
+          rowCount: read.items.length,
+        },
+        token,
+      )
+      const rows = read.items.map((item, position) => ({
+        position,
+        businessDate: item.day,
+        name: item.name,
+        code: item.code,
+        qty: item.qty,
+        amount: item.amount,
+        refunds: item.refunds,
+        fileRows: item.rows,
+      }))
+      for (let start = 0; start < rows.length; start += IMPORT_ROWS_CHUNK) {
+        await this.mutate(
+          'saleImport.addRows',
+          { id, rows: rows.slice(start, start + IMPORT_ROWS_CHUNK) },
+          token,
+        )
+      }
+      doc = (await this.query<Envelope<SaleImportDto>>('saleImport.get', { id })).data
+    }
+    if (doc.status !== 'draft') return
+    type Answer = { name: string; code: string | null; target: string; productId: string | null }
+    const answers = doc.names.flatMap((entry): Answer[] => {
+      if (entry.match.state !== 'unmatched') return []
+      if (entry.name === TIPS_NAME) {
+        return [{ name: entry.name, code: entry.code, target: 'skip', productId: null }]
+      }
+      const item = imp.items.find((i) =>
+        entry.code !== null
+          ? i.code === entry.code
+          : (i.name ?? this.products.get(i.product)?.name) === entry.name,
+      )
+      if (!item) throw new Error(`demo data: ${imp.key} has no answer for "${entry.name}"`)
+      return [
+        {
+          name: entry.name,
+          code: entry.code,
+          target: 'product',
+          productId: this.id(`product:${item.product}`),
+        },
+      ]
+    })
+    this.answered.set(imp.key, answers.length)
+    if (answers.length > 0) {
+      doc = (await this.mutate<Envelope<SaleImportDto>>('saleImport.match', { id, answers }, token))
+        .data
+    }
+    await this.mutate('saleImport.post', { id, version: doc.version }, token)
+  }
+
+  /**
+   * A channel's statement for days of last month, typed from the app's statement: the sales it lists
+   * are what the channel's files of last month add up to on those days (as the customers paid), and
+   * the app kept its commission and payment fees (a % of them) and its ads.
+   */
+  private async statement(s: DemoStatement): Promise<void> {
+    const id = this.id(`statement:${s.key}`)
+    const channelId = this.channelId(s.channel)
+    const listed = await this.query<ChannelStatementListDto>('channelStatement.list', {
+      channelId,
+    })
+    let doc = listed.data.items.find((item) => item.id === id)
+    if (!doc) {
+      const { from: first, to: lastDay } = lastMonthOf(this.today)
+      const dayOfMonth = (n: number) =>
+        `${first.slice(0, 8)}${String(Math.min(n, Number(lastDay.slice(8, 10)))).padStart(2, '0')}`
+      const from = dayOfMonth(s.days[0])
+      const to = dayOfMonth(s.days[1])
+      let sales = 0n
+      for (const imp of this.data.imports ?? []) {
+        if (imp.channel !== s.channel || imp.month !== 'last') continue
+        for (const row of salesFile(imp, this.products, this.today)?.rows ?? []) {
+          if (row.day >= from && row.day <= to) sales += row.amount
+        }
+      }
+      if (sales === 0n) throw new Error(`demo data: ${s.key} lists no sales`)
+      const commission = percentOf(sales, s.commissionPercent)
+      const paymentFees = percentOf(sales, s.paymentFeesPercent ?? '0')
+      const ads = filsOf(s.ads ?? '0')
+      doc = (
+        await this.mutate<ChannelStatementResultDto>('channelStatement.create', {
+          id,
+          channelId,
+          periodFrom: from,
+          periodTo: to,
+          sales: amountOfFils(sales),
+          commission: amountOfFils(commission),
+          paymentFees: amountOfFils(paymentFees),
+          otherFees: '0',
+          ads: amountOfFils(ads),
+          refundsCharged: '0',
+          payout: amountOfFils(sales - commission - paymentFees - ads),
+          notes: s.notes ?? null,
+        })
+      ).data
+    }
+    if (doc.status === 'draft') {
+      await this.mutate('channelStatement.post', { id, version: doc.version })
+    }
+  }
+
   // -------------------------------------------------------------------------------------------------
   // Customers and orders (M3 Step 5)
   // -------------------------------------------------------------------------------------------------
@@ -787,7 +1032,7 @@ class CostingSeed {
           kind: c.kind ?? 'individual',
           phone: c.phone ?? null,
           email: c.email ?? null,
-          trn: c.trn ?? null,
+          trn: this.vatRegistered ? (c.trn ?? null) : null,
           tradeLicenceNo: c.tradeLicenceNo ?? null,
           emirate: c.emirate ?? null,
         })
@@ -797,7 +1042,7 @@ class CostingSeed {
 
   /**
    * Each order's steps on their days, after the day's sales: entered with its deposit, delivered or
-   * cancelled, then its payments, then its refund.
+   * cancelled, then its payments, then its refund (each never before the step it follows).
    */
   private orderEvents(): TimelineEvent[] {
     const orders = this.data.orders ?? []
@@ -805,45 +1050,49 @@ class CostingSeed {
     if (this.skipUnless(what, orders.length, 'orders', 'customers', 'payments', 'products')) {
       return []
     }
-    return orders.flatMap((o): TimelineEvent[] => [
-      { order: 5, daysAgo: o.daysAgo, label: `order ${o.key}`, run: () => this.newOrder(o) },
-      ...(o.deliveredDaysAgo === undefined
-        ? []
-        : [
-            {
-              order: 6,
-              daysAgo: o.deliveredDaysAgo,
-              label: `order ${o.key}: delivery`,
-              run: () => this.deliverOrder(o),
-            },
-          ]),
-      ...(o.cancelledDaysAgo === undefined
-        ? []
-        : [
-            {
-              order: 6,
-              daysAgo: o.cancelledDaysAgo,
-              label: `order ${o.key}: cancel`,
-              run: () => this.cancelOrder(o),
-            },
-          ]),
-      ...(o.payments ?? []).map((pay) => ({
-        order: 7,
-        daysAgo: pay.daysAgo,
-        label: `order ${o.key}: payment ${pay.key}`,
-        run: () => this.orderPayment(o, pay),
-      })),
-      ...(o.refund
-        ? [
-            {
-              order: 8,
-              daysAgo: o.refund.daysAgo,
-              label: `order ${o.key}: refund ${o.refund.key}`,
-              run: () => this.orderRefund(o),
-            },
-          ]
-        : []),
-    ])
+    return orders.flatMap((o): TimelineEvent[] => {
+      const entered = this.dayOf(o.daysAgo)
+      const done =
+        o.deliveredDaysAgo !== undefined
+          ? this.notBefore(this.dayOf(o.deliveredDaysAgo), entered)
+          : o.cancelledDaysAgo !== undefined
+            ? this.notBefore(this.dayOf(o.cancelledDaysAgo), entered)
+            : entered
+      const event = (order: number, day: string, label: string, run: () => Promise<void>) => ({
+        order,
+        daysAgo: this.ago(day),
+        label: `order ${o.key}${label}`,
+        run,
+      })
+      return [
+        event(ORDER.order, entered, '', () => this.newOrder(o)),
+        ...(o.deliveredDaysAgo === undefined
+          ? []
+          : [event(ORDER.delivery, done, ': delivery', () => this.deliverOrder(o, done))]),
+        ...(o.cancelledDaysAgo === undefined
+          ? []
+          : [event(ORDER.delivery, done, ': cancel', () => this.cancelOrder(o))]),
+        ...(o.payments ?? []).map((pay) => {
+          const day = this.notBefore(this.dayOf(pay.daysAgo), done)
+          return event(ORDER.customerPayment, day, `: payment ${pay.key}`, () =>
+            this.customerPayment({ orderId: this.orderId(o) }, o.key, {
+              ...pay,
+              daysAgo: this.ago(day),
+            }),
+          )
+        }),
+        ...(o.refund
+          ? [
+              event(
+                ORDER.refund,
+                this.notBefore(this.dayOf(o.refund.daysAgo), done),
+                `: refund ${o.refund.key}`,
+                () => this.orderRefund(o, this.notBefore(this.dayOf(o.refund!.daysAgo), done)),
+              ),
+            ]
+          : []),
+      ]
+    })
   }
 
   private orderId(o: DemoOrder): string {
@@ -856,56 +1105,59 @@ class CostingSeed {
 
   private async newOrder(o: DemoOrder): Promise<void> {
     if (await this.orderOf(o)) return
-    const day = this.day(o.daysAgo)
+    const day = this.dayOf(o.daysAgo)
     const channelId = this.channelIds.get('messages') ?? [...this.channelIds.values()][0] ?? null
-    const prices = new Map((this.data.products ?? []).map((product) => [product.key, product]))
-    await this.mutate('order.create', {
-      id: this.orderId(o),
-      businessDate: day,
-      dueDate: o.dueIn === undefined ? null : addDays(day, o.dueIn),
-      customerId: this.id(`customer:${o.customer}`),
-      customerRef: o.customerRef ?? null,
-      channelId,
-      deliveryNeeded: o.delivery !== undefined,
-      deliveryArea: o.delivery?.area ?? null,
-      ...(o.delivery?.cost ? { deliveryCost: o.delivery.cost } : {}),
-      lines: [
-        ...o.lines.map(([product, qty, price]) => ({
-          kind: 'item',
-          id: this.id(`order:${o.key}:line:${product}`),
-          productId: this.id(`product:${product}`),
-          qty,
-          unitPrice: price ?? prices.get(product)?.price ?? '0',
-        })),
-        ...(o.delivery
-          ? [
-              {
-                kind: 'delivery',
-                id: this.id(`order:${o.key}:delivery`),
-                amount: o.delivery.charged,
-              },
-            ]
-          : []),
-      ],
-      payment: o.deposit
-        ? {
-            id: this.id(`order:${o.key}:deposit`),
-            method: o.deposit.method,
-            amount: o.deposit.amount,
-          }
-        : null,
-    })
+    await this.mutate(
+      'order.create',
+      {
+        id: this.orderId(o),
+        businessDate: day,
+        dueDate: o.dueIn === undefined ? null : addDays(day, o.dueIn),
+        customerId: this.id(`customer:${o.customer}`),
+        customerRef: o.customerRef ?? null,
+        channelId,
+        deliveryNeeded: o.delivery !== undefined,
+        deliveryArea: o.delivery?.area ?? null,
+        ...(o.delivery?.cost ? { deliveryCost: o.delivery.cost } : {}),
+        lines: [
+          ...o.lines.map(([product, qty, price]) => ({
+            kind: 'item',
+            id: this.id(`order:${o.key}:line:${product}`),
+            productId: this.id(`product:${product}`),
+            qty,
+            unitPrice: price ?? this.products.get(product)?.price ?? '0',
+          })),
+          ...(o.delivery?.charged
+            ? [
+                {
+                  kind: 'delivery',
+                  id: this.id(`order:${o.key}:delivery`),
+                  amount: o.delivery.charged,
+                },
+              ]
+            : []),
+        ],
+        payment: o.deposit
+          ? {
+              id: this.id(`order:${o.key}:deposit`),
+              method: o.deposit.method,
+              amount: o.deposit.amount,
+            }
+          : null,
+      },
+      await this.tokenFor(o.enteredBy),
+    )
   }
 
-  private async deliverOrder(o: DemoOrder): Promise<void> {
+  private async deliverOrder(o: DemoOrder, day: string): Promise<void> {
     const order = await this.orderOf(o)
     if (!order) throw new Error('the order was not entered')
-    if (order.status !== 'pending' || o.deliveredDaysAgo === undefined) return
-    await this.mutate('order.deliver', {
-      id: order.id,
-      version: order.version,
-      businessDate: this.day(o.deliveredDaysAgo),
-    })
+    if (order.status !== 'pending') return
+    await this.mutate(
+      'order.deliver',
+      { id: order.id, version: order.version, businessDate: day },
+      await this.tokenFor(o.enteredBy),
+    )
   }
 
   private async cancelOrder(o: DemoOrder): Promise<void> {
@@ -915,22 +1167,7 @@ class CostingSeed {
     await this.mutate('order.cancel', { id: order.id, version: order.version })
   }
 
-  private async orderPayment(o: DemoOrder, pay: DemoOrderPayment): Promise<void> {
-    const id = this.id(`order:${o.key}:payment:${pay.key}`)
-    const orderId = this.orderId(o)
-    const listed = await this.query<CustomerPaymentListDto>('customerPayment.list', { orderId })
-    if (listed.items.some((p) => p.id === id)) return
-    await this.mutate('customerPayment.record', {
-      id,
-      orderId,
-      kind: pay.kind ?? 'payment',
-      businessDate: this.day(pay.daysAgo),
-      method: pay.method,
-      amount: pay.amount,
-    })
-  }
-
-  private async orderRefund(o: DemoOrder): Promise<void> {
+  private async orderRefund(o: DemoOrder, day: string): Promise<void> {
     const refund = o.refund
     if (!refund) return
     const id = this.id(`order:${o.key}:refund:${refund.key}`)
@@ -945,7 +1182,7 @@ class CostingSeed {
         id,
         orderId: order.id,
         by: refund.by,
-        businessDate: this.day(refund.daysAgo),
+        businessDate: day,
         lines: [
           refund.by === 'amount'
             ? { lineId: line.id, amount: refund.value }
@@ -967,7 +1204,7 @@ class CostingSeed {
       id: backId,
       orderId: order.id,
       kind: 'refund',
-      businessDate: this.day(refund.daysAgo),
+      businessDate: day,
       method: refund.payBack,
       amount: overpaid,
     })
@@ -1028,13 +1265,13 @@ class CostingSeed {
     }
   }
 
+  /**
+   * The owner's hourly rate, without a team (D-119): set before any sale, so each sale's time is
+   * costed when it is finalized (a rate set later fills them once).
+   */
   private async ownerTime(): Promise<void> {
     const rate = this.data.ownerHourlyRate
     if (!rate) return
-    if (!this.ctx.api.hasProcedure('productCost.updateSettings')) {
-      this.notes.push(`${this.ctx.label}: the owner's time skipped (Step 6 is not built yet)`)
-      return
-    }
     if (!this.ownerTimeAvailable()) {
       this.notes.push(`${this.ctx.label}: the owner's time skipped (cost_engine off or a team)`)
       return
@@ -1044,34 +1281,6 @@ class CostingSeed {
         await this.query<Envelope<{ ownerHourlyRate: string | null }>>('productCost.settings')
       if (settings.data.ownerHourlyRate !== null) return
       await this.mutate('productCost.updateSettings', { ownerHourlyRate: rate })
-    })
-    // Products made before Step 6 was built get their minutes now (productCost.get shows them, with
-    // or without the Materials module).
-    const timed = (this.data.products ?? []).filter((p) => p.ownerMinutes)
-    if (timed.length === 0 || !this.active('products')) return
-    await this.attempt('owner minutes', async () => {
-      for (const p of timed) {
-        const id = this.id(`product:${p.key}`)
-        const cost = await this.find<Envelope<{ cost: { ownerTime: { minutes: string | null } } }>>(
-          'productCost.get',
-          { productId: id },
-        )
-        if (!cost || cost.data.cost.ownerTime.minutes !== null) continue
-        const product = await this.query<ProductDto>('product.get', { id })
-        await this.mutate('product.update', {
-          id,
-          version: product.version,
-          name: product.name,
-          description: product.description,
-          type: product.type,
-          unit: product.unit,
-          defaultPrice: product.defaultPrice,
-          vatCategory: product.vatCategory,
-          priceIncludesVat: product.priceIncludesVat,
-          ownerMinutes: p.ownerMinutes,
-          locationIds: product.locationIds,
-        })
-      }
     })
   }
 
@@ -1117,6 +1326,7 @@ class CostingSeed {
       runningCosts: await counted('running_costs', 'runningCost.list', { state: 'all' }, true),
       expenses: await counted('expenses', 'expense.list', { status: 'posted' }, true),
       sales: await counted('sales', 'sale.list', { status: 'posted' }, false),
+      imports: await counted('sales', 'saleImport.list', { status: 'posted' }, false),
       orders: await counted('orders', 'order.list', {}, false),
     }
   }
@@ -1126,18 +1336,23 @@ class CostingSeed {
     await this.loadCategories()
     await this.suppliers()
     await this.materialsStep()
-    await this.products()
+    await this.productsStep()
     await this.recipes()
     await this.runningCosts()
+    await this.ownerTime()
     await this.channels()
     await this.customers()
     await this.documents()
-    await this.ownerTime()
-    return { summary: await this.summary(), notes: this.notes, warnings: this.warnings }
+    return {
+      summary: await this.summary(),
+      notes: this.notes,
+      warnings: this.warnings,
+      answered: this.answered,
+    }
   }
 }
 
-/** Adds the business's Costing Core data (what is missing of it) through the API. */
+/** Adds the business's data (what is missing of it) through the API. */
 export function seedCosting(ctx: CostingContext, data: DemoCosting): Promise<CostingResult> {
   return new CostingSeed(ctx, data).run()
 }

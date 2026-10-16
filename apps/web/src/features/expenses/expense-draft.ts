@@ -110,7 +110,7 @@ export interface ExpenseFormContext {
    */
   readonly payable?: readonly { readonly id: string }[]
   /**
-   * The channels whose app fees it may pay (expense.payableChannels), while Sales is served, for a
+   * The channels whose app fees it may pay (expense.payableChannels), with Sales on, for a
    * member who sees costs (M3 Step 3). Undefined otherwise: a channel's fees or delivery is kept.
    */
   readonly channels?: readonly { readonly id: string }[]
@@ -192,7 +192,7 @@ export function expenseDraft(
 }
 
 /**
- * While Sales is served (M3 Step 3, Q8), an expense may also pay a channel's app fees
+ * With Sales on (M3 Step 3, Q8), an expense may also pay a channel's app fees
  * (`fees:<channel id>`) or delivery already on the sales (DELIVERY), said by a member who sees costs;
  * or nothing of these (ORDINARY: it counts as itself, said only in a category without running costs).
  * For a member who may not say them, a channel's fees or delivery already said is kept as it is: left
@@ -221,8 +221,8 @@ export function paysChoiceOf(pays: ExpensePaysDto | undefined): string {
 }
 
 /**
- * What to send for the choice, given the running costs its category can pay that month and (while
- * Sales is served, for a member who sees costs) the channels: the bill of one of them, an extra while
+ * What to send for the choice, given the running costs its category can pay that month and (with
+ * Sales on, for a member who sees costs) the channels: the bill of one of them, an extra while
  * there is one, a channel's fees, delivery already on the sales, null otherwise (nothing said).
  * Undefined while they are not known, or for a member who may not say it: left out, the API keeps
  * what the expense says while it still fits (a channel's fees or delivery always does).

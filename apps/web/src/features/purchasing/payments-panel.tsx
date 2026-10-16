@@ -15,13 +15,15 @@ import { Button } from '@/components/ui/button'
 import { Money, useBusinessDate, useMoney } from '@/features/documents/amounts'
 import { ConfirmDialog } from '@/features/documents/confirm-dialog'
 import { Panel } from '@/features/documents/panel'
+import { useBusinessContext } from '@/lib/trpc/client'
 import { cn } from '@/lib/utils'
 import { PaymentSheet, type OwedAmounts, type OwedDocument } from './payment-sheet'
 
 // The payments of a purchase (the owner's request of 2026-09-29) or an expense (M2 Step 5, D-166)
 // bought on credit or paid by a member: who it is owed to, its total, what returns and credit notes took off, what was paid
-// and what is still owed; each payment with its day, how it was paid, who recorded it and its note.
-// A payment recorded by mistake is reversed (it stays listed, marked reversed, with who reversed it).
+// and what is still owed; each payment with its day, how it was paid, who recorded it (with a team
+// only, D-278) and its note. A payment recorded by mistake is reversed (it stays listed, marked
+// reversed, with who reversed it with a team).
 // A return or credit note posted after it was paid can leave it paid beyond what it came to: then the
 // last row says how much, in place of "Still owed", and a line says who owes it back (D-162). The
 // money a supplier then gives back is recorded on the purchase ("Record money back from the
@@ -117,6 +119,9 @@ export function PaymentsPanel({
   const queryClient = useQueryClient()
   const money = useMoney()
   const businessDate = useBusinessDate()
+  const { data: context } = useBusinessContext()
+  // Who recorded or reversed a payment only with a team ("Entered by" only with a team, D-278).
+  const team = context?.capabilities.has_team === true
   const reversePurchase = useMutation(trpc.purchasePayment.reverse.mutationOptions())
   const reverseExpense = useMutation(trpc.expensePayment.reverse.mutationOptions())
   const reversingBusy = reversePurchase.isPending || reverseExpense.isPending
@@ -242,12 +247,16 @@ export function PaymentsPanel({
                   ) : null}
                   <p className="mt-0.5 text-sm text-muted-foreground">
                     {businessDate(payment.businessDate)}
-                    {' · '}
-                    {payment.recordedBy.name
-                      ? t('purchasing.payments.recordedBy', {
-                          name: isolate(payment.recordedBy.name),
-                        })
-                      : t('purchasing.payments.recordedByFormer')}
+                    {team ? (
+                      <>
+                        {' · '}
+                        {payment.recordedBy.name
+                          ? t('purchasing.payments.recordedBy', {
+                              name: isolate(payment.recordedBy.name),
+                            })
+                          : t('purchasing.payments.recordedByFormer')}
+                      </>
+                    ) : null}
                   </p>
                   {payment.note ? (
                     <p className="mt-0.5 text-sm whitespace-pre-line [unicode-bidi:plaintext]">
@@ -256,10 +265,14 @@ export function PaymentsPanel({
                   ) : null}
                   {reversed ? (
                     <p className="mt-0.5 text-sm text-muted-foreground">
-                      {t('purchasing.payments.reversedOn', {
-                        date: businessDate(payment.reversalDate ?? payment.businessDate),
-                        name: isolate(payment.reversedBy?.name ?? '…'),
-                      })}
+                      {team
+                        ? t('purchasing.payments.reversedOn', {
+                            date: businessDate(payment.reversalDate ?? payment.businessDate),
+                            name: isolate(payment.reversedBy?.name ?? '…'),
+                          })
+                        : t('purchasing.payments.reversedOnAlone', {
+                            date: businessDate(payment.reversalDate ?? payment.businessDate),
+                          })}
                     </p>
                   ) : null}
                 </div>

@@ -30,11 +30,11 @@ describe('permission groups of the Roles section', () => {
       'expenses',
       'running_costs',
       'cost_engine',
-      'customers',
       'sales',
+      'orders',
+      'customers',
       'payments',
       'reports',
-      'orders',
       'data',
     ])
     expect(groups.flatMap((g) => g.keys).sort()).toEqual([...PERMISSION_CATALOG].sort())
@@ -58,11 +58,11 @@ describe('permission groups of the Roles section', () => {
       'expenses',
       'running_costs',
       'cost_engine',
-      'customers',
       'sales',
+      'orders',
+      'customers',
       'payments',
       'reports',
-      'orders',
       'quotations',
       'data',
     ])
@@ -124,7 +124,7 @@ describe('visiblePermissionGroups', () => {
     ).not.toContain('materials')
   })
 
-  it('offers closing the books under business settings with Purchases or Expenses on (D-201)', () => {
+  it('offers closing the books under business settings with Purchases, Expenses, Sales or Orders on (D-201)', () => {
     const capabilities = { has_team: true, multi_location: false }
     const business = (modules: string[]) =>
       visiblePermissionGroups(capabilities, [...M1, ...modules]).find((g) => g.id === 'business')
@@ -133,6 +133,10 @@ describe('visiblePermissionGroups', () => {
     expect(business(['products'])).not.toContain('settings.books.close')
     expect(business(['purchases'])).toContain('settings.books.close')
     expect(business(['expenses'])).toContain('settings.books.close')
+    // Release A (M3 Step 6): sales, and orders' deliveries and refunds, obey the date too.
+    expect(business(['sales'])).toContain('settings.books.close')
+    expect(business(['orders'])).toContain('settings.books.close')
+    expect(business(['customers', 'payments', 'reports'])).not.toContain('settings.books.close')
     expect(
       visiblePermissionGroups(capabilities, [...M1, 'purchases'])
         .find((g) => g.id === 'purchases')

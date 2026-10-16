@@ -16,6 +16,7 @@ import { Skeleton } from '@/components/ui/skeleton'
 import { cn } from '@/lib/utils'
 import {
   bottomTabs,
+  slotCount,
   TAB_SLOTS,
   type NavSlots,
   type ShellNavItem,
@@ -29,7 +30,8 @@ import { useNavWording } from './use-nav-wording'
 // tall. "More" holds what does not fit; "+" shows only when a module has "+" actions. A section with a
 // long name shows its short name on its tab (`common.navShort`, in the business's wording, D-132;
 // "Services" for a business that sells only services, D-200); the tab is still called by its full
-// name. With only one "+" action, "+" goes there directly, named after it (D-200).
+// name. With only one "+" action, "+" goes there directly, named after it (D-200). The tabs come in
+// their claims' order (Release A: Home | Sales | + | Costs | More), "+" in their middle.
 
 const TAB =
   'flex min-h-11 w-full flex-col items-center justify-center gap-1 rounded-xl px-1 py-1.5 text-[0.6875rem] leading-none font-medium transition-colors outline-none focus-visible:ring-3 focus-visible:ring-ring'
@@ -141,7 +143,7 @@ export function BottomNav({
   const { tabs, more, quickAdd } = bottomTabs(items, quickActions)
   const middle = Math.ceil(tabs.length / 2)
   const cells: ReactNode[] = slots
-    ? Array.from({ length: Math.min(slots.main + slots.system, TAB_SLOTS) }, (_, index) => (
+    ? Array.from({ length: Math.min(slotCount(slots), TAB_SLOTS) }, (_, index) => (
         <TabPlaceholder key={index} />
       ))
     : tabs.map((item) => <Tab key={item.id} item={item} />)

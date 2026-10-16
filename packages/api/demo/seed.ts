@@ -22,10 +22,11 @@ import {
 // (no reset). Idempotent: what exists is kept, what is missing is added, and every demo account's
 // password is set back to the demo password. Each business is created by Smart Setup's real confirm
 // step (business.createFromSetup), and members join through real invitations. Then each business gets
-// its Costing Core data (demo/costing.ts): suppliers, materials, products, recipes, posted purchases,
-// returns, payments, running costs and expenses, and (M3 Step 2, previewed) its sales channels and
-// sales, and (M3 Step 5, previewed) its customers and orders with deposits, payments and refunds,
-// through the same API.
+// its data (demo/costing.ts) through the same API: its Costing Core (suppliers, materials, products,
+// recipes, posted purchases, returns, payments, running costs and expenses) and its sales (Release A,
+// M3 Step 6): sales channels, Today's sales and One sale, sales files imported and app statements,
+// customers, orders with deposits, deliveries, payments and refunds, over the month before last, last
+// month and this month so far, so each business shows a whole month of real profit.
 
 interface Row {
   business: string
@@ -232,6 +233,7 @@ const COSTING_COLUMNS: [keyof CostingSummary, string][] = [
   ['runningCosts', 'running costs'],
   ['expenses', 'final expenses'],
   ['sales', 'finalized sales'],
+  ['imports', 'sales files'],
   ['orders', 'orders'],
 ]
 

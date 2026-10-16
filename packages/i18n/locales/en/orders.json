@@ -299,6 +299,7 @@
     "recordedByFormer": "Recorded by a former member",
     "reversedTag": "Reversed",
     "reversedOn": "Reversed on {{date}} by {{name}}. It no longer counts.",
+    "reversedOnAlone": "Reversed on {{date}}. It no longer counts.",
     "reverse": "Reverse",
     "reverseTitle": "Reverse this payment?",
     "reverseBody": "{{amount}} is owed again. The payment stays listed, marked reversed.",

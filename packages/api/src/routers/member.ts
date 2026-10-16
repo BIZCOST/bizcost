@@ -22,13 +22,7 @@ import {
   updateMemberLocations,
   updateMemberPermissions,
 } from '../services/members'
-import {
-  businessProcedure,
-  requireCapability,
-  requireModule,
-  requirePermission,
-  router,
-} from '../trpc'
+import { businessProcedure, requireCapability, requirePermission, router } from '../trpc'
 
 /** Settings → Team (services/members.ts): a business with a team only (CAPABILITY_DISABLED otherwise). */
 const team = businessProcedure.use(requireCapability('has_team'))
@@ -42,13 +36,13 @@ const memberAccess = team
   .use(requirePermission('settings.roles.manage'))
 
 /**
- * A member's branches ("Branches they work in", M3 Step 2, Q12): with branches too, and only while
- * Sales is served (the module used per branch, D-191; released businesses see no change before
- * Release A, the plan's D3).
+ * A member's branches ("Branches they work in", M3 Step 2, Q12): with a team and branches, whatever
+ * modules are on (the plan's Step 6: "only with branches and a team"). A limit takes effect beyond
+ * Sales and Reports (it keeps team changes within the caller's branches, D-236), so wherever one
+ * applies it can be seen and changed; with branches off none applies, since branches cannot be
+ * switched off while a member or an invitation is limited (BRANCH_LIMITS_IN_USE, M3 Step 6 review).
  */
-const memberBranches = memberAccess
-  .use(requireCapability('multi_location'))
-  .use(requireModule('sales'))
+const memberBranches = memberAccess.use(requireCapability('multi_location'))
 
 export const memberRouter = router({
   /** `member.list` (settings.members.view). */

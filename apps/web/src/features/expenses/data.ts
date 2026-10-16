@@ -118,7 +118,7 @@ export function usePayableRunningCosts(categoryId: string, periodMonth: string, 
 
 /**
  * Whether the member may say an expense pays a channel's app fees or delivery already on the sales
- * (M3 Step 3, Q8): Sales on (served: the preview until Release A) and the costs switch (a channel's
+ * (M3 Step 3, Q8): Sales on and the costs switch (a channel's
  * fees are a cost, D-187), with expenses seen. The API refuses anyone else.
  */
 export function maySaySalesPays(context: BusinessContextDto): boolean {

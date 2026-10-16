@@ -12,7 +12,7 @@ import type { Db } from '@bizcost/db'
 import { newId } from '@bizcost/domain'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { connectApi, handlerFor, mutate, SECRET_KEY, type CallResult } from './helpers'
-import { FACTORY, orderItem, ORDERS_PREVIEW, OrderScope, OrdersApi } from './orders'
+import { FACTORY, orderItem, OrderScope, OrdersApi } from './orders'
 import { codeOf, ok, type Handler, type Person } from './purchasing'
 import { item } from './sales'
 import { BAKER } from './settings'
@@ -46,9 +46,7 @@ let customer: CustomerDto
 beforeAll(async () => {
   api = new OrdersApi()
   dbs = Array.from({ length: INSTANCES }, () => connectApi())
-  handlers = dbs.map((db) =>
-    handlerFor(db, undefined, { supabaseSecretKey: SECRET_KEY, previewModules: ORDERS_PREVIEW }),
-  )
+  handlers = dbs.map((db) => handlerFor(db, undefined, { supabaseSecretKey: SECRET_KEY }))
   baker = await OrderScope.open(api, BAKER)
   today = await baker.today()
   product = await baker.service('100')

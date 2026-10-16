@@ -17,10 +17,12 @@ export const locationScopeDto = z.discriminatedUnion('all', [
 export type LocationScopeDto = z.infer<typeof locationScopeDto>
 
 /**
- * Where a navigation entry goes: `main` with the business's sections, in manifest order; `system`
- * after them (Settings: the sidebar's foot, the last tab), so new sections come before it.
+ * Where a navigation entry goes, in this order: `main` with the business's sections, in manifest
+ * order; then the named groups, each under its title in the sidebar (Release A, M3 Step 6: `sales`
+ * for Sales, Orders, Customers and What customers owe; `reports` for Real profit); `system` last
+ * (Settings: the sidebar's foot, the last tab), so new sections come before it.
  */
-export const NAV_GROUPS = ['main', 'system'] as const
+export const NAV_GROUPS = ['main', 'sales', 'reports', 'system'] as const
 export type NavGroup = (typeof NAV_GROUPS)[number]
 
 /** A "+" action of a module manifest. `path` and `icon` as for a navigation entry. */

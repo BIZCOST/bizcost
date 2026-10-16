@@ -8,17 +8,17 @@ import {
   createUser,
   deleteUser,
   nextInvitation,
+  onScreen,
   RAW_KEY,
   setLanguage,
   signIn,
   useLanguage,
   type TestUser,
 } from '../helpers'
-import { previewBaseURL } from '../stack'
+import { baseURL } from '../stack'
 
-// Real profit (ROADMAP.md M3 Step 3), on the dev-only preview (D-125, D-127: the `preview` project, a
-// `next dev` server with BIZCOST_PREVIEW_MODULES=sales,reports). Sales and Reports stay `planned`
-// until Release A.
+// Real profit (ROADMAP.md M3 Step 3), on the production build since Release A released Sales and
+// Reports (M3 Step 6, as D-199 after M2).
 //
 //   - The owner of a café (team, no VAT, no branches): last month 4,000 lattes at 18.00 (200 ml of
 //     milk at AED 6 a litre: 1.20 each) and 1,000 croissants at 8.00 without a recipe, 80,000 of
@@ -67,17 +67,11 @@ async function openAs(
   displayName: string,
 ): Promise<Page> {
   const context = await browser.newContext({
-    baseURL: previewBaseURL,
+    baseURL,
     locale: locale === 'ar' ? 'ar-AE' : 'en-US',
     viewport,
   })
   contexts.push(context)
-  // The development server's own badge and overlay are not part of the app (D-127).
-  await context.addInitScript(() => {
-    const sheet = new CSSStyleSheet()
-    sheet.replaceSync('[data-nextjs-dev-overlay] { display: none !important; }')
-    document.adoptedStyleSheets = [...document.adoptedStyleSheets, sheet]
-  })
   await useLanguage(context, 'en')
   const page = await context.newPage()
   await signIn(page, user)
@@ -336,7 +330,7 @@ test('the owner of a café sees its real profit, explained, in English on a desk
   ])
   await daySheet(owner, businessId, today, [{ productId: latte, qty: '10', unitPrice: '18' }])
 
-  // Real profit is in the menu (the preview); last month by product.
+  // Real profit is in the menu ("Reports"); last month by product.
   await owner.goto(`/b/${businessId}`)
   await owner
     .getByRole('navigation', { name: 'Main' })
@@ -403,7 +397,8 @@ test('the owner of a café sees its real profit, explained, in English on a desk
 
   // The Dashboard's cards: this month so far.
   await owner.goto(`/b/${businessId}`)
-  const cards = owner.locator('[data-decision-cards]')
+  // On the screen only: the streamed page holds a hidden copy for a moment (helpers.ts, onScreen).
+  const cards = onScreen(owner.locator('[data-decision-cards]'))
   await expect(cards.locator('[data-card="sales"]')).toContainText('AED 180.00')
   await expect(cards.locator('[data-card="sales"]')).toContainText('Last month: AED 80,000.00')
   await expect(cards.locator('[data-card="profit"]')).toBeVisible()
@@ -428,7 +423,7 @@ test('the same owner in Arabic on a phone: the cards, the chart mirrored, and Re
   test.setTimeout(600_000)
   const today = await todayOf(owner, businessId)
   await view(owner, `/b/${businessId}`, 'ar', PHONE)
-  const cards = owner.locator('[data-decision-cards]')
+  const cards = onScreen(owner.locator('[data-decision-cards]'))
   await expect(cards.locator('[data-card="sales"]')).toContainText('المبيعات')
   await expect(cards.locator('[data-card="sales"]')).toContainText(/180\.00[\s‎‏]*د\.إ\./)
   // The chart: the first day at the right (mirrored), and every day in a table for screen readers.
@@ -448,7 +443,7 @@ test('the same owner in Arabic on a phone: the cards, the chart mirrored, and Re
   // Today is the last day so far: at the left end of the chart in Arabic (when it is not the 1st).
   if (day > 1) expect(bar!.x + bar!.width / 2).toBeLessThan(box!.x + box!.width / 2)
   // "Let's calculate your first real profit", with its sales steps done.
-  const steps = owner.locator('[data-cost-checklist]')
+  const steps = onScreen(owner.locator('[data-cost-checklist]'))
   await expect(steps.getByRole('heading', { name: 'لنحسب ربحك الحقيقي الأول' })).toBeVisible()
   await expect(steps.locator('[data-cost-step="sales"][data-done]')).toBeVisible()
   await expect(steps.locator('[data-cost-step="real_profit"][data-done]')).toBeVisible()
@@ -477,6 +472,7 @@ test('an employee sees no profit: no cards, no Real profit, its address not open
 
   await page.goto(`/b/${businessId}`)
   await expect(page.getByRole('heading', { level: 1, name: 'Corner Cafe' })).toBeVisible()
+  // None at all, not even hidden: an absence counts every copy (not onScreen).
   await expect(page.locator('[data-decision-cards]')).toHaveCount(0)
   await expect(page.getByRole('link', { name: 'Real profit' })).toHaveCount(0)
   await expectSound(page, 'en')
@@ -492,6 +488,7 @@ test('an employee sees no profit: no cards, no Real profit, its address not open
       .getByRole('navigation', { name: 'القائمة الرئيسية' })
       .getByRole('link', { name: 'الربح الحقيقي' }),
   ).toHaveCount(0)
+  // None at all, not even hidden: an absence counts every copy (not onScreen).
   await expect(page.locator('[data-decision-cards]')).toHaveCount(0)
   await page.goto(`/b/${businessId}/reports/profit`)
   await expect(page.getByRole('heading', { name: 'هذه الصفحة غير متاحة لك' })).toBeVisible()

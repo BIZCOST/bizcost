@@ -171,7 +171,7 @@ function mayReadRunningCosts(ctx: BusinessCtx): boolean {
 
 /**
  * Whether the member may say an expense pays a channel's app fees or delivery already on the sales
- * (M3 Step 3, Q8): Sales on (served, the plan's D3) and costs seen (a channel's fees are a cost, as its
+ * (M3 Step 3, Q8): Sales on and costs seen (a channel's fees are a cost, as its
  * commission %, D-187).
  */
 function maySayFees(ctx: BusinessCtx): boolean {

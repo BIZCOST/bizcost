@@ -50,7 +50,7 @@ export type StarterCostCategory = (typeof STARTER_COST_CATEGORIES)[number]
  *     `running_cost`, the bill of one of them (`expenses.running_cost_id`), which takes the place of
  *     that running cost's regular amount alone over the period it pays for; `extra`, an expense on top
  *     of them, which counts as itself.
- *   - In any category, while Sales is served (M3 Step 3, Q8): `channel_fees`, "App fees of [channel]"
+ *   - In any category, with Sales on (M3 Step 3, Q8): `channel_fees`, "App fees of [channel]"
  *     (`expenses.channel_id`): that channel's fees for its month when no statement covers it; and
  *     `delivery`, "Delivery already on my sales and orders": a courier's bill whose deliveries the
  *     sales already carry as their delivery cost. Neither ever counts in the month's costs

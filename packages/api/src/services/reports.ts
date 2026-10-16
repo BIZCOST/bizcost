@@ -38,8 +38,8 @@ import {
 } from './real-profit'
 
 // Reports → Real profit (ROADMAP.md M3 Step 3; D-223; Q6–Q8, Q11, Q14 of D-218): `profit.summary`,
-// worked out on read by services/real-profit.ts. Module `reports` (planned until Release A, previewed
-// on local servers, D-125) and `reports.sales.view` (the router checks them). Sales figures with that
+// worked out on read by services/real-profit.ts. Module `reports` (released with Release A, M3 Step
+// 6) and `reports.sales.view` (the router checks them). Sales figures with that
 // key (every sale seen, H1); profit, its parts, the rates, the month's costs and the completeness note
 // only with `reports.profit.view` (with what it needs: the costs switch, Product costs, D-190):
 // otherwise they are withheld here (null), never computed into an answer (ARCHITECTURE §Redaction),

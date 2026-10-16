@@ -46,7 +46,8 @@ describe('the module gates', () => {
     for (const path of paths) {
       expect((await other.run(path)).error, path).toBeUndefined()
     }
-    for (const id of ['suppliers', 'materials', 'purchases', 'expenses']) {
+    // The books-closed date: sales, orders and what customers pay obey it too since Release A (D-277).
+    for (const id of ['suppliers', 'materials', 'purchases', 'expenses', 'sales', 'payments']) {
       ok(await other.run('business.customize', { item: { kind: 'module', id }, enabled: false }))
     }
     for (const path of paths) expect(codeOf(await other.run(path)), path).toBe('module_disabled')
@@ -618,12 +619,11 @@ describe('permissions by role template (PRODUCT.md §8)', () => {
         expect(codeOf(await shop.as(team[template], path)), `${template} ${path}`).toBe('forbidden')
       }
     }
-    // The books-closed date is read with purchases or expenses "see" (D-176): an employee enters
-    // expenses (D-180); Sales and Supervisor do neither.
-    for (const template of ['sales', 'supervisor'] as const) {
-      expect(codeOf(await shop.as(team[template], 'books.get')), template).toBe('forbidden')
+    // The books-closed date is read with purchases or expenses "see" (D-176), and since Release A with
+    // any key that sees or enters sales or orders (D-277): the three read it.
+    for (const template of ['sales', 'supervisor', 'employee'] as const) {
+      expect((await shop.as(team[template], 'books.get')).error, template).toBeUndefined()
     }
-    expect((await shop.as(team.employee, 'books.get')).error).toBeUndefined()
   })
 })
 

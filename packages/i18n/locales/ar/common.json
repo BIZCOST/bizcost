@@ -81,11 +81,16 @@
     "new_expense": "مصروف جديد",
     "new_sale": "عملية بيع جديدة",
     "new_order": "طلب جديد",
+    "new_customer": "عميل جديد",
     "today_sales": "مبيعات اليوم",
     "real_profit": "الربح الحقيقي",
     "more": "المزيد",
     "moreTitle": "أقسام أخرى",
-    "quickAdd": "إضافة جديد"
+    "quickAdd": "إضافة جديد",
+    "groups": {
+      "sales": "المبيعات",
+      "reports": "التقارير"
+    }
   },
   "navShort": {
     "products": "المنتجات",

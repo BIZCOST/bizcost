@@ -54,7 +54,7 @@ import {
 import { assertPostable, isoOf, lockPostingBusiness, uuidArray } from './stock'
 
 // Orders (ROADMAP.md M3 Step 5; DATA_MODEL.md §6; the owner's answers Q16, Q17, Q19, Q20 of D-218).
-// Module `orders` (planned until Release A: served under the dev-only preview only, D-125).
+// Module `orders` (released with Release A, M3 Step 6).
 // `orders.documents.view` sees every order (it needs every sale seen, H1); without it a member who
 // enters orders (.manage) sees, changes, cancels and delivers only those they entered, while nobody
 // else has changed them since (D-181, D-214); a member limited to some branches only those branches'
@@ -322,7 +322,7 @@ export async function readOrder(tx: Tx, ctx: BusinessCtx, id: string): Promise<O
 /**
  * A delivered order's real profit (D-223): its sale and the refunds of it, at the shares and fees of
  * their months, the delivery's cost and the owner's time; only with the costs switch (null
- * otherwise, or while Sales is not served).
+ * otherwise).
  */
 async function orderProfit(tx: Tx, ctx: BusinessCtx, head: OrderRecord) {
   if (!seesProfit(ctx)) return null

@@ -4,7 +4,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { handlerFor, mutate, SECRET_KEY } from './helpers'
 import { tag } from './product-costs'
 import { codeOf, ok, type Person } from './purchasing'
-import { CAFE_BRANCHES, item, PREVIEW_MODULES, SalesApi, SaleScope } from './sales'
+import { CAFE_BRANCHES, item, SalesApi, SaleScope } from './sales'
 import { CapturedEmails, templateRoleId } from './settings'
 
 // Who sees which sales (ROADMAP.md M3 Step 2; Q10, Q12; D-181, D-214, D-054): a member without "see
@@ -368,7 +368,7 @@ describe('a member limited to a branch widens no one beyond it (D-236)', () => {
     inviting = handlerFor(
       api.db,
       undefined,
-      { supabaseSecretKey: SECRET_KEY, previewModules: PREVIEW_MODULES },
+      { supabaseSecretKey: SECRET_KEY },
       { emailSender: emails },
     )
   })

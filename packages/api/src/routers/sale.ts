@@ -48,9 +48,9 @@ import {
 } from '../trpc'
 
 /**
- * Sales (services/sales.ts; M3 Step 2): module `sales` (planned until Release A, so served only under
- * the dev-only preview, D-125). Reading needs a sales key: sales.documents.view sees every sale, and a
- * member who only enters (.manage) sees their own (the service filters, D-181). .manage saves and
+ * Sales (services/sales.ts; M3 Step 2; released with Release A, Step 6): module `sales`. Reading
+ * needs a sales key: sales.documents.view sees every sale, and a member who only enters (.manage)
+ * sees their own (the service filters, D-181). .manage saves and
  * discards drafts, .post finalizes, .reverse reverses, .reverse with .manage corrects. The day sheet
  * lists products, so it also needs Products & Services on. Outputs are withMeta(): costs are removed
  * for members without data.cost.view.

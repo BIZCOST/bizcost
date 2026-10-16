@@ -17,18 +17,18 @@ import { cn } from '@/lib/utils'
 import { can } from './sections'
 
 // "Branches they work in" (M3 Step 2; Q12, D-231): on a member's page, for a business with a team and
-// branches, while Sales is served (the plan's D3: a released business sees no change before Release
-// A). Every branch by default (those added later too), or only some: a member limited to branches
-// sees and enters sales only of those; products and costs stay business-wide. Not the Owner's, not
-// one's own, and never beyond the editor's own access or branches (the API refuses the same). Saved
-// whole with the member's permissions version (member.updateLocations), which bumps it.
+// branches, whatever modules are on (a limit also keeps team changes within the member's branches,
+// D-236; branches can't be switched off while anyone is limited). Every branch by default (those
+// added later too), or only some: a member limited to branches sees and enters sales only of those;
+// products and costs stay business-wide. Not the Owner's, not one's own, and never beyond the
+// editor's own access or branches (the API refuses the same). Saved whole with the member's
+// permissions version (member.updateLocations), which bumps it.
 
 /** Whether the member page shows "Branches they work in" to this member. */
 export function showsMemberBranches(context: BusinessContextDto): boolean {
   return (
     context.capabilities.has_team === true &&
     context.capabilities.multi_location === true &&
-    context.modules.some((module) => module.id === 'sales') &&
     // The branches' names come from the branch list (settings.locations.manage).
     can(context, 'settings.locations.manage')
   )

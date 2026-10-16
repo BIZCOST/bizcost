@@ -11,7 +11,6 @@ import {
   type OkDto,
 } from '@bizcost/contracts'
 import {
-  businessCapabilities,
   businesses,
   businessInvitations,
   businessMembers,
@@ -38,6 +37,7 @@ import type { Context } from '../context'
 import { invitationEmail } from '../email/invitation'
 import type { EmailMessage } from '../email/sender'
 import { AppError, constraintOf } from '../errors'
+import { capabilityOnNow } from './customize'
 import { ensureProfile } from './profile'
 import { canGrant, coversBranches, invitedBranches } from './team-rules'
 
@@ -290,17 +290,16 @@ export async function createInvitation(
       .from(businesses)
       .where(eq(businesses.id, ctx.businessId))
       .for('share')
-    const [team] = await tx
-      .select({ enabled: businessCapabilities.enabled })
-      .from(businessCapabilities)
-      .where(
-        and(
-          eq(businessCapabilities.businessId, ctx.businessId),
-          eq(businessCapabilities.key, 'has_team'),
-          isNull(businessCapabilities.deletedAt),
-        ),
-      )
-    if (!team?.enabled) throw new AppError('capability_disabled')
+    if (!(await capabilityOnNow(tx, ctx.businessId, 'has_team'))) {
+      throw new AppError('capability_disabled')
+    }
+    // A caller limited to some branches invites into those only (below). Branches are never switched
+    // off while anyone is limited (BRANCH_LIMITS_IN_USE), so with branches off now, the limit this
+    // request read has been lifted since: CONFLICT, and a retry reads the access as it is.
+    const branches = invitedBranches(ctx.access)
+    if (branches.length > 0 && !(await capabilityOnNow(tx, ctx.businessId, 'multi_location'))) {
+      throw new AppError('conflict', { message: 'your branches changed' })
+    }
 
     const role = await assertInvitableRole(tx, ctx, input.roleId)
 
@@ -343,7 +342,7 @@ export async function createInvitation(
         roleId: input.roleId,
         // A caller limited to some branches invites into those only (D-236): the member who accepts
         // works there (app.accept_invitation writes them), never in a branch the caller does not.
-        locationIds: invitedBranches(ctx.access),
+        locationIds: branches,
         locale: input.locale,
         sendCount: 1,
         lastSentAt: sql`now()`,

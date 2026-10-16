@@ -12,11 +12,10 @@ import {
   useLanguage,
   type TestUser,
 } from '../helpers'
-import { previewBaseURL } from '../stack'
+import { baseURL } from '../stack'
 
-// Importing sales from a file (ROADMAP.md M3 Step 4; the owner's answer Q15 of D-218), on the dev-only
-// preview (D-125, D-127: the `preview` project, a `next dev` server with Sales and Reports). Sales stays
-// `planned` until Release A.
+// Importing sales from a file (ROADMAP.md M3 Step 4; the owner's answer Q15 of D-218), on the
+// production build since Release A released Sales (M3 Step 6, as D-199 after M2).
 //
 //   - A VAT-registered café with two branches imports its POS's day file for its first branch, in
 //     English on a desktop: the file read on the device (a summary with a title line and a "Total"
@@ -160,17 +159,11 @@ async function openAs(
   locale: 'en' | 'ar',
 ): Promise<Page> {
   const context = await browser.newContext({
-    baseURL: previewBaseURL,
+    baseURL,
     locale: locale === 'ar' ? 'ar-AE' : 'en-US',
     viewport,
   })
   contexts.push(context)
-  // The development server's own badge and overlay are not part of the app (D-127).
-  await context.addInitScript(() => {
-    const sheet = new CSSStyleSheet()
-    sheet.replaceSync('[data-nextjs-dev-overlay] { display: none !important; }')
-    document.adoptedStyleSheets = [...document.adoptedStyleSheets, sheet]
-  })
   await useLanguage(context, 'en')
   const page = await context.newPage()
   // Leaving a file read and not sent asks first (D-161): the tests leave it on purpose.

@@ -201,18 +201,20 @@ export const COST_STEP_RULES: readonly CostStepRule[] = [
     withoutTeam: false,
   },
   {
-    // M3 Step 3 (PRODUCT.md §10): "Add or import your sales", while Sales is served and on, for a
-    // member who enters and finalizes sales.
+    // M3 Step 3 (PRODUCT.md §10): "Add or import your sales", for a member who enters and finalizes
+    // sales. With Sales and Reports both on: the two sales steps lead to a real profit, which needs
+    // both (Reports shows it; only Sales or Orders finalizes a sale), so with either off the business
+    // gets the M2 checklist (M3 Step 6 review).
     id: 'sales',
-    modules: ['sales'],
+    modules: ['sales', 'reports'],
     permissions: ['sales.documents.manage', 'sales.documents.post'],
     categories: [],
     withoutTeam: false,
   },
   {
-    // "See your real profit": Reports served and on, for a member who sees profit (Q11).
+    // "See your real profit": Sales and Reports on, for a member who sees profit (Q11).
     id: 'real_profit',
-    modules: ['reports'],
+    modules: ['sales', 'reports'],
     permissions: ['reports.profit.view'],
     categories: ['cost', 'profit_margin'],
     withoutTeam: false,
@@ -261,7 +263,7 @@ export interface CostFacts {
    * share awaiting sales, nor a service that misses only its optional materials (D-203).
    */
   readonly incompleteCosts: number
-  /** Finalized sales that count (M3 Step 3; 0 while Sales is not served). */
+  /** Finalized sales that count (M3 Step 3; released with Release A). */
   readonly finalizedSales: number
   /** Of those, the ones whose cost is complete: "See your real profit" is done with one. */
   readonly completeSales: number

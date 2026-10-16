@@ -29,6 +29,12 @@ export const APP_ERROR_CODES = [
   'team_in_use',
   /** More than one location cannot be turned off while the business has more than one location. */
   'locations_in_use',
+  /**
+   * More than one location cannot be turned off while a member works only at some branches, or a
+   * pending invitation would make one: the limit would outlive the branches (let them work in every
+   * branch, or cancel the invitation, first).
+   */
+  'branch_limits_in_use',
   /** The owner cannot be removed or given another role, and no one is made owner, except by a transfer. */
   'owner_transfer_required',
   /** The default location cannot be removed (make another location the default first). */
@@ -38,6 +44,11 @@ export const APP_ERROR_CODES = [
    * sold everywhere (choose other locations for them first).
    */
   'only_location_of_products',
+  /**
+   * A location cannot be removed while it is the only live branch a member works in, or a pending
+   * invitation would give: they would be shut out of every branch (change their branches first).
+   */
+  'only_branch_of_members',
   /**
    * Another material, or another product or service, of the business already has this name (archived
    * ones included; names are compared ignoring case, and material names also ignoring spaces, Arabic

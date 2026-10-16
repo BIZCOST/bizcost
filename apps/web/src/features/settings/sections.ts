@@ -39,6 +39,9 @@ function hasModule(access: Access, id: string): boolean {
   return (access.modules ?? []).some((module) => module.id === id)
 }
 
+/** The modules whose records obey the books-closed date (books.close needs one of them on). */
+const BOOKS_MODULES = ['purchases', 'expenses', 'sales', 'orders'] as const
+
 /** Whether the member may open `section` in this business. */
 export function isSectionVisible(access: Access, section: SettingsSection): boolean {
   switch (section) {
@@ -48,8 +51,8 @@ export function isSectionVisible(access: Access, section: SettingsSection): bool
     case 'locations':
       return capability(access, 'multi_location') && can(access, 'settings.locations.manage')
     case 'channels':
-      // Sales channels (M3 Step 2; D-226): Sales on (served: released, or previewed on a local
-      // server), and the key to change them (Owner, Admin, Manager).
+      // Sales channels (M3 Step 2; D-226): Sales on, and the key to change them (Owner, Admin,
+      // Manager).
       return hasModule(access, 'sales') && can(access, 'sales.channels.manage')
     case 'members':
       return capability(access, 'has_team') && can(access, 'settings.members.view')
@@ -58,13 +61,10 @@ export function isSectionVisible(access: Access, section: SettingsSection): bool
     case 'modules':
       return can(access, 'settings.modules.manage')
     case 'books':
-      // "Books closed up to": purchases, expenses and sales obey it, so any of them on shows it
-      // (D-137, D-176, D-227), with the Settings key to close them (D-201).
+      // "Books closed up to": purchases, expenses, sales and orders obey it, so any of them on shows
+      // it (D-137, D-176, D-227; Release A), with the Settings key to close them (D-201).
       return (
-        (hasModule(access, 'purchases') ||
-          hasModule(access, 'expenses') ||
-          hasModule(access, 'sales')) &&
-        can(access, 'settings.books.close')
+        BOOKS_MODULES.some((id) => hasModule(access, id)) && can(access, 'settings.books.close')
       )
     case 'approval':
       // Whether expenses need approval: Expenses on, a team (without one nothing is approved, D-164),
@@ -118,12 +118,25 @@ export const SECTION_TITLES: Readonly<Record<SettingsSection, I18nKey>> = {
   language: 'settings.language.title',
 }
 
+/** What closing the books stops, by the modules on: purchases, expenses, sales (orders' are sales). */
+const BOOKS_PARTS = [
+  ['purchases', ['purchases']],
+  ['expenses', ['expenses']],
+  ['sales', ['sales', 'orders']],
+] as const
+
 /**
- * What a section is about, as its card and its page say it: "Closing the books" names sales too while
- * Sales is on and served (D-236; released businesses keep their words until Release A).
+ * What a section is about, as its card and its page say it: "Closing the books" names only what the
+ * business keeps of purchases, expenses and sales (D-236; an order's delivery is a sale; M3 Step 6
+ * review: a designer without Purchases is never told it stops changes to purchases).
  */
 export function sectionDescription(access: Access, section: SettingsSection): I18nKey {
-  if (section === 'books' && hasModule(access, 'sales')) return 'settings.books.descriptionSales'
+  if (section === 'books') {
+    const parts = BOOKS_PARTS.filter(([, ids]) => ids.some((id) => hasModule(access, id))).map(
+      ([part]) => part,
+    )
+    if (parts.length > 0) return `settings.books.descriptions.${parts.join('_')}` as I18nKey
+  }
   return SECTION_DESCRIPTIONS[section]
 }
 
@@ -134,7 +147,7 @@ export const SECTION_DESCRIPTIONS: Readonly<Record<SettingsSection, I18nKey>> = 
   members: 'settings.members.description',
   roles: 'settings.roles.description',
   modules: 'settings.modules.description',
-  books: 'settings.books.description',
+  books: 'settings.books.descriptions.purchases_expenses',
   approval: 'settings.approval.description',
   costing: 'settings.costing.description',
   language: 'settings.language.description',

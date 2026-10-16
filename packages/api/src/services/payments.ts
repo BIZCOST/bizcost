@@ -424,7 +424,11 @@ export function listPayables(
         returned: row.returned,
         paid: row.paid,
         outstanding: row.outstanding,
-        enteredBy: { memberId: row.entered_by_id, name: row.entered_by_name },
+        // Who entered it named with a team only (D-278).
+        enteredBy: {
+          memberId: row.entered_by_id,
+          name: namesMembers(ctx) ? row.entered_by_name : null,
+        },
       })
     }
     const last = rows.at(-1)
@@ -551,12 +555,22 @@ interface PaymentsView {
   readonly data: Omit<PurchasePaymentsDto['data'], 'purchaseId' | 'status'>
 }
 
+/**
+ * Whether who recorded or reversed a payment is named to this caller: in a business with a team only
+ * ("Entered by" only with a team, D-278; run alone, it is always the owner).
+ */
+function namesMembers(ctx: BusinessCtx): boolean {
+  return ctx.access.capabilities.has_team
+}
+
 async function paymentsView(
   tx: Tx,
   doc: PayableDoc,
-  businessId: string,
+  ctx: BusinessCtx,
   id: string,
 ): Promise<PaymentsView> {
+  const businessId = ctx.businessId
+  const named = namesMembers(ctx)
   const head = await readHead(tx, doc, businessId, id)
   const rows = (await tx.execute(sql`
     select p.id, ${doc.kinds ? sql`p.kind` : sql`'payment'::text as kind`},
@@ -610,11 +624,13 @@ async function paymentsView(
         currency: r.currency,
         note: r.note,
         status: r.reversed_at === null ? 'recorded' : 'reversed',
-        recordedBy: { memberId: r.recorded_by_id, name: r.recorded_by_name },
+        recordedBy: { memberId: r.recorded_by_id, name: named ? r.recorded_by_name : null },
         createdAt: isoOf(r.created_at),
         reversedAt: isoOf(r.reversed_at),
         reversedBy:
-          r.reversed_at === null ? null : { memberId: r.reversed_by_id, name: r.reversed_by_name },
+          r.reversed_at === null
+            ? null
+            : { memberId: r.reversed_by_id, name: named ? r.reversed_by_name : null },
         reversalDate: r.reversal_date,
         receivedBy:
           r.kind === 'refund' && r.received_by_id !== null
@@ -673,7 +689,7 @@ function recordPayment(
     `)) as unknown as { request_hash: string | null; mine: boolean }[]
     if (existing) {
       if (existing.request_hash !== requestHash || !existing.mine) throw new AppError('conflict')
-      return paymentsView(tx, doc, ctx.businessId, documentId)
+      return paymentsView(tx, doc, ctx, documentId)
     }
     if (head.status !== 'posted') throw new AppError('document_not_posted')
     if (!isOwedPaymentMethod(head.payment_method)) {
@@ -720,7 +736,7 @@ function recordPayment(
     } else {
       await createIdempotent(tx, expensePayments, { ...common, expenseId: documentId })
     }
-    return paymentsView(tx, doc, ctx.businessId, documentId)
+    return paymentsView(tx, doc, ctx, documentId)
   })
 }
 
@@ -755,7 +771,7 @@ function reversePayment(ctx: BusinessCtx, doc: PayableDoc, id: string): Promise<
          where business_id = ${ctx.businessId} and id = ${id}
       `)
     }
-    return paymentsView(tx, doc, ctx.businessId, found.document_id)
+    return paymentsView(tx, doc, ctx, found.document_id)
   })
 }
 
@@ -783,7 +799,7 @@ export async function listPurchasePayments(
   input: PurchasePaymentsInput,
 ): Promise<PurchasePaymentsDto> {
   return purchaseResult(
-    await ctx.tx((tx) => paymentsView(tx, DOCS.purchase, ctx.businessId, input.purchaseId)),
+    await ctx.tx((tx) => paymentsView(tx, DOCS.purchase, ctx, input.purchaseId)),
   )
 }
 
@@ -809,9 +825,7 @@ export async function listExpensePayments(
   ctx: BusinessCtx,
   input: ExpensePaymentsInput,
 ): Promise<ExpensePaymentsDto> {
-  return expenseResult(
-    await ctx.tx((tx) => paymentsView(tx, DOCS.expense, ctx.businessId, input.expenseId)),
-  )
+  return expenseResult(await ctx.tx((tx) => paymentsView(tx, DOCS.expense, ctx, input.expenseId)))
 }
 
 /** `expensePayment.record`: see recordPayment. */
@@ -964,7 +978,8 @@ const CUSTOMER_PAYMENT_JOINS = sql`
      where m.business_id = p.business_id and m.user_id = p.reversed_by
      order by (m.deleted_at is null) desc, m.created_at desc limit 1)`
 
-function customerPaymentOf(r: CustomerPaymentRecord): CustomerPaymentDto {
+/** A customer payment as the API sends it; who recorded or reversed it named with a team only. */
+function customerPaymentOf(r: CustomerPaymentRecord, named: boolean): CustomerPaymentDto {
   return {
     id: r.id,
     kind: r.kind,
@@ -979,22 +994,25 @@ function customerPaymentOf(r: CustomerPaymentRecord): CustomerPaymentDto {
     currency: r.currency,
     note: r.note,
     status: r.reversed_at === null ? 'recorded' : 'reversed',
-    recordedBy: { memberId: r.recorded_by_id, name: r.recorded_by_name },
+    recordedBy: { memberId: r.recorded_by_id, name: named ? r.recorded_by_name : null },
     createdAt: isoOf(r.created_at),
     reversedAt: isoOf(r.reversed_at),
     reversedBy:
-      r.reversed_at === null ? null : { memberId: r.reversed_by_id, name: r.reversed_by_name },
+      r.reversed_at === null
+        ? null
+        : { memberId: r.reversed_by_id, name: named ? r.reversed_by_name : null },
     reversalDate: r.reversal_date,
   }
 }
 
 /** The payments of one order or sale (reversed ones too), newest first. */
-export async function paymentsOfDocument(
+async function paymentsOfDocument(
   tx: Tx,
-  businessId: string,
+  ctx: BusinessCtx,
   kind: ReceivableKindDto,
   id: string,
 ): Promise<CustomerPaymentDto[]> {
+  const businessId = ctx.businessId
   const rows = (await tx.execute(sql`
     select ${CUSTOMER_PAYMENT_COLUMNS}
       from app.customer_payments p
@@ -1003,21 +1021,21 @@ export async function paymentsOfDocument(
        and ${kind === 'order' ? sql`p.order_id = ${id}` : sql`p.sale_id = ${id}`}
      order by p.business_date desc, p.created_at desc, p.id desc
   `)) as unknown as CustomerPaymentRecord[]
-  return rows.map(customerPaymentOf)
+  return rows.map((row) => customerPaymentOf(row, namesMembers(ctx)))
 }
 
 /** The document, what it is owed, and its payments (NOT_FOUND: not an obligation). */
 async function documentPayments(
   tx: Tx,
-  businessId: string,
+  ctx: BusinessCtx,
   kind: ReceivableKindDto,
   id: string,
 ): Promise<DocumentPaymentsDto> {
-  const obligation = await readObligation(tx, businessId, kind, id)
+  const obligation = await readObligation(tx, ctx.businessId, kind, id)
   if (!obligation) throw new AppError('not_found')
   return {
     document: owedDocumentOf(obligation),
-    items: await paymentsOfDocument(tx, businessId, kind, id),
+    items: await paymentsOfDocument(tx, ctx, kind, id),
   }
 }
 
@@ -1045,7 +1063,7 @@ export function listCustomerPayments(
            and ${inScope(ctx, 'd')}
       `)) as unknown as { id: string }[]
       if (!visible) throw new AppError('not_found')
-      const view = await documentPayments(tx, ctx.businessId, kind, id)
+      const view = await documentPayments(tx, ctx, kind, id)
       return { document: view.document, items: view.items, nextCursor: null }
     }
     const [customer] = (await tx.execute(sql`
@@ -1086,7 +1104,7 @@ export function listCustomerPayments(
     const last = page.at(-1)
     return {
       document: null,
-      items: page.map(customerPaymentOf),
+      items: page.map((row) => customerPaymentOf(row, namesMembers(ctx))),
       nextCursor:
         rows.length > input.limit && last
           ? encodeCursor({ key: `${last.business_date}|${last.created_key}`, id: last.id })
@@ -1187,7 +1205,7 @@ export function recordCustomerPayment(
     const existing = await existingCustomerPayment(tx, ctx.businessId, input.id)
     if (existing) {
       if (existing.request_hash !== requestHash || !existing.mine) throw new AppError('conflict')
-      return documentPayments(tx, ctx.businessId, document.kind, document.id)
+      return documentPayments(tx, ctx, document.kind, document.id)
     }
     await recordCustomerPaymentInTx(tx, ctx, document, head, {
       id: input.id,
@@ -1198,7 +1216,7 @@ export function recordCustomerPayment(
       note: input.note,
       requestHash,
     })
-    return documentPayments(tx, ctx.businessId, document.kind, document.id)
+    return documentPayments(tx, ctx, document.kind, document.id)
   })
 }
 
@@ -1264,7 +1282,7 @@ export function reverseCustomerPayment(
          where business_id = ${ctx.businessId} and id = ${input.id}
       `)
     }
-    return documentPayments(tx, ctx.businessId, document.kind, document.id)
+    return documentPayments(tx, ctx, document.kind, document.id)
   })
 }
 
@@ -1317,7 +1335,7 @@ export function recordManyCustomerPayments(
         customerId: input.customerId,
         payments: ids.flatMap((id) => {
           const row = byId.get(id)
-          return row ? [customerPaymentOf(row)] : []
+          return row ? [customerPaymentOf(row, namesMembers(ctx))] : []
         }),
         documents: documents.flatMap((d) => {
           const row = obligations.get(d.id)

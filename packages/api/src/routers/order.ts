@@ -26,8 +26,8 @@ import {
 } from '../trpc'
 
 /**
- * Orders (services/orders.ts; M3 Step 5): module `orders` (planned until Release A, so served only
- * under the dev-only preview, D-125). orders.documents.view sees every order; a member who only
+ * Orders (services/orders.ts; M3 Step 5; released with Release A, Step 6): module `orders`, which
+ * needs Sales on (a delivery is a sale). orders.documents.view sees every order; a member who only
  * enters (.manage) or delivers (.deliver) sees their own (the service filters, D-181, D-214). .manage
  * creates, changes and cancels pending orders; .deliver delivers them (their sale is posted);
  * .reverse undoes a delivery. Outputs are withMeta(): the delivery cost and the order's profit are

@@ -20,7 +20,7 @@ import { businessProcedure, requireModule, requirePermission, router } from '../
 
 /**
  * Customer payments and What customers owe (services/payments.ts, services/receivables.ts; M3 Step
- * 5): module `payments` (planned until Release A, so served only under the dev-only preview, D-125).
+ * 5; released with Release A, Step 6): module `payments`.
  * payments.customers.view lists payments and what customers owe (it needs every sale seen, H1);
  * payments.customers.record records and reverses them, one or several at once. Their amounts are
  * sales amounts, not a redaction category.

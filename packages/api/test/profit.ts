@@ -7,25 +7,17 @@ import type {
 } from '@bizcost/contracts'
 import { addMonths, daysIn, monthOf, newId, type BusinessMonth } from '@bizcost/domain'
 import type { SetupAnswers } from '@bizcost/modules'
-import { handlerFor, SECRET_KEY } from './helpers'
 import { tag } from './product-costs'
 import { ok, PurchasingApi, purchaseInput, type Person } from './purchasing'
 import { bought, SaleScope } from './sales'
 
-// Helpers of the real-profit tests (ROADMAP.md M3 Step 3): Sales and Reports are planned until Release
-// A (Step 6), so the API runs with the dev-only preview of both (D-125), as a local server does.
-// Businesses, products, recipes, purchases, running costs, expenses and sales are made through the
-// API; months are counted from the business's today, so the tests hold on any day they run.
+// Helpers of the real-profit tests (ROADMAP.md M3 Step 3): the API as deployed (Sales and Reports are
+// released since Release A, M3 Step 6). Businesses, products, recipes, purchases, running costs,
+// expenses and sales are made through the API; months are counted from the business's today, so the
+// tests hold on any day they run.
 
-/** The modules the real-profit suites preview (D-125). */
-export const PROFIT_PREVIEW = ['sales', 'reports'] as const
-
-export class ProfitApi extends PurchasingApi {
-  override readonly handler = handlerFor(this.db, undefined, {
-    supabaseSecretKey: SECRET_KEY,
-    previewModules: PROFIT_PREVIEW,
-  })
-}
+/** The API of the real-profit suites: the purchasing suites' (as deployed). */
+export class ProfitApi extends PurchasingApi {}
 
 /** Day `n` of `month` (YYYY-MM-DD). */
 export const dayOf = (month: BusinessMonth, n: number) => `${month}-${String(n).padStart(2, '0')}`

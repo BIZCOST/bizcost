@@ -67,8 +67,8 @@ import {
   type PostingBusiness,
 } from './stock'
 
-// Sales (ROADMAP.md M3 Step 2; DATA_MODEL.md §6; D-219–D-222, D-225–D-232). Module `sales` (planned
-// until Release A: served under the dev-only preview only, D-125). sales.documents.view sees every
+// Sales (ROADMAP.md M3 Step 2; DATA_MODEL.md §6; D-219–D-222, D-225–D-232). Module `sales` (released
+// with Release A, M3 Step 6). sales.documents.view sees every
 // sale (and so the sales totals, H1); .manage saves and discards drafts; .post finalizes; .reverse
 // reverses; .reverse with .manage corrects (the router checks them). Without .view a member sees,
 // changes and finalizes only the sales they entered, and only while nobody else has changed them since

@@ -15,7 +15,6 @@ import type { BusinessCtx } from '../business-context'
 import { AppError } from '../errors'
 import { passes } from '../trpc'
 import { listProductCostsIn } from './product-costs'
-import { salesServed } from './real-profit'
 
 // Dashboard (ROADMAP.md Step 7, docs/PRODUCT.md §10): the getting-started checklists from real data.
 // Which steps a member sees follows the business's capabilities, the modules it has on and the
@@ -28,9 +27,9 @@ import { salesServed } from './real-profit'
 //     (productCost.list), read only for a member who sees costs, in the same transaction, without
 //     the services that miss only their optional materials (D-200). Running costs reach every product
 //     and service by its price (D-202), so every business is asked for them, one that sells only
-//     services too. While Sales and Reports are served (M3 Step 3) it becomes "Let's calculate your
-//     first real profit": add or import your sales (one finalized sale), see your real profit (one
-//     finalized sale with a complete cost).
+//     services too. With Sales and Reports (M3 Step 3; released with Release A, Step 6) it becomes
+//     "Let's calculate your first real profit": add or import your sales (one finalized sale), see
+//     your real profit (one finalized sale with a complete cost).
 
 /**
  * Whether the business sells only services (D-200): every product or service in use (not archived) is
@@ -180,12 +179,10 @@ async function readCostFacts(tx: Tx, ctx: BusinessCtx, costs: boolean): Promise<
     // Services that miss only their optional materials are complete there (D-203).
     incompleteCosts = page.data.counts.incomplete ?? 0
   }
-  const sales = salesServed(ctx)
-    ? await readSaleFacts(tx, businessId, {
-        materialsOn: passes(ctx, ['materials']),
-        expensesOn: passes(ctx, ['expenses']),
-      })
-    : { finalized: 0, complete: 0 }
+  const sales = await readSaleFacts(tx, businessId, {
+    materialsOn: passes(ctx, ['materials']),
+    expensesOn: passes(ctx, ['expenses']),
+  })
   return {
     items: row.items,
     madeProducts: row.made_products,

@@ -139,7 +139,7 @@ const SCREENS: Screen[] = [
   { name: 'roles', who: 'owner', path: () => business('/settings/roles') },
   { name: 'Customize BizCost', who: 'owner', path: () => business('/settings/modules') },
   { name: 'language', who: 'owner', path: () => business('/settings/language') },
-  { name: 'page not found in the shell', who: 'owner', path: () => business('/orders') },
+  { name: 'page not found in the shell', who: 'owner', path: () => business('/quotations') },
   { name: 'not a member', who: 'owner', path: () => `/b/${randomUUID()}` },
   {
     name: 'invitation for another email',

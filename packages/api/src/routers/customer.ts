@@ -29,8 +29,8 @@ import {
 } from '../trpc'
 
 /**
- * Customers (services/customers.ts; M3 Step 5): module `customers` (planned until Release A, so
- * served only under the dev-only preview, D-125). customers.items.view lists and reads them with their
+ * Customers (services/customers.ts; M3 Step 5; released with Release A, Step 6): module
+ * `customers`. customers.items.view lists and reads them with their
  * details; .manage adds them, and with .view changes, archives and brings them back. A member who may
  * name a customer (adding customers, entering orders or sales, recording customer payments) picks them
  * through `pick` and `similar`: with customers.items.view the whole phone, without it the name and the

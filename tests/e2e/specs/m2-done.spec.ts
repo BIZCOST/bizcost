@@ -1263,12 +1263,9 @@ test('DoD: capabilities hide VAT fields, branch pickers, approval and stock quan
   ).toBe('capability_disabled')
 })
 
+// Release A (M3 Step 6) released Sales, Orders, Customers, Payments and Reports: their addresses are
+// pages now (release-sales.spec.ts), so only the modules still planned are listed.
 const PLANNED_ADDRESSES = [
-  'sales',
-  'customers',
-  'payments',
-  'reports',
-  'orders',
   'quotations',
   'invoices',
   'inventory',
@@ -1295,6 +1292,11 @@ const RELEASED_MODULES = [
   'running_costs',
   'files',
   'cost_engine',
+  'sales',
+  'orders',
+  'customers',
+  'payments',
+  'reports',
 ]
 
 test('DoD: only the released modules appear, in English and Arabic', async ({ browser }) => {
@@ -1306,7 +1308,7 @@ test('DoD: only the released modules appear, in English and Arabic', async ({ br
     sales_channels: ['walk_in', 'online', 'messages'],
   })
   const base = `/b/${businessId}`
-  // Smart Setup turned planned modules on for the café (sales, orders…): none of them shows.
+  // Smart Setup turned planned modules on for the café (stock, employees…): none of them shows.
   const planned = (await savedSetup(businessId))!.enabledModules.filter(
     (id) => !RELEASED_MODULES.includes(id),
   )
@@ -1322,6 +1324,9 @@ test('DoD: only the released modules appear, in English and Arabic', async ({ br
     'Expenses',
     'Running Costs',
     'Product costs',
+    // Release A: the café sells through its POS, so Sales and Reports, without Orders or Customers.
+    'Sales',
+    'Real profit',
     'Settings',
   ]
   await page.goto(base)
@@ -1382,15 +1387,18 @@ test('DoD: only the released modules appear, in English and Arabic', async ({ br
   await page.setViewportSize(PHONE)
   await page.goto(base)
   const bar = page.getByRole('navigation', { name: 'القائمة الرئيسية' })
-  await expect(bar.getByRole('link')).toHaveText(['الرئيسية', 'المنتجات', 'التكاليف'])
+  // Home | Sales | + | Costs | More since Release A (Q14): Products moves to "More".
+  await expect(bar.getByRole('link')).toHaveText(['الرئيسية', 'المبيعات', 'التكاليف'])
   await bar.getByRole('button', { name: 'المزيد' }).click()
   await expect(page.getByRole('menuitem')).toHaveText([
+    'المنتجات والخدمات',
     'المكونات والمستلزمات',
     'الموردون',
     'المشتريات',
     'المستحقات',
     'المصروفات',
     'المصاريف التشغيلية',
+    'الربح الحقيقي',
     'الإعدادات',
   ])
   await page.keyboard.press('Escape')

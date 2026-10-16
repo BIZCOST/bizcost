@@ -165,7 +165,7 @@ export const expenses = tenantTable(
     // that running cost's regular amount alone over the period it pays for), or `extra` (it counts
     // as itself, on top). Null: not said yet, or its category has no running cost for its month.
     // Said before it is finalized whenever its category has one (the API); kept by a correction.
-    // While Sales is served (M3 Step 3, Q8) any expense may also say `channel_fees` ("App fees of
+    // With Sales on (M3 Step 3, Q8) any expense may also say `channel_fees` ("App fees of
     // [channel]", `channel_id`: that channel's fees for its month when no statement covers it) or
     // `delivery` ("Delivery already on my sales and orders"); neither counts in the month's costs.
     pays: text('pays').$type<ExpensePays>(),

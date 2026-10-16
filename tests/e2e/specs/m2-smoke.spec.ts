@@ -584,7 +584,8 @@ const SCREENS: Screen[] = [
       await mainNav(context)
         .getByRole('button', { name: context.L('Add new', 'إضافة جديد') })
         .click()
-      await expect(context.page.getByRole('menuitem')).toHaveCount(3)
+      // A product, a purchase, an expense, and since Release A Today's sales and a new sale.
+      await expect(context.page.getByRole('menuitem')).toHaveCount(5)
     },
   },
   {

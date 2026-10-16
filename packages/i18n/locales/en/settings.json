@@ -417,7 +417,7 @@
     "settings_members_manage": "Invite people, change their roles and remove them.",
     "settings_roles_manage": "Change what each role can see and do.",
     "settings_modules_manage": "Turn sections and features on or off.",
-    "settings_books_close": "Stop finalizing or reversing purchases and expenses dated on or before a day you choose.",
+    "settings_books_close": "Stop finalizing or reversing anything dated on or before a day you choose: purchases, expenses, sales and orders.",
     "products_items_view": "What you sell, with its unit and price.",
     "products_items_manage": "Add, change and archive products and services.",
     "products_recipes_view": "The materials and packaging each product or service uses, and how much.",
@@ -496,6 +496,7 @@
     "confirm": "Turn off",
     "teamInUse": "To turn this off, first remove the other members and cancel the invitations in Team.",
     "locationsInUse": "To turn this off, first remove the other branches in Branches.",
+    "branchLimitsInUse": "To turn this off, first let every member work in every branch in Team, and cancel the invitations that give only some branches.",
     "needsVat": "Needs VAT registration. Turn on VAT in the business profile first.",
     "vatInProfile": "VAT is set in the business profile, with your TRN.",
     "openProfile": "Open the business profile"
@@ -521,8 +522,15 @@
   },
   "books": {
     "title": "Closing the books",
-    "description": "Stop changes to purchases and expenses up to a day you choose.",
-    "descriptionSales": "Stop changes to purchases, expenses and sales up to a day you choose.",
+    "descriptions": {
+      "purchases": "Stop changes to purchases up to a day you choose.",
+      "expenses": "Stop changes to expenses up to a day you choose.",
+      "sales": "Stop changes to sales up to a day you choose.",
+      "purchases_expenses": "Stop changes to purchases and expenses up to a day you choose.",
+      "purchases_sales": "Stop changes to purchases and sales up to a day you choose.",
+      "expenses_sales": "Stop changes to expenses and sales up to a day you choose.",
+      "purchases_expenses_sales": "Stop changes to purchases, expenses and sales up to a day you choose."
+    },
     "explain": "Once you have checked a period, close the books up to its last day. Nothing dated on or before it can then be finalized or reversed.",
     "statusOpen": "The books are open: anything can be finalized or reversed.",
     "statusClosed": "The books are closed up to {{date}}.",

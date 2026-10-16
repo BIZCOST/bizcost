@@ -1,8 +1,9 @@
 'use client'
 
+import type { NavGroup } from '@bizcost/contracts'
 import { PlusIcon } from 'lucide-react'
 import Link from 'next/link'
-import { useState, type ReactNode } from 'react'
+import { useId, useState, type ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Logo, LogoMark } from '@/components/brand/logo'
 import { Button } from '@/components/ui/button'
@@ -18,7 +19,7 @@ import { useLocale } from '@/lib/i18n/client'
 import { useMediaQuery } from '@/lib/use-media-query'
 import { cn } from '@/lib/utils'
 import { BusinessSwitcher } from './business-switcher'
-import type { NavSlots, ShellNavItem, ShellQuickAction } from './nav'
+import { repeatsGroupTitle, type NavSlots, type ShellNavItem, type ShellQuickAction } from './nav'
 import { navIcon } from './nav-icons'
 import { SIDEBAR_WIDTH } from './sizes'
 
@@ -29,7 +30,9 @@ import { SIDEBAR_WIDTH } from './sizes'
 // which would say the name twice. Above the sections, "Add new" holds the "+" actions the member may
 // use (a new product, purchase or expense, D-189): a button with its name from 1024px, a "+" on the
 // rail; the phone has them in its tab bar. With only one action it goes there directly, named after
-// it ("New expense"), instead of opening a menu of one (D-200).
+// it ("New expense"), instead of opening a menu of one (D-200). The business's sections come first;
+// the named groups follow under their titles (Release A: "Sales" and "Reports"; on the rail a line
+// between groups, the title kept for screen readers), and Settings at the foot.
 
 const ITEM = 'min-h-11 rounded-xl max-lg:mx-auto max-lg:size-12'
 
@@ -154,6 +157,50 @@ function Placeholders({ count }: { count: number }) {
   return Array.from({ length: count }, (_, index) => <NavPlaceholder key={index} />)
 }
 
+/** The groups the sidebar lists under a title, in order, between the sections and Settings. */
+const NAMED_GROUPS = ['sales', 'reports'] as const satisfies readonly NavGroup[]
+
+/** A named group of sections, under its title ("Sales", "Reports"). */
+function NavGroupList({
+  group,
+  items,
+  slots,
+  named,
+}: {
+  group: (typeof NAMED_GROUPS)[number]
+  items: readonly ShellNavItem[]
+  /** While the business loads: this many placeholders. */
+  slots?: number
+  named: boolean
+}) {
+  const { t } = useTranslation()
+  const titleId = useId()
+  const title = t(`nav.groups.${group}`)
+  // A group of one entry with the group's own name ("Sales" under "Sales"): the title stays for
+  // screen readers only, as on the rail.
+  const repeated = slots === undefined && repeatsGroupTitle(items, title, (key) => t(key))
+  return (
+    <div className="mt-4 border-t pt-3 lg:border-t-0 lg:pt-0" data-nav-group={group}>
+      <p
+        id={titleId}
+        className={cn(
+          'px-3 pb-1.5 text-xs font-semibold tracking-wide text-muted-foreground',
+          repeated ? 'sr-only' : 'max-lg:sr-only',
+        )}
+      >
+        {title}
+      </p>
+      <ul aria-labelledby={titleId} className="space-y-1">
+        {slots !== undefined ? (
+          <Placeholders count={slots} />
+        ) : (
+          items.map((item) => <NavLink key={item.id} item={item} named={named} />)
+        )}
+      </ul>
+    </div>
+  )
+}
+
 export function Sidebar({
   items,
   quickActions,
@@ -170,6 +217,7 @@ export function Sidebar({
   const main = items.filter((item) => item.group === 'main')
   const system = items.filter((item) => item.group === 'system')
   const hasSystem = slots ? slots.system > 0 : system.length > 0
+  const inGroup = (group: NavGroup) => items.filter((item) => item.group === group)
   return (
     // Not a landmark of its own: the navigation inside is the landmark.
     <div
@@ -208,6 +256,17 @@ export function Sidebar({
             main.map((item) => <NavLink key={item.id} item={item} named={named} />)
           )}
         </ul>
+        {NAMED_GROUPS.map((group) =>
+          (slots ? slots[group] : inGroup(group).length) > 0 ? (
+            <NavGroupList
+              key={group}
+              group={group}
+              items={inGroup(group)}
+              slots={slots?.[group]}
+              named={named}
+            />
+          ) : null,
+        )}
         {hasSystem ? (
           <ul className="mt-auto space-y-1 border-t pt-3">
             {slots ? (

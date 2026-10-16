@@ -334,19 +334,19 @@ test('Arabic, phone: a workshop with branches adds a material, a product and a s
   await expect(page.getByText(withValue('تمت إعادة ', 'حليب', ' إلى قائمتك.'))).toBeVisible()
   await expectSound(page, 'ar')
 
-  // Products & Services from the phone's tab bar. Materials is under "More" there (the tabs follow
-  // the claims, D-189), which is marked while its page is open.
+  // Products & Services from the phone's "More": since Release A the owner's tabs are Home | Orders
+  // | + | Costs (Q14; the tabs follow the claims, D-189). Materials is under "More" too, which is
+  // marked while its page is open.
   const tabs = page.getByRole('navigation', { name: 'القائمة الرئيسية' })
   await expect(tabs.getByRole('link', { name: 'المواد' })).toHaveCount(0)
+  // A long section name shows its short name on its tab (D-132).
+  await expect(tabs.getByRole('link', { name: 'تكاليف المنتجات' })).toHaveText('التكاليف')
   await tabs.getByRole('button', { name: 'المزيد' }).click()
   await expect(page.getByRole('menuitem', { name: 'المواد' })).toHaveAttribute(
     'aria-current',
     'page',
   )
-  await page.keyboard.press('Escape')
-  // A long section name shows its short name on its tab (D-132).
-  await expect(tabs.getByRole('link', { name: 'المنتجات والخدمات' })).toHaveText('المنتجات')
-  await tabs.getByRole('link', { name: 'المنتجات والخدمات' }).click()
+  await page.getByRole('menuitem', { name: 'المنتجات والخدمات' }).click()
   await expect(page.getByRole('heading', { level: 1 })).toHaveText('المنتجات والخدمات')
   await page.getByRole('button', { name: 'أضف منتجًا أو خدمة' }).first().click()
   let product = page.getByRole('dialog', { name: 'منتج أو خدمة جديدة' })

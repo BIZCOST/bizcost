@@ -12,7 +12,7 @@ import {
 } from '../helpers'
 import { tag } from '../product-costs'
 import { codeOf, ok, type Person } from '../purchasing'
-import { CAFE_BRANCHES, item, PREVIEW_MODULES, SalesApi, SaleScope } from '../sales'
+import { CAFE_BRANCHES, item, SalesApi, SaleScope } from '../sales'
 import { BAKER, CapturedEmails, templateRoleId } from '../settings'
 
 // SECURITY REVIEW of M3 Step 2 (sales data and API). Each case is a leak or a bypass found by the
@@ -40,7 +40,7 @@ beforeAll(() => {
   inviteHandler = handlerFor(
     api.db,
     undefined,
-    { supabaseSecretKey: SECRET_KEY, previewModules: PREVIEW_MODULES },
+    { supabaseSecretKey: SECRET_KEY },
     { emailSender: emails },
   )
 })

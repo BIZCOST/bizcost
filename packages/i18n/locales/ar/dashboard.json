@@ -250,15 +250,26 @@
       "unpricedMaterialsHint": "مواد في مبيعاتك لم تُشترَ قط: سجّل مشتريات لتُحسب تكلفتها.",
       "channelsWithoutFees": "قبل عمولات التطبيقات",
       "channelsWithoutFeesHint": "قنوات تأخذ جزءًا من كل عملية بيع، ولم يُدخل لها شيء: أضف ما تأخذه.",
-      "productsWithoutRecipe": "بِيع بلا وصفة",
-      "productsWithoutRecipeHint": "لا يمكن حساب موادها: أضف ما يدخل فيها.",
-      "materialsInNoRecipe": "اشتُريت، لكنها ليست في أي وصفة",
-      "materialsInNoRecipeHint": "تُحسب مع مصاريفك التشغيلية. أضفها إلى وصفة لتصبح تكلفةً لذلك المنتج نفسه.",
+      "productsWithoutRecipe": "بِيعت، لكن لم تُضف موادها بعد",
+      "productsWithoutRecipe_food": "بِيع بلا وصفة",
+      "productsWithoutRecipe_retail": "بِيعت، لكن لم تُضف أصنافها بعد",
+      "productsWithoutRecipeHint": "لا يمكن حساب موادها: أضف المواد التي يستخدمها كلٌّ منها.",
+      "productsWithoutRecipeHint_food": "لا يمكن حساب مكوناتها: اكتب وصفاتها.",
+      "productsWithoutRecipeHint_retail": "لا يمكن حساب أصنافها: أضف الأصناف التي يستخدمها كلٌّ منها.",
+      "materialsInNoRecipe": "اشتُريت، لكنها لا تدخل في شيء مما تبيعه",
+      "materialsInNoRecipe_food": "اشتُريت، لكنها ليست في أي وصفة",
+      "materialsInNoRecipeHint": "تُحسب حاليًا مع مصاريفك التشغيلية. إن كان شيء مما تبيعه يستخدمها، فأضفها إلى المواد المستخدمة فيه لتُحسب في تكلفته هو.",
+      "materialsInNoRecipeHint_food": "تُحسب حاليًا مع مصاريفك التشغيلية. إن كان شيء مما تبيعه يستخدمها، فأضفها إلى وصفته لتُحسب في تكلفته هو.",
+      "materialsInNoRecipeHint_retail": "تُحسب حاليًا مع مصاريفك التشغيلية. إن كان شيء مما تبيعه يستخدمها، فأضفها إلى الأصناف المستخدمة فيه لتُحسب في تكلفته هو.",
       "actions": {
         "unpricedMaterials": "تسجيل مشتريات",
         "channelsWithoutFees": "قنوات البيع",
-        "productsWithoutRecipe": "إضافة الوصفات",
-        "materialsInNoRecipe": "عرض منتجاتك"
+        "productsWithoutRecipe": "إضافة المواد المستخدمة",
+        "productsWithoutRecipe_food": "إضافة الوصفات",
+        "productsWithoutRecipe_retail": "إضافة الأصناف المستخدمة",
+        "materialsInNoRecipe": "عرض منتجاتك",
+        "materialsInNoRecipe_services": "عرض خدماتك",
+        "materialsInNoRecipe_projects": "عرض خدماتك وبنود عملك"
       }
     },
     "orders": {

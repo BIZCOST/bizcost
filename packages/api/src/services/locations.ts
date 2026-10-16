@@ -6,17 +6,11 @@ import type {
   OkDto,
   RenameLocationInput,
 } from '@bizcost/contracts'
-import {
-  businessCapabilities,
-  businesses,
-  insertIdempotent,
-  locations,
-  productLocations,
-  type Tx,
-} from '@bizcost/db'
+import { businesses, insertIdempotent, locations, productLocations, type Tx } from '@bizcost/db'
 import { and, asc, desc, eq, isNull, sql } from 'drizzle-orm'
 import type { BusinessCtx } from '../business-context'
 import { AppError } from '../errors'
+import { capabilityOnNow } from './customize'
 
 // Settings → Locations (ROADMAP.md Step 6): only for a business with more than one location
 // (capability multi_location, checked by the router) and settings.locations.manage. Smart Setup created
@@ -71,17 +65,9 @@ export async function createLocation(
       .from(businesses)
       .where(eq(businesses.id, ctx.businessId))
       .for('share')
-    const [capability] = await tx
-      .select({ enabled: businessCapabilities.enabled })
-      .from(businessCapabilities)
-      .where(
-        and(
-          eq(businessCapabilities.businessId, ctx.businessId),
-          eq(businessCapabilities.key, 'multi_location'),
-          isNull(businessCapabilities.deletedAt),
-        ),
-      )
-    if (!capability?.enabled) throw new AppError('capability_disabled')
+    if (!(await capabilityOnNow(tx, ctx.businessId, 'multi_location'))) {
+      throw new AppError('capability_disabled')
+    }
     const row = await insertIdempotent(tx, locations, {
       id: input.id,
       businessId: ctx.businessId,
@@ -151,7 +137,8 @@ export async function setDefaultLocation(
  * `location.remove`: soft delete; the default location cannot be removed (DEFAULT_LOCATION). The
  * location leaves the list of every product sold there, in the same transaction (D-129). A product or
  * service sold only there would then be sold everywhere, so the removal is refused while one is
- * (ONLY_LOCATION_OF_PRODUCTS): the owner picks other branches for it first.
+ * (ONLY_LOCATION_OF_PRODUCTS): the owner picks other branches for it first. Likewise while it is the
+ * only live branch a member works in or a pending invitation gives (ONLY_BRANCH_OF_MEMBERS).
  */
 export async function removeLocation(ctx: BusinessCtx, input: LocationIdInput): Promise<OkDto> {
   return ctx.tx(async (tx) => {
@@ -190,6 +177,46 @@ export async function removeLocation(ctx: BusinessCtx, input: LocationIdInput): 
               and other.deleted_at is null)
        limit 1`)
     if (soleLocation.length > 0) throw new AppError('only_location_of_products')
+    // A member limited to branches ("Branches they work in", Q12) keeps a removed one in their scope
+    // (D-054: an empty scope would mean every branch), so a member whose only live branch this is
+    // would be shut out of every branch (M3 Step 6 review). Refused while one is, or a pending
+    // invitation would make one: the owner changes the branches they work in first
+    // (ONLY_BRANCH_OF_MEMBERS). Branches stay on while anyone is limited (BRANCH_LIMITS_IN_USE).
+    const soleBranch = await tx.execute(sql`
+      select 1
+        from app.member_locations ml
+        join app.business_members m
+          on m.business_id = ml.business_id and m.id = ml.member_id
+         and m.deleted_at is null and m.status <> 'removed'
+       where ml.business_id = ${ctx.businessId}
+         and ml.location_id = ${input.id}
+         and ml.deleted_at is null
+         and not exists (
+           select 1
+             from app.member_locations other
+             join app.locations l
+               on l.business_id = other.business_id and l.id = other.location_id
+              and l.deleted_at is null
+            where other.business_id = ml.business_id
+              and other.member_id = ml.member_id
+              and other.location_id <> ml.location_id
+              and other.deleted_at is null)
+      union all
+      select 1
+        from app.business_invitations i
+       where i.business_id = ${ctx.businessId}
+         and i.status = 'pending'
+         and i.deleted_at is null
+         and ${input.id}::uuid = any(i.location_ids)
+         and not exists (
+           select 1
+             from app.locations l
+            where l.business_id = i.business_id
+              and l.id = any(i.location_ids)
+              and l.id <> ${input.id}::uuid
+              and l.deleted_at is null)
+       limit 1`)
+    if (soleBranch.length > 0) throw new AppError('only_branch_of_members')
     await tx
       .update(productLocations)
       .set({ deletedAt: sql`now()` })

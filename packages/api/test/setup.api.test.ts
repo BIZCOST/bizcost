@@ -280,8 +280,8 @@ describe('business.createFromSetup', () => {
       jobs_and_tasks: true,
       vat_registered: true,
     })
-    // Released modules show (the Costing Core since M2 Step 7); planned ones are saved but stay
-    // hidden.
+    // Released modules show (the Costing Core since M2 Step 7, Sales & Profit since Release A, M3
+    // Step 6); planned ones are saved but stay hidden.
     const ids = context.data?.modules.map((m) => m.id)
     expect(ids?.slice(0, 2)).toEqual(['dashboard', 'settings'])
     expect(ids).toEqual(
@@ -292,10 +292,21 @@ describe('business.createFromSetup', () => {
         'expenses',
         'running_costs',
         'cost_engine',
+        'sales',
+        'orders',
+        'customers',
+        'payments',
+        'reports',
       ]),
     )
-    for (const planned of ['orders', 'vat_center', 'equipment']) expect(ids).not.toContain(planned)
-    expect(await moduleRows(id)).toMatchObject({ orders: true, vat_center: true, equipment: true })
+    for (const planned of ['quotations', 'vat_center', 'equipment']) {
+      expect(ids).not.toContain(planned)
+    }
+    expect(await moduleRows(id)).toMatchObject({
+      quotations: true,
+      vat_center: true,
+      equipment: true,
+    })
 
     const [place] = await admin<{ name: string }[]>`
       select name from app.locations where business_id = ${id}`

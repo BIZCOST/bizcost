@@ -39,6 +39,7 @@ import {
 import { and, asc, eq, inArray, isNull, ne, sql } from 'drizzle-orm'
 import type { BusinessCtx } from '../business-context'
 import { AppError } from '../errors'
+import { capabilityOnNow } from './customize'
 import { revokeInvitationsBeyondSenders, revokeInvitationsSentBy } from './invitations'
 import { assertRecentSignIn } from './reauth'
 import { uuidArray } from './stock'
@@ -380,8 +381,8 @@ async function adminRoleId(tx: Tx, businessId: string): Promise<string> {
 
 /**
  * `member.transferOwnership` (the owner only): the member (an active account member other than the
- * caller) gets the Owner role and the caller becomes Admin, in one transaction (the database's owner
- * rule holds at commit). Needs a sign-in or an emailed code within AUTH_RECENT_SIGN_IN_SECONDS
+ * caller) gets the Owner role, and works in every branch from then on, and the caller becomes Admin, in
+ * one transaction (the database's owner rule holds at commit). Needs a sign-in or an emailed code within AUTH_RECENT_SIGN_IN_SECONDS
  * (REAUTH_REQUIRED), like account deletion.
  */
 export async function transferOwnership(ctx: BusinessCtx, input: MemberIdInput): Promise<OkDto> {
@@ -405,6 +406,19 @@ export async function transferOwnership(ctx: BusinessCtx, input: MemberIdInput):
         permissionsVersion: sql`${businessMembers.permissionsVersion} + 1`,
       })
       .where(and(eq(businessMembers.businessId, ctx.businessId), eq(businessMembers.id, target.id)))
+    // The owner works in every branch: a limit of theirs would still narrow what they see and whom
+    // they manage, where nobody can see or change it (member.locations shows the owner as working
+    // everywhere, member.updateLocations refuses the owner; M3 Step 6 review).
+    await tx
+      .update(memberLocations)
+      .set({ deletedAt: sql`now()` })
+      .where(
+        and(
+          eq(memberLocations.businessId, ctx.businessId),
+          eq(memberLocations.memberId, target.id),
+          isNull(memberLocations.deletedAt),
+        ),
+      )
     await tx
       .update(businessMembers)
       .set({
@@ -680,7 +694,8 @@ export function getMemberLocations(
 /**
  * `member.updateLocations`: the branches a member works in, all of them (empty: every branch, those
  * added later included), `version` as read (the member's permissions version: CONFLICT when their
- * access moved on). Each a live location of the business (NOT_FOUND). Not the Owner (VALIDATION: they
+ * access moved on). Each a live location of the business (NOT_FOUND), branches still on when a limit
+ * is saved (CAPABILITY_DISABLED, read under the business row's lock). Not the Owner (VALIDATION: they
  * work everywhere) and not one's own (FORBIDDEN). "No access beyond your own": a caller who is not the
  * owner changes only a member who may do nothing beyond the caller, and a caller limited to some
  * branches only a member limited within them, and only to some of theirs (FORBIDDEN). Saving bumps the
@@ -703,10 +718,24 @@ export function updateMemberLocations(
     // The branches named first (a reference of another business is NOT_FOUND whatever the version).
     const wanted = [...new Set(input.locationIds.map((id) => id.toLowerCase()))].sort()
     if (wanted.length > 0) {
+      // A limit is added under the business row's lock, with branches still on: switching branches
+      // off locks the row FOR UPDATE and refuses while anyone is limited (BRANCH_LIMITS_IN_USE), so a
+      // limit never outlives the branches (M3 Step 6 review).
+      await tx
+        .select({ id: businesses.id })
+        .from(businesses)
+        .where(eq(businesses.id, ctx.businessId))
+        .for('share')
+      if (!(await capabilityOnNow(tx, ctx.businessId, 'multi_location'))) {
+        throw new AppError('capability_disabled')
+      }
+      // FOR SHARE: a branch being removed (location.remove locks it FOR UPDATE, then refuses to leave a
+      // member without a live branch) is either gone when this reads it, or removed after this saves.
       const found = await tx.execute(sql`
         select l.id from app.locations l
          where l.business_id = ${ctx.businessId} and l.deleted_at is null
            and l.id = any(${uuidArray(wanted)})
+           for share
       `)
       if ((found as unknown as unknown[]).length !== wanted.length) {
         throw new AppError('not_found')

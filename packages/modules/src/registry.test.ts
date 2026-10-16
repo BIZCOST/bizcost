@@ -37,7 +37,7 @@ describe('module manifests', () => {
     }
   })
 
-  it('release Dashboard and Settings (M1) and the Costing Core together (M2 Step 7)', () => {
+  it('release Dashboard and Settings (M1), the Costing Core (M2 Step 7) and Release A (M3 Step 6)', () => {
     const released = MODULES.filter((m) => m.availability === 'released').map((m) => m.id)
     expect(released).toEqual([
       'dashboard',
@@ -50,28 +50,20 @@ describe('module manifests', () => {
       'running_costs',
       'files',
       'cost_engine',
+      // Release A: Sales & Profit, half-way through M3 (Q1); Quotations and Invoices wait for Release B.
+      'sales',
+      'orders',
+      'customers',
+      'payments',
+      'reports',
     ])
   })
 
   it('give planned modules no permission keys, nav or quick actions until their build starts (no stubs)', () => {
     // A module gets its keys and nav when its build starts and stays planned (hidden) until it is
-    // released (D-124, D-125). M3 Step 2 builds Sales, Step 3 Reports and Step 5 Customers, Payments
-    // and Orders (released with Release A, Step 6).
-    const started = MODULES.filter(
-      (m) => m.availability === 'planned' && (m.permissionKeys.length > 0 || m.nav.length > 0),
-    )
-    expect(started.map((m) => m.id)).toEqual([
-      'customers',
-      'sales',
-      'payments',
-      'reports',
-      'orders',
-    ])
-    for (const m of started) {
-      expect(m.permissionKeys.length, m.id).toBeGreaterThan(0)
-      expect(m.nav.length, m.id).toBeGreaterThan(0)
-    }
-    for (const m of MODULES.filter((x) => x.availability === 'planned' && !started.includes(x))) {
+    // released (D-124, D-125). Release A (M3 Step 6) released every module being built: none is until
+    // Quotations (M3 Step 7).
+    for (const m of MODULES.filter((x) => x.availability === 'planned')) {
       expect(m.permissionKeys, m.id).toEqual([])
       expect(m.nav, m.id).toEqual([])
       expect(m.quickActions, m.id).toEqual([])
@@ -86,70 +78,93 @@ describe('module manifests', () => {
     expect(byId.get('files')).toMatchObject({ nav: [], quickActions: [], permissionKeys: [] })
   })
 
-  it('have a positive phase, and released modules belong to phases 1 and 2', () => {
+  it('have a positive phase, and released modules belong to phases 1 to 3', () => {
     for (const m of MODULES) {
       expect(Number.isInteger(m.phase) && m.phase >= 1, m.id).toBe(true)
-      if (m.availability === 'released') expect(m.phase, m.id).toBeLessThanOrEqual(2)
+      if (m.availability === 'released') expect(m.phase, m.id).toBeLessThanOrEqual(3)
     }
   })
 
-  it('give each main nav entry at most one claim to the phone tab bar, 1 first, never Settings', () => {
+  it('give each section at most one claim to the phone tab bar, 1 first, never Settings', () => {
     // A page reached by two keys (Sales: see every sale, or enter sales) has one entry per key, each
-    // with the same claim: it is one place in the tab bar.
+    // with the same claim and rank: it is one place in the tab bar.
     const claims = [
       ...new Map(
         MODULES.flatMap((m) =>
           m.nav.flatMap((entry) =>
             'tab' in entry && entry.tab !== undefined
-              ? [[`${entry.id} ${entry.tab}`, [entry.id, entry.tab] as const] as const]
+              ? [
+                  [
+                    `${entry.id} ${entry.tab}`,
+                    [entry.id, entry.tab, 'tabRank' in entry ? entry.tabRank : 0] as const,
+                  ] as const,
+                ]
               : [],
           ),
         ),
       ).values(),
     ]
-    // M2 Step 7: Home, then Product costs, Products, Expenses, Purchases, Materials; an owner's phone
-    // gets Home, Products, +, Product costs and More, and an employee's Home, Products, +,
-    // Expenses and More (the tabs keep the nav's order). M3 Step 2 (D-233): Sales claims the place
-    // after Home (Q14: Home | Sales | + | Costs | More), the others keep their order, so a business
-    // without Sales keeps its tabs.
+    // Release A (M3 Step 6, Q14): Home, then the Sales place (Orders for a business with Orders on,
+    // else Sales), Product costs ("Costs"), Expenses, Products, Purchases, Materials: an owner's phone
+    // gets Home | Sales | + | Costs | More (Products under "More"), an employee's Home | Sales | + |
+    // Expenses | More (D-184 kept).
     expect(claims).toEqual([
-      ['dashboard', 1],
-      ['products', 4],
-      ['materials', 7],
-      ['purchases', 6],
-      ['expenses', 5],
-      ['product_costs', 3],
-      ['sales', 2],
+      ['dashboard', 1, 0],
+      ['products', 5, 0],
+      ['materials', 7, 0],
+      ['purchases', 6, 0],
+      ['expenses', 4, 0],
+      ['product_costs', 3, 0],
+      ['sales', 2, 1],
+      ['orders', 2, 0],
     ])
     for (const m of MODULES) {
-      const ranks = new Set(m.nav.flatMap((entry) => ('tab' in entry ? [entry.tab] : [])))
-      expect(ranks.size, m.id).toBeLessThanOrEqual(1)
+      const claimed = new Set(
+        m.nav.flatMap((entry) =>
+          'tab' in entry ? [`${entry.tab} ${'tabRank' in entry ? entry.tabRank : 0}`] : [],
+        ),
+      )
+      expect(claimed.size, m.id).toBeLessThanOrEqual(1)
     }
-    const ranks = claims.map(([, rank]) => rank)
-    expect(new Set(ranks).size).toBe(ranks.length)
+    // Places are shared only by entries of different ranks, so a place always has one holder.
+    const places = claims.map(([, place, rank]) => `${place} ${rank}`)
+    expect(new Set(places).size).toBe(places.length)
     for (const m of MODULES) {
       for (const entry of m.nav) {
         if ('tab' in entry && entry.tab !== undefined) {
-          expect(entry.group, entry.id).toBe('main')
+          expect(entry.group, entry.id).not.toBe('system')
           expect(Number.isInteger(entry.tab) && entry.tab >= 1, entry.id).toBe(true)
         }
       }
     }
   })
 
-  it('offer "+" for a new product or service, purchase, expense and sale, and Today\'s sales, each with the key to enter it', () => {
+  it('offer "+" for a new product or service, purchase, expense, sale, order and customer, and Today\'s sales, each with the keys to enter it', () => {
     const actions = MODULES.flatMap((m) =>
-      m.quickActions.map((a) => [m.id, a.id, a.path, a.permission ?? null]),
+      m.quickActions.map((a) => [
+        m.id,
+        a.id,
+        a.path,
+        a.permission ?? null,
+        ...('alsoNeeds' in a ? a.alsoNeeds : []),
+      ]),
     )
     expect(actions).toEqual([
       ['products', 'new_product', 'products/new', 'products.items.manage'],
       ['purchases', 'new_purchase', 'purchases/new', 'purchases.documents.manage'],
       ['expenses', 'new_expense', 'expenses/new', 'expenses.documents.manage'],
-      // M3 Step 2 (planned: shown only under the dev-only preview until Release A).
+      // Release A (M3 Step 6).
       ['sales', 'today_sales', 'sales/today', 'sales.documents.manage'],
       ['sales', 'new_sale', 'sales/new', 'sales.documents.manage'],
-      // M3 Step 5 (planned likewise).
       ['orders', 'new_order', 'orders/new', 'orders.documents.manage'],
+      // It opens Customers, so it is for those who see customers as well as add them.
+      [
+        'customers',
+        'new_customer',
+        'customers/new',
+        'customers.items.manage',
+        'customers.items.view',
+      ],
     ])
   })
 
@@ -228,6 +243,8 @@ describe('module manifests', () => {
         if (entry.permission !== undefined) {
           expect(m.permissionKeys, entry.id).toContain(entry.permission)
         }
+        const also: readonly string[] = ('alsoNeeds' in entry && entry.alsoNeeds) || []
+        for (const key of also) expect(m.permissionKeys, entry.id).toContain(key)
       }
     }
   })
@@ -239,7 +256,7 @@ describe('module manifests', () => {
     }
   })
 
-  it('put Settings after the sections (group system), and every other entry in main', () => {
+  it('put Settings after the sections (group system), Sales & Profit in its groups, and every other entry in main', () => {
     const groups = MODULES.flatMap((m) => m.nav.map((entry) => [entry.id, entry.group]))
     expect(groups).toEqual([
       ['dashboard', 'main'],
@@ -253,18 +270,16 @@ describe('module manifests', () => {
       ['payables', 'main'],
       ['running_costs', 'main'],
       ['product_costs', 'main'],
-      // Customers (M3 Step 5).
-      ['customers', 'main'],
-      // Sales (M3 Step 2): one page, reached with "see every sale" or with "enter sales".
-      ['sales', 'main'],
-      ['sales', 'main'],
-      // What customers owe (M3 Step 5).
-      ['receivables', 'main'],
-      // Reports (M3 Step 3): Real profit.
-      ['real_profit', 'main'],
-      // Orders (M3 Step 5): one page, with "see every order" or with "enter orders".
-      ['orders', 'main'],
-      ['orders', 'main'],
+      // Release A (M3 Step 6): the "Sales" group holds Sales (one page, reached with "see every sale"
+      // or with "enter sales"), Orders (likewise), Customers and What customers owe; "Reports" holds
+      // Real profit.
+      ['sales', 'sales'],
+      ['sales', 'sales'],
+      ['orders', 'sales'],
+      ['orders', 'sales'],
+      ['customers', 'sales'],
+      ['receivables', 'sales'],
+      ['real_profit', 'reports'],
     ])
   })
 

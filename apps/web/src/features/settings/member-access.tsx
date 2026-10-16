@@ -48,8 +48,8 @@ import { NoAccess } from './settings-shell'
 // editor: a permission comes with what it needs (costs, supplier prices and margins as one switch), and
 // nobody gives access they don't have. Not the owner's (they can do everything) and not one's own.
 // The changes are saved whole (member.updatePermissions), with the member's permissions version.
-// "N changes from their role" names each switch that differs, and leads to it (D-200). With a team,
-// branches and Sales served, "Branches they work in" comes first (M3 Step 2, Q12: member-branches.tsx).
+// "N changes from their role" names each switch that differs, and leads to it (D-200). With a team and
+// branches, "Branches they work in" comes first (M3 Step 2, Q12: member-branches.tsx).
 
 function Editor({
   data,

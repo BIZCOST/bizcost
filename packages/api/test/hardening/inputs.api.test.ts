@@ -28,7 +28,7 @@ import { handlerFor, mutate, SECRET_KEY, type CallResult } from '../helpers'
 import { CostScope, ProductCostsApi, tag } from '../product-costs'
 import { codeOf, line, ok, purchaseInput } from '../purchasing'
 import { BAKER, CapturedEmails, WORKSHOP } from '../settings'
-import { businessDigest, PREVIEW_MODULES, proceduresOf } from './fixture'
+import { businessDigest, proceduresOf } from './fixture'
 import { updateFieldsOf } from '../sales'
 import {
   decimalsIn,
@@ -60,7 +60,7 @@ class InputsApi extends ProductCostsApi {
   override readonly handler = handlerFor(
     this.db,
     undefined,
-    { supabaseSecretKey: SECRET_KEY, previewModules: PREVIEW_MODULES },
+    { supabaseSecretKey: SECRET_KEY },
     { emailSender: this.emails },
   )
 }

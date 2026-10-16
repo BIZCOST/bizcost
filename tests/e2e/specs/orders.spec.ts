@@ -14,6 +14,7 @@ import {
   callApi,
   createUser,
   deleteUser,
+  onScreen,
   pngImage,
   RAW_KEY,
   setLanguage,
@@ -22,11 +23,10 @@ import {
   WORKSHOP_ANSWERS,
   type TestUser,
 } from '../helpers'
-import { previewBaseURL } from '../stack'
+import { baseURL } from '../stack'
 
-// Orders, Customers and What customers owe (ROADMAP.md M3 Step 5), on the dev-only preview (D-125,
-// D-127: the `preview` project, a `next dev` server with BIZCOST_PREVIEW_MODULES=…,customers,
-// payments,orders). The modules stay `planned` until Release A (M3 Step 6).
+// Orders, Customers and What customers owe (ROADMAP.md M3 Step 5), on the production build since
+// Release A released them (M3 Step 6, as D-199 after M2).
 //
 //   - The home baker in Arabic on a phone (the plan's definition of done): order #1001 from "+", a
 //     customer added on the spot after "Did you mean …?" shows another Fatima, a chocolate cake at 150
@@ -68,17 +68,11 @@ async function open(
   const user = await createUser(`orders-${locale}`, { locale: 'en' })
   users.push(user)
   const context = await browser.newContext({
-    baseURL: previewBaseURL,
+    baseURL,
     locale: locale === 'ar' ? 'ar-AE' : 'en-US',
     viewport,
   })
   contexts.push(context)
-  // The development server's own badge and overlay are not part of the app (D-127).
-  await context.addInitScript(() => {
-    const sheet = new CSSStyleSheet()
-    sheet.replaceSync('[data-nextjs-dev-overlay] { display: none !important; }')
-    document.adoptedStyleSheets = [...document.adoptedStyleSheets, sheet]
-  })
   await useLanguage(context, 'en')
   const page = await context.newPage()
   await signIn(page, user)
@@ -227,7 +221,7 @@ test("the home baker's order #1001 in Arabic on a phone: a deposit, delivered, p
     'customer.create',
   )
 
-  // "+" offers a new order (the preview).
+  // "+" offers a new order.
   await page.goto(`/b/${businessId}`)
   const tabs = page.getByRole('navigation', { name: 'القائمة الرئيسية' })
   await tabs.getByRole('button', { name: 'إضافة جديد' }).click()
@@ -378,7 +372,8 @@ test("the home baker's order #1001 in Arabic on a phone: a deposit, delivered, p
   await page.goto(`/b/${businessId}/receivables`)
   await expect(page.getByRole('heading', { name: 'لا مستحقات على أحد' })).toBeVisible()
   await page.goto(`/b/${businessId}`)
-  const recent = page.locator('[data-card="recent-orders"]')
+  // On the screen only: the streamed page holds a hidden copy for a moment (helpers.ts, onScreen).
+  const recent = onScreen(page.locator('[data-card="recent-orders"]'))
   await expect(recent.locator('[data-recent-order]')).toHaveCount(1)
   await expect(recent).toContainText('#1001')
   await expect(recent).toContainText('كيكة شوكولاتة')
@@ -814,8 +809,10 @@ test('the orders screens in Arabic on a desktop (a workshop with VAT)', async ({
   await expectSound(page, 'ar')
   await shot(page, 'orders-ar-1440-customers')
   await page.goto(`/b/${businessId}`)
-  await expect(page.locator('[data-card="recent-orders"]')).toContainText('#1001')
-  await expect(page.locator('[data-card="customers-owe"]')).toContainText(money('ar', '5,560.00'))
+  await expect(onScreen(page.locator('[data-card="recent-orders"]'))).toContainText('#1001')
+  await expect(onScreen(page.locator('[data-card="customers-owe"]'))).toContainText(
+    money('ar', '5,560.00'),
+  )
   await expectSound(page, 'ar')
   await shot(page, 'orders-ar-1440-dashboard')
   await page.goto(`/b/${businessId}/reports/profit?by=order`)

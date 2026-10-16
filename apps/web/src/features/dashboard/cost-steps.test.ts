@@ -1,7 +1,13 @@
 import type { BusinessContextDto, CostStepDto } from '@bizcost/contracts'
 import { hasMessage, LOCALES, terminologyKey } from '@bizcost/i18n'
 import { describe, expect, it } from 'vitest'
-import { costProgress, costsReadyKeys, costStepIdsFor, costStepView } from './cost-steps'
+import {
+  costProgress,
+  costsReadyKeys,
+  costStepIdsFor,
+  costStepView,
+  leadsToProfit,
+} from './cost-steps'
 
 // "Let's find the real cost of what you sell" on the Dashboard (M2 Step 7, D-193): which steps a
 // member sees (the API's rules), and what each open step says and where it leads.
@@ -64,6 +70,25 @@ describe('costStepIdsFor', () => {
         ),
       ),
     ).toEqual([])
+  })
+})
+
+describe('leadsToProfit', () => {
+  it('titles the checklist after the first real profit once it has a sales step (Release A)', () => {
+    const owner = costStepIdsFor(context([...COSTING, 'cost_engine', 'sales', 'reports'], 'all'))
+    expect(owner.slice(-2)).toEqual(['sales', 'real_profit'])
+    expect(leadsToProfit(owner)).toBe(true)
+    // An employee who enters sales gets that step alone: still the way to the real profit.
+    const employee = costStepIdsFor(
+      context(
+        [...COSTING, 'cost_engine', 'sales', 'reports'],
+        ['dashboard.home.view', 'sales.documents.manage', 'sales.documents.post'],
+      ),
+    )
+    expect(employee).toEqual(['sales'])
+    expect(leadsToProfit(employee)).toBe(true)
+    // Without Sales and Reports, the M2 checklist: the real cost of what you sell.
+    expect(leadsToProfit(costStepIdsFor(context([...COSTING, 'cost_engine'], 'all')))).toBe(false)
   })
 })
 

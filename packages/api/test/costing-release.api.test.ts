@@ -85,7 +85,7 @@ describe('released code serves the Costing Core, gated by module and permission'
     ok(await shop.run('attachment.list', input))
   })
 
-  it('closing the books is a Settings key, used with Purchases or Expenses on (D-176, D-201)', async () => {
+  it('closing the books is a Settings key, used with Purchases, Expenses, Sales or Orders on (D-176, D-201, D-277)', async () => {
     const shop = await CostScope.open(api, WORKSHOP)
     const roles = ok(await shop.run<RoleDto[]>('role.list'))
     const admin = roles.find((r) => r.templateKey === 'admin')!
@@ -131,9 +131,17 @@ describe('released code serves the Costing Core, gated by module and permission'
     expect(
       ok(await shop.as<BooksDto>(sales, 'books.close', { closedThrough: null })),
     ).toMatchObject({ closedThrough: null })
-    // Neither on: nothing obeys the date, so there is nothing to close.
+    // Neither on: the sales and orders still obey the date (Release A, D-277), so it still opens.
     ok(await toggle('expenses', false))
-    expect(codeOf(await shop.run('books.close', { closedThrough: today }))).toBe('module_disabled')
+    expect(
+      ok(await shop.as<BooksDto>(sales, 'books.close', { closedThrough: today })).closedThrough,
+    ).toBe(today)
+    // Sales off too (Orders goes with it): nothing obeys the date, so there is nothing to close.
+    ok(await toggle('sales', false))
+    expect(codeOf(await shop.run('books.close', { closedThrough: null }))).toBe('module_disabled')
+    // Reading it still serves who sees what customers pay; with Payments off too, nobody.
+    expect(codeOf(await shop.as(sales, 'books.get'))).toBeUndefined()
+    ok(await toggle('payments', false))
     expect(codeOf(await shop.as(sales, 'books.get'))).toBe('module_disabled')
   })
 })
@@ -242,6 +250,9 @@ describe('"Let\'s find the real cost of what you sell" (dashboard.checklist)', (
       running_costs: { done: false, missing: ['runningCosts'], remaining: null },
       owner_time: { done: false, missing: ['hourlyRate', 'minutes'], remaining: null },
       product_costs: { done: false, missing: [], remaining: null },
+      // Release A (M3 Step 6): the way on to her first real profit.
+      sales: { done: false, missing: [], remaining: null },
+      real_profit: { done: false, missing: [], remaining: null },
     })
     // What she sells: a cake, made at home, without what goes into it yet.
     const cake = await baker.product({ name: `Cake ${tag()}`, defaultPrice: '60' })
@@ -287,22 +298,36 @@ describe('"Let\'s find the real cost of what you sell" (dashboard.checklist)', (
       owner_time: { done: true, missing: [] },
       product_costs: { done: true, remaining: 0 },
     })
-    // Every step done; the first checklist is unchanged.
+    // Every cost step done, the sales steps waiting for her first sale; the first checklist is
+    // unchanged.
     const all = ok(await baker.run<DashboardChecklistDto>('dashboard.checklist'))
-    expect(all.costSteps.every((step) => step.done)).toBe(true)
+    const sold = ['sales', 'real_profit']
+    expect(all.costSteps.every((step) => step.done || sold.includes(step.id))).toBe(true)
+    expect(all.costSteps.filter((step) => step.done).map((step) => step.id)).not.toContain('sales')
     expect(all.items.map((item) => item.id)).toEqual(['profile'])
   })
 
   it('shows each role template of a business with a team only the steps it can act on', async () => {
     const shop = await CostScope.open(api, WORKSHOP)
+    // Since Release A (M3 Step 6), "Add or import your sales" for whoever enters and finalizes sales,
+    // and "See your real profit" for whoever sees profit (D-244, D-277).
+    const all = [
+      'products',
+      'recipes',
+      'purchases',
+      'running_costs',
+      'product_costs',
+      'sales',
+      'real_profit',
+    ]
     const expected = {
-      owner: ['products', 'recipes', 'purchases', 'running_costs', 'product_costs'],
-      admin: ['products', 'recipes', 'purchases', 'running_costs', 'product_costs'],
-      manager: ['products', 'recipes', 'purchases', 'running_costs', 'product_costs'],
-      accountant: ['product_costs'],
-      sales: [],
-      supervisor: [],
-      employee: [],
+      owner: all,
+      admin: all,
+      manager: all,
+      accountant: ['product_costs', 'real_profit'],
+      sales: ['sales'],
+      supervisor: ['sales'],
+      employee: ['sales'],
     } as const
     for (const [template, ids] of Object.entries(expected)) {
       const person = template === 'owner' ? shop.owner : await api.member(shop, template as never)
@@ -318,7 +343,13 @@ describe('"Let\'s find the real cost of what you sell" (dashboard.checklist)', (
     for (const id of ['cost_engine', 'running_costs']) {
       ok(await shop.run('business.customize', { item: { kind: 'module', id }, enabled: false }))
     }
-    expect((await steps(shop)).map((step) => step.id)).toEqual(['products', 'recipes', 'purchases'])
+    expect((await steps(shop)).map((step) => step.id)).toEqual([
+      'products',
+      'recipes',
+      'purchases',
+      'sales',
+      'real_profit',
+    ])
     // A manager whose costs were taken away keeps the steps that change things, not those about costs.
     ok(
       await shop.run('business.customize', {
@@ -351,12 +382,15 @@ describe('"Let\'s find the real cost of what you sell" (dashboard.checklist)', (
       'products',
       'recipes',
       'purchases',
+      'sales',
     ])
     expect((await steps(shop)).map((step) => step.id)).toEqual([
       'products',
       'recipes',
       'purchases',
       'product_costs',
+      'sales',
+      'real_profit',
     ])
   })
 
@@ -399,6 +433,8 @@ describe('"Let\'s find the real cost of what you sell" (dashboard.checklist)', (
       'running_costs',
       'owner_time',
       'product_costs',
+      'sales',
+      'real_profit',
     ])
     // A logo design, 3 hours of her time, and her running costs.
     const logo = await designer.product({
@@ -436,6 +472,8 @@ describe('"Let\'s find the real cost of what you sell" (dashboard.checklist)', (
       running_costs: { done: true, missing: [], remaining: null },
       owner_time: { done: true, missing: [], remaining: null },
       product_costs: { done: true, missing: [], remaining: 0 },
+      sales: { done: false, missing: [], remaining: null },
+      real_profit: { done: false, missing: [], remaining: null },
     })
   })
 

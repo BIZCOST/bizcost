@@ -8,7 +8,13 @@ import { useTranslation } from 'react-i18next'
 import { Button } from '@/components/ui/button'
 import { useTerminology } from '@/lib/i18n/client'
 import { cn } from '@/lib/utils'
-import { costProgress, costsReadyKeys, costStepView, type CostStepView } from './cost-steps'
+import {
+  costProgress,
+  costsReadyKeys,
+  costStepView,
+  leadsToProfit,
+  type CostStepView,
+} from './cost-steps'
 
 // "Let's find the real cost of what you sell / لنعرف التكلفة الحقيقية لما تبيعه" (docs/PRODUCT.md
 // §10, M2 Step 7, D-193): the path from an empty business to its product costs, the steps this member
@@ -135,9 +141,8 @@ export function CostChecklist({
   const { t } = useTranslation()
   const { done, total, next } = costProgress(steps)
   const percent = total === 0 ? 0 : Math.round((done / total) * 100)
-  // With the sales steps (M3 Step 3, while Sales and Reports are served) it is the way to the first
-  // real profit (PRODUCT.md §10).
-  const profit = steps.some((step) => step.id === 'real_profit')
+  // With a sales step (M3 Step 3) it is the way to the first real profit (PRODUCT.md §10).
+  const profit = leadsToProfit(steps.map((step) => step.id))
   return (
     <section aria-labelledby="costs-title" className={cn(CARD, className)} data-cost-checklist>
       <div className="border-b px-5 pt-5 pb-4 sm:px-6">

@@ -193,7 +193,7 @@ export function ExpenseEditor({
   const choosesPays = context ? mayChoosePays(context) : false
   const payable = usePayableRunningCosts(draft.categoryId, draft.periodMonth, choosesPays)
   const payableItems = choosesPays ? payable.data?.items : undefined
-  // While Sales is served (M3 Step 3, Q8): a channel's app fees or delivery already on the sales, said
+  // With Sales on (M3 Step 3, Q8): a channel's app fees or delivery already on the sales, said
   // by a member who sees costs.
   const saysSalesPays = context ? maySaySalesPays(context) : false
   const channels = usePayableChannels(saysSalesPays)

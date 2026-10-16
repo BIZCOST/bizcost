@@ -37,8 +37,9 @@ function previewableIds(manifests: readonly ModuleManifest[]): readonly ModuleId
 
 /**
  * Planned modules whose build has started (they have nav entries): the only ones the dev-only preview
- * may show (D-125). None since the Costing Core was released (M2 Step 7); the switch stays for the
- * modules built next.
+ * may show (D-125). None since Release A (M3 Step 6) released Sales, Orders, Customers, Payments and
+ * Reports, as after the Costing Core's release (M2 Step 7); the switch stays for the modules built
+ * next (Quotations and Invoices).
  */
 export const PREVIEWABLE_MODULE_IDS: readonly ModuleId[] = previewableIds(MODULES)
 
@@ -47,7 +48,8 @@ export interface ParsedPreviewModules {
   readonly ids: readonly ModuleId[]
   /**
    * Released modules named, in registry order: there is nothing to preview any more (an environment
-   * written before their release, e.g. the Costing Core's in M2 Step 7), so they are ignored.
+   * written before their release, e.g. the Costing Core's in M2 Step 7 or Release A's in M3 Step 6), so
+   * they are ignored.
    */
   readonly released: readonly ModuleId[]
   /** Names that are neither a previewable nor a released module (unknown, or not being built). */
@@ -142,8 +144,11 @@ export function visibleNav(manifest: ModuleManifest, can: Can): readonly NavEntr
   return permitted(manifest.nav, can)
 }
 
+/** The "+" actions of a module the member may use: its key, and every key it also needs. */
 export function visibleQuickActions(manifest: ModuleManifest, can: Can): readonly QuickAction[] {
-  return permitted(manifest.quickActions, can)
+  return permitted(manifest.quickActions, can).filter((action) =>
+    (action.alsoNeeds ?? []).every((key) => can(key)),
+  )
 }
 
 /** Shown in the nav, tabs and "+": released, enabled and permitted. */
@@ -155,9 +160,36 @@ export function isModuleVisible(
   return isModuleActive(manifest, enabledKeys) && visibleNav(manifest, can).length > 0
 }
 
-/** The wire shape of a nav entry (without its permission key or who else it is for). */
-function toNavDto({ id, labelKey, path, icon, group, tab }: NavEntry): NavEntryDto {
-  return { id, labelKey, path, icon, group, tab: tab ?? null }
+/**
+ * The wire shape of a nav entry (without its permission key, who else it is for or its rank): its claim
+ * only when it holds its place (`holders`, from placeHolders), else none.
+ */
+function toNavDto(entry: NavEntry, holders: ReadonlySet<NavEntry>): NavEntryDto {
+  const { id, labelKey, path, icon, group, tab } = entry
+  return {
+    id,
+    labelKey,
+    path,
+    icon,
+    group,
+    tab: tab !== undefined && holders.has(entry) ? tab : null,
+  }
+}
+
+/**
+ * The entries that hold the place they claim: of the entries claiming the same place, the one with the
+ * lowest `tabRank` (0 without one), the first in nav order on a tie (Orders takes the Sales place, Q14).
+ */
+function placeHolders(entries: readonly NavEntry[]): ReadonlySet<NavEntry> {
+  const byPlace = new Map<number, NavEntry>()
+  for (const entry of entries) {
+    if (entry.tab === undefined) continue
+    const holder = byPlace.get(entry.tab)
+    if (holder === undefined || (entry.tabRank ?? 0) < (holder.tabRank ?? 0)) {
+      byPlace.set(entry.tab, entry)
+    }
+  }
+  return new Set(byPlace.values())
 }
 
 /** The wire shape of a "+" action (without its permission key). */
@@ -175,6 +207,8 @@ function toActionDto({ id, labelKey, path, icon }: QuickAction): QuickActionDto 
  * entries for payees show too (D-181). Such a page, reached only as a payee, comes after every entry
  * the member reaches by their keys, under the last module that shares it: it is seldom opened, and
  * must not push a section they work in (an employee's Expenses) into the phone's "More" (D-184).
+ * Each entry keeps its claim to a place in the phone's tab bar only when it holds that place among the
+ * member's entries (`tabRank`: Orders takes the Sales place for a business with Orders on, Q14).
  */
 export function buildModuleNav(
   enabledKeys: ReadonlySet<string>,
@@ -205,9 +239,12 @@ export function buildModuleNav(
   })
   const payeeOnly = active.map((): NavEntry[] => [])
   for (const [path, { entry, at }] of lastOf) if (owed.has(path)) payeeOnly[at]?.push(entry)
+  const navOf = active.map((_, at) => [...(byKeys[at] ?? []), ...(payeeOnly[at] ?? [])])
+  // A place in the phone's tab bar claimed by several of the member's entries goes to one of them.
+  const holders = placeHolders(navOf.flat())
   return active.map((m, at) => ({
     id: m.id,
-    nav: [...(byKeys[at] ?? []), ...(payeeOnly[at] ?? [])].map(toNavDto),
+    nav: (navOf[at] ?? []).map((entry) => toNavDto(entry, holders)),
     quickActions: visibleQuickActions(m, can).map(toActionDto),
   }))
 }

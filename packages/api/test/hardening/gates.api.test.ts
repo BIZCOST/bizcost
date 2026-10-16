@@ -16,7 +16,6 @@ import {
   ALWAYS_ENABLED_MODULE_IDS,
   MODULES as MANIFESTS,
   roleTemplateByKey,
-  withPreviewModules,
   type CapabilityKey,
   type ModuleId,
   type ModuleManifest,
@@ -30,7 +29,6 @@ import {
   callProcedure,
   createTenant,
   openApi,
-  PREVIEW_MODULES,
   proceduresOf,
   tenantDigest,
   type Api,
@@ -60,10 +58,10 @@ import { inputLeaves, inputSchemaOf } from './schema'
 //     (nothing written), accepted where it does.
 
 /**
- * The registry the suites' API serves: the manifests with the modules being built previewed (D-125;
- * Sales since M3 Step 2), as a local server has them.
+ * The registry the suites' API serves: the manifests as released code has them (Release A, M3 Step 6,
+ * released every module being built, so nothing is previewed).
  */
-const MODULES = withPreviewModules(PREVIEW_MODULES, MANIFESTS)
+const MODULES: readonly ModuleManifest[] = MANIFESTS
 
 /** Any of the groups, each with every module on; [] = no module gate. */
 type Gate = readonly (readonly ModuleId[])[]
@@ -90,8 +88,12 @@ const ORDERS: Gate = [['orders']]
 const PAYMENTS: Gate = [['payments']]
 const SALES: Gate = [['sales']]
 const SALES_AND_PRODUCTS: Gate = [['sales', 'products']]
-/** The books-closed date: purchases, expenses and sales obey it (D-227, D-236). */
-const BOOKS: Gate = [['purchases'], ['expenses'], ['sales']]
+/**
+ * The books-closed date: purchases, expenses, sales and orders obey it (D-227, D-236, Release A);
+ * reading it also serves who sees what customers pay (their payments obey it too).
+ */
+const BOOKS: Gate = [['purchases'], ['expenses'], ['sales'], ['orders']]
+const BOOKS_READ: Gate = [...BOOKS, ['payments']]
 
 const MODULE_GATES: Record<string, Gate> = {
   'attachment.add': RECEIPTS,
@@ -99,7 +101,7 @@ const MODULE_GATES: Record<string, Gate> = {
   'attachment.remove': RECEIPTS,
   'attachment.uploadUrl': RECEIPTS,
   'books.close': BOOKS,
-  'books.get': BOOKS,
+  'books.get': BOOKS_READ,
   'business.context': NONE,
   'business.customization': NONE,
   'business.customize': NONE,
@@ -187,12 +189,13 @@ const MODULE_GATES: Record<string, Gate> = {
   'member.changeRole': NONE,
   'member.leave': NONE,
   'member.list': NONE,
-  // "Branches they work in": only while Sales is served (the module used per branch, Q12).
-  'member.locations': SALES,
+  // "Branches they work in": with a team and branches, whatever modules are on (Q12; the plan's
+  // Step 6; M3 Step 6 review: a limit narrows team changes too, so wherever one applies it shows).
+  'member.locations': NONE,
   'member.permissions': NONE,
   'member.remove': NONE,
   'member.transferOwnership': NONE,
-  'member.updateLocations': SALES,
+  'member.updateLocations': NONE,
   'member.updatePermissions': NONE,
   // Orders (M3 Step 5).
   'order.cancel': ORDERS,
@@ -428,10 +431,12 @@ async function expectGates(enabled: ReadonlySet<string>, what: string) {
 /** The nav paths and actions a member with `template`'s keys may use among the modules on. */
 function expectedNav(template: RoleTemplateKey, enabled: ReadonlySet<string>) {
   const role = roleTemplateByKey(template)
-  const can = (entry: { readonly permission?: string }) =>
-    entry.permission === undefined ||
+  const holds = (key: string) =>
     Boolean(role?.allPermissions) ||
-    (role?.permissionKeys as readonly string[] | undefined)?.includes(entry.permission) === true
+    (role?.permissionKeys as readonly string[] | undefined)?.includes(key) === true
+  const can = (entry: { readonly permission?: string; readonly alsoNeeds?: readonly string[] }) =>
+    (entry.permission === undefined || holds(entry.permission)) &&
+    (entry.alsoNeeds ?? []).every(holds)
   const active: readonly ModuleManifest[] = MODULES.filter(
     (m) => m.availability === 'released' && enabled.has(m.id),
   )
@@ -476,6 +481,9 @@ describe('a module switched off is refused by every procedure that needs it (MOD
     ['purchases', 'expenses'],
     ['expenses', 'running_costs'],
     ['products', 'materials'],
+    // Orders goes with Sales (a delivery is a sale): nothing then obeys the books-closed date but
+    // what customers pay, so only reading it stays open.
+    ['purchases', 'expenses', 'sales'],
     SWITCHABLE,
   ]
 

@@ -8,7 +8,7 @@ export async function generateMetadata(): Promise<Metadata> {
   return { title: t(isModuleServed('reports') ? 'common.nav.real_profit' : 'notFound.title') }
 }
 
-/** Reports → Real profit (M3 Step 3; the dev-only preview until Release A). */
+/** Reports → Real profit (M3 Step 3; released with Release A, M3 Step 6). */
 export default function Page() {
   return <RealProfitPage />
 }

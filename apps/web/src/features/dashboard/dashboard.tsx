@@ -33,12 +33,12 @@ import { DecisionCards, hasCards, hasOrderCards, OrderCards } from './cards'
 import { AllSet, Checklist, ChecklistSkeleton } from './checklist'
 import { progressOf } from './checklist-steps'
 import { CostChecklist, CostsReady } from './cost-checklist'
-import { costProgress, costStepIdsFor } from './cost-steps'
+import { costProgress, costStepIdsFor, leadsToProfit } from './cost-steps'
 import { useAllSetHidden } from './hidden-all-set'
 
 // The Dashboard (ROADMAP.md Step 7, docs/PRODUCT.md §9–10): a welcome with the business's name (its
 // Arabic name in Arabic, D-097), its logo and the member's role; the decision cards of this month
-// (M3 Step 3, only while Sales is served and only the cards with data the member may see); "Let's
+// (M3 Step 3, released with Release A: only the cards with data the member may see); "Let's
 // find the real cost of what you sell" (M2 Step 7, D-193; "Let's calculate your first real profit"
 // with the sales steps) and "Finish setting up" (M1), both from real data and only with the steps the
 // member can act on; and what the setup says about the business (§6.8). No cards for sections that
@@ -48,10 +48,8 @@ import { useAllSetHidden } from './hidden-all-set'
 interface DashboardServerData {
   /** The checklists, when the member has steps and the API answered. */
   readonly checklist: DashboardChecklistDto | null
-  /** The decision cards (M3 Step 3), when Sales is served and the API answered. */
+  /** The decision cards (M3 Step 3), when the API answered. */
   readonly cards: DashboardCardsDto | null
-  /** Sales is served on this server: only then are the cards asked for (a released business: never). */
-  readonly cardsServed: boolean
   /** Whether this user hid "You're all set" here (the cookie). */
   readonly allSetHidden: boolean
   /** Whether this user hid "Your product costs are ready" here (its cookie). */
@@ -63,7 +61,6 @@ interface DashboardServerData {
 const ServerData = createContext<DashboardServerData>({
   checklist: null,
   cards: null,
-  cardsServed: false,
   allSetHidden: false,
   costsReadyHidden: false,
   profitReadyHidden: false,
@@ -233,10 +230,9 @@ function DashboardView({ businessId }: { businessId: string }) {
     server.profitReadyHidden,
     PROFIT_READY_HIDDEN_COOKIE,
   )
-  // The decision cards (M3 Step 3): read only while Sales is served.
+  // The decision cards (M3 Step 3; Release A).
   const cards = useQuery({
     ...trpc.dashboard.cards.queryOptions(),
-    enabled: server.cardsServed,
     initialData: server.cards ?? undefined,
   })
   const membership = me?.memberships.find((m) => m.businessId === businessId)
@@ -270,7 +266,7 @@ function DashboardView({ businessId }: { businessId: string }) {
     else costTop = readyOffered && !readyHidden ? 'ready' : null
   }
   const cardsData = cards.data?.data
-  const showCards = server.cardsServed && hasCards(cardsData)
+  const showCards = hasCards(cardsData)
   const beside =
     top === 'checklist' || top === 'loading' || costTop === 'checklist' || costTop === 'loading'
 
@@ -309,7 +305,7 @@ function DashboardView({ businessId }: { businessId: string }) {
           <DecisionCards cards={cardsData} businessId={businessId} context={context} />
         ) : null}
         {/* M3 Step 5: Recent orders and What customers owe, whether or not anything sold yet. */}
-        {server.cardsServed && hasOrderCards(cardsData) ? (
+        {hasOrderCards(cardsData) ? (
           <OrderCards cards={cardsData} businessId={businessId} context={context} />
         ) : null}
         {failed ? (
@@ -328,7 +324,10 @@ function DashboardView({ businessId }: { businessId: string }) {
                 />
               ) : null}
               {costTop === 'loading' ? (
-                <ChecklistSkeleton steps={costIds.length} kind={profitSteps ? 'profit' : 'costs'} />
+                <ChecklistSkeleton
+                  steps={costIds.length}
+                  kind={leadsToProfit(costIds) ? 'profit' : 'costs'}
+                />
               ) : null}
               {top === 'checklist' ? <Checklist businessId={businessId} items={items} /> : null}
               {top === 'loading' ? <ChecklistSkeleton steps={steps.length} /> : null}
