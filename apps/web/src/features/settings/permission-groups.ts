@@ -87,10 +87,14 @@ const KEY_CAPABILITY: Readonly<Partial<Record<PermissionKey, string>>> = {
 /**
  * Settings keys that only mean something with one of these modules on: hidden (and kept as they are)
  * without any. Closing the books: purchases, expenses, sales and orders (their deliveries and
- * refunds, and what customers pay on them) obey the date (D-176, D-201, D-236; Release A).
+ * refunds, and what customers pay on them) obey the date (D-176, D-201, D-236; Release A). Managing
+ * documents goes with Quotations or Invoices (M3 Step 7).
  */
 const KEY_MODULES: Readonly<Partial<Record<PermissionKey, readonly string[]>>> = {
   'settings.books.close': ['purchases', 'expenses', 'sales', 'orders'],
+  // Settings → Documents (M3 Step 7): numbers, the letterhead and the signature of quotations and
+  // invoices.
+  'settings.documents.manage': ['quotations', 'invoices'],
 }
 
 /** Groups that belong to Dashboard and Settings, which every business has. */

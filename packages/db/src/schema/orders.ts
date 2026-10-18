@@ -67,6 +67,12 @@ export const orders = tenantTable(
     // The discount on the whole order, as typed (a % or an amount; computeSale splits it).
     discountPercent: percent('discount_percent'),
     discountAmount: money('discount_amount'),
+    // "Round the total" (D-221; M3 Step 7, carried from the quotation it was made from): the total with
+    // VAT wanted, the adjustment before VAT it came to and the fils no VAT rate could reach. What the
+    // customer owes is total + rounding difference.
+    roundTo: money('round_to'),
+    adjustment: money('adjustment').notNull().default('0'),
+    roundingDifference: money('rounding_difference').notNull().default('0'),
     subtotal: money('subtotal').notNull().default('0'),
     discountTotal: money('discount_total').notNull().default('0'),
     netTotal: money('net_total').notNull().default('0'),
@@ -114,6 +120,10 @@ export const orders = tenantTable(
       'orders_discount_check',
       sql`num_nonnulls(discount_percent, discount_amount) <= 1
         and discount_percent between 0 and 100 and discount_amount >= 0`,
+    ),
+    check(
+      'orders_round_check',
+      sql`round_to >= 0 and (round_to is not null or (adjustment = 0 and rounding_difference = 0))`,
     ),
     check(
       'orders_delivery_check',
@@ -179,7 +189,12 @@ export const orderLines = tenantTable(
     index('order_lines_order_idx').on(t.businessId, t.orderId),
     index('order_lines_product_idx').on(t.businessId, t.productId),
     check('order_lines_kind_check', sql`kind in ('item', 'delivery')`),
-    check('order_lines_product_check', sql`(kind = 'item') = (product_id is not null)`),
+    // An item is a product or service, or typed (M3 Step 7, Q21: from a quotation; it names itself).
+    check(
+      'order_lines_product_check',
+      sql`(kind = 'item' or product_id is null)
+        and (product_id is not null or kind <> 'item' or description is not null)`,
+    ),
     check(
       'order_lines_delivery_check',
       sql`kind <> 'delivery' or (qty = 1 and unit is null

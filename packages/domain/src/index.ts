@@ -63,12 +63,15 @@ export { proportionOf, splitByWeights, subtractDecimals, sumDecimals } from './d
 export {
   computeSale,
   pintLineOf,
+  printedSubtotal,
   ROUNDING_DIFFERENCE_MINOR_UNITS,
   roundTheTotalError,
   SALE_LINE_KINDS,
   saleError,
   solveRoundAmount,
   type PintLine,
+  type PrintedSubtotal,
+  type PrintedTotalsLine,
   type RoundTheTotal,
   type RoundTheTotalErrorCode,
   type SaleAmounts,
@@ -101,6 +104,54 @@ export {
   type CreditMade,
   type CreditRequest,
 } from './documents/credit'
+// Billing in parts and payment stages (M3 Step 7, Q22): never above what is left, the last part
+// exactly the rest; a quotation's stages share its total exactly.
+export {
+  billingError,
+  billingState,
+  billPart,
+  PAYMENT_STAGE_PERCENT_DECIMALS,
+  PAYMENT_STAGES_MAX,
+  paymentStageAmounts,
+  paymentStagesError,
+  type BillingErrorCode,
+  type BillingPart,
+  type BillingState,
+  type BillPlan,
+  type PaymentStagesErrorCode,
+} from './documents/billing'
+// Quotations (M3 Step 7, Q21–Q25): draft → sent → accepted or declined, revisions frozen once sent;
+// the letterhead's accent colours.
+export {
+  DOCUMENT_ACCENT_DEFAULT,
+  DOCUMENT_ACCENT_KEYS,
+  DOCUMENT_ACCENTS,
+  isDocumentAccent,
+  QUOTATION_ACTIONS,
+  QUOTATION_LIST_STATUSES,
+  QUOTATION_STATUSES,
+  QUOTATION_VALID_DAYS_DEFAULT,
+  QUOTATION_VALID_DAYS_MAX,
+  quotationActions,
+  quotationListStatus,
+  quotationTransition,
+  type DocumentAccent,
+  type QuotationAction,
+  type QuotationActionContext,
+  type QuotationListStatus,
+  type QuotationRefusal,
+  type QuotationStatus,
+  type QuotationTransition,
+} from './documents/quotation'
+// A quotation's areas or rooms (the owner's round of 2026-10-18, D-299): each area's lines together.
+export {
+  areaBlocks,
+  areaKey,
+  areaNames,
+  groupByArea,
+  type AreaBlock,
+  type AreaLine,
+} from './documents/areas'
 // Orders (M3 Step 5): Pending → Delivered or Cancelled, Undo delivery (Q16); document numbers.
 export {
   DOCUMENT_COUNTER_DEFAULTS,

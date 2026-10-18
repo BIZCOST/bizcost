@@ -52,8 +52,11 @@ export default async function DashboardLayout({
       if (other) redirect(other.href)
     } else {
       const wantsChecklist =
-        checklistItemIds(context.capabilities, (key) => can(context, key)).length > 0 ||
-        costStepIdsFor(context).length > 0
+        checklistItemIds(
+          context.capabilities,
+          (key) => can(context, key),
+          (id) => context.modules.some((module) => module.id === id),
+        ).length > 0 || costStepIdsFor(context).length > 0
       ;[checklist, cards] = await Promise.all([
         wantsChecklist ? getDashboardChecklist(businessId) : null,
         getDashboardCards(businessId),

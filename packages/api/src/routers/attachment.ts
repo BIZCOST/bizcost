@@ -58,15 +58,25 @@ const ACCESS: Readonly<
     ],
     manage: [['orders', 'orders.documents.manage']],
   },
+  // M3 Step 7: a quotation's files (the signed copy, added by whoever prepares it or records the
+  // answer) and a line's picture (by whoever prepares it, only while the quotation is a draft).
+  quotation: {
+    view: [['quotations', 'quotations.documents.view']],
+    manage: [
+      ['quotations', 'quotations.documents.manage'],
+      ['quotations', 'quotations.documents.decide'],
+    ],
+  },
+  quotation_line: {
+    view: [['quotations', 'quotations.documents.view']],
+    manage: [['quotations', 'quotations.documents.manage']],
+  },
 }
 
+const ALL = Object.values(ACCESS)
 const files = businessProcedure.use(requireModule('files'))
-const viewAny = files.use(
-  requireAnyAccess(...ACCESS.purchase.view, ...ACCESS.expense.view, ...ACCESS.order.view),
-)
-const manageAny = files.use(
-  requireAnyAccess(...ACCESS.purchase.manage, ...ACCESS.expense.manage, ...ACCESS.order.manage),
-)
+const viewAny = files.use(requireAnyAccess(...ALL.flatMap((access) => access.view)))
+const manageAny = files.use(requireAnyAccess(...ALL.flatMap((access) => access.manage)))
 
 const mayView = (ctx: BusinessCtx, entity: AttachmentEntity) =>
   assertAnyAccess(ctx, ACCESS[entity].view)

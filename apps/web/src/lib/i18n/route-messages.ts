@@ -152,6 +152,24 @@ export const ORDERS_MESSAGES: readonly MessageSpec[] = [
 ]
 
 /**
+ * Quotations (M3 Step 7; its layout): their own words (documents), the orders messages (the customer
+ * picker and form, an order made from a quotation), a sale's list, branch and "incl. VAT" words, the catalog's
+ * words and the unit names (a line names a product or service, typed or picked, and "Save as a work
+ * item" opens the product form), and the purchasing words of the shared document parts and files.
+ */
+export const QUOTATIONS_MESSAGES: readonly MessageSpec[] = [
+  { namespace: 'documents', paths: ['quotations'] },
+  'orders',
+  { namespace: 'sales', paths: ['list', 'editor.location', 'view.inclVat'] },
+  'catalog',
+  'units',
+  {
+    namespace: 'purchasing',
+    paths: ['editor', 'view.discountPercent', 'view.discountAmount', 'receipts'],
+  },
+]
+
+/**
  * Customers (M3 Step 5; its layout): the orders messages (customers, their orders, payments and what
  * they owe), the catalog's list and form words, and the sales words of a customer's sales.
  */
@@ -189,7 +207,12 @@ export const MEMBER_ACCESS_MESSAGES: readonly MessageSpec[] = ['modules']
 export const SETTINGS_SECTION_MESSAGES: Readonly<Record<SettingsSection, readonly MessageSpec[]>> =
   {
     // The sections switching VAT turns on or off, by name.
-    business: ['modules', { namespace: 'setup', paths: ['review.alsoOn', 'review.alsoOff'] }],
+    // M3 Step 7: the emirates of the address (with Quotations or Invoices on).
+    business: [
+      'modules',
+      { namespace: 'setup', paths: ['review.alsoOn', 'review.alsoOff'] },
+      { namespace: 'documents', paths: ['emirates'] },
+    ],
     locations: [],
     // The note on a solo business, the invite form's email and "confirm it's you" (ownership).
     members: [
@@ -219,4 +242,9 @@ export const SETTINGS_SECTION_MESSAGES: Readonly<Record<SettingsSection, readonl
       { namespace: 'catalog', paths: ['numbers'] },
     ],
     language: [],
+    // Settings → Documents (M3 Step 7): the letterhead preview's emirates and the numbers' messages.
+    documents: [
+      { namespace: 'documents', paths: ['emirates'] },
+      { namespace: 'catalog', paths: ['numbers'] },
+    ],
   }

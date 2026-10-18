@@ -29,6 +29,16 @@ const nextConfig: NextConfig = {
     '@bizcost/tokens',
   ],
   headers: async () => [{ source: '/:path*', headers: securityHeaders }],
+  // The documents' PDFs (M3 Step 7, D-224) render in a worker thread of the API function, from files
+  // the bundler never sees: the worker, the template, the four IBM Plex fonts and the Typst compiler's
+  // WebAssembly. They are traced into the function so a deployed build has them next to it.
+  outputFileTracingIncludes: {
+    '/api/trpc/[trpc]': [
+      '../../packages/api/src/documents/pdf/**/*',
+      '../../node_modules/@myriaddreamin/typst.ts/**/*',
+      '../../node_modules/@myriaddreamin/typst-ts-web-compiler/**/*',
+    ],
+  },
 }
 
 export default nextConfig

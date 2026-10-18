@@ -4,6 +4,7 @@ import {
   CalendarCheckIcon,
   ChartLineIcon,
   ClipboardListIcon,
+  FileTextIcon,
   HandCoinsIcon,
   LayoutDashboardIcon,
   LayoutGridIcon,
@@ -53,9 +54,16 @@ const NAV_ICONS: Readonly<Record<string, LucideIcon>> = {
   'user-round-plus': UserRoundPlusIcon,
   'clipboard-list': ClipboardListIcon,
   wallet: WalletIcon,
+  // Quotations (M3 Step 7; the dev-only preview until Release B, Step 9).
+  'file-text': FileTextIcon,
 }
 
 export const FALLBACK_NAV_ICON: LucideIcon = LayoutGridIcon
+
+/** Whether the shell has its own icon for `name` (not the neutral one). */
+export function hasNavIcon(name: string): boolean {
+  return name in NAV_ICONS
+}
 
 export function navIcon(name: string): LucideIcon {
   return NAV_ICONS[name] ?? FALLBACK_NAV_ICON

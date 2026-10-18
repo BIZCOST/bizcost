@@ -6,8 +6,19 @@ import { tenantTable } from './_helpers'
 
 const quoted = (values: readonly string[]) => sql.raw(values.map((v) => `'${v}'`).join(', '))
 
-/** What an upload is for: the business logo (M1), or a file attached to a record (M2 Step 3). */
-export type FileUploadPurpose = 'logo' | 'attachment'
+/**
+ * What an upload is for: the business logo (M1), a file attached to a record (M2 Step 3), the
+ * signature and the stamp printed on the business's documents (images, M3 Step 7), or an issued
+ * document's PDF that the server stores itself (M3 Step 7, for Step 8's issued copies).
+ */
+export const FILE_UPLOAD_PURPOSES = [
+  'logo',
+  'attachment',
+  'signature',
+  'stamp',
+  'document',
+] as const
+export type FileUploadPurpose = (typeof FILE_UPLOAD_PURPOSES)[number]
 /** issued: the signed upload URL may still be used · used: saved (e.g. as the logo) · discarded. */
 export type FileUploadStatus = 'issued' | 'used' | 'discarded'
 
@@ -20,7 +31,8 @@ export type FileUploadStatus = 'issued' | 'used' | 'discarded'
 export const fileUploads = tenantTable(
   'file_uploads',
   {
-    // {business_id}/logo/{uuidv7}.{ext}, or {business_id}/{entity}/{uuidv7}.{ext} for an attachment.
+    // {business_id}/{purpose}/{uuidv7}.{ext} (logo, signature, stamp, document), or
+    // {business_id}/{entity}/{uuidv7}.{ext} for an attachment.
     path: text('path').notNull(),
     purpose: text('purpose').$type<FileUploadPurpose>().notNull(),
     contentType: text('content_type').notNull(),
@@ -32,7 +44,7 @@ export const fileUploads = tenantTable(
     unique('file_uploads_business_id_path_key').on(t.businessId, t.path),
     // The hourly limit counts a business's uploads of the last hour.
     index('file_uploads_created_idx').on(t.businessId, t.createdAt),
-    check('file_uploads_purpose_check', sql`purpose in ('logo', 'attachment')`),
+    check('file_uploads_purpose_check', sql`purpose in (${quoted(FILE_UPLOAD_PURPOSES)})`),
     check('file_uploads_status_check', sql`status in ('issued', 'used', 'discarded')`),
     check('file_uploads_path_check', sql`starts_with(path, business_id::text || '/')`),
   ],
@@ -64,6 +76,11 @@ export const attachments = tenantTable(
       sql`btrim(file_name) <> '' and char_length(file_name) <= 200`,
     ),
     check('attachments_size_check', sql`size_bytes > 0`),
+    // A quotation line's picture prints in its PDF: images only (M3 Step 7).
+    check(
+      'attachments_line_image_check',
+      sql`entity <> 'quotation_line' or content_type in ('image/png', 'image/jpeg', 'image/webp')`,
+    ),
   ],
 )
 

@@ -1,5 +1,8 @@
 import { randomBytes } from 'node:crypto'
 import type {
+  DocumentImageUploadUrlDto,
+  DocumentSettingsDto,
+  QuotationDto,
   CustomerDto,
   OrderDto,
   AttachmentUploadUrlDto,
@@ -473,6 +476,53 @@ async function newChannel(): Promise<SalesChannelDto> {
       }),
     )
   ).data
+}
+
+/** A quotation of the tenant's customer (M3 Step 7): a product line and a typed one. */
+function quotationInput(extra: object = {}) {
+  return {
+    id: newId(),
+    customerId: tenant.customer.id,
+    businessDate: tenant.sale.businessDate,
+    locationId: tenant.branch.id,
+    lines: [
+      { id: newId(), productId: tenant.product.id, qty: '1', unitPrice: '15.5' },
+      { id: newId(), productId: null, description: 'Fitting', qty: '2', unitPrice: '5' },
+    ],
+    ...extra,
+  }
+}
+
+async function newQuotation(state: 'draft' | 'sent' | 'accepted' = 'draft'): Promise<QuotationDto> {
+  const created = await ok(
+    call<QuotationDto>(tenant.owner, 'quotation.create', 'mutation', quotationInput()),
+  )
+  if (state === 'draft') return created
+  const sent = await ok(
+    call<QuotationDto>(tenant.owner, 'quotation.send', 'mutation', {
+      id: created.id,
+      version: created.version,
+    }),
+  )
+  if (state === 'sent') return sent
+  return ok(
+    call<QuotationDto>(tenant.owner, 'quotation.accept', 'mutation', {
+      id: sent.id,
+      version: sent.version,
+    }),
+  )
+}
+
+/** A signature uploaded for Settings → Documents, not saved yet: its path. */
+async function uploadedSignature(): Promise<string> {
+  const upload = await ok(
+    call<DocumentImageUploadUrlDto>(tenant.owner, 'document.imageUploadUrl', 'mutation', {
+      kind: 'signature',
+      contentType: 'image/png',
+    }),
+  )
+  expect((await uploadTo(upload.uploadUrl, PNG, 'image/png')).ok).toBe(true)
+  return upload.path
 }
 
 async function asOwner(path: string, input?: unknown): Promise<Done> {
@@ -1197,6 +1247,108 @@ const AUDIT: Record<string, AuditProbe> = {
   },
   'order.undoDelivery': {
     run: async () => asOwner('order.undoDelivery', { id: (await newOrder(true)).id }),
+  },
+  // Quotations and Settings → Documents (M3 Step 7, previewed: D-125).
+  'quotation.create': { run: () => asOwner('quotation.create', quotationInput()) },
+  'quotation.update': {
+    run: async () => {
+      const quotation = await newQuotation()
+      const fields: Record<string, unknown> = quotationInput({ notes: 'Changed' })
+      delete fields.id
+      return asOwner('quotation.update', {
+        ...fields,
+        id: quotation.id,
+        version: quotation.version,
+      })
+    },
+  },
+  'quotation.discard': {
+    run: async () => {
+      const quotation = await newQuotation()
+      return asOwner('quotation.discard', { id: quotation.id, version: quotation.version })
+    },
+  },
+  'quotation.send': {
+    run: async () => {
+      const quotation = await newQuotation()
+      return asOwner('quotation.send', { id: quotation.id, version: quotation.version })
+    },
+  },
+  'quotation.accept': {
+    run: async () => {
+      const quotation = await newQuotation('sent')
+      return asOwner('quotation.accept', { id: quotation.id, version: quotation.version })
+    },
+  },
+  'quotation.decline': {
+    run: async () => {
+      const quotation = await newQuotation('sent')
+      return asOwner('quotation.decline', { id: quotation.id, version: quotation.version })
+    },
+  },
+  'quotation.revise': {
+    run: async () =>
+      asOwner('quotation.revise', { id: (await newQuotation('sent')).id, newId: newId() }),
+  },
+  'quotation.copy': {
+    run: async () => asOwner('quotation.copy', { id: (await newQuotation()).id, newId: newId() }),
+  },
+  'quotation.toOrder': {
+    run: async () =>
+      asOwner('quotation.toOrder', {
+        id: (await newQuotation('accepted')).id,
+        orderId: newId(),
+        channelId: tenant.channel.id,
+      }),
+  },
+  // Counted in document_renders (the rate limit): an audited row.
+  'quotation.pdf': {
+    run: async () => asOwner('quotation.pdf', { id: (await newQuotation()).id }),
+  },
+  'document.updateSettings': {
+    run: async () => {
+      const current = await ok(
+        call<DocumentSettingsDto>(tenant.owner, 'document.settings', 'query'),
+      )
+      return asOwner('document.updateSettings', {
+        version: current.version,
+        series: [{ series: 'order', prefix: 'ORD-', padding: 0 }],
+        footer: `Bank ${newId()}`,
+        quotationTerms: null,
+        quotationValidDays: 10,
+        accent: 'green',
+        watermark: true,
+        wholeAmounts: true,
+        signatory: 'Audit signatory',
+      })
+    },
+  },
+  'document.imageUploadUrl': {
+    run: () => asOwner('document.imageUploadUrl', { kind: 'stamp', contentType: 'image/png' }),
+  },
+  'document.setImage': {
+    run: async () =>
+      asOwner('document.setImage', { kind: 'signature', path: await uploadedSignature() }),
+  },
+  'document.removeImage': {
+    run: async () => {
+      await ok(
+        call(tenant.owner, 'document.setImage', 'mutation', {
+          kind: 'stamp',
+          path: await (async () => {
+            const upload = await ok(
+              call<DocumentImageUploadUrlDto>(tenant.owner, 'document.imageUploadUrl', 'mutation', {
+                kind: 'stamp',
+                contentType: 'image/png',
+              }),
+            )
+            expect((await uploadTo(upload.uploadUrl, PNG, 'image/png')).ok).toBe(true)
+            return upload.path
+          })(),
+        }),
+      )
+      return asOwner('document.removeImage', { kind: 'stamp' })
+    },
   },
   'customerPayment.record': {
     run: async () =>

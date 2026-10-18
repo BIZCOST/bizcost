@@ -129,7 +129,9 @@ const DASHBOARD = {
 // Settings includes Locations (PRODUCT.md §7). Its nav entry has no permission: every member reaches
 // their own profile and language there; each section checks its own key. Closing the books
 // (`settings.books.close`, D-114 rule 6) is a Settings key since M2 Step 7 (D-201): purchases and
-// expenses both obey the date, so it works with either of them on.
+// expenses both obey the date, so it works with either of them on. Settings → Documents (numbers, the
+// letterhead, the signature: `settings.documents.manage`, the Owner and the Admin, M3 Step 7) is
+// served only while Quotations or Invoices is.
 const SETTINGS = {
   id: 'settings',
   kind: 'core',
@@ -145,6 +147,7 @@ const SETTINGS = {
     'settings.roles.manage',
     'settings.modules.manage',
     'settings.books.close',
+    'settings.documents.manage',
   ],
   nav: [
     {
@@ -648,6 +651,40 @@ const REPORTS = {
   requiresCapabilities: [],
 } as const satisfies ModuleManifest
 
+// Quotations (M3 Step 7; planned until Release B, M3 Step 9: served only under the dev-only preview,
+// D-125): a customer's quotation with revisions frozen once sent, numbered Q-0001…, as a PDF on the
+// business's own letterhead (Q21–Q25; the owner's document requests of 2026-10-16). Its keys and nav
+// come with its build (D-124). `quotations.documents.view` sees the business's quotations (in one's
+// branches, Q12); `.manage` prepares, sends, revises, copies, discards and turns an accepted one into
+// an order; `.decide` records the customer's answer (accepted or declined). Prices are not sensitive
+// (D-187). "+ New quotation" comes with Release B. It needs Products & Services (its lines) and
+// Customers ("Dear …").
+const QUOTATIONS = {
+  id: 'quotations',
+  kind: 'optional',
+  availability: 'planned',
+  phase: 3,
+  deps: ['products', 'customers'],
+  permissionKeys: [
+    'quotations.documents.view',
+    'quotations.documents.manage',
+    'quotations.documents.decide',
+  ],
+  nav: [
+    {
+      id: 'quotations',
+      labelKey: 'nav.quotations',
+      path: 'quotations',
+      icon: 'file-text',
+      group: 'sales',
+      permission: 'quotations.documents.view',
+    },
+  ],
+  quickActions: [],
+  sensitiveFields: [],
+  requiresCapabilities: [],
+} as const satisfies ModuleManifest
+
 interface PlannedManifest extends ModuleManifest {
   readonly availability: 'planned'
   readonly permissionKeys: readonly []
@@ -696,7 +733,7 @@ export const MODULES = [
   CUSTOMERS,
   PAYMENTS,
   REPORTS,
-  planned('quotations', 'optional', 3, { deps: ['products', 'customers'] }),
+  QUOTATIONS,
   // No requiresCapabilities: a business that is not VAT-registered sends plain invoices (§6.6).
   planned('invoices', 'optional', 3, { deps: ['products', 'customers', 'payments'] }),
   planned('inventory', 'optional', 4, {

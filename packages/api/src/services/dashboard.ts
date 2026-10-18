@@ -58,6 +58,7 @@ interface FactsRow extends Record<string, unknown> {
   legal_name_ar: string | null
   has_logo: boolean
   trn: string | null
+  has_address: boolean
   active_members: number
   pending_invitations: number
   locations: number
@@ -76,6 +77,7 @@ async function readFacts(tx: Tx, businessId: string, memberId: string): Promise<
       b.legal_name_ar,
       b.logo_path is not null as has_logo,
       b.trn,
+      (coalesce(btrim(b.address_line), '') <> '' or coalesce(btrim(b.city), '') <> '') as has_address,
       (select count(*)::int from app.business_members m
         where m.business_id = b.id and m.status = 'active' and m.deleted_at is null) as active_members,
       (select count(*)::int from app.business_invitations i
@@ -100,6 +102,7 @@ async function readFacts(tx: Tx, businessId: string, memberId: string): Promise<
     legalNameAr: row.legal_name_ar,
     hasLogo: row.has_logo,
     trn: row.trn,
+    hasAddress: row.has_address,
     activeMembers: row.active_members,
     pendingInvitations: row.pending_invitations,
     locations: row.locations,
@@ -252,7 +255,7 @@ async function readSaleFacts(
  */
 export async function getChecklist(ctx: BusinessCtx): Promise<DashboardChecklistDto> {
   const holds = (key: PermissionKey) => can(ctx.access.effective, key)
-  const ids = checklistItemIds(ctx.access.capabilities, holds)
+  const ids = checklistItemIds(ctx.access.capabilities, holds, (id) => passes(ctx, [id]))
   const costIds = costStepIds({
     active: (id) => passes(ctx, [id]),
     can: holds,

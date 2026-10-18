@@ -2,6 +2,7 @@ import {
   ATTACHMENT_MAX_BYTES,
   ATTACHMENT_URL_TTL_SECONDS,
   ATTACHMENTS_PER_RECORD_MAX,
+  QUOTATION_LINE_PICTURES_MAX,
   type addAttachmentInput,
   type AttachmentContentType,
   type AttachmentDto,
@@ -26,6 +27,7 @@ import {
 import type { BusinessCtx } from '../business-context'
 import type { ApiConfig } from '../deps'
 import { AppError } from '../errors'
+import { printableImageType } from './document-files'
 import { isoOf, uuidArray } from './stock'
 
 // Attachments (ROADMAP.md M2 Step 3; DATA_MODEL.md §6 Files; D-030, D-085): files attached to a
@@ -58,7 +60,24 @@ const RECORD_TABLES: Readonly<Record<AttachmentEntity, ReturnType<typeof sql.raw
   expense: sql.raw('app.expenses'),
   // M3 Step 5: an order's files (the customer's LPO, a photo of the order).
   order: sql.raw('app.orders'),
+  // M3 Step 7: a quotation's files (the customer's signed copy, drawings), and a line's picture.
+  quotation: sql.raw('app.quotations'),
+  quotation_line: sql.raw('app.quotation_lines'),
 }
+
+/** Only images print in a quotation's picture column (the database holds the same). */
+const IMAGE_TYPES: ReadonlySet<AttachmentContentType> = new Set([
+  'image/png',
+  'image/jpeg',
+  'image/webp',
+])
+
+/** Entities whose files are seen by whoever sees the record (prices are not sensitive, D-187). */
+const OPEN_ENTITIES: ReadonlySet<AttachmentEntity> = new Set(['quotation', 'quotation_line'])
+
+/** The most files one record of `entity` may have. */
+const maxFilesOf = (entity: AttachmentEntity) =>
+  entity === 'quotation_line' ? QUOTATION_LINE_PICTURES_MAX : ATTACHMENTS_PER_RECORD_MAX
 
 /** Storage's signed upload URLs work for 2 hours; the registry closes the path at the same time. */
 const UPLOAD_URL_TTL_MS = 2 * 60 * 60 * 1000
@@ -109,6 +128,10 @@ async function assertRecord(
   // The attachments table's trigger checks the same (DATA_MODEL.md §6).
   const table = RECORD_TABLES[entity]
   if (!table) throw new AppError('not_found')
+  if (entity === 'quotation' || entity === 'quotation_line') {
+    await assertQuotationRecord(tx, businessId, entity, id, { lock, change, orders })
+    return
+  }
   // An order of another branch, for a member limited to some branches (Q12): as if it did not exist.
   const branches =
     entity === 'order' && orders && !orders.scope.all
@@ -134,6 +157,44 @@ async function assertRecord(
     (!row.mine || (row.status !== 'draft' && row.status !== 'rejected'))
   ) {
     throw new AppError('forbidden')
+  }
+}
+
+/**
+ * A quotation, or a quotation's line (M3 Step 7): a live one of this business, in the caller's
+ * branches when they are limited to some (Q12; NOT_FOUND otherwise). With `change`, a line's picture
+ * changes only while its quotation is a draft (QUOTATION_FROZEN: a sent revision prints as it was
+ * sent); a quotation's own files (a signed copy) may be added once it is sent too. `lock` locks the
+ * quotation FOR NO KEY UPDATE (a discard of it waits, or this finds it discarded).
+ */
+async function assertQuotationRecord(
+  tx: Tx,
+  businessId: string,
+  entity: 'quotation' | 'quotation_line',
+  id: string,
+  { lock, change, orders }: { lock: boolean; change: boolean; orders: OrderAccess | undefined },
+) {
+  const branches =
+    orders && !orders.scope.all
+      ? sql`and q.location_id = any(${uuidArray([...orders.scope.ids])})`
+      : sql``
+  const forLock = lock ? sql`for no key update of q` : sql``
+  const [row] = (await tx.execute(
+    entity === 'quotation'
+      ? sql`
+        select q.status from app.quotations q
+         where q.business_id = ${businessId} and q.id = ${id} and q.deleted_at is null ${branches}
+         ${forLock}`
+      : sql`
+        select q.status from app.quotation_lines l
+          join app.quotations q on q.business_id = l.business_id and q.id = l.quotation_id
+         where l.business_id = ${businessId} and l.id = ${id} and l.deleted_at is null
+           and q.deleted_at is null ${branches}
+         ${forLock}`,
+  )) as unknown as { status: string }[]
+  if (!row) throw new AppError('not_found')
+  if (change && entity === 'quotation_line' && row.status !== 'draft') {
+    throw new AppError('quotation_frozen')
   }
 }
 
@@ -201,6 +262,9 @@ export async function attachmentUploadUrl(
   ctx: BusinessCtx,
   input: UploadInput,
 ): Promise<AttachmentUploadUrlDto> {
+  if (input.entity === 'quotation_line' && !IMAGE_TYPES.has(input.contentType)) {
+    throw new AppError('validation', { message: 'contentType: a line picture is an image' })
+  }
   const path = `${ctx.businessId}/${input.entity}/${newId()}.${EXTENSION_OF[input.contentType]}`
   const expired = await ctx.tx(async (tx) => {
     await assertRecord(tx, ctx.businessId, input.entity, input.entityId, {
@@ -209,8 +273,7 @@ export async function attachmentUploadUrl(
       orders: orderAccess(ctx),
     })
     if (
-      (await countOn(tx, ctx.businessId, input.entity, input.entityId)) >=
-      ATTACHMENTS_PER_RECORD_MAX
+      (await countOn(tx, ctx.businessId, input.entity, input.entityId)) >= maxFilesOf(input.entity)
     ) {
       throw new AppError('validation', { message: 'too many files on this record' })
     }
@@ -270,14 +333,17 @@ async function recordsOf(
 
 /**
  * Signed download URLs of the business's own attachment paths, only for a member who may see
- * supplier prices (the redactor removes `url` for the others anyway). Storage failing leaves them
- * null (reported).
+ * supplier prices (the redactor removes `url` for the others anyway), but a quotation's and its lines'
+ * for whoever sees the quotation (no prices paid on them, D-187). Storage failing leaves them null
+ * (reported).
  */
 async function urlsFor(ctx: BusinessCtx, records: readonly AttachmentRecord[]) {
-  if (records.length === 0 || !ctx.access.visibleCategories.has('supplier_price')) return new Map()
+  const pricesSeen = ctx.access.visibleCategories.has('supplier_price')
   const own = records
+    .filter((r) => pricesSeen || OPEN_ENTITIES.has(r.entity))
     .filter((r) => attachmentPathPattern(ctx.businessId, r.entity).test(r.path))
     .map((r) => r.path)
+  if (own.length === 0) return new Map<string, string>()
   try {
     return await signedDownloadUrls(ctx.config, own, ATTACHMENT_URL_TTL_SECONDS)
   } catch (error) {
@@ -295,6 +361,7 @@ function toDto(record: AttachmentRecord, urls: Map<string, string>): AttachmentD
     contentType: record.content_type,
     sizeBytes: record.size_bytes,
     url: urls.get(record.path) ?? null,
+    openUrl: OPEN_ENTITIES.has(record.entity) ? (urls.get(record.path) ?? null) : null,
     createdAt: isoOf(record.created_at),
   }
 }
@@ -328,7 +395,8 @@ async function discard(ctx: BusinessCtx, path: string): Promise<void> {
  * `attachment.add` (the record's "manage" key): attaches an uploaded file. The path must be an
  * attachment path of this business for this kind of record (VALIDATION) that attachment.uploadUrl
  * issued and that was not attached or refused since; the object must exist, be at most 10 MB and be a
- * PNG, JPEG, WebP or PDF whose first bytes, stored type and extension agree (ATTACHMENT_INVALID
+ * PNG, JPEG, WebP or PDF whose first bytes, stored type and extension agree, and a quotation line's
+ * picture an image the PDF compiler decodes within the PDFs' image limits (ATTACHMENT_INVALID
  * otherwise, and the object is removed).
  */
 export async function addAttachment(
@@ -366,10 +434,17 @@ export async function addAttachment(
     object.bytes.byteLength > ATTACHMENT_MAX_BYTES ||
     !sniffed ||
     EXTENSION_OF[sniffed] !== match[1] ||
-    storedType !== sniffed
+    storedType !== sniffed ||
+    (input.entity === 'quotation_line' && !IMAGE_TYPES.has(sniffed))
   ) {
     await discard(ctx, input.path)
     throw new AppError('attachment_invalid', { message: 'not an allowed file' })
+  }
+  // A line's picture prints on the quotation's PDF: it must be an image the PDF compiler decodes,
+  // within the PDFs' image limits (D-295).
+  if (input.entity === 'quotation_line' && (await printableImageType(object.bytes)) !== sniffed) {
+    await discard(ctx, input.path)
+    throw new AppError('attachment_invalid', { message: 'not an image a document can print' })
   }
   const records = await ctx.tx(async (tx) => {
     // The upload is closed only while it is still open: two adds of one path wait for each other
@@ -400,8 +475,7 @@ export async function addAttachment(
       orders: orderAccess(ctx),
     })
     if (
-      (await countOn(tx, ctx.businessId, input.entity, input.entityId)) >=
-      ATTACHMENTS_PER_RECORD_MAX
+      (await countOn(tx, ctx.businessId, input.entity, input.entityId)) >= maxFilesOf(input.entity)
     ) {
       throw new AppError('validation', { message: 'too many files on this record' })
     }

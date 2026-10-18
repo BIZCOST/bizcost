@@ -59,6 +59,13 @@ const TRPC_CODE_OF: Record<AppErrorCode, TRPC_ERROR_CODE_KEY> = {
   order_cancelled: 'CONFLICT',
   below_paid: 'BAD_REQUEST',
   payment_has_money_back: 'CONFLICT',
+  quotation_frozen: 'CONFLICT',
+  quotation_not_sent: 'CONFLICT',
+  quotation_superseded: 'CONFLICT',
+  quotation_decided: 'CONFLICT',
+  quotation_not_accepted: 'CONFLICT',
+  quotation_has_order: 'CONFLICT',
+  series_started: 'CONFLICT',
   internal: 'INTERNAL_SERVER_ERROR',
 }
 

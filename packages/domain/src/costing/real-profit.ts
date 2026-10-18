@@ -645,6 +645,12 @@ export interface SaleLineProfitInput {
   readonly cost: SaleLineCost
   /** A product sold while Materials was on: without a recipe its profit is incomplete. */
   readonly materialsRequired: boolean
+  /**
+   * A typed line (M3 Step 7, Q21): something sold that is no saved product or service, typed on a
+   * quotation and carried to its order. It counts in sales and carries its share and fees, with no
+   * materials, and its profit says so (`typedSales`), never "no recipe".
+   */
+  readonly typed?: boolean
   /** Its channel's fees (item lines). */
   readonly fees: ChannelFees
   /** The rate of its month (item lines). */
@@ -673,6 +679,8 @@ export interface SaleLineProfit {
   readonly profit: CostAmount
   /** The share applies and is not in it yet (awaiting sales, or a first month's first days). */
   readonly beforeRunningCosts: boolean
+  /** The sales of typed lines among them (Q21: no materials, said apart); "0" without one. */
+  readonly typedSales: string
   readonly reasons: readonly RealProfitReason[]
   readonly complete: boolean
 }
@@ -693,7 +701,9 @@ export function saleLineProfit(input: SaleLineProfitInput): SaleLineProfit {
         : 'priced') as ProfitMaterialsState,
     amount: priced.length === 0 ? null : add(priced.map((m) => m.cost)),
   }
-  if (isItem && input.materialsRequired && cost.basis === 'none') reasons.add('no_recipe')
+  if (isItem && input.materialsRequired && !input.typed && cost.basis === 'none') {
+    reasons.add('no_recipe')
+  }
   if (unpriced > 0) reasons.add('unpriced_materials')
 
   const fees = isItem ? { state: input.fees.state, amount: feeOf(input.net, input.fees) } : null
@@ -732,6 +742,7 @@ export function saleLineProfit(input: SaleLineProfitInput): SaleLineProfit {
     beforeRunningCosts:
       runningCosts !== null &&
       (runningCosts.state === 'awaiting_sales' || runningCosts.state === 'before_running_costs'),
+    typedSales: isItem && input.typed ? plain(toDec(input.net)) : '0',
     reasons: ordered,
     complete: ordered.length === 0,
   }
@@ -753,6 +764,8 @@ export interface SoldLinesInput {
   readonly unpricedRows: number
   /** Item lines of products sold without a recipe while Materials was on (`no_recipe`). */
   readonly withoutRecipe: number
+  /** Σ of the net of the typed lines among them (Q21); null or "0" without one. */
+  readonly typedNet?: string | null
   /** Σ of the owner's time worked out; null when none is. */
   readonly ownerTime: string | null
   /** Lines with the owner's minutes and no hourly rate yet. */
@@ -825,6 +838,7 @@ export function soldLinesProfit(input: SoldLinesInput): SaleLineProfit {
     beforeRunningCosts:
       runningCosts !== null &&
       (runningCosts.state === 'awaiting_sales' || runningCosts.state === 'before_running_costs'),
+    typedSales: isItem && input.typedNet ? plain(toDec(input.typedNet)) : '0',
     reasons: ordered,
     complete: ordered.length === 0,
   }
@@ -847,6 +861,8 @@ export interface RealProfitSum {
   readonly sales: CostAmount
   /** Σ of the item lines' (what the share and the fees are divided by). */
   readonly itemSales: CostAmount
+  /** Σ of the typed lines' sales among the items (Q21: carried with no materials, said apart). */
+  readonly typedSales: CostAmount
   readonly materials: CostAmount
   readonly fees: CostAmount
   /** Delivery charged (Σ delivery lines), what it cost (Σ entered), and the margin. */
@@ -911,6 +927,7 @@ export function sumRealProfit(
   return {
     sales,
     itemSales: add(lines.filter((l) => l.kind === 'item').map((l) => l.sales)),
+    typedSales: add(lines.map((l) => l.typedSales)),
     materials: add(lines.map((l) => l.materials.amount)),
     fees: add(lines.map((l) => l.fees?.amount ?? null)),
     deliveryCharged,

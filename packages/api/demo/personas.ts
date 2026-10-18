@@ -11,6 +11,7 @@ import {
   WORKSHOP_COSTING,
   type DemoCosting,
 } from './costing-data'
+import { FITOUT_DOCUMENTS, WORKSHOP_DOCUMENTS, type DemoDocuments } from './documents'
 
 // Local demo businesses: one per persona of docs/PRODUCT.md §6.11, with the persona's exact Smart
 // Setup answers (the server recomputes everything from them), an Arabic legal name, a TRN when
@@ -49,6 +50,8 @@ export interface DemoPersona {
   readonly team?: readonly DemoTeamMember[]
   /** Suppliers, materials, products, recipes, purchases, running costs, expenses… (M2). */
   readonly costing?: DemoCosting
+  /** Its letterhead and quotations (M3 Step 7, D-298), for a business that quotes. */
+  readonly documents?: DemoDocuments
 }
 
 const email = (local: string) => `${local}@${DEMO_EMAIL_DOMAIN}`
@@ -145,6 +148,7 @@ export const DEMO_PERSONAS: readonly DemoPersona[] = [
   {
     title: 'Fit-out / decor project company',
     costing: FITOUT_COSTING,
+    documents: FITOUT_DOCUMENTS,
     owner: { email: email('fitout'), name: 'عبدالله الكعبي', locale: 'ar' },
     legalName: 'Modern Touch Interiors',
     legalNameAr: 'لمسة عصرية للديكور',
@@ -278,6 +282,7 @@ export const DEMO_PERSONAS: readonly DemoPersona[] = [
   {
     title: 'Workshop with many jobs (carpentry)',
     costing: WORKSHOP_COSTING,
+    documents: WORKSHOP_DOCUMENTS,
     owner: { email: email('workshop'), name: 'حمد الظاهري', locale: 'ar' },
     legalName: 'Al Itqan Carpentry',
     legalNameAr: 'نجارة الإتقان',

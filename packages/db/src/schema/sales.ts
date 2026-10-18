@@ -383,7 +383,13 @@ export const saleLines = tenantTable(
     unique('sale_lines_sale_id_key').on(t.businessId, t.saleId, t.id),
     index('sale_lines_product_idx').on(t.businessId, t.productId),
     check('sale_lines_kind_check', sql`kind in (${quoted(SALE_LINE_KINDS)})`),
-    check('sale_lines_product_check', sql`(kind = 'item') = (product_id is not null)`),
+    // An item is a product or service, or typed (M3 Step 7, Q21: an order's typed line; it names
+    // itself, counts in sales, carries its share and fees, and uses no materials).
+    check(
+      'sale_lines_product_check',
+      sql`(kind = 'item' or product_id is null)
+        and (product_id is not null or kind <> 'item' or description is not null)`,
+    ),
     check(
       'sale_lines_delivery_check',
       // A refund of the delivery charged takes it back with −1 (M3 Step 5).

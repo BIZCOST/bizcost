@@ -164,6 +164,30 @@ export async function signedDownloadUrls(
   return urls
 }
 
+/**
+ * Writes one new object at `path` from the server (M3 Step 7: an issued document's PDF, Step 8): the
+ * path must be open in the upload registry, as for a signed upload (guard_business_file); never
+ * overwrites.
+ */
+export async function uploadObject(
+  config: ApiConfig,
+  path: string,
+  bytes: Uint8Array,
+  contentType: string,
+): Promise<void> {
+  const { error } = await bucket(config).upload(path, bytes, { contentType, upsert: false })
+  if (error) throw storageFailed('upload', error)
+}
+
+/**
+ * Copies an object to a new path (M3 Step 7: a revised or copied quotation's line pictures): the new
+ * path must be open in the upload registry (guard_business_file); never overwrites.
+ */
+export async function copyObject(config: ApiConfig, from: string, to: string): Promise<void> {
+  const { error } = await bucket(config).copy(from, to)
+  if (error) throw storageFailed('copy', error)
+}
+
 /** Removes objects; a missing one is not an error. */
 export async function removeObjects(config: ApiConfig, paths: readonly string[]): Promise<void> {
   if (paths.length === 0) return

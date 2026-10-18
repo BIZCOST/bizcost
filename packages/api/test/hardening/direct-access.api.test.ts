@@ -1,7 +1,10 @@
 import type {
   AttachmentUploadUrlDto,
   BusinessProfileDto,
+  DocumentImageUploadUrlDto,
+  DocumentSettingsDto,
   LogoUploadUrlDto,
+  QuotationDto,
 } from '@bizcost/contracts'
 import { newId } from '@bizcost/domain'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
@@ -278,13 +281,17 @@ describe('the Auth admin API with a real user token', () => {
 // ---------------------------------------------------------------------------------------------------
 //
 // Each business has objects of every kind the bucket holds: its logo and its receipts (a purchase's
-// and an expense's, M2 Steps 3 and 5), and two uploads the API issued and nobody used (a logo's and a
-// receipt's: the Storage guard would let Storage write there).
+// and an expense's, M2 Steps 3 and 5), its signature (Settings → Documents) and a quotation line's
+// picture (M3 Step 7), and two uploads the API issued and nobody used (a logo's and a receipt's: the
+// Storage guard would let Storage write there). Quotation PDFs are never stored: each is made when
+// asked for and returned (quotation.pdf).
 
 interface Objects {
   logo: string
   purchaseReceipt: string
   expenseReceipt: string
+  signature: string
+  linePicture: string
 }
 
 const objectsOf = new Map<Tenant, Objects>()
@@ -297,12 +304,15 @@ beforeAll(async () => {
   for (const t of [A, B]) {
     const rows = await api.admin<{ id: string; path: string }[]>`
       select id, path from app.attachments
-       where business_id = ${t.id} and id in (${t.attachment.id}, ${t.expenseAttachment.id})`
+       where business_id = ${t.id}
+         and id in (${t.attachment.id}, ${t.expenseAttachment.id}, ${t.linePicture.id})`
     const pathOf = (id: string) => rows.find((r) => r.id === id)?.path ?? ''
     objectsOf.set(t, {
       logo: t.logoPath,
       purchaseReceipt: pathOf(t.attachment.id),
       expenseReceipt: pathOf(t.expenseAttachment.id),
+      signature: t.signaturePath,
+      linePicture: pathOf(t.linePicture.id),
     })
     const receipt = await mutate<AttachmentUploadUrlDto>(api.handler, 'attachment.uploadUrl', {
       token: t.owner.token,
@@ -333,9 +343,11 @@ function png(who: Identity, extra: Record<string, string> = {}) {
   return { headers: headers(who, { 'content-type': 'image/png', ...extra }), body: PNG }
 }
 
+/** Every folder of a business in the bucket. */
+const KINDS = ['logo', 'purchase', 'expense', 'signature', 'stamp', 'quotation', 'quotation_line']
+
 /** New paths of every kind in a business (never issued). */
-const freshPaths = (t: Tenant) =>
-  ['logo', 'purchase', 'expense'].map((kind) => `${t.id}/${kind}/${newId()}.png`)
+const freshPaths = (t: Tenant) => KINDS.map((kind) => `${t.id}/${kind}/${newId()}.png`)
 
 describe('Storage straight from the client, with a real user token', () => {
   const targets = () =>
@@ -349,11 +361,13 @@ describe('Storage straight from the client, with a real user token', () => {
     digests = { A: await tenantDigest(api.admin, A), B: await tenantDigest(api.admin, B) }
   })
 
-  it('every kind of object is there to attack: a logo and two receipts in each business', async () => {
+  it('every kind of object is there to attack: a logo, two receipts, a signature and a picture in each business', async () => {
     for (const t of [A, B]) {
       const objects = objectsOf.get(t)!
       expect(objects.purchaseReceipt).toMatch(new RegExp(`^${t.id}/purchase/`))
       expect(objects.expenseReceipt).toMatch(new RegExp(`^${t.id}/expense/`))
+      expect(objects.signature).toMatch(new RegExp(`^${t.id}/signature/`))
+      expect(objects.linePicture).toMatch(new RegExp(`^${t.id}/quotation_line/`))
       for (const path of pathsOf(t)) expect(await objectEtag(path), path).toBeDefined()
       for (const path of openUploadsOf.get(t)!) expect(await objectEtag(path), path).toBeUndefined()
     }
@@ -362,7 +376,7 @@ describe('Storage straight from the client, with a real user token', () => {
   it.each(IDENTITIES)('lists nothing and reads nothing (%s)', async (who) => {
     for (const [what, target] of targets()) {
       const prefixes = ['', `${target.id}/`]
-      for (const kind of ['logo', 'purchase', 'expense']) {
+      for (const kind of KINDS) {
         prefixes.push(`${target.id}/${kind}/`, `${target.id}/${kind}`)
       }
       for (const prefix of prefixes) {
@@ -619,6 +633,48 @@ describe('signed URLs the API issued', () => {
       )
       await expectConfined(url, own, others)
     }
+  })
+
+  it('a signature’s and a line picture’s download URLs for business A cannot be re-pointed elsewhere', async () => {
+    const settings = await query<DocumentSettingsDto>(api.handler, 'document.settings', {
+      token: A.owner.token,
+      businessId: A.id,
+    })
+    expect(settings.error, settings.raw).toBeUndefined()
+    const signature = objectsOf.get(A)!.signature
+    await expectConfined(
+      settings.data?.signatureUrl ?? '',
+      signature,
+      [...pathsOf(A), ...pathsOf(B), ...openUploadsOf.get(B)!].filter((path) => path !== signature),
+    )
+    const quotation = await query<QuotationDto>(api.handler, 'quotation.get', {
+      token: A.owner.token,
+      businessId: A.id,
+      input: { id: A.quotation.id },
+    })
+    expect(quotation.error, quotation.raw).toBeUndefined()
+    const picture = objectsOf.get(A)!.linePicture
+    await expectConfined(
+      quotation.data?.lines.find((l) => l.picture)?.picture?.url ?? '',
+      picture,
+      [...pathsOf(A), ...pathsOf(B), ...openUploadsOf.get(B)!].filter((path) => path !== picture),
+    )
+  })
+
+  it('a signature’s upload URL for business A cannot write into business B, nor over A’s objects', async () => {
+    const issued = await mutate<DocumentImageUploadUrlDto>(api.handler, 'document.imageUploadUrl', {
+      token: A.owner.token,
+      businessId: A.id,
+      input: { kind: 'signature', contentType: 'image/png' },
+    })
+    expect(issued.error, issued.raw).toBeUndefined()
+    await expectUploadConfined(issued.data!, [
+      ...freshPaths(B),
+      ...openUploadsOf.get(B)!,
+      ...pathsOf(B),
+      ...pathsOf(A),
+      ...openUploadsOf.get(A)!,
+    ])
   })
 
   it('a logo’s upload URL for business A cannot write into business B, nor over A’s objects', async () => {

@@ -10,6 +10,7 @@ import { newId } from '@bizcost/domain'
 import { NO_ADJUSTMENTS, QUESTION_SET_VERSION } from '@bizcost/modules'
 import { DemoApi } from './client'
 import { seedCosting, type CostingResult, type CostingSummary } from './costing'
+import { seedDocuments } from './documents'
 import {
   DEMO_PASSWORD,
   DEMO_PERSONAS,
@@ -26,7 +27,8 @@ import {
 // recipes, posted purchases, returns, payments, running costs and expenses) and its sales (Release A,
 // M3 Step 6): sales channels, Today's sales and One sale, sales files imported and app statements,
 // customers, orders with deposits, deliveries, payments and refunds, over the month before last, last
-// month and this month so far, so each business shows a whole month of real profit.
+// month and this month so far, so each business shows a whole month of real profit. A business that
+// quotes gets its letterhead and a quotation or two (demo/documents.ts; Quotations previewed, D-125).
 
 interface Row {
   business: string
@@ -202,7 +204,21 @@ async function seedPersona(
     state: created ? 'created' : 'exists',
   }
   const rows = [owner, ...(await ensureTeam(api, persona, token, businessId))]
-  return { rows, costing: await ensureCosting(api, persona, token, businessId) }
+  const costing = await ensureCosting(api, persona, token, businessId)
+  // Its letterhead and quotations (M3 Step 7, D-298): after its customers (the costing seed adds them).
+  if (persona.documents) {
+    const documents = await seedDocuments(api, token, businessId, persona.documents)
+    rows.push({
+      business: persona.legalNameAr,
+      email: user.email,
+      role: 'documents',
+      state: [
+        documents.letterhead ? 'letterhead set' : 'letterhead kept',
+        `${documents.quotations} quotation(s) added`,
+      ].join(', '),
+    })
+  }
+  return { rows, costing }
 }
 
 function printTable<K extends string>(columns: readonly [K, string][], rows: Record<K, string>[]) {

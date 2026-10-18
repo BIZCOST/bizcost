@@ -55,7 +55,7 @@ const isoTimestamp = z.iso.datetime({ offset: true })
 const unboundedDecimal = z.string().regex(/^-?\d+(?:\.\d+)?$/)
 
 /** A sold quantity: more than zero, at most SALE_LINE_QTY_MAX, numeric(24,6). */
-const saleQtyInput = zDecimal.refine(
+export const saleQtyInput = zDecimal.refine(
   (v) =>
     checkDecimal(v, 'quantity') === null &&
     compareDecimal(v, '0') > 0 &&
@@ -158,6 +158,28 @@ export const saleLineInput = z.discriminatedUnion('kind', [
   saleItemLineInput,
   saleDeliveryLineInput,
 ])
+
+/**
+ * Something sold that is no saved product or service (M3 Step 7, Q21): typed on a quotation and carried
+ * to its order, never entered as a sale of its own. Its title is required; its unit, VAT category
+ * (standard by default) and whether its price includes VAT (a VAT-registered business only:
+ * CAPABILITY_DISABLED otherwise) are as typed. It counts in sales and carries its share and fees, with
+ * no materials.
+ */
+export const saleTypedLineInput = z.object({
+  kind: z.literal('typed'),
+  id: zUuid,
+  description: optionalLine(SALE_LINE_DESCRIPTION_MAX_LENGTH).refine((value) => value !== null, {
+    message: 'a typed line needs its title',
+  }),
+  qty: saleQtyInput,
+  unit: standardUnitDto.nullish().transform((value) => value ?? null),
+  unitPrice: moneyInput,
+  priceIncludesVat: z.boolean().default(false),
+  vatCategory: z.enum(VAT_CATEGORIES).default('standard'),
+  discount: discountInput.nullish(),
+})
+export type SaleTypedLineInput = z.input<typeof saleTypedLineInput>
 export type SaleLineInput = z.input<typeof saleLineInput>
 
 const saleFields = {

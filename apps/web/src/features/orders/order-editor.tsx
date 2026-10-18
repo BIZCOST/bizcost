@@ -23,7 +23,7 @@ import { Required } from '@/components/form/required'
 import { TextField } from '@/components/form/text-field'
 import { sameData } from '@/components/form/unsaved'
 import { useBeforeNavigate, useUnsavedChanges } from '@/components/form/unsaved-changes'
-import { isolate } from '@/components/form/use-message'
+import { isolate, ltrIsolate } from '@/components/form/use-message'
 import { PageContainer } from '@/components/shell/page-container'
 import { Button } from '@/components/ui/button'
 import { NativeSelect } from '@/components/ui/native-select'
@@ -478,6 +478,14 @@ export function OrderEditor({
             vatRegistered={vatRegistered}
             money={(amount) => money(amount, currency)}
           />
+          {order?.roundTo ? (
+            // An order made from a quotation keeps its rounded total when saved (D-297).
+            <p data-order-rounded className="mt-3 border-t pt-3 text-sm text-muted-foreground">
+              {t('orders.editor.roundedTotal', {
+                total: ltrIsolate(money(order.roundTo, currency)),
+              })}
+            </p>
+          ) : null}
         </Panel>
 
         {paymentAsked ? (

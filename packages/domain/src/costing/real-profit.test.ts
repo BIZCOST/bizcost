@@ -15,6 +15,7 @@ import {
   rateSourceOf,
   saleLineProfit,
   saleRate,
+  soldLinesProfit,
   statementParts,
   sumRealProfit,
   type ChannelFees,
@@ -459,6 +460,36 @@ describe('parts that are not known yet', () => {
       materials: { state: 'none', amount: null },
       complete: true,
     })
+  })
+
+  it('a typed line (Q21) carries its share with no materials, never "no recipe", and says so', () => {
+    const typed = line({ net: '4000', materialsRequired: true, typed: true })
+    expect(typed).toMatchObject({
+      materials: { state: 'none', amount: null },
+      runningCosts: { state: 'applied', amount: '1000' },
+      profit: '3000',
+      typedSales: '4000',
+      reasons: [],
+      complete: true,
+    })
+    expect(line({ net: '18' }).typedSales).toBe('0')
+    const sum = sumRealProfit([typed, line({ net: '18' })])
+    expect(sum.typedSales).toBe('4000')
+    expect(sum.itemSales).toBe('4018')
+    const lines = soldLinesProfit({
+      kind: 'item',
+      net: '5000',
+      materials: null,
+      materialRows: 0,
+      unpricedRows: 0,
+      withoutRecipe: 0,
+      typedNet: '4000',
+      ownerTime: null,
+      rateNotSet: 0,
+      fees: noFees,
+      rate: monthRate('20000', '80000'),
+    })
+    expect(lines).toMatchObject({ typedSales: '4000', profit: '3750', complete: true })
   })
 
   it('a delivery app without a statement, fee expenses or a %: before app fees', () => {

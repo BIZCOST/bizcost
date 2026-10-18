@@ -348,6 +348,14 @@ describe('APP_ERROR_CODES', () => {
     'order_cancelled',
     'below_paid',
     'payment_has_money_back',
+    // M3 Step 7: quotations and document numbers.
+    'quotation_frozen',
+    'quotation_not_sent',
+    'quotation_superseded',
+    'quotation_decided',
+    'quotation_not_accepted',
+    'quotation_has_order',
+    'series_started',
     'internal',
   ]
 

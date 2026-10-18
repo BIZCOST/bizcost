@@ -20,6 +20,7 @@ import {
   ORDERS_MESSAGES,
   PRODUCT_COSTS_MESSAGES,
   PURCHASES_MESSAGES,
+  QUOTATIONS_MESSAGES,
   RECEIVABLES_MESSAGES,
   REPORTS_MESSAGES,
   ROOT_MESSAGES,
@@ -239,6 +240,29 @@ describe("each route's messages have the keys its code translates", () => {
     ).toEqual({})
   })
 
+  it('Quotations: the list, the editor, the quote, its PDF and files (M3 Step 7)', () => {
+    expect(
+      missing(
+        [
+          'features/quotations',
+          'features/customers/customer-picker.tsx',
+          'features/customers/customer-sheet.tsx',
+          'features/customers/customer-draft.ts',
+          'features/documents/amounts.tsx',
+          'features/documents/confirm-dialog.tsx',
+          'features/documents/line-editor.tsx',
+          'features/documents/name-picker.tsx',
+          'features/documents/panel.tsx',
+          'features/documents/search-box.tsx',
+          'features/catalog',
+          'features/purchasing/receipts.tsx',
+          'components/ui',
+        ],
+        QUOTATIONS_MESSAGES,
+      ),
+    ).toEqual({})
+  })
+
   it("Customers: the list and a customer's page (M3 Step 5)", () => {
     expect(
       missing(
@@ -314,6 +338,7 @@ describe("each route's messages have the keys its code translates", () => {
       business: ['business-profile.tsx', 'logo-section.tsx', 'module-names.ts'],
       locations: ['locations-settings.tsx'],
       channels: ['channels-settings.tsx'],
+      documents: ['documents-settings.tsx', 'letterhead-preview.tsx'],
       members: ['members-settings.tsx', 'invitations.tsx', 'member-dialogs.tsx', 'role-picker.tsx'],
       roles: ['roles-settings.tsx', 'role-picker.tsx'],
       modules: ['customize-settings.tsx', '../setup/review-parts.tsx'],
@@ -357,6 +382,7 @@ describe("each route's messages have the keys its code translates", () => {
       RUNNING_COSTS_MESSAGES,
       PRODUCT_COSTS_MESSAGES,
       SALES_MESSAGES,
+      QUOTATIONS_MESSAGES,
       REPORTS_MESSAGES,
       SETTINGS_MESSAGES,
       MEMBER_ACCESS_MESSAGES,

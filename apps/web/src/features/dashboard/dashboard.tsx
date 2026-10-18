@@ -208,7 +208,13 @@ function DashboardView({ businessId }: { businessId: string }) {
   const { data: me } = useMe()
   const { data: context } = useBusinessContext()
   const aboutTitle = useRef<HTMLHeadingElement>(null)
-  const steps = context ? checklistItemIds(context.capabilities, (key) => can(context, key)) : []
+  const steps = context
+    ? checklistItemIds(
+        context.capabilities,
+        (key) => can(context, key),
+        (id) => context.modules.some((module) => module.id === id),
+      )
+    : []
   const costIds = context ? costStepIdsFor(context) : []
   const checklist = useQuery({
     ...trpc.dashboard.checklist.queryOptions(),

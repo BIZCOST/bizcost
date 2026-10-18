@@ -148,6 +148,23 @@ export const APP_ERROR_CODES = [
    * is reversed first (M3 Step 5 review, D-273).
    */
   'payment_has_money_back',
+  /** Changing or discarding a quotation that was sent: a sent revision is frozen (revise it, M3 Step 7). */
+  'quotation_frozen',
+  /** Accepting, declining or revising a quotation that was not sent yet (M3 Step 7). */
+  'quotation_not_sent',
+  /** Acting on a revision that a later revision of the quotation replaced (M3 Step 7). */
+  'quotation_superseded',
+  /** Accepting a declined quotation, or declining an accepted one (M3 Step 7). */
+  'quotation_decided',
+  /** Making an order from a quotation that was not accepted (M3 Step 7). */
+  'quotation_not_accepted',
+  /** Making a second order from a quotation, or declining one that became an order (M3 Step 7). */
+  'quotation_has_order',
+  /**
+   * Setting the first number of a document series that already numbered a document: it continues
+   * from there (Settings → Documents, M3 Step 7, Q25).
+   */
+  'series_started',
   'internal',
 ] as const
 export type AppErrorCode = (typeof APP_ERROR_CODES)[number]

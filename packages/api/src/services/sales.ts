@@ -12,6 +12,7 @@ import {
   type saleListInput,
   type SaleListDto,
   type SaleResultDto,
+  type saleTypedLineInput,
   type saleVersionInput,
   type updateSaleInput,
   type OkDto,
@@ -20,13 +21,16 @@ import { createIdempotent, saleLines, sales, type NewSaleLine, type Tx } from '@
 import {
   can,
   canAccessLocation,
+  compareDecimal,
   computeSale,
   creditLeft,
   isCurrencyCode,
   newId,
   phoneLast4,
+  roundTheTotalError,
   saleError,
   saleLineCost,
+  solveRoundAmount,
   sumDecimals,
   type CurrencyCode,
   type LineDiscount,
@@ -92,7 +96,11 @@ type CorrectInput = z.output<typeof correctSaleInput>
 type ListInput = z.output<typeof saleListInput>
 type DaySheetInput = z.output<typeof daySheetInput>
 type FillDeliveryInput = z.output<typeof fillDeliveryCostInput>
-type InputLine = Fields['lines'][number]
+/**
+ * A line as saved: an item, the delivery charged, or a typed item (M3 Step 7, Q21: carried from a
+ * quotation to its order and its sale; no product, no materials).
+ */
+export type InputLine = Fields['lines'][number] | z.output<typeof saleTypedLineInput>
 
 const invalid = (message: string) => new AppError('validation', { message })
 
@@ -825,21 +833,30 @@ export interface PricedLine {
 /** The domain's view of the lines (computeSale). */
 export function domainLines(lines: readonly PricedLine[]): DomainSaleLine[] {
   return lines.map(({ line, product, vat }) =>
-    line.kind === 'item'
+    line.kind === 'typed'
       ? {
           kind: 'item',
           qty: line.qty as Quantity,
           unitPrice: line.unitPrice as Money,
-          priceIncludesVat: vat?.priceIncludesVat ?? product?.price_includes_vat ?? false,
+          priceIncludesVat: line.priceIncludesVat,
           discount: toLineDiscount(line.discount),
-          vatCategory: vat?.vatCategory ?? product?.vat_category ?? 'standard',
+          vatCategory: line.vatCategory,
         }
-      : {
-          kind: 'delivery',
-          qty: '1' as Quantity,
-          unitPrice: line.amount as Money,
-          priceIncludesVat: line.amountIncludesVat,
-        },
+      : line.kind === 'item'
+        ? {
+            kind: 'item',
+            qty: line.qty as Quantity,
+            unitPrice: line.unitPrice as Money,
+            priceIncludesVat: vat?.priceIncludesVat ?? product?.price_includes_vat ?? false,
+            discount: toLineDiscount(line.discount),
+            vatCategory: vat?.vatCategory ?? product?.vat_category ?? 'standard',
+          }
+        : {
+            kind: 'delivery',
+            qty: '1' as Quantity,
+            unitPrice: line.amount as Money,
+            priceIncludesVat: line.amountIncludesVat,
+          },
   )
 }
 
@@ -868,6 +885,68 @@ export function amountsOf(
   } catch (cause) {
     throw new AppError('validation', { message: 'amounts: cannot be computed', cause })
   }
+}
+
+/**
+ * A document's amounts with "Round the total" (D-221; quotations and the orders made from them, M3
+ * Step 7): computeSale with the document discount, and, when `roundTo` (the total wanted, with VAT) is
+ * given, the adjustment before VAT and the rounding difference solveRoundAmount finds for it, which the
+ * amounts include. VALIDATION with the domain's code when they cannot be worked out.
+ */
+export function roundedAmountsOf(
+  lines: readonly PricedLine[],
+  vatRegistered: boolean,
+  currency: CurrencyCode,
+  discount: LineDiscount | null,
+  roundTo: string | null,
+): { amounts: SaleAmounts | null; adjustment: string; roundingDifference: string } {
+  if (roundTo === null) {
+    return {
+      amounts: amountsOf(lines, vatRegistered, currency, discount),
+      adjustment: '0',
+      roundingDifference: '0',
+    }
+  }
+  if (lines.length === 0) throw invalid('roundTo: nothing to round')
+  const input = { lines: domainLines(lines), vatRegistered, discount }
+  const error = roundTheTotalError(input, roundTo as Money, currency)
+  if (error) {
+    const at = error.line === undefined ? '' : ` (line ${error.line + 1})`
+    throw invalid(`roundTo: ${error.code}${at}`)
+  }
+  const solved = solveRoundAmount(input, roundTo as Money, currency)
+  return {
+    amounts: solved.sale,
+    adjustment: solved.adjustment,
+    roundingDifference: solved.roundingDifference,
+  }
+}
+
+/**
+ * A document's amounts with the adjustment and rounding difference it was saved with (an order's
+ * delivery keeps its order's, M3 Step 7). VALIDATION when they cannot be worked out.
+ */
+export function amountsWithRounding(
+  lines: readonly PricedLine[],
+  vatRegistered: boolean,
+  currency: CurrencyCode,
+  discount: LineDiscount | null,
+  adjustment: string,
+  roundingDifference: string,
+): SaleAmounts | null {
+  if (compareDecimal(adjustment, '0') === 0 && compareDecimal(roundingDifference, '0') === 0) {
+    return amountsOf(lines, vatRegistered, currency, discount)
+  }
+  const input = {
+    lines: domainLines(lines),
+    vatRegistered,
+    discount,
+    adjustment: adjustment as Money,
+    roundingDifference: roundingDifference as Money,
+  }
+  const error = saleError(input, currency)
+  if (error) throw invalid(`amounts: ${error.code}`)
+  return computeSale(input, currency)
 }
 
 /** The header's totals from the lines' amounts (zero without a line). */
@@ -917,6 +996,20 @@ export function lineValues(
         priceIncludesVat: vatRegistered && line.amountIncludesVat,
         discountPercent: null,
         discountAmount: null,
+      }
+    }
+    if (line.kind === 'typed') {
+      return {
+        ...common,
+        kind: 'item' as const,
+        productId: null,
+        description: line.description,
+        qty: line.qty,
+        unit: line.unit,
+        unitPrice: line.unitPrice,
+        priceIncludesVat: vatRegistered && line.priceIncludesVat,
+        discountPercent: line.discount && 'percent' in line.discount ? line.discount.percent : null,
+        discountAmount: line.discount && 'amount' in line.discount ? line.discount.amount : null,
       }
     }
     return {

@@ -20,6 +20,12 @@
         "done": "Your TRN is saved.",
         "action": "Add TRN"
       },
+      "address": {
+        "title": "Add your business address",
+        "todo": "Your quotations and invoices print it on your letterhead, with your phone and email.",
+        "done": "Your address is saved.",
+        "action": "Add address"
+      },
       "invite": {
         "title": "Invite your first team member",
         "todo": "Send an invitation by email, and choose what they can see and do.",

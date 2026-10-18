@@ -9,11 +9,12 @@ import { sensitive } from '../sensitivity'
 // Costing Core's release (M2 Step 7), "Let's find the real cost of what you sell".
 
 /**
- * The checklist's steps, in the order shown: complete the business profile, add the TRN, invite the
- * first team member, add a second branch. Which of them a member sees: `checklistItemIds` in
+ * The checklist's steps, in the order shown: complete the business profile, add the TRN, add the
+ * business's address (with Quotations or Invoices on: their letterhead prints it, M3 Step 7), invite
+ * the first team member, add a second branch. Which of them a member sees: `checklistItemIds` in
  * @bizcost/modules.
  */
-export const CHECKLIST_ITEM_IDS = ['profile', 'trn', 'invite', 'location'] as const
+export const CHECKLIST_ITEM_IDS = ['profile', 'trn', 'address', 'invite', 'location'] as const
 export type ChecklistItemId = (typeof CHECKLIST_ITEM_IDS)[number]
 
 /** Parts of a complete business profile (D-090): the name in Arabic and the logo. */

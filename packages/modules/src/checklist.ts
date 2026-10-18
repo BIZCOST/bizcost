@@ -12,8 +12,9 @@ import type { ModuleId } from './manifests'
 import type { PermissionKey } from './permissions'
 
 // The getting-started checklist of the Dashboard (docs/PRODUCT.md §10, D-090): steps built from real
-// data. A member sees a step only when it applies to the business (its capability is on) and they can
-// act on it (they hold the permission its settings section needs to make the change). The first team
+// data. A member sees a step only when it applies to the business (its capability is on, and its
+// modules: one of them active) and they can act on it (they hold the permission its settings section
+// needs to make the change). The first team
 // member and the second branch are milestones: a member who joined after one was reached never gets
 // that step. The API computes the state (dashboard.checklist); the web uses the same rules to size
 // its placeholder.
@@ -24,24 +25,44 @@ interface ChecklistRule {
   readonly permission: PermissionKey
   /** The capability the step needs, if any. */
   readonly capability: CapabilityKey | null
+  /** The step applies only while one of these modules is active (released and on); null: always. */
+  readonly modules: readonly ModuleId[] | null
 }
 
 /** The steps in the order shown. */
 export const CHECKLIST_RULES: readonly ChecklistRule[] = [
-  { id: 'profile', permission: 'settings.business.edit', capability: null },
-  { id: 'trn', permission: 'settings.business.edit', capability: 'vat_registered' },
-  { id: 'invite', permission: 'settings.members.manage', capability: 'has_team' },
-  { id: 'location', permission: 'settings.locations.manage', capability: 'multi_location' },
+  { id: 'profile', permission: 'settings.business.edit', capability: null, modules: null },
+  { id: 'trn', permission: 'settings.business.edit', capability: 'vat_registered', modules: null },
+  // M3 Step 7: "Add your business address", which the quotations' and invoices' letterhead prints.
+  {
+    id: 'address',
+    permission: 'settings.business.edit',
+    capability: null,
+    modules: ['quotations', 'invoices'],
+  },
+  { id: 'invite', permission: 'settings.members.manage', capability: 'has_team', modules: null },
+  {
+    id: 'location',
+    permission: 'settings.locations.manage',
+    capability: 'multi_location',
+    modules: null,
+  },
 ]
 
-/** The steps this member sees in this business, in order (none: a welcome without a checklist). */
+/**
+ * The steps this member sees in this business, in order (none: a welcome without a checklist).
+ * `active`: whether a module is released and on for the business (the server's registry).
+ */
 export function checklistItemIds(
   capabilities: Readonly<Record<string, boolean>>,
   can: (key: PermissionKey) => boolean,
+  active: (id: ModuleId) => boolean,
 ): ChecklistItemId[] {
   return CHECKLIST_RULES.filter(
     (rule) =>
-      (rule.capability === null || capabilities[rule.capability] === true) && can(rule.permission),
+      (rule.capability === null || capabilities[rule.capability] === true) &&
+      (rule.modules === null || rule.modules.some(active)) &&
+      can(rule.permission),
   ).map((rule) => rule.id)
 }
 
@@ -51,6 +72,8 @@ export interface ChecklistFacts {
   readonly legalNameAr: string | null
   readonly hasLogo: boolean
   readonly trn: string | null
+  /** The business's address is filled in (its street address or its city). */
+  readonly hasAddress: boolean
   /** Active members, the caller included. */
   readonly activeMembers: number
   /** Invitations waiting for an answer that have not expired. */
@@ -82,8 +105,8 @@ function missingProfileParts(facts: ChecklistFacts): ProfilePart[] {
 
 /**
  * A step's state: the profile is complete with its name in Arabic and a logo; the TRN is saved; the
- * team has started once someone else is an active member or has an invitation waiting; a second
- * branch exists.
+ * address is filled in; the team has started once someone else is an active member or has an
+ * invitation waiting; a second branch exists.
  */
 export function checklistItem(id: ChecklistItemId, facts: ChecklistFacts): ChecklistItemDto {
   switch (id) {
@@ -93,6 +116,8 @@ export function checklistItem(id: ChecklistItemId, facts: ChecklistFacts): Check
     }
     case 'trn':
       return { id, done: facts.trn !== null && facts.trn !== '', missing: [] }
+    case 'address':
+      return { id, done: facts.hasAddress, missing: [] }
     case 'invite':
       return { id, done: facts.activeMembers > 1 || facts.pendingInvitations > 0, missing: [] }
     case 'location':

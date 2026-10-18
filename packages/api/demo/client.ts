@@ -67,8 +67,8 @@ export class DemoApi {
     const stack = await useLocalStack()
     // The helpers read the variables useLocalStack() has just set, so they load only now.
     const helpers = await import('../test/helpers')
-    // The preview of the modules being built is honoured only in development and test (D-125); none
-    // is previewable since Release A (M3 Step 6, D-275), so this previews nothing today.
+    // The preview of the modules being built is honoured only in development and test (D-125): today
+    // Quotations (M3 Step 7, until Release B), so the demo writes its letterheads and quotations.
     process.env.NODE_ENV ??= 'development'
     const db = helpers.connectApi()
     const mail = new DemoMail(stack.smtpHost)

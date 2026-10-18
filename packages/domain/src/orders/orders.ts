@@ -80,13 +80,17 @@ export function orderActions(ctx: OrderActionContext): OrderAction[] {
 // ---------------------------------------------------------------------------------------------------
 
 /**
- * `document_counters.series`: what a running number counts. M3 Step 5: orders. Quotations, invoices
- * and credit notes come with their steps (7 and 8), on the same design.
+ * `document_counters.series`: what a running number counts. M3 Step 5: orders; Step 7: quotations
+ * (Q-0001…, which may skip, Q25). Invoices and credit notes come with Step 8, on the same design.
  */
-export const DOCUMENT_SERIES = ['order'] as const
+export const DOCUMENT_SERIES = ['order', 'quotation'] as const
 export type DocumentSeries = (typeof DOCUMENT_SERIES)[number]
 
-/** A series' first number, prefix and zero padding, until the business changes them (Step 8). */
+/**
+ * A series' first number, prefix and zero padding, until the business changes them (Settings →
+ * Documents, M3 Step 7: the prefix and padding at any time, the first number only before the series'
+ * first document).
+ */
 export const DOCUMENT_COUNTER_DEFAULTS: Readonly<
   Record<
     DocumentSeries,
@@ -94,6 +98,7 @@ export const DOCUMENT_COUNTER_DEFAULTS: Readonly<
   >
 > = {
   order: { first: 1001, prefix: '#', padding: 0 },
+  quotation: { first: 1, prefix: 'Q-', padding: 4 },
 }
 
 /** The most digits a number is padded to. */

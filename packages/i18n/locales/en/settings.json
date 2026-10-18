@@ -82,6 +82,24 @@
       "currency": "Currency",
       "country": "Country",
       "timezone": "Time zone"
+    },
+    "letterhead": {
+      "title": "Phone, email and address",
+      "description": "Printed at the foot of your quotations and invoices, with your trade licence under your name.",
+      "phone": "Phone",
+      "phone2": "Second phone",
+      "email": "Email",
+      "addressLine": "Address",
+      "addressPlaceholder": "e.g. Warehouse 7, Al Quoz Industrial 3",
+      "city": "Area or city",
+      "emirate": "Emirate",
+      "emirateNone": "Not said",
+      "tradeLicenceNo": "Trade licence number",
+      "tradeLicenceAuthority": "Issued by",
+      "authorityPlaceholder": "e.g. Dubai Economy and Tourism",
+      "phoneInvalid": "Enter a phone number: digits, spaces, + and -.",
+      "emailInvalid": "Enter an email address like name@example.com.",
+      "tooLong": "Keep it to {{count}} characters."
     }
   },
   "locations": {
@@ -237,6 +255,106 @@
       }
     }
   },
+  "documents": {
+    "title": "Documents",
+    "description": "Your letterhead on quotations, document numbers, the signature and stamp, and the bank details printed at the foot.",
+    "saved": "Document settings saved.",
+    "save": "Save",
+    "conflict": "Someone else changed these settings. Load them again to see the latest.",
+    "letterhead": {
+      "title": "Your letterhead",
+      "description": "Made from your business name, logo and details, like your own letterhead. Pick its colour; the logo can show faintly behind the page."
+    },
+    "preview": {
+      "title": "Quotation",
+      "trn": "TRN",
+      "tradeLicence": "Trade licence",
+      "page": "Page 1 of 1",
+      "logo": "Your logo",
+      "signature": "Signature",
+      "stamp": "Stamp"
+    },
+    "accent": {
+      "label": "Colour",
+      "hint": "The bars and headings of your documents.",
+      "colors": {
+        "navy": "Navy",
+        "black": "Black",
+        "teal": "Teal",
+        "green": "Green",
+        "maroon": "Maroon",
+        "brown": "Brown",
+        "slate": "Slate"
+      }
+    },
+    "watermark": {
+      "label": "Logo behind the page",
+      "hint": "Your logo, large and light, behind the content of every page. A draft shows \"Draft\" instead.",
+      "noLogo": "Add your logo in the business profile to show it behind the page."
+    },
+    "contacts": {
+      "title": "Phone, email and address",
+      "hint": "The footer prints them from your business profile, with your TRN and trade licence under your name.",
+      "action": "Change them in the business profile"
+    },
+    "signature": {
+      "title": "Signature and stamp",
+      "description": "Printed at the end of every quotation, with the name of the person who signs. Upload them once.",
+      "signatory": "Who signs"
+    },
+    "images": {
+      "signature": "Signature",
+      "stamp": "Stamp",
+      "signatureSaved": "Signature saved.",
+      "stampSaved": "Stamp saved.",
+      "signatureRemoved": "Signature removed.",
+      "stampRemoved": "Stamp removed.",
+      "signatureRemove": "Remove the signature",
+      "stampRemove": "Remove the stamp",
+      "upload": "Upload",
+      "replace": "Replace",
+      "remove": "Remove",
+      "none": "None yet",
+      "hint": "A PNG, JPEG or WebP picture of up to 2 MB, best on a white or clear background.",
+      "wrongType": "Pick a PNG, JPEG or WebP picture.",
+      "tooBig": "This picture is larger than 2 MB."
+    },
+    "numbers": {
+      "title": "Document numbers",
+      "description": "How each document is numbered. Change the start number only before the first document, to continue from your old system.",
+      "series": {
+        "quotation": "Quotations",
+        "order": "Orders"
+      },
+      "prefix": "Starts with",
+      "padding": "Digits",
+      "firstNo": "First number",
+      "firstNoHint": "Set it once, before the first document.",
+      "started": "This series already has documents, so its first number stays.",
+      "next": "Next:"
+    },
+    "footer": {
+      "title": "Footer and terms",
+      "description": "Your bank details are printed under the totals; new quotations start with your usual terms.",
+      "bank": "Bank details",
+      "bankPlaceholder": "Bank: …\nAccount name: …\nIBAN: AE…",
+      "terms": "Usual terms for new quotations",
+      "termsPlaceholder": "e.g. Prices include supply and installation.",
+      "validDays": "A new quotation is valid for (days)",
+      "validDaysHint": "From its date. You can change it on each quotation."
+    },
+    "whole": {
+      "label": "Whole amounts without \".00\"",
+      "hint": "Off: every amount keeps 2 decimals, as tax documents need. On: 16,100 instead of 16,100.00."
+    },
+    "errors": {
+      "tooLong": "Keep it to {{count}} characters.",
+      "validDays": "Enter a number of days from 1 to {{max}}.",
+      "prefix": "Keep it to {{count}} characters.",
+      "padding": "Enter a number from 0 to {{max}}.",
+      "firstNo": "Enter a whole number from 1."
+    }
+  },
   "members": {
     "title": "Team",
     "description": "The people who can sign in to this business.",
@@ -352,6 +470,7 @@
     "settings_roles_manage": "Manage roles",
     "settings_modules_manage": "Customize BizCost",
     "settings_books_close": "Close the books",
+    "settings_documents_manage": "Manage documents",
     "products_items_view": "See products & services",
     "products_items_manage": "Add and edit products & services",
     "products_recipes_view": "See what goes into each product or service",
@@ -400,6 +519,9 @@
     "orders_documents_reverse": "Undo deliveries and refund orders",
     "payments_customers_view": "See what customers owe",
     "payments_customers_record": "Record customers' payments",
+    "quotations_documents_view": "See quotations",
+    "quotations_documents_manage": "Prepare quotations",
+    "quotations_documents_decide": "Record the customer's answer",
     "data_cost_view": "See costs",
     "data_profit_margin_view": "See profit and margins",
     "data_supplier_price_view": "See supplier prices",
@@ -418,6 +540,7 @@
     "settings_roles_manage": "Change what each role can see and do.",
     "settings_modules_manage": "Turn sections and features on or off.",
     "settings_books_close": "Stop finalizing or reversing anything dated on or before a day you choose: purchases, expenses, sales and orders.",
+    "settings_documents_manage": "Set document numbers, the letterhead colour, the footer, and the signature and stamp printed on quotations.",
     "products_items_view": "What you sell, with its unit and price.",
     "products_items_manage": "Add, change and archive products and services.",
     "products_recipes_view": "The materials and packaging each product or service uses, and how much.",
@@ -471,6 +594,9 @@
     "orders_documents_reverse": "Undo a delivery, so the order waits again, or record a refund of a delivered order. Needs every order seen.",
     "payments_customers_view": "What each customer still owes, with the payments and deposits they made. Needs every sale seen.",
     "payments_customers_record": "Record a customer's payment or deposit, give money back, or reverse a payment recorded by mistake.",
+    "quotations_documents_view": "Every quotation, its revisions and its PDF.",
+    "quotations_documents_manage": "Prepare, send, revise and copy quotations, and turn an accepted one into an order.",
+    "quotations_documents_decide": "Mark a sent quotation as accepted or declined, and attach the signed copy.",
     "data_cost_view": "What products, materials and work really cost.",
     "data_cost_view_food": "What products, ingredients, supplies and work really cost.",
     "data_cost_view_factory": "What products, raw materials and work really cost.",

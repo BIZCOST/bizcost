@@ -1586,6 +1586,13 @@ beforeAll(async () => {
       version: pendingOrder.version,
     })
   ).data
+  // M3 Step 7: a quotation for the oracle's customer (the search finds it by the customer's name).
+  await asOwner('quotation.create', 'mutation', {
+    id: newId(),
+    customerId: customer.id,
+    businessDate: today,
+    lines: [{ id: newId(), productId: costed.id, qty: '1', unitPrice: PRODUCT_PRICE }],
+  })
   running = (
     await asOwner<{ data: RunningCostDto }>('runningCost.create', 'mutation', runningInput())
   ).data

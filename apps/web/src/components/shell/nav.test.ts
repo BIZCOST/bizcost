@@ -23,7 +23,7 @@ import {
   wayBack,
   type ShellNavItem,
 } from './nav'
-import { FALLBACK_NAV_ICON, navIcon } from './nav-icons'
+import { FALLBACK_NAV_ICON, hasNavIcon, navIcon } from './nav-icons'
 
 // The shell's navigation comes only from business.context's modules (D-089). Each test builds that
 // part of the context the way the API does (buildModuleNav), from the registry or from a registry
@@ -169,6 +169,14 @@ describe('a module released later shows with no change to the shell', () => {
   it('with a neutral icon until the shell knows its icon', () => {
     expect(navIcon('file-signature')).toBe(FALLBACK_NAV_ICON)
     expect(navIcon('settings')).not.toBe(FALLBACK_NAV_ICON)
+  })
+
+  it('has its own icon for every entry of the modules built so far, Quotations too (D-297)', () => {
+    for (const manifest of MODULES.filter(
+      (m) => m.availability !== 'planned' || m.id === 'quotations',
+    )) {
+      for (const entry of manifest.nav) expect(hasNavIcon(entry.icon), entry.id).toBe(true)
+    }
   })
 
   it('and the page states follow: off for a business without it, not open without permission', () => {

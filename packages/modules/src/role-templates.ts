@@ -16,7 +16,9 @@ import { PERMISSION_CATALOG, type PermissionKey } from './permissions'
 // Accountant; sale_imports_security for the import key of M3 Step 4, the Manager's; orders_security
 // for the customers, orders and customer-payments keys of M3 Step 5, by the plan's Q10 table: an
 // Employee adds customers, enters and delivers their own orders, and picks customers by name and the
-// phone's last 4 digits only).
+// phone's last 4 digits only); quotations_security for the quotations keys of M3 Step 7, by the plan's
+// Q10 table: the Manager and Sales see, prepare and record the customer's answer, the Accountant sees
+// them; "Manage documents" (Settings) is the Owner's and the Admin's.
 
 export const ROLE_TEMPLATE_KEYS = [
   OWNER_TEMPLATE_KEY,
@@ -90,6 +92,9 @@ export const ROLE_TEMPLATES: readonly RoleTemplate[] = [
       'orders.documents.reverse',
       'payments.customers.view',
       'payments.customers.record',
+      'quotations.documents.view',
+      'quotations.documents.manage',
+      'quotations.documents.decide',
       'data.cost.view',
       'data.profit_margin.view',
       'data.supplier_price.view',
@@ -116,6 +121,7 @@ export const ROLE_TEMPLATES: readonly RoleTemplate[] = [
       'orders.documents.view',
       'payments.customers.view',
       'payments.customers.record',
+      'quotations.documents.view',
       'data.cost.view',
       'data.profit_margin.view',
       'data.supplier_price.view',
@@ -139,6 +145,9 @@ export const ROLE_TEMPLATES: readonly RoleTemplate[] = [
       'orders.documents.deliver',
       'payments.customers.view',
       'payments.customers.record',
+      'quotations.documents.view',
+      'quotations.documents.manage',
+      'quotations.documents.decide',
     ],
   },
   {

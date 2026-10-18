@@ -25,7 +25,9 @@ import {
 import type { BusinessCtx } from '../business-context'
 import type { ApiConfig } from '../deps'
 import { AppError } from '../errors'
+import { assertAnyAccess } from '../trpc'
 import { applySwitch, readBusinessState } from './customize'
+import { documentsServed, printableImageType } from './document-files'
 
 // Settings → Business profile and Business language (ROADMAP.md Step 6): legal names, VAT and TRN,
 // the business's default language, and the logo in the private bucket (docs/ARCHITECTURE.md §Storage):
@@ -48,6 +50,14 @@ const profileColumns = {
   vatRegistered: businesses.vatRegistered,
   trn: businesses.trn,
   defaultLocale: businesses.defaultLocale,
+  phone: businesses.phone,
+  phone2: businesses.phone2,
+  email: businesses.email,
+  addressLine: businesses.addressLine,
+  city: businesses.city,
+  emirate: businesses.emirate,
+  tradeLicenceNo: businesses.tradeLicenceNo,
+  tradeLicenceAuthority: businesses.tradeLicenceAuthority,
   version: businesses.version,
 }
 
@@ -62,6 +72,14 @@ type ProfileRow = {
   vatRegistered: boolean
   trn: string | null
   defaultLocale: string
+  phone: string | null
+  phone2: string | null
+  email: string | null
+  addressLine: string | null
+  city: string | null
+  emirate: BusinessProfileDto['letterhead']['emirate']
+  tradeLicenceNo: string | null
+  tradeLicenceAuthority: string | null
   version: number
 }
 
@@ -88,6 +106,16 @@ async function toProfileDto(config: ApiConfig, row: ProfileRow): Promise<Busines
     vatRegistered: row.vatRegistered,
     trn: row.trn,
     defaultLocale: isLocale(row.defaultLocale) ? row.defaultLocale : 'en',
+    letterhead: {
+      phone: row.phone,
+      phone2: row.phone2,
+      email: row.email,
+      addressLine: row.addressLine,
+      city: row.city,
+      emirate: row.emirate,
+      tradeLicenceNo: row.tradeLicenceNo,
+      tradeLicenceAuthority: row.tradeLicenceAuthority,
+    },
     version: row.version,
   }
 }
@@ -115,9 +143,11 @@ function trnFor(input: UpdateBusinessProfileInput): string | null {
 }
 
 /**
- * `business.updateProfile` (settings.business.edit): names, VAT and TRN. `version` must be the
- * version read (CONFLICT otherwise). Switching VAT follows the Customize BizCost rules and reports the
- * modules it turned on or off.
+ * `business.updateProfile` (settings.business.edit): names, VAT and TRN, and (M3 Step 7) the contact
+ * lines, address and trade licence the documents' letterhead prints (`letterhead`, whole; left out,
+ * kept; only while Quotations or Invoices is served, MODULE_DISABLED otherwise; an emirate only for a
+ * business in the UAE). `version` must be the version read (CONFLICT otherwise). Switching VAT follows
+ * the Customize BizCost rules and reports the modules it turned on or off.
  */
 export async function updateProfile(
   ctx: BusinessCtx,
@@ -125,6 +155,8 @@ export async function updateProfile(
 ): Promise<UpdateBusinessProfileDto> {
   const trn = trnFor(input)
   const legalNameAr = input.legalNameAr?.trim() ? input.legalNameAr.trim() : null
+  const letterhead = letterheadOf(input.letterhead)
+  if (letterhead) assertAnyAccess(ctx, [['quotations'], ['invoices']])
   const { row, turnedOn, turnedOff } = await ctx.tx(async (tx) => {
     const before = await readBusinessState(tx, ctx.businessId, { lock: true })
     const current = await readProfile(tx, ctx.businessId)
@@ -144,6 +176,9 @@ export async function updateProfile(
       modulesOn = result.turnedOn.flatMap((item) => (item.kind === 'module' ? [item.id] : []))
       modulesOff = result.turnedOff.flatMap((item) => (item.kind === 'module' ? [item.id] : []))
     }
+    if (letterhead?.emirate && current.country.trim() !== 'AE') {
+      throw invalid('emirate: only for a business in the UAE')
+    }
     await tx
       .update(businesses)
       .set({
@@ -151,6 +186,7 @@ export async function updateProfile(
         legalNameAr,
         vatRegistered: input.vatRegistered,
         trn,
+        ...letterhead,
       })
       .where(eq(businesses.id, ctx.businessId))
     return {
@@ -160,6 +196,22 @@ export async function updateProfile(
     }
   })
   return { profile: await toProfileDto(ctx.config, row), turnedOn, turnedOff }
+}
+
+/** The letterhead's columns as given (each '' or null is none); null when left out. */
+function letterheadOf(input: UpdateBusinessProfileInput['letterhead']) {
+  if (input === undefined) return null
+  const text = (value: string | null | undefined) => (value?.trim() ? value.trim() : null)
+  return {
+    phone: text(input.phone),
+    phone2: text(input.phone2),
+    email: text(input.email),
+    addressLine: text(input.addressLine),
+    city: text(input.city),
+    emirate: input.emirate ?? null,
+    tradeLicenceNo: text(input.tradeLicenceNo),
+    tradeLicenceAuthority: text(input.tradeLicenceAuthority),
+  }
 }
 
 /** `business.setDefaultLocale` (settings.business.edit): the business's language. */
@@ -365,7 +417,10 @@ export async function setLogo(ctx: BusinessCtx, input: SetLogoInput): Promise<Bu
     object.bytes.byteLength > LOGO_MAX_BYTES ||
     !sniffed ||
     sniffed !== expected ||
-    storedType !== sniffed
+    storedType !== sniffed ||
+    // With Quotations or Invoices the logo prints on every document: an image their compiler decodes
+    // within the PDFs' image limits (D-295).
+    (documentsServed(ctx) && (await printableImageType(object.bytes)) !== sniffed)
   ) {
     await discard(ctx, input.path)
     throw new AppError('file_invalid', { message: 'not an allowed image' })

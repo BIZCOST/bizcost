@@ -2,11 +2,17 @@
 
 import { apiErrorCode, apiErrorKey, useTRPC } from '@bizcost/app-core'
 import {
+  BUSINESS_ADDRESS_MAX_LENGTH,
+  BUSINESS_CITY_MAX_LENGTH,
+  BUSINESS_EMAIL_MAX_LENGTH,
+  BUSINESS_LICENCE_AUTHORITY_MAX_LENGTH,
+  BUSINESS_LICENCE_MAX_LENGTH,
   BUSINESS_NAME_MAX_LENGTH,
+  BUSINESS_PHONE_MAX_LENGTH,
   withoutControlCharacters,
   type BusinessProfileDto,
 } from '@bizcost/contracts'
-import { parseTrn, type TrnError } from '@bizcost/domain'
+import { EMIRATES, normalizeDigits, parseTrn, type Emirate, type TrnError } from '@bizcost/domain'
 import { intlLocale, type I18nKey } from '@bizcost/i18n'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { useMutation } from '@tanstack/react-query'
@@ -20,7 +26,9 @@ import { TextField } from '@/components/form/text-field'
 import { useUnsavedChanges } from '@/components/form/unsaved-changes'
 import { useMessage } from '@/components/form/use-message'
 import { Button } from '@/components/ui/button'
+import { NativeSelect } from '@/components/ui/native-select'
 import { Switch } from '@/components/ui/switch'
+import { hasModule } from '@/features/purchasing/data'
 import { Section } from '@/features/account/section'
 import { useLocale } from '@/lib/i18n/client'
 import { useBusinessContext } from '@/lib/trpc/client'
@@ -33,13 +41,29 @@ import { SectionPage } from './settings-shell'
 
 // Settings → Business profile (ROADMAP.md Step 6): logo, legal names, VAT and TRN, and the region
 // BizCost works in (read-only in M1). One form saves names and VAT together (business.updateProfile,
-// with the version read: a change made elsewhere meanwhile is refused, not overwritten).
+// with the version read: a change made elsewhere meanwhile is refused, not overwritten). With
+// Quotations or Invoices on (M3 Step 7), the same form keeps how customers reach the business, its
+// address and its trade licence: the documents' letterhead prints them.
 
 const TRN_ERRORS: Readonly<Record<TrnError, I18nKey>> = {
   required: 'settings.business.vat.trnRequired',
   invalid_chars: 'settings.business.vat.trnDigits',
   invalid_length: 'settings.business.vat.trnLength',
 }
+
+/** A phone number as people write it: digits (either kind), spaces, +, -, ( and ). */
+const PHONE = /^(?:[+\d\s()-]*\d[+\d\s()-]*)?$/
+const EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
+
+/** A one-line text of at most `max` characters (a pasted line break becomes a space). */
+const lineField = (max: number) =>
+  z
+    .string()
+    .check(
+      z.overwrite(withoutControlCharacters),
+      z.trim(),
+      z.maxLength(max, { error: 'settings.business.letterhead.tooLong' }),
+    )
 
 /** A one-line name: a pasted tab or line break becomes a space (the API refuses control characters). */
 const nameField = (required: boolean) =>
@@ -58,8 +82,32 @@ const profileSchema = z
     legalNameAr: nameField(false),
     vatRegistered: z.boolean(),
     trn: z.string(),
+    phone: lineField(BUSINESS_PHONE_MAX_LENGTH),
+    phone2: lineField(BUSINESS_PHONE_MAX_LENGTH),
+    email: lineField(BUSINESS_EMAIL_MAX_LENGTH),
+    addressLine: lineField(BUSINESS_ADDRESS_MAX_LENGTH),
+    city: lineField(BUSINESS_CITY_MAX_LENGTH),
+    emirate: z.string(),
+    tradeLicenceNo: lineField(BUSINESS_LICENCE_MAX_LENGTH),
+    tradeLicenceAuthority: lineField(BUSINESS_LICENCE_AUTHORITY_MAX_LENGTH),
   })
   .superRefine((value, ctx) => {
+    for (const field of ['phone', 'phone2'] as const) {
+      if (!PHONE.test(normalizeDigits(value[field]))) {
+        ctx.addIssue({
+          code: 'custom',
+          path: [field],
+          message: 'settings.business.letterhead.phoneInvalid',
+        })
+      }
+    }
+    if (value.email !== '' && !EMAIL.test(value.email)) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['email'],
+        message: 'settings.business.letterhead.emailInvalid',
+      })
+    }
     if (!value.vatRegistered) return
     const trn = parseTrn(value.trn)
     if (!trn.ok) ctx.addIssue({ code: 'custom', path: ['trn'], message: TRN_ERRORS[trn.error] })
@@ -67,21 +115,36 @@ const profileSchema = z
 type ProfileForm = z.input<typeof profileSchema>
 
 function formOf(profile: BusinessProfileDto): ProfileForm {
+  const letterhead = profile.letterhead
   return {
     legalName: profile.legalName,
     legalNameAr: profile.legalNameAr ?? '',
     vatRegistered: profile.vatRegistered,
     trn: profile.trn ?? '',
+    phone: letterhead.phone ?? '',
+    phone2: letterhead.phone2 ?? '',
+    email: letterhead.email ?? '',
+    addressLine: letterhead.addressLine ?? '',
+    city: letterhead.city ?? '',
+    emirate: letterhead.emirate ?? '',
+    tradeLicenceNo: letterhead.tradeLicenceNo ?? '',
+    tradeLicenceAuthority: letterhead.tradeLicenceAuthority ?? '',
   }
 }
+
+const isEmirate = (value: string): value is Emirate =>
+  (EMIRATES as readonly string[]).includes(value)
 
 function DetailsForm({
   profile,
   canEdit,
+  letterheadShown,
   onReload,
 }: {
   profile: BusinessProfileDto
   canEdit: boolean
+  /** Quotations or Invoices is on: the contact lines, address and trade licence are asked for. */
+  letterheadShown: boolean
   onReload: () => void
 }) {
   const { t } = useTranslation()
@@ -111,6 +174,21 @@ function DetailsForm({
         legalNameAr: values.legalNameAr === '' ? null : values.legalNameAr,
         vatRegistered: values.vatRegistered,
         trn: values.vatRegistered ? values.trn : null,
+        ...(letterheadShown
+          ? {
+              letterhead: {
+                phone: values.phone || null,
+                phone2: values.phone2 || null,
+                email: values.email || null,
+                addressLine: values.addressLine || null,
+                city: values.city || null,
+                emirate:
+                  profile.country === 'AE' && isEmirate(values.emirate) ? values.emirate : null,
+                tradeLicenceNo: values.tradeLicenceNo || null,
+                tradeLicenceAuthority: values.tradeLicenceAuthority || null,
+              },
+            }
+          : {}),
       })
       saved(result.profile)
       // Saved: nothing is left to ask about (the form also opens again with the new version).
@@ -252,6 +330,104 @@ function DetailsForm({
         </div>
       </Section>
 
+      {letterheadShown ? (
+        <Section
+          title={t('settings.business.letterhead.title')}
+          description={t('settings.business.letterhead.description')}
+        >
+          <div className="grid gap-5 sm:grid-cols-2">
+            <TextField
+              label={t('settings.business.letterhead.phone')}
+              type="tel"
+              dir="ltr"
+              autoComplete="tel"
+              readOnly={!canEdit}
+              className="rtl:text-end"
+              error={message(errors.phone?.message, { count: BUSINESS_PHONE_MAX_LENGTH })}
+              {...form.register('phone')}
+            />
+            <TextField
+              label={t('settings.business.letterhead.phone2')}
+              type="tel"
+              dir="ltr"
+              autoComplete="off"
+              readOnly={!canEdit}
+              className="rtl:text-end"
+              error={message(errors.phone2?.message, { count: BUSINESS_PHONE_MAX_LENGTH })}
+              {...form.register('phone2')}
+            />
+            <TextField
+              label={t('settings.business.letterhead.email')}
+              type="email"
+              dir="ltr"
+              autoComplete="email"
+              readOnly={!canEdit}
+              className="rtl:text-end sm:col-span-2"
+              error={message(errors.email?.message, { count: BUSINESS_EMAIL_MAX_LENGTH })}
+              {...form.register('email')}
+            />
+            <TextField
+              label={t('settings.business.letterhead.addressLine')}
+              autoComplete="street-address"
+              dir="auto"
+              readOnly={!canEdit}
+              className="[unicode-bidi:plaintext] sm:col-span-2"
+              placeholder={t('settings.business.letterhead.addressPlaceholder')}
+              error={message(errors.addressLine?.message, { count: BUSINESS_ADDRESS_MAX_LENGTH })}
+              {...form.register('addressLine')}
+            />
+            <TextField
+              label={t('settings.business.letterhead.city')}
+              autoComplete="address-level2"
+              dir="auto"
+              readOnly={!canEdit}
+              className="[unicode-bidi:plaintext]"
+              error={message(errors.city?.message, { count: BUSINESS_CITY_MAX_LENGTH })}
+              {...form.register('city')}
+            />
+            {profile.country === 'AE' ? (
+              <TextField
+                label={t('settings.business.letterhead.emirate')}
+                render={(a11y) => (
+                  <NativeSelect {...a11y} disabled={!canEdit} {...form.register('emirate')}>
+                    <option value="">{t('settings.business.letterhead.emirateNone')}</option>
+                    {EMIRATES.map((emirate) => (
+                      <option key={emirate} value={emirate}>
+                        {t(`documents.emirates.${emirate}`)}
+                      </option>
+                    ))}
+                  </NativeSelect>
+                )}
+              />
+            ) : null}
+            <TextField
+              label={t('settings.business.letterhead.tradeLicenceNo')}
+              dir="ltr"
+              autoComplete="off"
+              spellCheck={false}
+              readOnly={!canEdit}
+              className="rtl:text-end"
+              error={message(errors.tradeLicenceNo?.message, {
+                count: BUSINESS_LICENCE_MAX_LENGTH,
+              })}
+              {...form.register('tradeLicenceNo')}
+            />
+            <TextField
+              label={t('settings.business.letterhead.tradeLicenceAuthority')}
+              dir="auto"
+              autoComplete="off"
+              readOnly={!canEdit}
+              className="[unicode-bidi:plaintext]"
+              placeholder={t('settings.business.letterhead.authorityPlaceholder')}
+              error={message(errors.tradeLicenceAuthority?.message, {
+                count: BUSINESS_LICENCE_AUTHORITY_MAX_LENGTH,
+              })}
+              {...form.register('tradeLicenceAuthority')}
+            />
+          </div>
+        </Section>
+      ) : null}
+
       {conflict ? (
         <FormAlert tone="error">
           <p>{t('settings.business.conflict')}</p>
@@ -378,6 +554,10 @@ export function BusinessProfileSettings({ businessId }: { businessId: string }) 
             key={profile.data.version}
             profile={profile.data}
             canEdit={canEdit}
+            letterheadShown={
+              context !== undefined &&
+              (hasModule(context, 'quotations') || hasModule(context, 'invoices'))
+            }
             onReload={() => void profile.refetch()}
           />
           <RegionSection profile={profile.data} />

@@ -70,7 +70,7 @@ export const customers = tenantTable(
 )
 
 // A business's running numbers (M3 Step 5; the plan's numbering design, H9; Q25): one row per series
-// (`order` now; quotations, invoices and credit notes in Steps 7–8). The next number to give, its
+// (`order`, and `quotation` from Step 7; invoices and credit notes in Step 8). The next number to give, its
 // prefix and zero padding. The row is locked FOR UPDATE last in the transaction that creates (or, for
 // invoices, issues) a document, after any cost rows, and nothing else locks it, so it cannot deadlock;
 // a rollback gives the number back. A replayed create is answered from its document before a number
@@ -81,13 +81,19 @@ export const documentCounters = tenantTable(
   {
     series: text('series').$type<DocumentSeries>().notNull(),
     nextNo: integer('next_no').notNull(),
+    // The series' first number (M3 Step 7): settable in Settings → Documents until the first
+    // document takes it (next_no = first_no), to continue from an old system.
+    firstNo: integer('first_no').notNull(),
     prefix: text('prefix').notNull(),
     padding: integer('padding').notNull().default(0),
   },
   (t) => [
     unique('document_counters_series_key').on(t.businessId, t.series),
     check('document_counters_series_check', sql`series in (${quoted(DOCUMENT_SERIES)})`),
-    check('document_counters_next_no_check', sql`next_no >= 1`),
+    check(
+      'document_counters_next_no_check',
+      sql`next_no >= 1 and first_no >= 1 and next_no >= first_no`,
+    ),
     check(
       'document_counters_padding_check',
       sql`padding between 0 and ${sql.raw(String(DOCUMENT_NUMBER_PADDING_MAX))}`,

@@ -23,6 +23,11 @@ import { CustomerName, CustomerSheet } from './customer-sheet'
 export type PickedCustomer = CustomerPickItemDto
 
 /** A customer saved by the form, as the picker holds it. */
+/** Left-to-right isolate and its end (U+2066, U+2069), and every isolate mark. */
+const LRI = '\u2066'
+const PDI = '\u2069'
+const ISOLATE_MARKS = /[\u2066-\u2069]/g
+
 export function pickedOf(customer: CustomerDto): PickedCustomer {
   return {
     id: customer.id,
@@ -104,7 +109,12 @@ export function CustomerPicker({
     else setAdding(option.name)
   }
 
-  const shownName = value ? [value.name, phoneHint(value)].filter(Boolean).join(' · ') : ''
+  // The phone in a left-to-right isolate (LRI … PDI): after an Arabic name its digit groups would
+  // otherwise read reversed in the box (D-297). Typing over it takes the marks out again.
+  const hint = value ? phoneHint(value) : null
+  const shownName = value
+    ? [value.name, hint ? `${LRI}${hint}${PDI}` : null].filter(Boolean).join(' · ')
+    : ''
 
   return (
     <div className="relative">
@@ -136,7 +146,7 @@ export function CustomerPicker({
         }}
         onClick={() => setOpen(true)}
         onChange={(event) => {
-          setTyped(event.target.value)
+          setTyped(event.target.value.replace(ISOLATE_MARKS, ''))
           setActive(0)
           setOpen(true)
         }}

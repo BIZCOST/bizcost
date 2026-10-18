@@ -72,6 +72,7 @@ export function partsOf(sum: RealProfitSum, shown: boolean): ProfitPartsDto {
     sales: sum.sales,
     itemSales: sum.itemSales,
     deliveryCharged: sum.deliveryCharged,
+    typedSales: sum.typedSales,
   }
   if (!shown) return { ...sales, ...NULL_PROFIT }
   return {
@@ -347,6 +348,7 @@ function sumAll(groups: readonly ProfitGroupSums[]): RealProfitSum {
   return {
     sales: sales as RealProfitSum['sales'],
     itemSales: add((s) => s.itemSales) as RealProfitSum['itemSales'],
+    typedSales: add((s) => s.typedSales) as RealProfitSum['typedSales'],
     materials: add((s) => s.materials) as RealProfitSum['materials'],
     fees: add((s) => s.fees) as RealProfitSum['fees'],
     deliveryCharged: add((s) => s.deliveryCharged) as RealProfitSum['deliveryCharged'],

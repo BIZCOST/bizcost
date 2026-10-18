@@ -19,8 +19,10 @@ import {
   orderTransition,
   paymentState,
   phoneLast4,
+  sumDecimals,
   type OrderAction,
   type OrderStatus,
+  type SaleAmounts,
 } from '@bizcost/domain'
 import { and, eq, inArray, sql, type SQL } from 'drizzle-orm'
 import type { z } from 'zod'
@@ -36,7 +38,7 @@ import { profitEnvOf, profitGroups } from './real-profit'
 import { obligationsOf, paymentStateOf, readObligation, type ObligationRecord } from './receivables'
 import { partsOf } from './reports'
 import {
-  amountsOf,
+  amountsWithRounding,
   assertDays,
   assertInScope,
   discountOf,
@@ -45,11 +47,13 @@ import {
   productsOf,
   resolveChannel,
   reverseInTx,
+  roundedAmountsOf,
   saleContextOf,
   seesPayments,
   toLineDiscount,
   totalsOf,
   type PricedLine,
+  type StoredVat,
 } from './sales'
 import { assertPostable, isoOf, lockPostingBusiness, uuidArray } from './stock'
 
@@ -95,7 +99,7 @@ function seesAllOrders(ctx: BusinessCtx): boolean {
 }
 
 /** The orders the caller may see (alias `o`): every order or their own, and only their branches. */
-function visibleOrders(ctx: BusinessCtx): SQL[] {
+export function visibleOrders(ctx: BusinessCtx): SQL[] {
   const parts: SQL[] = []
   if (!seesAllOrders(ctx)) parts.push(sql`o.created_by = app.current_user_id()`)
   const scope = ctx.access.locationScope
@@ -143,6 +147,9 @@ interface OrderRecord extends Record<string, unknown> {
   currency: string
   discount_percent: string | null
   discount_amount: string | null
+  round_to: string | null
+  adjustment: string
+  rounding_difference: string
   subtotal: string
   discount_total: string
   net_total: string
@@ -211,6 +218,8 @@ export async function readOrder(tx: Tx, ctx: BusinessCtx, id: string): Promise<O
            trim(o.currency) as currency,
            trim_scale(o.discount_percent)::text as discount_percent,
            trim_scale(o.discount_amount)::text as discount_amount,
+           trim_scale(o.round_to)::text as round_to, trim_scale(o.adjustment)::text as adjustment,
+           trim_scale(o.rounding_difference)::text as rounding_difference,
            trim_scale(o.subtotal)::text as subtotal,
            trim_scale(o.discount_total)::text as discount_total,
            trim_scale(o.net_total)::text as net_total, trim_scale(o.vat_total)::text as vat_total,
@@ -270,11 +279,15 @@ export async function readOrder(tx: Tx, ctx: BusinessCtx, id: string): Promise<O
     vatRegistered: head.vat_registered,
     currency: head.currency,
     discount: discountOf(head.discount_percent, head.discount_amount),
+    roundTo: head.round_to,
+    adjustment: head.adjustment,
+    roundingDifference: head.rounding_difference,
     subtotal: head.subtotal,
     discountTotal: head.discount_total,
     netTotal: head.net_total,
     vatTotal: head.vat_total,
     total: head.total,
+    payable: sumDecimals([head.total, head.rounding_difference]),
     deliveryNeeded: head.delivery_needed,
     deliveryArea: head.delivery_area,
     deliveryCost: head.delivery_cost,
@@ -284,6 +297,7 @@ export async function readOrder(tx: Tx, ctx: BusinessCtx, id: string): Promise<O
       id: l.id,
       kind: l.kind,
       productId: l.product_id,
+      typed: l.kind === 'item' && l.product_id === null,
       description: l.description,
       qty: l.qty,
       unit: l.unit,
@@ -405,7 +419,8 @@ export function listOrders(ctx: BusinessCtx, input: ListInput): Promise<OrderLis
       select ${SORT_KEY} as sort_key, o.id, o.number, o.status, o.customer_id,
              cu.name as customer_name, o.customer_ref, o.business_date::text as business_date,
              o.due_date::text as due_date, o.delivered_on::text as delivered_on,
-             trim(o.currency) as currency, trim_scale(o.total)::text as order_total,
+             trim(o.currency) as currency,
+             trim_scale(o.total + o.rounding_difference)::text as order_total,
              (select count(*)::int from app.order_lines l
                where l.business_id = o.business_id and l.order_id = o.id and l.kind = 'item'
                  and l.deleted_at is null) as line_count,
@@ -464,12 +479,16 @@ export function listOrders(ctx: BusinessCtx, input: ListInput): Promise<OrderLis
 // Pending orders
 // ---------------------------------------------------------------------------------------------------
 
-/** What a save keeps of the order it changes. */
-interface StoredOrder {
+/** What a save keeps of the order it changes (or of the quotation it is made from). */
+export interface StoredOrder {
   readonly channelId: string
   readonly customerId: string | null
   readonly productIds: ReadonlySet<string>
   readonly deliveryCost: string | null
+  /** Its "Round the total" (kept when an update leaves it out). */
+  readonly roundTo: string | null
+  /** Each product line's VAT basis by its id, kept instead of the product's own (an accepted quotation). */
+  readonly vat?: ReadonlyMap<string, StoredVat> | undefined
 }
 
 /**
@@ -482,7 +501,14 @@ interface StoredOrder {
 async function prepareOrder(tx: Tx, ctx: BusinessCtx, input: Fields, stored: StoredOrder | null) {
   const biz = await saleContextOf(tx, ctx.businessId)
   assertDays(input.businessDate, null, biz.today)
-  if (!biz.vatRegistered && input.lines.some((l) => l.kind === 'delivery' && l.amountIncludesVat)) {
+  if (
+    !biz.vatRegistered &&
+    input.lines.some(
+      (l) =>
+        (l.kind === 'delivery' && l.amountIncludesVat) ||
+        (l.kind === 'typed' && (l.priceIncludesVat || l.vatCategory !== 'standard')),
+    )
+  ) {
     throw new AppError('capability_disabled', { message: 'VAT needs a VAT-registered business' })
   }
   if (input.customerId !== null) assertModuleActive(ctx, 'customers')
@@ -517,9 +543,17 @@ async function prepareOrder(tx: Tx, ctx: BusinessCtx, input: Fields, stored: Sto
   const priced: PricedLine[] = input.lines.map((line) => ({
     line,
     product: line.kind === 'item' ? (products.get(line.productId) ?? null) : null,
+    vat: line.kind === 'item' && line.id ? stored?.vat?.get(line.id) : undefined,
   }))
   const discount = toLineDiscount(input.discount)
-  const amounts = amountsOf(priced, biz.vatRegistered, biz.currency, discount)
+  const roundTo = input.roundTo === undefined ? (stored?.roundTo ?? null) : input.roundTo
+  const { amounts, adjustment, roundingDifference } = roundedAmountsOf(
+    priced,
+    biz.vatRegistered,
+    biz.currency,
+    discount,
+    roundTo,
+  )
   const deliveryCost = !input.deliveryNeeded
     ? null
     : input.deliveryCost === undefined
@@ -536,6 +570,9 @@ async function prepareOrder(tx: Tx, ctx: BusinessCtx, input: Fields, stored: Sto
     currency: biz.currency,
     discountPercent: input.discount && 'percent' in input.discount ? input.discount.percent : null,
     discountAmount: input.discount && 'amount' in input.discount ? input.discount.amount : null,
+    roundTo,
+    adjustment,
+    roundingDifference,
     ...totalsOf(amounts),
     deliveryNeeded: input.deliveryNeeded,
     deliveryArea: input.deliveryNeeded ? input.deliveryArea : null,
@@ -549,7 +586,7 @@ async function prepareOrder(tx: Tx, ctx: BusinessCtx, input: Fields, stored: Sto
 function orderLineValues(
   businessId: string,
   priced: readonly PricedLine[],
-  amounts: ReturnType<typeof amountsOf>,
+  amounts: SaleAmounts | null,
   vatRegistered: boolean,
 ) {
   return lineValues(businessId, priced, amounts, vatRegistered).map((line) => ({
@@ -574,6 +611,45 @@ function orderLineValues(
     total: line.total ?? '0',
   }))
 }
+
+/**
+ * Writes a pending order in `tx`: prepareOrder's checks and amounts, then its number (the counter row,
+ * the last lock taken; `beforeNumber` runs any other lock first), then the order and its lines.
+ * Shared by order.create and quotation.toOrder (M3 Step 7), whose caller answered replays already;
+ * `stored` is what the order is made from and keeps (an accepted quotation's customer, products and
+ * VAT basis, D-296).
+ */
+export async function insertOrder(
+  tx: Tx,
+  ctx: BusinessCtx,
+  id: string,
+  fields: Fields,
+  requestHash: string | null,
+  {
+    beforeNumber,
+    stored = null,
+  }: { beforeNumber?: (() => Promise<void>) | undefined; stored?: StoredOrder | null } = {},
+): Promise<{ number: string }> {
+  const { header, lines } = await prepareOrder(tx, ctx, fields, stored)
+  if (beforeNumber) await beforeNumber()
+  const { seq, number } = await takeNumber(tx, ctx.businessId, 'order')
+  await tx.insert(orders).values({
+    id,
+    businessId: ctx.businessId,
+    seq,
+    number,
+    status: 'pending',
+    ...header,
+    requestHash,
+  })
+  if (lines.length > 0) {
+    await tx.insert(orderLines).values(lines.map((line) => ({ ...line, orderId: id })))
+  }
+  return { number }
+}
+
+/** What order.create and quotation.toOrder give insertOrder: every field of an order. */
+export type OrderFields = Fields
 
 /** The create's fingerprint: every field as sent (its payment too). */
 function createHashOf(input: CreateInput): string {
@@ -613,25 +689,15 @@ export function createOrder(ctx: BusinessCtx, input: CreateInput): Promise<Order
       if (existing.request_hash !== requestHash || !existing.mine) throw new AppError('conflict')
       return result(await readOrder(tx, ctx, id))
     }
-    const { header, lines } = await prepareOrder(tx, ctx, fields, null)
-    if (payment) {
-      // Lock 2 before the number (the counter stays the last lock): the books-closed date.
-      const business = await lockPostingBusiness(tx, ctx.businessId)
-      assertPostable(business, fields.businessDate)
-    }
-    const { seq, number } = await takeNumber(tx, ctx.businessId, 'order')
-    await tx.insert(orders).values({
-      id,
-      businessId: ctx.businessId,
-      seq,
-      number,
-      status: 'pending',
-      ...header,
-      requestHash,
+    await insertOrder(tx, ctx, id, fields, requestHash, {
+      beforeNumber: payment
+        ? async () => {
+            // Lock 2 before the number (the counter stays the last lock): the books-closed date.
+            const business = await lockPostingBusiness(tx, ctx.businessId)
+            assertPostable(business, fields.businessDate)
+          }
+        : undefined,
     })
-    if (lines.length > 0) {
-      await tx.insert(orderLines).values(lines.map((line) => ({ ...line, orderId: id })))
-    }
     if (payment) {
       const head = await lockReceivable(tx, ctx, 'order', id)
       await recordCustomerPaymentInTx(tx, ctx, { kind: 'order', id }, head, {
@@ -661,6 +727,9 @@ interface LockedOrder extends Record<string, unknown> {
   delivery_cost: string | null
   discount_percent: string | null
   discount_amount: string | null
+  round_to: string | null
+  adjustment: string
+  rounding_difference: string
   notes: string | null
   sale_id: string | null
   delivered_on: string | null
@@ -679,7 +748,9 @@ async function lockOrder(tx: Tx, ctx: BusinessCtx, id: string): Promise<LockedOr
            o.channel_id, o.customer_id, o.delivery_needed, o.delivery_area,
            trim_scale(o.delivery_cost)::text as delivery_cost,
            trim_scale(o.discount_percent)::text as discount_percent,
-           trim_scale(o.discount_amount)::text as discount_amount, o.notes, o.sale_id,
+           trim_scale(o.discount_amount)::text as discount_amount,
+           trim_scale(o.round_to)::text as round_to, trim_scale(o.adjustment)::text as adjustment,
+           trim_scale(o.rounding_difference)::text as rounding_difference, o.notes, o.sale_id,
            o.delivered_on::text as delivered_on, o.created_by, o.vat_registered,
            coalesce(o.created_by = app.current_user_id()
              and coalesce(o.updated_by, o.created_by) = app.current_user_id(), false) as mine
@@ -749,6 +820,7 @@ export function updateOrder(ctx: BusinessCtx, input: UpdateInput): Promise<Order
       customerId: head.customer_id,
       productIds: new Set(live.flatMap((l) => (l.product_id ? [l.product_id] : []))),
       deliveryCost: head.delivery_cost,
+      roundTo: head.round_to,
     })
     const paid = await paidOn(tx, ctx.businessId, id)
     if (paid.standing > 0) {
@@ -756,7 +828,8 @@ export function updateOrder(ctx: BusinessCtx, input: UpdateInput): Promise<Order
       if (header.customerId !== head.customer_id) {
         throw invalid('customerId: an order with payments keeps its customer')
       }
-      if (compareDecimal(header.total, paid.paid) < 0) throw new AppError('below_paid')
+      const payable = sumDecimals([header.total, header.roundingDifference])
+      if (compareDecimal(payable, paid.paid) < 0) throw new AppError('below_paid')
     }
     await tx
       .update(orders)
@@ -855,9 +928,12 @@ export function deliverOrder(ctx: BusinessCtx, input: DeliverInput): Promise<Ord
     `)) as unknown as { id: string }[]
     if (!location) throw invalid('location: removed since the order was saved')
     const stored = await orderLinesOf(tx, ctx.businessId, input.id)
-    const items = stored.filter((l) => l.kind === 'item')
-    if (items.length === 0) throw invalid('lines: an order needs something sold to deliver')
-    assertModuleActive(ctx, 'products')
+    if (!stored.some((l) => l.kind === 'item')) {
+      throw invalid('lines: an order needs something sold to deliver')
+    }
+    // Typed items (Q21) name no product; the others must still be the business's.
+    const items = stored.filter((l) => l.kind === 'item' && l.product_id !== null)
+    if (items.length > 0) assertModuleActive(ctx, 'products')
     const products = await productsOf(
       tx,
       ctx.businessId,
@@ -874,23 +950,36 @@ export function deliverOrder(ctx: BusinessCtx, input: DeliverInput): Promise<Ord
     const sameRegistration = head.vat_registered === business.vatRegistered
     const saleId = newId()
     const asLines: InputLine[] = stored.map((l) =>
-      l.kind === 'item'
+      l.kind === 'item' && l.product_id === null
         ? {
-            kind: 'item',
+            kind: 'typed',
             id: newId(),
-            productId: l.product_id ?? '',
-            description: l.description,
+            description: l.description ?? '',
             qty: l.qty,
+            unit: l.unit,
             unitPrice: l.unit_price,
+            // A typed line keeps the VAT basis it was saved with (it has no product to ask).
+            priceIncludesVat: l.price_includes_vat,
+            vatCategory: l.vat_category ?? 'standard',
             discount: discountOf(l.discount_percent, l.discount_amount),
           }
-        : {
-            kind: 'delivery',
-            id: newId(),
-            description: l.description,
-            amount: l.unit_price,
-            amountIncludesVat: l.price_includes_vat,
-          },
+        : l.kind === 'item'
+          ? {
+              kind: 'item',
+              id: newId(),
+              productId: l.product_id ?? '',
+              description: l.description,
+              qty: l.qty,
+              unitPrice: l.unit_price,
+              discount: discountOf(l.discount_percent, l.discount_amount),
+            }
+          : {
+              kind: 'delivery',
+              id: newId(),
+              description: l.description,
+              amount: l.unit_price,
+              amountIncludesVat: l.price_includes_vat,
+            },
     )
     const priced: PricedLine[] = asLines.map((line, i) => {
       const kept = stored[i]!
@@ -906,19 +995,43 @@ export function deliverOrder(ctx: BusinessCtx, input: DeliverInput): Promise<Ord
             : undefined,
       }
     })
-    const amounts = amountsOf(
-      priced,
-      business.vatRegistered,
-      business.currency,
-      toLineDiscount(discountOf(head.discount_percent, head.discount_amount)),
-    )
+    // Its "Round the total" (M3 Step 7): the adjustment and rounding difference it was saved with, or,
+    // when the VAT registration changed since, worked out again for the total it wanted.
+    const deliveryDiscount = toLineDiscount(discountOf(head.discount_percent, head.discount_amount))
+    const rounded = sameRegistration
+      ? {
+          amounts: amountsWithRounding(
+            priced,
+            business.vatRegistered,
+            business.currency,
+            deliveryDiscount,
+            head.adjustment,
+            head.rounding_difference,
+          ),
+          adjustment: head.adjustment,
+          roundingDifference: head.rounding_difference,
+        }
+      : roundedAmountsOf(
+          priced,
+          business.vatRegistered,
+          business.currency,
+          deliveryDiscount,
+          head.round_to,
+        )
+    const amounts = rounded.amounts
     const totals = totalsOf(amounts)
     // The order keeps the amounts its sale counts (they change only when VAT registration did; then
     // what was paid beyond the new total shows as money back to the customer, D-273).
     const orderValues = orderLineValues(ctx.businessId, priced, amounts, business.vatRegistered)
     await tx
       .update(orders)
-      .set({ vatRegistered: business.vatRegistered, currency: business.currency, ...totals })
+      .set({
+        vatRegistered: business.vatRegistered,
+        currency: business.currency,
+        adjustment: rounded.adjustment,
+        roundingDifference: rounded.roundingDifference,
+        ...totals,
+      })
       .where(and(eq(orders.businessId, ctx.businessId), eq(orders.id, input.id)))
     for (const [i, line] of stored.entries()) {
       const values = orderValues[i]!

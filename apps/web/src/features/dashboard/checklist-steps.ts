@@ -1,6 +1,7 @@
 import type { ChecklistItemDto, ChecklistItemId } from '@bizcost/contracts'
 import type { I18nKey } from '@bizcost/i18n'
 import {
+  MapPinIcon,
   MapPinnedIcon,
   ReceiptTextIcon,
   StoreIcon,
@@ -17,6 +18,7 @@ const STEPS: Readonly<
 > = {
   profile: { icon: StoreIcon, section: 'business', key: 'profile' },
   trn: { icon: ReceiptTextIcon, section: 'business', key: 'trn' },
+  address: { icon: MapPinIcon, section: 'business', key: 'address' },
   invite: { icon: UserRoundPlusIcon, section: 'members', key: 'invite' },
   location: { icon: MapPinnedIcon, section: 'locations', key: 'location' },
 }

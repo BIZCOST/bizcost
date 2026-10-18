@@ -13,7 +13,9 @@
     "test:api": "vitest run --config vitest.api.config.ts",
     "demo:seed": "tsx --conditions=react-server demo/seed.ts",
     "demo:reset": "tsx --conditions=react-server demo/reset.ts",
-    "dev:clean-test-data": "tsx demo/clean-test-data.ts"
+    "dev:clean-test-data": "tsx demo/clean-test-data.ts",
+    "pdf:sample": "tsx scripts/render-sample-pdf.ts",
+    "pdf:samples": "tsx scripts/make-pdf-samples.ts"
   },
   "dependencies": {
     "@bizcost/contracts": "workspace:*",
@@ -21,6 +23,8 @@
     "@bizcost/domain": "workspace:*",
     "@bizcost/i18n": "workspace:*",
     "@bizcost/modules": "workspace:*",
+    "@myriaddreamin/typst-ts-web-compiler": "catalog:",
+    "@myriaddreamin/typst.ts": "catalog:",
     "@supabase/ssr": "catalog:",
     "@supabase/supabase-js": "catalog:",
     "@trpc/server": "catalog:",
@@ -32,10 +36,12 @@
   },
   "devDependencies": {
     "@bizcost/config": "workspace:*",
+    "@napi-rs/canvas": "catalog:",
     "@types/node": "catalog:",
     "@types/semver": "catalog:",
     "eslint": "catalog:",
     "fast-check": "catalog:",
+    "pdfjs-dist": "catalog:",
     "postgres": "catalog:",
     "tsx": "catalog:",
     "typescript": "catalog:",

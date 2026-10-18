@@ -94,6 +94,11 @@ export const profitPartsDto = z.object({
   itemSales: amount,
   /** Of which delivery charged to customers. */
   deliveryCharged: amount,
+  /**
+   * Of the items, those typed on a quotation and carried to its order (M3 Step 7, Q21): they carry
+   * their share and fees with no materials, and the screens say so.
+   */
+  typedSales: amount,
   /** Materials by the recipes, at the average frozen on each sale's day; null: withheld. */
   materials: costAmount(),
   /** App and selling fees of the channels. */

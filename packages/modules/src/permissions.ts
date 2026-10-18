@@ -100,6 +100,10 @@ export const PERMISSION_NEEDS: Readonly<Partial<Record<PermissionKey, readonly P
     'orders.documents.reverse': ['orders.documents.view'],
     'payments.customers.view': ['sales.documents.view'],
     'payments.customers.record': ['payments.customers.view'],
+    // Quotations (M3 Step 7, the plan's Q10 table): preparing them and recording the customer's
+    // answer both need to see them.
+    'quotations.documents.manage': ['quotations.documents.view'],
+    'quotations.documents.decide': ['quotations.documents.view'],
   }
 
 /** The keys of `keys` granted without a key they need (empty when the set is coherent). */

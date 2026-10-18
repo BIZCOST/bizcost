@@ -424,7 +424,7 @@ async function recentOrdersOf(tx: Tx, ctx: BusinessCtx): Promise<Cards['recentOr
   const scope = ctx.access.locationScope
   const payments = passes(ctx, ['payments', 'payments.customers.view'])
   const rows = (await tx.execute(sql`
-    select o.id, o.number, o.status, o.due_date::text as due_date, trim_scale(o.total)::text as total,
+    select o.id, o.number, o.status, o.due_date::text as due_date, trim_scale(o.total + o.rounding_difference)::text as total,
            c.name as customer_name,
            (select l.description from app.order_lines l
              where l.business_id = o.business_id and l.order_id = o.id and l.kind = 'item'

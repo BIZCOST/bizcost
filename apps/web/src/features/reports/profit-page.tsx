@@ -912,6 +912,8 @@ function useGroupName() {
     }
     if (group.key === 'delivery') return t('reports.profit.table.deliveryRow')
     if (group.key === 'charge') return t('reports.profit.table.chargeRow')
+    // Items typed on a quotation, not in the products list (M3 Step 7, Q21).
+    if (group.key === 'typed') return t('reports.profit.table.typedRow')
     return group.name ?? t('reports.profit.table.removed')
   }
 }

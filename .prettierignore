@@ -7,3 +7,5 @@ supabase/migrations/meta/
 supabase/templates/
 test-results/
 playwright-report/
+# The PDF samples' data: written by packages/api/scripts/make-pdf-samples.ts (JSON.stringify).
+packages/api/scripts/samples/*.json

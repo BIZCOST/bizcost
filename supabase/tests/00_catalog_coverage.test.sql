@@ -40,15 +40,16 @@ select tables_are(
     'cost_categories', 'expenses', 'expense_payments', 'running_costs',
     'sales_channels', 'sales', 'sale_lines', 'sale_line_materials',
     'sale_imports', 'sale_import_rows', 'import_profiles', 'product_aliases', 'channel_statements',
-    'customers', 'document_counters', 'orders', 'order_lines', 'customer_payments'
+    'customers', 'document_counters', 'orders', 'order_lines', 'customer_payments',
+    'quotations', 'quotation_lines', 'quotation_stages', 'document_renders'
   ],
   'app contains exactly the Milestone 1 and M2 tables and those of M3 so far'
 );
 
 select is(
   (select count(*)::int from business_tables),
-  46,
-  'sanity: 46 app tables carry business_id (the checks below are not vacuous)'
+  50,
+  'sanity: 50 app tables carry business_id (the checks below are not vacuous)'
 );
 
 -- 2. Row level security ---------------------------------------------------------
@@ -286,7 +287,15 @@ select is_empty(
          ('sale_lines', 'sale_id', 'sales'),
          ('sale_lines', 'product_id', 'products_services'),
          ('sale_line_materials', 'sale_id', 'sales'),
-         ('sale_line_materials', 'material_id', 'materials')
+         ('sale_line_materials', 'material_id', 'materials'),
+         ('quotations', 'root_id', 'quotations'),
+         ('quotations', 'copied_from_id', 'quotations'),
+         ('quotations', 'customer_id', 'customers'),
+         ('quotations', 'location_id', 'locations'),
+         ('quotations', 'order_id', 'orders'),
+         ('quotation_lines', 'quotation_id', 'quotations'),
+         ('quotation_lines', 'product_id', 'products_services'),
+         ('quotation_stages', 'quotation_id', 'quotations')
        ) as v(child, col, parent)
       where not exists (
         select 1

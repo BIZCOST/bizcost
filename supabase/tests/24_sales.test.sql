@@ -232,8 +232,9 @@ select is(pg_temp.state_of(pg_temp.api_exec('user A', 'biz A', v.stmt)), v.state
       update app.sales_channels set fee_percent = 101 where id = pg_temp.id('chan A') $$),
     ('23514', 'a sold quantity is never 0', $$
       update app.sale_lines set qty = 0 where id = pg_temp.id('line A') $$),
-    ('23514', 'an item names its product', $$
-      update app.sale_lines set product_id = null where id = pg_temp.id('line A') $$),
+    ('23514', 'an item names its product, or itself (a typed item, M3 Step 7)', $$
+      update app.sale_lines set product_id = null, description = null
+       where id = pg_temp.id('line A') $$),
     ('23514', 'a VAT category goes with its rate', $$
       update app.sale_lines set vat_category = 'standard' where id = pg_temp.id('line A') $$),
     ('23514', 'a delivery line is 1, without a unit or discount', $$

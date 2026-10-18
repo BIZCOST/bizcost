@@ -61,9 +61,18 @@ describe('module manifests', () => {
 
   it('give planned modules no permission keys, nav or quick actions until their build starts (no stubs)', () => {
     // A module gets its keys and nav when its build starts and stays planned (hidden) until it is
-    // released (D-124, D-125). Release A (M3 Step 6) released every module being built: none is until
-    // Quotations (M3 Step 7).
-    for (const m of MODULES.filter((x) => x.availability === 'planned')) {
+    // released (D-124, D-125). Quotations' build started in M3 Step 7 (released with Release B).
+    expect(byId.get('quotations')).toMatchObject({
+      availability: 'planned',
+      permissionKeys: [
+        'quotations.documents.view',
+        'quotations.documents.manage',
+        'quotations.documents.decide',
+      ],
+      quickActions: [],
+      sensitiveFields: [],
+    })
+    for (const m of MODULES.filter((x) => x.availability === 'planned' && x.id !== 'quotations')) {
       expect(m.permissionKeys, m.id).toEqual([])
       expect(m.nav, m.id).toEqual([])
       expect(m.quickActions, m.id).toEqual([])
@@ -280,6 +289,8 @@ describe('module manifests', () => {
       ['customers', 'sales'],
       ['receivables', 'sales'],
       ['real_profit', 'reports'],
+      // M3 Step 7: Quotations joins the "Sales" group (shown once released, Release B).
+      ['quotations', 'sales'],
     ])
   })
 
@@ -347,6 +358,11 @@ describe('permission catalog', () => {
         'orders.documents.manage',
         'orders.documents.deliver',
         'orders.documents.reverse',
+        // M3 Step 7: Quotations, and Settings → Documents.
+        'quotations.documents.view',
+        'quotations.documents.manage',
+        'quotations.documents.decide',
+        'settings.documents.manage',
         'data.cost.view',
         'data.profit_margin.view',
         'data.supplier_price.view',
@@ -476,6 +492,10 @@ describe('role templates', () => {
         'orders.documents.reverse',
         'payments.customers.view',
         'payments.customers.record',
+        // M3 Step 7 (Q10): see, prepare and record the answer of quotations.
+        'quotations.documents.view',
+        'quotations.documents.manage',
+        'quotations.documents.decide',
         'data.cost.view',
         'data.profit_margin.view',
         'data.supplier_price.view',
@@ -501,6 +521,8 @@ describe('role templates', () => {
         'orders.documents.view',
         'payments.customers.view',
         'payments.customers.record',
+        // M3 Step 7 (Q10): sees quotations.
+        'quotations.documents.view',
         'data.cost.view',
         'data.profit_margin.view',
         'data.supplier_price.view',
@@ -525,6 +547,10 @@ describe('role templates', () => {
         'orders.documents.deliver',
         'payments.customers.view',
         'payments.customers.record',
+        // M3 Step 7 (Q10): see, prepare and record the answer of quotations.
+        'quotations.documents.view',
+        'quotations.documents.manage',
+        'quotations.documents.decide',
       ].sort(),
     )
     expect(keysOf('supervisor')).toEqual(

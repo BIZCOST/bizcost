@@ -21,3 +21,11 @@ export function useMessage() {
 export function isolate(value: string): string {
   return `⁨${value}⁩`
 }
+
+/**
+ * An amount inside a sentence, left to right (LRI … PDI): its minus and its currency stay where the
+ * number puts them in an Arabic sentence too ("-119.29 د.إ.", never "119.29- د.إ.").
+ */
+export function ltrIsolate(value: string): string {
+  return `\u2066${value}\u2069`
+}

@@ -221,8 +221,8 @@ describe('module gates', () => {
 })
 
 describe('the dev-only preview (D-125)', () => {
-  // No module is being built between Release A (M3 Step 6) and Quotations (Step 7): a test registry
-  // starts the build of Quotations (its keys and nav) while it stays planned.
+  // A test registry with a Quotations of its own keys and nav (the real one's build started in M3 Step
+  // 7, and it stays planned until Release B).
   const building: ModuleManifest = {
     ...quotations,
     permissionKeys: ['quotations.view'],
@@ -240,8 +240,8 @@ describe('the dev-only preview (D-125)', () => {
   const registry = MODULES.map((m) => (m.id === 'quotations' ? building : m))
   const quotationsOn = resolveEnabledModules([{ key: 'quotations', enabled: true }])
 
-  it('may show only planned modules whose build started: none since Release A (M3 Step 6)', () => {
-    expect(PREVIEWABLE_MODULE_IDS).toEqual([])
+  it('may show only planned modules whose build started: Quotations (M3 Step 7)', () => {
+    expect(PREVIEWABLE_MODULE_IDS).toEqual(['quotations'])
   })
 
   it('parses a comma or space separated list, ignores released modules, and names what it cannot preview', () => {
@@ -271,11 +271,11 @@ describe('the dev-only preview (D-125)', () => {
       released: [],
       invalid: ['invoices', 'Quotations', 'nope'],
     })
-    // The real registry previews only the modules being built (Quotations is not yet).
-    expect(parsePreviewModules('quotations,materials,sales')).toEqual({
-      ids: [],
+    // The real registry previews only the modules being built (Quotations since M3 Step 7).
+    expect(parsePreviewModules('quotations,invoices,materials,sales')).toEqual({
+      ids: ['quotations'],
       released: ['materials', 'sales'],
-      invalid: ['quotations'],
+      invalid: ['invoices'],
     })
   })
 
@@ -293,7 +293,10 @@ describe('the dev-only preview (D-125)', () => {
     expect(isModuleActive(building, quotationsOn)).toBe(false)
     expect(withPreviewModules([], registry)).toBe(registry)
     // With the real registry nothing changes for a module not being built, or released.
-    expect(withPreviewModules(['quotations', 'materials', 'sales'])).toBe(MODULES)
+    expect(withPreviewModules(['invoices', 'materials', 'sales'])).toBe(MODULES)
+    expect(
+      withPreviewModules(['quotations']).find((m) => m.id === 'quotations')?.availability,
+    ).toBe('released')
   })
 
   it('still needs the business to have the module on and the member its permission', () => {

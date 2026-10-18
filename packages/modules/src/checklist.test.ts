@@ -24,6 +24,14 @@ import { ROLE_TEMPLATE_KEYS, roleTemplateByKey } from './role-templates'
 const ALL_ON = Object.fromEntries(CAPABILITY_KEYS.map((k) => [k, true]))
 const ALL_OFF = Object.fromEntries(CAPABILITY_KEYS.map((k) => [k, false]))
 
+/** Every module active, or none (the address step needs Quotations or Invoices). */
+const EVERY = () => true
+const NONE = () => false
+const ONLY =
+  (...ids: ModuleId[]) =>
+  (id: ModuleId) =>
+    ids.includes(id)
+
 function canFor(templateKey: string) {
   const effective = resolveEffective({
     roleTemplateKey: templateKey,
@@ -36,37 +44,51 @@ function canFor(templateKey: string) {
 
 describe('checklistItemIds', () => {
   it('lists every step, in order, for the owner of a business that uses everything', () => {
-    expect(checklistItemIds(ALL_ON, canFor(OWNER_TEMPLATE_KEY))).toEqual([...CHECKLIST_ITEM_IDS])
+    expect(checklistItemIds(ALL_ON, canFor(OWNER_TEMPLATE_KEY), EVERY)).toEqual([
+      ...CHECKLIST_ITEM_IDS,
+    ])
     expect(CHECKLIST_RULES.map((rule) => rule.id)).toEqual([...CHECKLIST_ITEM_IDS])
   })
 
   it('shows only the profile to the owner of a solo, single-branch business without VAT', () => {
-    expect(checklistItemIds(ALL_OFF, canFor(OWNER_TEMPLATE_KEY))).toEqual(['profile'])
+    expect(checklistItemIds(ALL_OFF, canFor(OWNER_TEMPLATE_KEY), NONE)).toEqual(['profile'])
   })
 
   it('shows each step only with its capability', () => {
     const owner = canFor(OWNER_TEMPLATE_KEY)
-    expect(checklistItemIds({ ...ALL_OFF, vat_registered: true }, owner)).toEqual([
+    expect(checklistItemIds({ ...ALL_OFF, vat_registered: true }, owner, NONE)).toEqual([
       'profile',
       'trn',
     ])
-    expect(checklistItemIds({ ...ALL_OFF, has_team: true }, owner)).toEqual(['profile', 'invite'])
-    expect(checklistItemIds({ ...ALL_OFF, multi_location: true }, owner)).toEqual([
+    expect(checklistItemIds({ ...ALL_OFF, has_team: true }, owner, NONE)).toEqual([
+      'profile',
+      'invite',
+    ])
+    expect(checklistItemIds({ ...ALL_OFF, multi_location: true }, owner, NONE)).toEqual([
       'profile',
       'location',
     ])
     // Capabilities that no step needs change nothing.
     const others = { ...ALL_OFF, keeps_stock: true, uses_machines: true, sells_via_pos: true }
-    expect(checklistItemIds(others, owner)).toEqual(['profile'])
+    expect(checklistItemIds(others, owner, NONE)).toEqual(['profile'])
+  })
+
+  it('asks for the address only with Quotations or Invoices on (their letterhead prints it)', () => {
+    const owner = canFor(OWNER_TEMPLATE_KEY)
+    expect(checklistItemIds(ALL_OFF, owner, ONLY('quotations'))).toEqual(['profile', 'address'])
+    expect(checklistItemIds(ALL_OFF, owner, ONLY('invoices'))).toEqual(['profile', 'address'])
+    expect(checklistItemIds(ALL_OFF, owner, ONLY('orders', 'sales', 'customers'))).toEqual([
+      'profile',
+    ])
   })
 
   it('shows only the steps each role template can act on', () => {
     const byTemplate = Object.fromEntries(
-      ROLE_TEMPLATE_KEYS.map((key) => [key, checklistItemIds(ALL_ON, canFor(key))]),
+      ROLE_TEMPLATE_KEYS.map((key) => [key, checklistItemIds(ALL_ON, canFor(key), EVERY)]),
     )
     expect(byTemplate).toEqual({
-      owner: ['profile', 'trn', 'invite', 'location'],
-      admin: ['profile', 'trn', 'invite', 'location'],
+      owner: ['profile', 'trn', 'address', 'invite', 'location'],
+      admin: ['profile', 'trn', 'address', 'invite', 'location'],
       // Sees the business and the team, manages branches.
       manager: ['location'],
       accountant: [],
@@ -78,8 +100,12 @@ describe('checklistItemIds', () => {
 
   it('follows a role that was edited', () => {
     const only = (keys: string[]) => (key: PermissionKey) => keys.includes(key)
-    expect(checklistItemIds(ALL_ON, only(['settings.members.manage']))).toEqual(['invite'])
-    expect(checklistItemIds(ALL_ON, only(['settings.business.edit']))).toEqual(['profile', 'trn'])
+    expect(checklistItemIds(ALL_ON, only(['settings.members.manage']), EVERY)).toEqual(['invite'])
+    expect(checklistItemIds(ALL_ON, only(['settings.business.edit']), EVERY)).toEqual([
+      'profile',
+      'trn',
+      'address',
+    ])
   })
 })
 
@@ -88,6 +114,7 @@ const BLANK: ChecklistFacts = {
   legalNameAr: null,
   hasLogo: false,
   trn: null,
+  hasAddress: false,
   activeMembers: 1,
   pendingInvitations: 0,
   locations: 1,
@@ -127,6 +154,11 @@ describe('checklistItem', () => {
     expect(checklistItem('trn', { ...BLANK, trn: '100123456700003' }).done).toBe(true)
   })
 
+  it('is done once the address is filled in', () => {
+    expect(checklistItem('address', BLANK).done).toBe(false)
+    expect(checklistItem('address', { ...BLANK, hasAddress: true }).done).toBe(true)
+  })
+
   it('counts the team as started with another member or an invitation waiting', () => {
     expect(checklistItem('invite', BLANK).done).toBe(false)
     expect(checklistItem('invite', { ...BLANK, activeMembers: 2 }).done).toBe(true)
@@ -148,6 +180,7 @@ describe('checklistItems', () => {
     expect(checklistItems(ALL, done).map((item) => [item.id, item.done])).toEqual([
       ['profile', false],
       ['trn', true],
+      ['address', false],
       ['invite', true],
       ['location', true],
     ])
@@ -156,9 +189,9 @@ describe('checklistItems', () => {
   it('leaves out the first team member and the second branch reached before the member joined', () => {
     // An admin invited into the team; a manager who joined a business with two branches.
     const joined = { ...BLANK, activeMembers: 2, teamBeforeMember: true }
-    expect(ids(joined)).toEqual(['profile', 'trn', 'location'])
+    expect(ids(joined)).toEqual(['profile', 'trn', 'address', 'location'])
     const branches = { ...BLANK, locations: 3, secondBranchBeforeMember: true }
-    expect(ids(branches)).toEqual(['profile', 'trn', 'invite'])
+    expect(ids(branches)).toEqual(['profile', 'trn', 'address', 'invite'])
   })
 
   it('shows the step again, open, once the milestone is lost', () => {

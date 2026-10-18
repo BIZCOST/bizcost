@@ -36,7 +36,11 @@ export function cleanName(value: string): string {
   return value.replace(INVISIBLE, '').replace(FILLER_AT_ENDS, '')
 }
 
-/** Whether a name has something to see: a character that is neither a space nor a format mark. */
+/**
+ * Whether a name has something to see: a character that is neither a space, a format mark, a
+ * combining mark on its own (it needs a letter to sit on) nor a blank filler (the Hangul fillers and
+ * the blank Braille pattern draw nothing). A PDF prints nothing of a name without one (D-299).
+ */
 export function hasVisibleCharacter(value: string): boolean {
-  return /[^\s\p{Cf}]/u.test(value)
+  return /[^\s\p{Cf}\p{M}ᅟᅠ⠀ㅤﾠ]/u.test(value)
 }

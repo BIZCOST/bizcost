@@ -471,6 +471,66 @@ export function computeSale(input: SaleInput, currency: CurrencyCode): SaleAmoun
 }
 
 // ---------------------------------------------------------------------------------------------------
+// The totals as a document prints them (D-296)
+// ---------------------------------------------------------------------------------------------------
+
+/** A line as its document stores it, for its printed totals. */
+export interface PrintedTotalsLine {
+  /** qty × unit price less its own discount, as typed (with VAT when its price includes it). */
+  readonly amount: Money
+  readonly priceIncludesVat: boolean
+  /** Null for a business not registered for VAT. */
+  readonly vatRate: Percent | null
+}
+
+export interface PrintedSubtotal {
+  /** Whether the subtotal and the discount are worked out before VAT (a taxed price includes VAT). */
+  readonly beforeVat: boolean
+  /** What the lines come to (after their own discounts), in the totals' basis. */
+  readonly subtotal: Money
+  /** The discount on the whole document, in the same basis (≥ 0). */
+  readonly discount: Money
+}
+
+/**
+ * The "Subtotal" and "Discount" of a document's totals, in one basis with its total before VAT, so the
+ * rows add up as printed: subtotal − discount + "Round the total" adjustment = total before VAT. When
+ * no taxed line's price includes VAT, the lines' amounts as typed and the document discount; when one
+ * does, both before VAT: each rate's lines priced with VAT less their VAT taken out once on their sum
+ * (as computeSale does), and the discount whatever then separates it from the total before VAT.
+ */
+export function printedSubtotal(
+  lines: readonly PrintedTotalsLine[],
+  totals: { readonly documentDiscount: Money; readonly net: Money; readonly adjustment: Money },
+  currency: CurrencyCode,
+): PrintedSubtotal {
+  const digits = currencyMinorUnit(currency)
+  const print = (value: Decimal) => fixed(value, digits) as Money
+  const taxedGross = (l: PrintedTotalsLine) =>
+    l.priceIncludesVat && l.vatRate !== null && toDec(l.vatRate).gt(0)
+  const asTyped = lines.reduce((acc, l) => acc.plus(toDec(l.amount)), toDec('0'))
+  if (!lines.some(taxedGross)) {
+    return { beforeVat: false, subtotal: print(asTyped), discount: totals.documentDiscount }
+  }
+  const rates = new Map<string, { gross: Decimal; before: Decimal }>()
+  for (const line of lines) {
+    const rate = line.vatRate === null ? '0' : toDec(line.vatRate).toString()
+    const group = rates.get(rate) ?? { gross: toDec('0'), before: toDec('0') }
+    if (taxedGross(line)) group.gross = group.gross.plus(toDec(line.amount))
+    else group.before = group.before.plus(toDec(line.amount))
+    rates.set(rate, group)
+  }
+  let subtotal = toDec('0')
+  for (const [rate, group] of rates) {
+    const sign = group.gross.lt(0) ? -1 : 1
+    const inGross = vatIn(group.gross.abs(), rate, digits).times(sign)
+    subtotal = subtotal.plus(group.before).plus(group.gross.minus(inGross))
+  }
+  const discount = subtotal.minus(toDec(totals.net).minus(toDec(totals.adjustment)))
+  return { beforeVat: true, subtotal: print(subtotal), discount: print(discount) }
+}
+
+// ---------------------------------------------------------------------------------------------------
 // Round the total (D-221)
 // ---------------------------------------------------------------------------------------------------
 

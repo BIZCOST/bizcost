@@ -44,7 +44,9 @@ export function obligationsOf(businessId: string): SQL {
       from (
         select 'order'::text as kind, o.id, o.business_id, o.location_id, o.number, o.status as order_status, o.customer_id,
                o.business_date, o.due_date, trim(o.currency) as currency, o.created_at,
-               case when o.status = 'cancelled' then 0::numeric else o.total end as total_n,
+               -- What the customer owes for an order: its total and its rounding difference (M3 Step 7).
+               case when o.status = 'cancelled' then 0::numeric
+                    else o.total + o.rounding_difference end as total_n,
                coalesce(rf.credited, 0) as credited_n,
                coalesce(cp.paid, 0) as paid_n, coalesce(cp.refunded, 0) as refunded_n
           from app.orders o

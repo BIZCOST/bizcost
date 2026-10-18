@@ -1,0 +1,753 @@
+{
+  "kind": "tax_invoice",
+  "draft": false,
+  "locale": "en",
+  "issuedAt": {
+    "year": 2026,
+    "month": 10,
+    "day": 8,
+    "hour": 9,
+    "minute": 30,
+    "second": 0
+  },
+  "labels": {
+    "title.quotation": {
+      "en": "Quotation",
+      "ar": "عرض سعر"
+    },
+    "title.taxInvoice": {
+      "en": "Tax Invoice",
+      "ar": "فاتورة ضريبية"
+    },
+    "title.invoice": {
+      "en": "Invoice",
+      "ar": "فاتورة"
+    },
+    "title.taxCreditNote": {
+      "en": "Tax Credit Note",
+      "ar": "إشعار دائن ضريبي"
+    },
+    "title.creditNote": {
+      "en": "Credit Note",
+      "ar": "إشعار دائن"
+    },
+    "draft": {
+      "en": "Draft",
+      "ar": "مسودة"
+    },
+    "number.quotation": {
+      "en": "Quotation no.",
+      "ar": "رقم العرض"
+    },
+    "number.invoice": {
+      "en": "Invoice no.",
+      "ar": "رقم الفاتورة"
+    },
+    "number.creditNote": {
+      "en": "Credit note no.",
+      "ar": "رقم الإشعار"
+    },
+    "revision": {
+      "en": "Revision",
+      "ar": "النسخة"
+    },
+    "date": {
+      "en": "Date",
+      "ar": "التاريخ"
+    },
+    "validUntil": {
+      "en": "Valid until",
+      "ar": "صالح حتى"
+    },
+    "dueDate": {
+      "en": "Due date",
+      "ar": "تاريخ الاستحقاق"
+    },
+    "customerRef": {
+      "en": "Your reference",
+      "ar": "مرجعكم"
+    },
+    "references.invoiceNo": {
+      "en": "Invoice no.",
+      "ar": "رقم الفاتورة"
+    },
+    "references.invoiceDate": {
+      "en": "Invoice date",
+      "ar": "تاريخ الفاتورة"
+    },
+    "trn": {
+      "en": "TRN",
+      "ar": "الرقم الضريبي"
+    },
+    "tradeLicence": {
+      "en": "Trade licence",
+      "ar": "الرخصة التجارية"
+    },
+    "to": {
+      "en": "Quotation for",
+      "ar": "مقدّم إلى"
+    },
+    "billTo": {
+      "en": "Bill to",
+      "ar": "فاتورة إلى"
+    },
+    "site": {
+      "en": "Project",
+      "ar": "المشروع"
+    },
+    "phone": {
+      "en": "Phone",
+      "ar": "الهاتف"
+    },
+    "email": {
+      "en": "Email",
+      "ar": "البريد الإلكتروني"
+    },
+    "address": {
+      "en": "Address",
+      "ar": "العنوان"
+    },
+    "page": {
+      "en": "Page {{page}} of {{pages}}",
+      "ar": "صفحة {{page}} من {{pages}}"
+    },
+    "dear": {
+      "en": "Dear {{name}},",
+      "ar": "السادة / {{name}}،"
+    },
+    "intro": {
+      "en": "Thank you for your interest in our services. We are pleased to submit the following quotation for your review.",
+      "ar": "شكرًا لاهتمامكم بخدماتنا. يسعدنا أن نقدّم لكم عرض السعر التالي للاطلاع عليه."
+    },
+    "amountsIn": {
+      "en": "All prices are in {{currency}}.",
+      "ar": "جميع الأسعار بعملة {{currency}}."
+    },
+    "amountsInAed": {
+      "en": "All prices are in UAE dirhams (AED).",
+      "ar": "جميع الأسعار بالدرهم الإماراتي (⁦AED⁩)."
+    },
+    "validity": {
+      "en": "This quotation is valid until {{date}}. Please feel free to contact us if you have any questions.",
+      "ar": "هذا العرض صالح حتى {{date}}. يسعدنا الردّ على أي استفسار."
+    },
+    "contact": {
+      "en": "Please feel free to contact us if you have any questions.",
+      "ar": "يسعدنا الردّ على أي استفسار."
+    },
+    "table.no": {
+      "en": "No.",
+      "ar": "م"
+    },
+    "table.picture": {
+      "en": "Picture",
+      "ar": "صورة"
+    },
+    "table.area": {
+      "en": "Area",
+      "ar": "المكان"
+    },
+    "table.description": {
+      "en": "Description",
+      "ar": "الوصف"
+    },
+    "table.unitPrice": {
+      "en": "Unit price",
+      "ar": "سعر الوحدة"
+    },
+    "table.qty": {
+      "en": "Qty",
+      "ar": "الكمية"
+    },
+    "table.discount": {
+      "en": "Discount",
+      "ar": "الخصم"
+    },
+    "table.vat": {
+      "en": "VAT",
+      "ar": "الضريبة"
+    },
+    "table.amount": {
+      "en": "Amount",
+      "ar": "المبلغ"
+    },
+    "table.inclVat": {
+      "en": "incl. VAT",
+      "ar": "شامل الضريبة"
+    },
+    "totals.subtotal": {
+      "en": "Subtotal",
+      "ar": "المجموع الفرعي"
+    },
+    "totals.discount": {
+      "en": "Discount",
+      "ar": "الخصم"
+    },
+    "totals.adjustment": {
+      "en": "Rounding adjustment",
+      "ar": "تعديل لتقريب الإجمالي"
+    },
+    "totals.net": {
+      "en": "Total before VAT",
+      "ar": "الإجمالي قبل الضريبة"
+    },
+    "totals.vatRate": {
+      "en": "VAT {{rate}}% on {{taxable}}",
+      "ar": "ضريبة القيمة المضافة {{rate}}% على {{taxable}}"
+    },
+    "totals.zeroRated": {
+      "en": "Zero-rated, on {{taxable}}",
+      "ar": "خاضع لنسبة الصفر، على {{taxable}}"
+    },
+    "totals.exempt": {
+      "en": "Exempt, on {{taxable}}",
+      "ar": "معفى، على {{taxable}}"
+    },
+    "totals.total": {
+      "en": "Total",
+      "ar": "الإجمالي"
+    },
+    "totals.roundingDifference": {
+      "en": "Rounding difference",
+      "ar": "فرق التقريب"
+    },
+    "totals.payable": {
+      "en": "Amount to pay",
+      "ar": "المبلغ المطلوب"
+    },
+    "totals.paid": {
+      "en": "Paid",
+      "ar": "المدفوع"
+    },
+    "totals.balanceDue": {
+      "en": "Balance due",
+      "ar": "المبلغ المتبقي"
+    },
+    "stages.title": {
+      "en": "Payment terms",
+      "ar": "شروط الدفع"
+    },
+    "stages.stage": {
+      "en": "Payment",
+      "ar": "الدفعة"
+    },
+    "stages.due": {
+      "en": "When",
+      "ar": "الموعد"
+    },
+    "stages.percent": {
+      "en": "Share",
+      "ar": "النسبة"
+    },
+    "stages.amount": {
+      "en": "Amount",
+      "ar": "المبلغ"
+    },
+    "stages.label": {
+      "en": "Payment {{n}}",
+      "ar": "الدفعة {{n}}"
+    },
+    "payments.title": {
+      "en": "Payments received",
+      "ar": "الدفعات المستلمة"
+    },
+    "payments.date": {
+      "en": "Date",
+      "ar": "التاريخ"
+    },
+    "payments.method": {
+      "en": "Method",
+      "ar": "طريقة الدفع"
+    },
+    "payments.reference": {
+      "en": "Reference",
+      "ar": "المرجع"
+    },
+    "payments.amount": {
+      "en": "Amount",
+      "ar": "المبلغ"
+    },
+    "terms": {
+      "en": "Terms and conditions",
+      "ar": "الشروط والأحكام"
+    },
+    "notes": {
+      "en": "Notes",
+      "ar": "ملاحظات"
+    },
+    "paymentDetails": {
+      "en": "Payment details",
+      "ar": "بيانات الدفع"
+    },
+    "signature.for": {
+      "en": "For {{name}}",
+      "ar": "عن {{name}}"
+    },
+    "signature.signatory": {
+      "en": "Authorised signatory",
+      "ar": "المفوّض بالتوقيع"
+    },
+    "signature.acceptance": {
+      "en": "Customer's acceptance",
+      "ar": "موافقة العميل"
+    },
+    "signature.line": {
+      "en": "Signature and date",
+      "ar": "التوقيع والتاريخ"
+    },
+    "unit.mg": {
+      "en": "mg",
+      "ar": "ملغ"
+    },
+    "unit.g": {
+      "en": "g",
+      "ar": "غرام"
+    },
+    "unit.kg": {
+      "en": "kg",
+      "ar": "كيلو"
+    },
+    "unit.ml": {
+      "en": "ml",
+      "ar": "مل"
+    },
+    "unit.l": {
+      "en": "L",
+      "ar": "لتر"
+    },
+    "unit.piece": {
+      "en": "pcs",
+      "ar": "قطعة"
+    },
+    "unit.mm": {
+      "en": "mm",
+      "ar": "مم"
+    },
+    "unit.cm": {
+      "en": "cm",
+      "ar": "سم"
+    },
+    "unit.m": {
+      "en": "m",
+      "ar": "متر"
+    },
+    "unit.mm2": {
+      "en": "mm²",
+      "ar": "مم²"
+    },
+    "unit.cm2": {
+      "en": "cm²",
+      "ar": "سم²"
+    },
+    "unit.m2": {
+      "en": "m²",
+      "ar": "م²"
+    },
+    "unit.s": {
+      "en": "sec",
+      "ar": "ثانية"
+    },
+    "unit.min": {
+      "en": "min",
+      "ar": "دقيقة"
+    },
+    "unit.h": {
+      "en": "hr",
+      "ar": "ساعة"
+    }
+  },
+  "title": {
+    "en": "Tax Invoice",
+    "ar": "فاتورة ضريبية"
+  },
+  "number": "INV-0042",
+  "revision": null,
+  "date": {
+    "en": "8 October 2026",
+    "ar": "8 أكتوبر 2026"
+  },
+  "validUntil": null,
+  "customerRef": "LPO-7781/B",
+  "currency": "AED",
+  "letterhead": {
+    "nameEn": {
+      "text": "Modern Touch Interiors",
+      "dir": "ltr"
+    },
+    "nameAr": {
+      "text": "لمسة عصرية للديكور",
+      "dir": "rtl"
+    },
+    "accent": "#1A1A1A",
+    "logo": "logo",
+    "watermark": true,
+    "phones": [
+      "+971 4 555 0142",
+      "+971 50 555 0199"
+    ],
+    "email": "hello@moderntouch.example",
+    "address": {
+      "text": "Warehouse 7, Al Quoz Industrial 3, Dubai",
+      "dir": "ltr"
+    },
+    "trn": "100345678900003",
+    "tradeLicence": "DED-884210"
+  },
+  "customer": {
+    "name": {
+      "text": "Mr. Yousef Al Hammadi",
+      "dir": "ltr"
+    },
+    "site": {
+      "text": "Villa 18, Al Barsha South",
+      "dir": "ltr"
+    },
+    "phone": "+971 55 555 0123",
+    "trn": "100555666700003",
+    "address": {
+      "text": "Villa 18, Al Barsha South, Dubai",
+      "dir": "ltr"
+    }
+  },
+  "opening": null,
+  "table": {
+    "showPictures": false,
+    "showAreas": true,
+    "showDiscount": false,
+    "showVat": true
+  },
+  "lines": [
+    {
+      "no": 1,
+      "area": {
+        "text": "MAJLIS",
+        "dir": "ltr"
+      },
+      "picture": null,
+      "title": {
+        "text": "Wall cladding with hidden door",
+        "dir": "ltr"
+      },
+      "details": {
+        "text": "Material: MDF with oak veneer, matt lacquer\nHidden door 90 × 240 cm, soft-close hinges\nLED strip along the top",
+        "dir": "ltr"
+      },
+      "note": null,
+      "qty": "18.5",
+      "unit": "م²",
+      "unitPrice": "650.00",
+      "discount": null,
+      "vatRate": "5%",
+      "amount": "12,025.00",
+      "includesVat": false
+    },
+    {
+      "no": 2,
+      "area": {
+        "text": "MAJLIS",
+        "dir": "ltr"
+      },
+      "picture": null,
+      "title": {
+        "text": "TV unit with back panel",
+        "dir": "ltr"
+      },
+      "details": {
+        "text": "Material: plywood, white high gloss\nFittings: Blum push-to-open",
+        "dir": "ltr"
+      },
+      "note": {
+        "text": "* Marble top price to be added as per client selection + delivery",
+        "dir": "ltr"
+      },
+      "qty": "1",
+      "unit": "قطعة",
+      "unitPrice": "7,800.00",
+      "discount": null,
+      "vatRate": "5%",
+      "amount": "7,800.00",
+      "includesVat": false
+    },
+    {
+      "no": 3,
+      "area": {
+        "text": "Master BR",
+        "dir": "ltr"
+      },
+      "picture": null,
+      "title": {
+        "text": "Wardrobe with sliding doors",
+        "dir": "ltr"
+      },
+      "details": {
+        "text": "Material: MDF painted, inside melamine\nTinted mirror on the middle door\nFittings: Hettich soft-close",
+        "dir": "ltr"
+      },
+      "note": null,
+      "qty": "6.8",
+      "unit": "م²",
+      "unitPrice": "980.00",
+      "discount": null,
+      "vatRate": "5%",
+      "amount": "6,664.00",
+      "includesVat": false
+    },
+    {
+      "no": 4,
+      "area": {
+        "text": "Master BR",
+        "dir": "ltr"
+      },
+      "picture": null,
+      "title": {
+        "text": "Bed back panel with side tables",
+        "dir": "ltr"
+      },
+      "details": {
+        "text": "Material: fabric panels on MDF frame\n2 side tables, one drawer each",
+        "dir": "ltr"
+      },
+      "note": null,
+      "qty": "1",
+      "unit": "قطعة",
+      "unitPrice": "4,750.00",
+      "discount": null,
+      "vatRate": "5%",
+      "amount": "4,750.00",
+      "includesVat": false
+    },
+    {
+      "no": 5,
+      "area": null,
+      "picture": null,
+      "title": {
+        "text": "Export packing for the client’s shipment",
+        "dir": "ltr"
+      },
+      "details": {
+        "text": "Crating and documents, goods exported",
+        "dir": "ltr"
+      },
+      "note": null,
+      "qty": "1",
+      "unit": "pcs",
+      "unitPrice": "1,200.00",
+      "discount": null,
+      "vatRate": "0%",
+      "amount": "1,200.00"
+    }
+  ],
+  "totals": [
+    {
+      "label": {
+        "en": "Total before VAT",
+        "ar": "الإجمالي قبل الضريبة"
+      },
+      "amount": "32,439.00",
+      "strong": false
+    },
+    {
+      "label": {
+        "en": "VAT 5% on 31,239.00",
+        "ar": "ضريبة القيمة المضافة 5٪ على 31,239.00"
+      },
+      "amount": "1,561.95",
+      "strong": false
+    },
+    {
+      "label": {
+        "en": "Zero-rated, on 1,200.00",
+        "ar": "خاضع لنسبة الصفر، على 1,200.00"
+      },
+      "amount": "0.00",
+      "strong": false
+    },
+    {
+      "label": {
+        "en": "Total",
+        "ar": "الإجمالي"
+      },
+      "amount": "34,000.95",
+      "strong": false
+    },
+    {
+      "label": {
+        "en": "Paid",
+        "ar": "المدفوع"
+      },
+      "amount": "-17,000.48",
+      "strong": false
+    },
+    {
+      "label": {
+        "en": "Balance due",
+        "ar": "المبلغ المتبقي"
+      },
+      "amount": "17,000.47",
+      "strong": true
+    }
+  ],
+  "stages": [],
+  "validity": null,
+  "terms": {
+    "text": "Payment within 14 days of the invoice date.\nGoods remain our property until paid in full.",
+    "dir": "ltr"
+  },
+  "notes": null,
+  "paymentDetails": {
+    "text": "Bank: Emirates Sample Bank\nAccount name: Modern Touch Interiors\nIBAN: AE00 0000 0000 0000 0000 000",
+    "dir": "ltr"
+  },
+  "signature": {
+    "signatory": {
+      "text": "Abdulla Al Kaabi",
+      "dir": "ltr"
+    },
+    "signature": "signature",
+    "stamp": "stamp",
+    "acceptance": false
+  },
+  "images": {
+    "logo": {
+      "path": "/img/logo.png",
+      "format": "png",
+      "width": 1,
+      "height": 1
+    },
+    "signature": {
+      "path": "/img/signature.png",
+      "format": "png",
+      "width": 1,
+      "height": 1
+    },
+    "stamp": {
+      "path": "/img/stamp.png",
+      "format": "png",
+      "width": 1,
+      "height": 1
+    },
+    "line-1": {
+      "path": "/img/line-1.jpg",
+      "format": "jpg",
+      "width": 1,
+      "height": 1
+    },
+    "line-2": {
+      "path": "/img/line-2.jpg",
+      "format": "jpg",
+      "width": 1,
+      "height": 1
+    },
+    "line-3": {
+      "path": "/img/line-3.jpg",
+      "format": "jpg",
+      "width": 1,
+      "height": 1
+    },
+    "line-4": {
+      "path": "/img/line-4.jpg",
+      "format": "jpg",
+      "width": 1,
+      "height": 1
+    },
+    "line-5": {
+      "path": "/img/line-5.jpg",
+      "format": "jpg",
+      "width": 1,
+      "height": 1
+    },
+    "line-6": {
+      "path": "/img/line-6.jpg",
+      "format": "jpg",
+      "width": 1,
+      "height": 1
+    },
+    "line-7": {
+      "path": "/img/line-7.jpg",
+      "format": "jpg",
+      "width": 1,
+      "height": 1
+    },
+    "line-8": {
+      "path": "/img/line-8.jpg",
+      "format": "jpg",
+      "width": 1,
+      "height": 1
+    },
+    "line-9": {
+      "path": "/img/line-9.jpg",
+      "format": "jpg",
+      "width": 1,
+      "height": 1
+    },
+    "line-10": {
+      "path": "/img/line-10.jpg",
+      "format": "jpg",
+      "width": 1,
+      "height": 1
+    },
+    "line-11": {
+      "path": "/img/line-11.jpg",
+      "format": "jpg",
+      "width": 1,
+      "height": 1
+    },
+    "line-12": {
+      "path": "/img/line-12.jpg",
+      "format": "jpg",
+      "width": 1,
+      "height": 1
+    },
+    "line-14": {
+      "path": "/img/line-14.jpg",
+      "format": "jpg",
+      "width": 1,
+      "height": 1
+    },
+    "line-17": {
+      "path": "/img/line-17.jpg",
+      "format": "jpg",
+      "width": 1,
+      "height": 1
+    },
+    "line-15": {
+      "path": "/img/line-15.jpg",
+      "format": "jpg",
+      "width": 1,
+      "height": 1
+    },
+    "line-16": {
+      "path": "/img/line-16.jpg",
+      "format": "jpg",
+      "width": 1,
+      "height": 1
+    }
+  },
+  "dueDate": {
+    "en": "22 October 2026",
+    "ar": "22 أكتوبر 2026"
+  },
+  "references": [
+    {
+      "label": {
+        "en": "Quotation",
+        "ar": "عرض السعر"
+      },
+      "value": "Q-0007"
+    }
+  ],
+  "payments": [
+    {
+      "date": {
+        "en": "10 October 2026",
+        "ar": "10 أكتوبر 2026"
+      },
+      "method": {
+        "en": "Bank transfer",
+        "ar": "تحويل بنكي"
+      },
+      "reference": "FT-2610-8841",
+      "amount": "17,000.48"
+    }
+  ]
+}

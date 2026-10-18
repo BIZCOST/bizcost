@@ -33,9 +33,9 @@ export async function takeNumber(
   // A business's first document of the series makes its counter (two first creates wait for each
   // other on the unique key; the second inserts nothing).
   await tx.execute(sql`
-    insert into app.document_counters (id, business_id, series, next_no, prefix, padding)
-    values (${newId()}, ${businessId}, ${series}, ${defaults.first}, ${defaults.prefix},
-            ${defaults.padding})
+    insert into app.document_counters (id, business_id, series, next_no, first_no, prefix, padding)
+    values (${newId()}, ${businessId}, ${series}, ${defaults.first}, ${defaults.first},
+            ${defaults.prefix}, ${defaults.padding})
     on conflict (business_id, series) do nothing
   `)
   const [row] = (await tx.execute(sql`

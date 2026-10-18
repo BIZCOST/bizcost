@@ -857,8 +857,12 @@ function groupKeyOf(grouping: ProfitGrouping): { line: SQL; sale: SQL } {
     case 'day':
       return { line: sql`p.day::text`, sale: sql`p.day::text` }
     case 'product':
-      // What is not a product: delivery charged ('delivery') and other charges ('charge').
-      return { line: sql`coalesce(l.product_id::text, l.kind)`, sale: sql`'delivery'` }
+      // What is not a product: delivery charged ('delivery'), other charges ('charge') and items
+      // typed on a quotation ('typed', M3 Step 7, Q21).
+      return {
+        line: sql`coalesce(l.product_id::text, case when l.kind = 'item' then 'typed' else l.kind end)`,
+        sale: sql`'delivery'`,
+      }
     case 'channel':
       return { line: sql`p.channel_id::text`, sale: sql`p.channel_id::text` }
     case 'branch':
@@ -887,6 +891,8 @@ interface BucketRow extends Record<string, unknown> {
   material_rows: number
   unpriced_rows: number
   without_recipe: number
+  /** Σ of the net of typed items (no product, Q21), null without one. */
+  typed_net: string | null
   owner_time: string | null
   rate_not_set: number
   /** Σ of the lines' sizes (abs net) and, below, of those each reason concerns (completeness). */
@@ -987,6 +993,8 @@ export async function profitGroups(
            (count(*) filter (where ${env.materialsOn} and l.kind = 'item'
               and l.cost_basis = 'none' and pr.type = 'product'
               and pr.resale_material_id is null))::int as without_recipe,
+           trim_scale(sum(p.sign * l.net) filter (where l.kind = 'item'
+             and l.product_id is null))::text as typed_net,
            trim_scale(sum(p.sign * l.time_cost))::text as owner_time,
            (count(*) filter (where l.time_minutes is not null and l.time_cost is null))::int
              as rate_not_set,
@@ -1062,6 +1070,7 @@ export async function profitGroups(
         materialRows: row.material_rows,
         unpricedRows: row.unpriced_rows,
         withoutRecipe: row.without_recipe,
+        typedNet: row.typed_net,
         ownerTime: row.owner_time,
         rateNotSet: row.rate_not_set,
         fees,

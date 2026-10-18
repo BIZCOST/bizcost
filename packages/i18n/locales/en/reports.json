@@ -161,6 +161,7 @@
       "weekDays": "{{from}} to {{to}}",
       "deliveryRow": "Delivery charged",
       "chargeRow": "Other charges",
+      "typedRow": "Typed items (not in your list)",
       "removed": "No longer listed",
       "incomplete": "Not complete",
       "beforeRunning": "before running costs",

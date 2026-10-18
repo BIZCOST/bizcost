@@ -927,6 +927,11 @@ const PROBES: Record<string, Probe> = {
     variants: (victim) => [
       { input: { entity: 'purchase', entityId: victim.purchase.id }, own: ['not_found'] },
       { input: { entity: 'expense', entityId: victim.expense.id }, own: ['not_found'] },
+      { input: { entity: 'quotation', entityId: victim.quotation.id }, own: ['not_found'] },
+      {
+        input: { entity: 'quotation_line', entityId: victim.quotation.lines[0]?.id },
+        own: ['not_found'],
+      },
     ],
   },
   'attachment.uploadUrl': {
@@ -939,6 +944,14 @@ const PROBES: Record<string, Probe> = {
       },
       {
         input: { entity: 'expense', entityId: victim.expense.id, contentType: 'image/png' },
+        own: ['not_found'],
+      },
+      {
+        input: {
+          entity: 'quotation_line',
+          entityId: victim.quotation.lines[0]?.id,
+          contentType: 'image/png',
+        },
         own: ['not_found'],
       },
     ],
@@ -967,6 +980,24 @@ const PROBES: Record<string, Probe> = {
         },
         own: ['not_found'],
       },
+      {
+        input: {
+          entity: 'quotation_line',
+          entityId: attacker.quotation.lines[0]?.id,
+          path: `${victim.id}/quotation_line/${newId()}.png`,
+          fileName: 'x.png',
+        },
+        own: ['validation'],
+      },
+      {
+        input: {
+          entity: 'quotation_line',
+          entityId: victim.quotation.lines[0]?.id,
+          path: `${attacker.id}/quotation_line/${newId()}.png`,
+          fileName: 'x.png',
+        },
+        own: ['not_found'],
+      },
     ],
   },
   'attachment.remove': {
@@ -975,6 +1006,7 @@ const PROBES: Record<string, Probe> = {
     variants: (victim) => [
       { input: { id: victim.attachment.id }, own: ['not_found'] },
       { input: { id: victim.expenseAttachment.id }, own: ['not_found'] },
+      { input: { id: victim.linePicture.id }, own: ['not_found'] },
     ],
   },
   // What is owed and its payments (the owner's requests of 2026-09-29): the purchase and the payment
@@ -2234,6 +2266,227 @@ const PROBES: Record<string, Probe> = {
     reason: 'looked up (and locked) in the x-business-id business',
     variants: (victim) => [{ input: { id: victim.statement.id }, own: ['not_found'] }],
   },
+  // Quotations and Settings → Documents (M3 Step 7, served under the dev-only preview, D-125).
+  'document.settings': { base: 'business', reason: NO_ROWS },
+  'document.updateSettings': {
+    base: 'business',
+    reason: `${NO_ROWS}; a series is a key of the registry (order, quotation), not a row`,
+    variants: () => [
+      {
+        input: {
+          version: 1,
+          series: [{ series: 'quotation', prefix: 'PW-', padding: 4 }],
+          footer: 'Pwned',
+          quotationTerms: null,
+          quotationValidDays: 30,
+          accent: 'navy',
+          watermark: false,
+          wholeAmounts: false,
+          signatory: null,
+        },
+      },
+    ],
+  },
+  'document.imageUploadUrl': {
+    base: 'business',
+    reason: 'the path is made by the server under the x-business-id business',
+    variants: () => [{ input: { kind: 'signature', contentType: 'image/png' } }],
+  },
+  'document.setImage': {
+    base: 'business',
+    reason: 'only a signature or stamp path of the x-business-id business that it issued (D-085)',
+    variants: (victim) => [
+      { input: { kind: 'signature', path: victim.signaturePath }, own: ['validation'] },
+      { input: { kind: 'stamp', path: victim.signaturePath }, own: ['validation'] },
+      { input: { kind: 'stamp', path: victim.openUpload.path }, own: ['validation'] },
+    ],
+  },
+  'document.removeImage': {
+    base: 'business',
+    reason: NO_ROWS,
+    variants: () => [{ input: { kind: 'stamp' } }],
+  },
+  'quotation.list': {
+    base: 'business',
+    reason: `${NO_ROWS}; a customer filter is looked up in that business (NOT_FOUND)`,
+    variants: (victim) => [
+      { input: { status: 'all' } },
+      { input: { customerId: victim.customer.id }, own: ['not_found'] },
+    ],
+  },
+  'quotation.get': {
+    base: 'business',
+    reason: 'looked up in the x-business-id business (and the caller’s branches)',
+    variants: (victim) => [
+      { input: { id: victim.quotation.id }, own: ['not_found'] },
+      { input: { id: victim.sentQuotation.id }, own: ['not_found'] },
+    ],
+  },
+  'quotation.history': {
+    base: 'business',
+    reason: 'looked up in the x-business-id business (and the caller’s branches)',
+    variants: (victim) => [{ input: { id: victim.quotation.id }, own: ['not_found'] }],
+  },
+  'quotation.pdf': {
+    base: 'business',
+    reason:
+      'looked up in the x-business-id business; its images are read only from that business’s ' +
+      'own Storage folders',
+    variants: (victim) => [{ input: { id: victim.quotation.id }, own: ['not_found'] }],
+  },
+  'quotation.create': {
+    base: 'business',
+    reason:
+      'its customer, branch and products are looked up in the x-business-id business; a quotation ' +
+      'or line id used anywhere is CONFLICT, and the number is never taken',
+    variants: (victim, attacker) => {
+      const fields = {
+        customerId: attacker.customer.id,
+        businessDate: attacker.order.businessDate,
+        locationId: attacker.branch.id,
+      }
+      const line = { productId: attacker.product.id, qty: '1', unitPrice: '1' }
+      return [
+        { input: { ...fields, id: victim.quotation.id }, own: ['conflict'] },
+        { input: { ...fields, id: newId(), customerId: victim.customer.id }, own: ['not_found'] },
+        { input: { ...fields, id: newId(), locationId: victim.branch.id }, own: ['not_found'] },
+        {
+          input: {
+            ...fields,
+            id: newId(),
+            lines: [{ ...line, id: newId(), productId: victim.product.id }],
+          },
+          own: ['not_found'],
+        },
+        {
+          input: {
+            ...fields,
+            id: newId(),
+            lines: [{ ...line, id: victim.quotation.lines[0]?.id }],
+          },
+          own: ['conflict'],
+        },
+      ]
+    },
+  },
+  'quotation.update': {
+    base: 'business',
+    reason:
+      'the quotation (locked) and its customer, branch and products are looked up in the ' +
+      'x-business-id business; a line id used anywhere is CONFLICT',
+    variants: (victim, attacker) => {
+      const fields = {
+        customerId: attacker.customer.id,
+        businessDate: attacker.order.businessDate,
+        locationId: attacker.branch.id,
+      }
+      const own = { id: attacker.quotation.id, version: attacker.quotation.version }
+      const line = { productId: attacker.product.id, qty: '1', unitPrice: '1' }
+      return [
+        {
+          input: { ...fields, id: victim.quotation.id, version: victim.quotation.version },
+          own: ['not_found'],
+        },
+        { input: { ...fields, ...own, customerId: victim.customer.id }, own: ['not_found'] },
+        { input: { ...fields, ...own, locationId: victim.branch.id }, own: ['not_found'] },
+        {
+          input: {
+            ...fields,
+            ...own,
+            lines: [{ ...line, id: newId(), productId: victim.product.id }],
+          },
+          own: ['not_found'],
+        },
+        {
+          input: { ...fields, ...own, lines: [{ ...line, id: victim.quotation.lines[0]?.id }] },
+          own: ['conflict'],
+        },
+      ]
+    },
+  },
+  'quotation.discard': {
+    base: 'business',
+    reason: 'looked up (and locked) in the x-business-id business',
+    variants: (victim) => [
+      { input: { id: victim.quotation.id, version: victim.quotation.version }, own: ['not_found'] },
+    ],
+  },
+  'quotation.send': {
+    base: 'business',
+    reason: 'looked up (and locked) in the x-business-id business',
+    variants: (victim) => [
+      { input: { id: victim.quotation.id, version: victim.quotation.version }, own: ['not_found'] },
+    ],
+  },
+  'quotation.revise': {
+    base: 'business',
+    reason:
+      'the revision is looked up (and locked) in the x-business-id business; a new id used ' +
+      'anywhere is CONFLICT (its pictures are copied only within that business’s folders)',
+    variants: (victim, attacker) => [
+      { input: { id: victim.sentQuotation.id, newId: newId() }, own: ['not_found'] },
+      { input: { id: attacker.sentQuotation.id, newId: victim.quotation.id }, own: ['conflict'] },
+    ],
+  },
+  'quotation.copy': {
+    base: 'business',
+    reason:
+      'the revision and the customer are looked up in the x-business-id business; a new id used ' +
+      'anywhere is CONFLICT, and the number is never taken',
+    variants: (victim, attacker) => [
+      { input: { id: victim.quotation.id, newId: newId() }, own: ['not_found'] },
+      { input: { id: attacker.quotation.id, newId: victim.quotation.id }, own: ['conflict'] },
+      {
+        input: { id: attacker.quotation.id, newId: newId(), customerId: victim.customer.id },
+        own: ['not_found'],
+      },
+    ],
+  },
+  'quotation.toOrder': {
+    base: 'business',
+    reason:
+      'the revision (locked) and the channel are looked up in the x-business-id business; an order ' +
+      'id used anywhere is CONFLICT, and the order’s number is never taken',
+    variants: (victim, attacker) => [
+      { input: { id: victim.acceptedQuotation.id, orderId: newId() }, own: ['not_found'] },
+      {
+        input: {
+          id: attacker.acceptedQuotation.id,
+          orderId: victim.order.id,
+          channelId: attacker.channel.id,
+        },
+        own: ['conflict'],
+      },
+      {
+        input: {
+          id: attacker.acceptedQuotation.id,
+          orderId: newId(),
+          channelId: victim.channel.id,
+        },
+        own: ['not_found'],
+      },
+    ],
+  },
+  'quotation.accept': {
+    base: 'business',
+    reason: 'looked up (and locked) in the x-business-id business',
+    variants: (victim) => [
+      {
+        input: { id: victim.sentQuotation.id, version: victim.sentQuotation.version },
+        own: ['not_found'],
+      },
+    ],
+  },
+  'quotation.decline': {
+    base: 'business',
+    reason: 'looked up (and locked) in the x-business-id business',
+    variants: (victim) => [
+      {
+        input: { id: victim.sentQuotation.id, version: victim.sentQuotation.version },
+        own: ['not_found'],
+      },
+    ],
+  },
   'member.locations': {
     base: 'business',
     reason: 'the member is looked up in the x-business-id business',
@@ -2299,6 +2552,7 @@ const TENANT_STRINGS = new Set([
   'defaultLocationId',
   'invitationToken',
   'logoPath',
+  'signaturePath',
   'resaleMaterialId',
 ])
 

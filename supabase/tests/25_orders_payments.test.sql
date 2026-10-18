@@ -205,8 +205,8 @@ select is(pg_temp.api_exec(v.u, v.b, v.stmt), 'ok 1', 'setup: ' || v.what)
       values (pg_temp.id('cust A2'), pg_temp.id('biz A'), 'Gulf Events', 'business',
               '100000000000003', 'TL-881', 'dubai') $$),
     (6, 'user A', 'biz A', 'A''s order counter', $$
-      insert into app.document_counters (id, business_id, series, next_no, prefix)
-      values (pg_temp.id('ctr A'), pg_temp.id('biz A'), 'order', 1003, '#') $$),
+      insert into app.document_counters (id, business_id, series, next_no, first_no, prefix)
+      values (pg_temp.id('ctr A'), pg_temp.id('biz A'), 'order', 1003, 1001, '#') $$),
     (7, 'user A', 'biz A', 'order #1001 of A', pg_temp.order_sql('ord A', 1001)),
     (8, 'user A', 'biz A', 'its line', $$
       insert into app.order_lines (id, business_id, order_id, position, kind, product_id, qty, unit,
@@ -336,8 +336,8 @@ select is(pg_temp.state_of(pg_temp.api_exec('user A', 'biz A', v.stmt)), '23514'
     (4, 'a TRN of 15 digits', $$
       update app.customers set trn = '123' where id = pg_temp.id('cust A') $$),
     (5, 'a series from the list', $$
-      insert into app.document_counters (id, business_id, series, next_no, prefix)
-      values (pg_temp.id('x ctr'), pg_temp.id('biz A'), 'quote', 1, 'Q') $$),
+      insert into app.document_counters (id, business_id, series, next_no, first_no, prefix)
+      values (pg_temp.id('x ctr'), pg_temp.id('biz A'), 'quote', 1, 1, 'Q') $$),
     (6, 'a number''s padding of at most 12 digits', $$
       update app.document_counters set padding = 13 where id = pg_temp.id('ctr A') $$),
     (7, 'an order status from the list', pg_temp.order_sql('x status', 1010, ', status',
@@ -396,8 +396,8 @@ select is(pg_temp.state_of(pg_temp.api_exec('user A', 'biz A', v.stmt)), v.state
   from (values
     (1, '23505', 'one order per number', pg_temp.order_sql('x dup', 1001)),
     (2, '23505', 'one counter per series', $$
-      insert into app.document_counters (id, business_id, series, next_no, prefix)
-      values (pg_temp.id('x ctr 2'), pg_temp.id('biz A'), 'order', 1, '#') $$),
+      insert into app.document_counters (id, business_id, series, next_no, first_no, prefix)
+      values (pg_temp.id('x ctr 2'), pg_temp.id('biz A'), 'order', 1, 1, '#') $$),
     (3, '23514', 'a counter never goes back (a number given is never given again)', $$
       update app.document_counters set next_no = 1000 where id = pg_temp.id('ctr A') $$),
     (4, 'ok 1', 'it moves forward', $$

@@ -103,7 +103,8 @@
       "depositOverTotal": "The deposit can't be more than the order's total.",
       "nothingToPay": "Add what was ordered first.",
       "paidMethod": "Choose how the customer paid."
-    }
+    },
+    "roundedTotal": "This order keeps its quotation's rounded total, {{total}}: when you save, the rounding adjustment follows the lines."
   },
   "view": {
     "pageTitle": "Order",

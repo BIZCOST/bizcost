@@ -1,0 +1,1129 @@
+{
+  "kind": "quotation",
+  "draft": false,
+  "locale": "ar",
+  "issuedAt": {
+    "year": 2026,
+    "month": 10,
+    "day": 8,
+    "hour": 9,
+    "minute": 30,
+    "second": 0
+  },
+  "labels": {
+    "title.quotation": {
+      "en": "Quotation",
+      "ar": "عرض سعر"
+    },
+    "title.taxInvoice": {
+      "en": "Tax Invoice",
+      "ar": "فاتورة ضريبية"
+    },
+    "title.invoice": {
+      "en": "Invoice",
+      "ar": "فاتورة"
+    },
+    "title.taxCreditNote": {
+      "en": "Tax Credit Note",
+      "ar": "إشعار دائن ضريبي"
+    },
+    "title.creditNote": {
+      "en": "Credit Note",
+      "ar": "إشعار دائن"
+    },
+    "draft": {
+      "en": "Draft",
+      "ar": "مسودة"
+    },
+    "number.quotation": {
+      "en": "Quotation no.",
+      "ar": "رقم العرض"
+    },
+    "number.invoice": {
+      "en": "Invoice no.",
+      "ar": "رقم الفاتورة"
+    },
+    "number.creditNote": {
+      "en": "Credit note no.",
+      "ar": "رقم الإشعار"
+    },
+    "revision": {
+      "en": "Revision",
+      "ar": "النسخة"
+    },
+    "date": {
+      "en": "Date",
+      "ar": "التاريخ"
+    },
+    "validUntil": {
+      "en": "Valid until",
+      "ar": "صالح حتى"
+    },
+    "dueDate": {
+      "en": "Due date",
+      "ar": "تاريخ الاستحقاق"
+    },
+    "customerRef": {
+      "en": "Your reference",
+      "ar": "مرجعكم"
+    },
+    "references.invoiceNo": {
+      "en": "Invoice no.",
+      "ar": "رقم الفاتورة"
+    },
+    "references.invoiceDate": {
+      "en": "Invoice date",
+      "ar": "تاريخ الفاتورة"
+    },
+    "trn": {
+      "en": "TRN",
+      "ar": "الرقم الضريبي"
+    },
+    "tradeLicence": {
+      "en": "Trade licence",
+      "ar": "الرخصة التجارية"
+    },
+    "to": {
+      "en": "Quotation for",
+      "ar": "مقدّم إلى"
+    },
+    "billTo": {
+      "en": "Bill to",
+      "ar": "فاتورة إلى"
+    },
+    "site": {
+      "en": "Project",
+      "ar": "المشروع"
+    },
+    "phone": {
+      "en": "Phone",
+      "ar": "الهاتف"
+    },
+    "email": {
+      "en": "Email",
+      "ar": "البريد الإلكتروني"
+    },
+    "address": {
+      "en": "Address",
+      "ar": "العنوان"
+    },
+    "page": {
+      "en": "Page {{page}} of {{pages}}",
+      "ar": "صفحة {{page}} من {{pages}}"
+    },
+    "dear": {
+      "en": "Dear {{name}},",
+      "ar": "السادة / {{name}}،"
+    },
+    "intro": {
+      "en": "Thank you for your interest in our services. We are pleased to submit the following quotation for your review.",
+      "ar": "شكرًا لاهتمامكم بخدماتنا. يسعدنا أن نقدّم لكم عرض السعر التالي للاطلاع عليه."
+    },
+    "amountsIn": {
+      "en": "All prices are in {{currency}}.",
+      "ar": "جميع الأسعار بعملة {{currency}}."
+    },
+    "amountsInAed": {
+      "en": "All prices are in UAE dirhams (AED).",
+      "ar": "جميع الأسعار بالدرهم الإماراتي (⁦AED⁩)."
+    },
+    "validity": {
+      "en": "This quotation is valid until {{date}}. Please feel free to contact us if you have any questions.",
+      "ar": "هذا العرض صالح حتى {{date}}. يسعدنا الردّ على أي استفسار."
+    },
+    "contact": {
+      "en": "Please feel free to contact us if you have any questions.",
+      "ar": "يسعدنا الردّ على أي استفسار."
+    },
+    "table.no": {
+      "en": "No.",
+      "ar": "م"
+    },
+    "table.picture": {
+      "en": "Picture",
+      "ar": "صورة"
+    },
+    "table.area": {
+      "en": "Area",
+      "ar": "المكان"
+    },
+    "table.description": {
+      "en": "Description",
+      "ar": "الوصف"
+    },
+    "table.unitPrice": {
+      "en": "Unit price",
+      "ar": "سعر الوحدة"
+    },
+    "table.qty": {
+      "en": "Qty",
+      "ar": "الكمية"
+    },
+    "table.discount": {
+      "en": "Discount",
+      "ar": "الخصم"
+    },
+    "table.vat": {
+      "en": "VAT",
+      "ar": "الضريبة"
+    },
+    "table.amount": {
+      "en": "Amount",
+      "ar": "المبلغ"
+    },
+    "table.inclVat": {
+      "en": "incl. VAT",
+      "ar": "شامل الضريبة"
+    },
+    "totals.subtotal": {
+      "en": "Subtotal",
+      "ar": "المجموع الفرعي"
+    },
+    "totals.discount": {
+      "en": "Discount",
+      "ar": "الخصم"
+    },
+    "totals.adjustment": {
+      "en": "Rounding adjustment",
+      "ar": "تعديل لتقريب الإجمالي"
+    },
+    "totals.net": {
+      "en": "Total before VAT",
+      "ar": "الإجمالي قبل الضريبة"
+    },
+    "totals.vatRate": {
+      "en": "VAT {{rate}}% on {{taxable}}",
+      "ar": "ضريبة القيمة المضافة {{rate}}% على {{taxable}}"
+    },
+    "totals.zeroRated": {
+      "en": "Zero-rated, on {{taxable}}",
+      "ar": "خاضع لنسبة الصفر، على {{taxable}}"
+    },
+    "totals.exempt": {
+      "en": "Exempt, on {{taxable}}",
+      "ar": "معفى، على {{taxable}}"
+    },
+    "totals.total": {
+      "en": "Total",
+      "ar": "الإجمالي"
+    },
+    "totals.roundingDifference": {
+      "en": "Rounding difference",
+      "ar": "فرق التقريب"
+    },
+    "totals.payable": {
+      "en": "Amount to pay",
+      "ar": "المبلغ المطلوب"
+    },
+    "totals.paid": {
+      "en": "Paid",
+      "ar": "المدفوع"
+    },
+    "totals.balanceDue": {
+      "en": "Balance due",
+      "ar": "المبلغ المتبقي"
+    },
+    "stages.title": {
+      "en": "Payment terms",
+      "ar": "شروط الدفع"
+    },
+    "stages.stage": {
+      "en": "Payment",
+      "ar": "الدفعة"
+    },
+    "stages.due": {
+      "en": "When",
+      "ar": "الموعد"
+    },
+    "stages.percent": {
+      "en": "Share",
+      "ar": "النسبة"
+    },
+    "stages.amount": {
+      "en": "Amount",
+      "ar": "المبلغ"
+    },
+    "stages.label": {
+      "en": "Payment {{n}}",
+      "ar": "الدفعة {{n}}"
+    },
+    "payments.title": {
+      "en": "Payments received",
+      "ar": "الدفعات المستلمة"
+    },
+    "payments.date": {
+      "en": "Date",
+      "ar": "التاريخ"
+    },
+    "payments.method": {
+      "en": "Method",
+      "ar": "طريقة الدفع"
+    },
+    "payments.reference": {
+      "en": "Reference",
+      "ar": "المرجع"
+    },
+    "payments.amount": {
+      "en": "Amount",
+      "ar": "المبلغ"
+    },
+    "terms": {
+      "en": "Terms and conditions",
+      "ar": "الشروط والأحكام"
+    },
+    "notes": {
+      "en": "Notes",
+      "ar": "ملاحظات"
+    },
+    "paymentDetails": {
+      "en": "Payment details",
+      "ar": "بيانات الدفع"
+    },
+    "signature.for": {
+      "en": "For {{name}}",
+      "ar": "عن {{name}}"
+    },
+    "signature.signatory": {
+      "en": "Authorised signatory",
+      "ar": "المفوّض بالتوقيع"
+    },
+    "signature.acceptance": {
+      "en": "Customer's acceptance",
+      "ar": "موافقة العميل"
+    },
+    "signature.line": {
+      "en": "Signature and date",
+      "ar": "التوقيع والتاريخ"
+    },
+    "unit.mg": {
+      "en": "mg",
+      "ar": "ملغ"
+    },
+    "unit.g": {
+      "en": "g",
+      "ar": "غرام"
+    },
+    "unit.kg": {
+      "en": "kg",
+      "ar": "كيلو"
+    },
+    "unit.ml": {
+      "en": "ml",
+      "ar": "مل"
+    },
+    "unit.l": {
+      "en": "L",
+      "ar": "لتر"
+    },
+    "unit.piece": {
+      "en": "pcs",
+      "ar": "قطعة"
+    },
+    "unit.mm": {
+      "en": "mm",
+      "ar": "مم"
+    },
+    "unit.cm": {
+      "en": "cm",
+      "ar": "سم"
+    },
+    "unit.m": {
+      "en": "m",
+      "ar": "متر"
+    },
+    "unit.mm2": {
+      "en": "mm²",
+      "ar": "مم²"
+    },
+    "unit.cm2": {
+      "en": "cm²",
+      "ar": "سم²"
+    },
+    "unit.m2": {
+      "en": "m²",
+      "ar": "م²"
+    },
+    "unit.s": {
+      "en": "sec",
+      "ar": "ثانية"
+    },
+    "unit.min": {
+      "en": "min",
+      "ar": "دقيقة"
+    },
+    "unit.h": {
+      "en": "hr",
+      "ar": "ساعة"
+    }
+  },
+  "title": {
+    "en": "Quotation",
+    "ar": "عرض سعر"
+  },
+  "number": "Q-0007",
+  "revision": 2,
+  "date": {
+    "en": "8 October 2026",
+    "ar": "8 أكتوبر 2026"
+  },
+  "validUntil": {
+    "en": "15 October 2026",
+    "ar": "15 أكتوبر 2026"
+  },
+  "customerRef": "ENQ-2026-118",
+  "currency": "AED",
+  "letterhead": {
+    "nameEn": {
+      "text": "Modern Touch Interiors",
+      "dir": "ltr"
+    },
+    "nameAr": {
+      "text": "لمسة عصرية للديكور",
+      "dir": "rtl"
+    },
+    "accent": "#1A1A1A",
+    "logo": "logo",
+    "watermark": true,
+    "phones": [
+      "+971 4 555 0142",
+      "+971 50 555 0199"
+    ],
+    "email": "hello@moderntouch.example",
+    "address": {
+      "text": "Warehouse 7, Al Quoz Industrial 3, Dubai",
+      "dir": "ltr"
+    },
+    "trn": "100345678900003",
+    "tradeLicence": "DED-884210"
+  },
+  "customer": {
+    "name": {
+      "text": "يوسف الحمادي",
+      "dir": "rtl"
+    },
+    "site": {
+      "text": "Villa 18, Al Barsha South",
+      "dir": "ltr"
+    },
+    "phone": "+971 55 555 0123",
+    "trn": null,
+    "address": null
+  },
+  "opening": {
+    "greeting": null,
+    "intro": {
+      "en": "Thank you for your interest in our services. We are pleased to submit the following quotation for your review.",
+      "ar": "شكرًا لاهتمامكم بخدماتنا. يسعدنا أن نقدّم لكم عرض السعر التالي للاطلاع عليه."
+    },
+    "amountsIn": {
+      "en": "All prices are in UAE dirhams (AED).",
+      "ar": "جميع الأسعار بالدرهم الإماراتي (⁦AED⁩)."
+    }
+  },
+  "table": {
+    "showPictures": true,
+    "showAreas": true,
+    "showDiscount": false,
+    "showVat": false
+  },
+  "lines": [
+    {
+      "no": 1,
+      "area": {
+        "text": "MAJLIS",
+        "dir": "ltr"
+      },
+      "picture": "line-1",
+      "title": {
+        "text": "Wall cladding with hidden door",
+        "dir": "ltr"
+      },
+      "details": {
+        "text": "Material: MDF with oak veneer, matt lacquer\nHidden door 90 × 240 cm, soft-close hinges\nLED strip along the top",
+        "dir": "ltr"
+      },
+      "note": null,
+      "qty": "18.5",
+      "unit": "م²",
+      "unitPrice": "650.00",
+      "discount": null,
+      "vatRate": null,
+      "amount": "12,025.00",
+      "includesVat": false
+    },
+    {
+      "no": 2,
+      "area": {
+        "text": "MAJLIS",
+        "dir": "ltr"
+      },
+      "picture": "line-2",
+      "title": {
+        "text": "TV unit with back panel",
+        "dir": "ltr"
+      },
+      "details": {
+        "text": "Material: plywood, white high gloss\nFittings: Blum push-to-open",
+        "dir": "ltr"
+      },
+      "note": {
+        "text": "* Marble top price to be added as per client selection + delivery",
+        "dir": "ltr"
+      },
+      "qty": "1",
+      "unit": "قطعة",
+      "unitPrice": "7,800.00",
+      "discount": null,
+      "vatRate": null,
+      "amount": "7,800.00",
+      "includesVat": false
+    },
+    {
+      "no": 3,
+      "area": {
+        "text": "MAJLIS",
+        "dir": "ltr"
+      },
+      "picture": "line-3",
+      "title": {
+        "text": "Floating wall shelves",
+        "dir": "ltr"
+      },
+      "details": {
+        "text": "Material: solid oak, natural oil\n4 shelves on hidden brackets",
+        "dir": "ltr"
+      },
+      "note": null,
+      "qty": "3.6",
+      "unit": "متر",
+      "unitPrice": "420.00",
+      "discount": null,
+      "vatRate": null,
+      "amount": "1,512.00",
+      "includesVat": false
+    },
+    {
+      "no": 4,
+      "area": {
+        "text": "غرفة الطعام",
+        "dir": "rtl"
+      },
+      "picture": "line-4",
+      "title": {
+        "text": "خزانة عرض بأبواب زجاجية",
+        "dir": "rtl"
+      },
+      "details": {
+        "text": "الخامة: قشرة بلوط وزجاج شفاف\nإضاءة داخلية ورفّان زجاجيان",
+        "dir": "rtl"
+      },
+      "note": null,
+      "qty": "2.4",
+      "unit": "متر",
+      "unitPrice": "1,850.00",
+      "discount": null,
+      "vatRate": null,
+      "amount": "4,440.00",
+      "includesVat": false
+    },
+    {
+      "no": 5,
+      "area": {
+        "text": "غرفة الطعام",
+        "dir": "rtl"
+      },
+      "picture": "line-5",
+      "title": {
+        "text": "بوفيه",
+        "dir": "rtl"
+      },
+      "details": {
+        "text": "الخامة: قشرة جوز\nالإكسسوارات: أدراج Hettich بإغلاق هادئ",
+        "dir": "rtl"
+      },
+      "note": null,
+      "qty": "1",
+      "unit": "قطعة",
+      "unitPrice": "5,200.00",
+      "discount": null,
+      "vatRate": null,
+      "amount": "5,200.00",
+      "includesVat": false
+    },
+    {
+      "no": 6,
+      "area": {
+        "text": "غرفة الطعام",
+        "dir": "rtl"
+      },
+      "picture": "line-6",
+      "title": {
+        "text": "تكسية الجدار خلف طاولة الطعام",
+        "dir": "rtl"
+      },
+      "details": {
+        "text": "الخامة: MDF مدهون بحفر V\nاللون حسب العيّنة المعتمدة",
+        "dir": "rtl"
+      },
+      "note": null,
+      "qty": "9.2",
+      "unit": "م²",
+      "unitPrice": "380.00",
+      "discount": null,
+      "vatRate": null,
+      "amount": "3,496.00",
+      "includesVat": false
+    },
+    {
+      "no": 7,
+      "area": {
+        "text": "Master BR",
+        "dir": "ltr"
+      },
+      "picture": "line-7",
+      "title": {
+        "text": "Wardrobe with sliding doors",
+        "dir": "ltr"
+      },
+      "details": {
+        "text": "Material: MDF painted, inside melamine\nTinted mirror on the middle door\nFittings: Hettich soft-close",
+        "dir": "ltr"
+      },
+      "note": null,
+      "qty": "6.8",
+      "unit": "م²",
+      "unitPrice": "980.00",
+      "discount": null,
+      "vatRate": null,
+      "amount": "6,664.00",
+      "includesVat": false
+    },
+    {
+      "no": 8,
+      "area": {
+        "text": "Master BR",
+        "dir": "ltr"
+      },
+      "picture": "line-8",
+      "title": {
+        "text": "Bed back panel with side tables",
+        "dir": "ltr"
+      },
+      "details": {
+        "text": "Material: fabric panels on MDF frame\n2 side tables, one drawer each",
+        "dir": "ltr"
+      },
+      "note": null,
+      "qty": "1",
+      "unit": "قطعة",
+      "unitPrice": "4,750.00",
+      "discount": null,
+      "vatRate": null,
+      "amount": "4,750.00",
+      "includesVat": false
+    },
+    {
+      "no": 9,
+      "area": {
+        "text": "Master BR",
+        "dir": "ltr"
+      },
+      "picture": "line-9",
+      "title": {
+        "text": "Dressing table with mirror",
+        "dir": "ltr"
+      },
+      "details": {
+        "text": "Material: oak veneer\nOval mirror with LED",
+        "dir": "ltr"
+      },
+      "note": null,
+      "qty": "1",
+      "unit": "قطعة",
+      "unitPrice": "2,300.00",
+      "discount": null,
+      "vatRate": null,
+      "amount": "2,300.00",
+      "includesVat": false
+    },
+    {
+      "no": 10,
+      "area": {
+        "text": "Master BR",
+        "dir": "ltr"
+      },
+      "picture": "line-10",
+      "title": {
+        "text": "Shoe cabinet by the door",
+        "dir": "ltr"
+      },
+      "details": {
+        "text": "Material: MDF painted\nTilt-out shelves, ventilated back",
+        "dir": "ltr"
+      },
+      "note": null,
+      "qty": "1.6",
+      "unit": "متر",
+      "unitPrice": "1,150.00",
+      "discount": null,
+      "vatRate": null,
+      "amount": "1,840.00",
+      "includesVat": false
+    },
+    {
+      "no": 11,
+      "area": {
+        "text": "Room 1",
+        "dir": "ltr"
+      },
+      "picture": "line-10",
+      "title": {
+        "text": "Wardrobe, hinged doors",
+        "dir": "ltr"
+      },
+      "details": {
+        "text": "Material: MDF painted\nInside: melamine, hanging rails and 3 drawers",
+        "dir": "ltr"
+      },
+      "note": null,
+      "qty": "4.5",
+      "unit": "م²",
+      "unitPrice": "850.00",
+      "discount": null,
+      "vatRate": null,
+      "amount": "3,825.00",
+      "includesVat": false
+    },
+    {
+      "no": 12,
+      "area": {
+        "text": "Room 1",
+        "dir": "ltr"
+      },
+      "picture": "line-11",
+      "title": {
+        "text": "Study desk with wall shelves",
+        "dir": "ltr"
+      },
+      "details": {
+        "text": "Material: plywood, oak laminate\nCable tray under the desk",
+        "dir": "ltr"
+      },
+      "note": null,
+      "qty": "1",
+      "unit": "قطعة",
+      "unitPrice": "2,650.00",
+      "discount": null,
+      "vatRate": null,
+      "amount": "2,650.00",
+      "includesVat": false
+    },
+    {
+      "no": 13,
+      "area": {
+        "text": "Room 1",
+        "dir": "ltr"
+      },
+      "picture": null,
+      "title": {
+        "text": "Curtain pelmet",
+        "dir": "ltr"
+      },
+      "details": {
+        "text": "Material: MDF painted\nFor a curtain track (track not included)",
+        "dir": "ltr"
+      },
+      "note": null,
+      "qty": "3.2",
+      "unit": "متر",
+      "unitPrice": "180.00",
+      "discount": null,
+      "vatRate": null,
+      "amount": "576.00",
+      "includesVat": false
+    },
+    {
+      "no": 14,
+      "area": {
+        "text": "Pantry",
+        "dir": "ltr"
+      },
+      "picture": "line-12",
+      "title": {
+        "text": "Base cabinets with quartz top",
+        "dir": "ltr"
+      },
+      "details": {
+        "text": "Material: moisture-resistant MDF, matt lacquer\nTop: quartz 20 mm\nFittings: Blum Tandembox drawers",
+        "dir": "ltr"
+      },
+      "note": null,
+      "qty": "4.2",
+      "unit": "متر",
+      "unitPrice": "1,650.00",
+      "discount": null,
+      "vatRate": null,
+      "amount": "6,930.00",
+      "includesVat": false
+    },
+    {
+      "no": 15,
+      "area": {
+        "text": "Pantry",
+        "dir": "ltr"
+      },
+      "picture": "line-14",
+      "title": {
+        "text": "Upper cabinets",
+        "dir": "ltr"
+      },
+      "details": {
+        "text": "Material: moisture-resistant MDF, matt lacquer\nLift-up doors with gas struts",
+        "dir": "ltr"
+      },
+      "note": null,
+      "qty": "4.2",
+      "unit": "متر",
+      "unitPrice": "950.00",
+      "discount": null,
+      "vatRate": null,
+      "amount": "3,990.00",
+      "includesVat": false
+    },
+    {
+      "no": 16,
+      "area": {
+        "text": "Pantry",
+        "dir": "ltr"
+      },
+      "picture": null,
+      "title": {
+        "text": "Tall unit for oven and fridge",
+        "dir": "ltr"
+      },
+      "details": {
+        "text": "Material: moisture-resistant MDF\nOpenings as per the appliance sizes",
+        "dir": "ltr"
+      },
+      "note": null,
+      "qty": "2",
+      "unit": "قطعة",
+      "unitPrice": "2,400.00",
+      "discount": null,
+      "vatRate": null,
+      "amount": "4,800.00",
+      "includesVat": false
+    },
+    {
+      "no": 17,
+      "area": {
+        "text": "Guest bathroom – ground floor",
+        "dir": "ltr"
+      },
+      "picture": null,
+      "title": {
+        "text": "Vanity unit",
+        "dir": "ltr"
+      },
+      "details": {
+        "text": "Material: moisture-resistant MDF, matt lacquer",
+        "dir": "ltr"
+      },
+      "note": null,
+      "qty": "1",
+      "unit": "قطعة",
+      "unitPrice": "1,950.00",
+      "discount": null,
+      "vatRate": null,
+      "amount": "1,950.00",
+      "includesVat": false
+    },
+    {
+      "no": 18,
+      "area": {
+        "text": "غرفة النوم الرئيسية – الطابق الأول",
+        "dir": "rtl"
+      },
+      "picture": "line-17",
+      "title": {
+        "text": "خزانة بياضات طويلة",
+        "dir": "rtl"
+      },
+      "details": {
+        "text": "الخامة: MDF مدهون\nرفوف داخلية ودرج سفلي",
+        "dir": "rtl"
+      },
+      "note": null,
+      "qty": "1",
+      "unit": "قطعة",
+      "unitPrice": "3,100.00",
+      "discount": null,
+      "vatRate": null,
+      "amount": "3,100.00",
+      "includesVat": false
+    },
+    {
+      "no": 19,
+      "area": {
+        "text": "غرفة النوم الرئيسية – الطابق الأول",
+        "dir": "rtl"
+      },
+      "picture": "line-15",
+      "title": {
+        "text": "طاولة جانبية دائرية",
+        "dir": "rtl"
+      },
+      "details": {
+        "text": "الخامة: خشب جوز صلب",
+        "dir": "rtl"
+      },
+      "note": null,
+      "qty": "2",
+      "unit": "قطعة",
+      "unitPrice": "650.00",
+      "discount": null,
+      "vatRate": null,
+      "amount": "1,300.00",
+      "includesVat": false
+    },
+    {
+      "no": 20,
+      "area": null,
+      "picture": "line-16",
+      "title": {
+        "text": "Mirror frame",
+        "dir": "ltr"
+      },
+      "details": {
+        "text": "Material: brass-finish aluminium",
+        "dir": "ltr"
+      },
+      "note": null,
+      "qty": "1",
+      "unit": "قطعة",
+      "unitPrice": "780.00",
+      "discount": null,
+      "vatRate": null,
+      "amount": "780.00",
+      "includesVat": false
+    }
+  ],
+  "totals": [
+    {
+      "label": {
+        "en": "Subtotal",
+        "ar": "المجموع الفرعي"
+      },
+      "amount": "79,928.00",
+      "strong": false
+    },
+    {
+      "label": {
+        "en": "Rounding adjustment",
+        "ar": "تعديل لتقريب الإجمالي"
+      },
+      "amount": "-23.24",
+      "strong": false
+    },
+    {
+      "label": {
+        "en": "Total before VAT",
+        "ar": "الإجمالي قبل الضريبة"
+      },
+      "amount": "79,904.76",
+      "strong": false
+    },
+    {
+      "label": {
+        "en": "VAT 5% on 79,904.76",
+        "ar": "ضريبة القيمة المضافة 5% على 79,904.76"
+      },
+      "amount": "3,995.24",
+      "strong": false
+    },
+    {
+      "label": {
+        "en": "Total",
+        "ar": "الإجمالي"
+      },
+      "amount": "83,900.00",
+      "strong": true
+    }
+  ],
+  "stages": [
+    {
+      "label": {
+        "en": "Payment 1",
+        "ar": "الدفعة 1"
+      },
+      "due": {
+        "text": "عند التوقيع",
+        "dir": "rtl"
+      },
+      "percent": "50%",
+      "amount": "41,950.00"
+    },
+    {
+      "label": {
+        "en": "Payment 2",
+        "ar": "الدفعة 2"
+      },
+      "due": {
+        "text": "عند التوريد",
+        "dir": "rtl"
+      },
+      "percent": "35%",
+      "amount": "29,365.00"
+    },
+    {
+      "label": {
+        "en": "Payment 3",
+        "ar": "الدفعة 3"
+      },
+      "due": {
+        "text": "بعد التسليم",
+        "dir": "rtl"
+      },
+      "percent": "15%",
+      "amount": "12,585.00"
+    }
+  ],
+  "validity": {
+    "en": "This quotation is valid until 15 October 2026. Please feel free to contact us if you have any questions.",
+    "ar": "هذا العرض صالح حتى 15 أكتوبر 2026. يسعدنا الردّ على أي استفسار."
+  },
+  "terms": {
+    "text": "Prices include supply and installation at site.\nThe client provides power and access during working hours.\nColours and finishes as per the approved samples.\nAny extra work is quoted separately.",
+    "dir": "ltr"
+  },
+  "notes": null,
+  "paymentDetails": {
+    "text": "Bank: Emirates Sample Bank\nAccount name: Modern Touch Interiors\nIBAN: AE00 0000 0000 0000 0000 000",
+    "dir": "ltr"
+  },
+  "signature": {
+    "signatory": {
+      "text": "عبدالله الكعبي",
+      "dir": "rtl"
+    },
+    "signature": "signature",
+    "stamp": "stamp",
+    "acceptance": true
+  },
+  "images": {
+    "logo": {
+      "path": "/img/logo.png",
+      "format": "png",
+      "width": 1,
+      "height": 1
+    },
+    "signature": {
+      "path": "/img/signature.png",
+      "format": "png",
+      "width": 1,
+      "height": 1
+    },
+    "stamp": {
+      "path": "/img/stamp.png",
+      "format": "png",
+      "width": 1,
+      "height": 1
+    },
+    "line-1": {
+      "path": "/img/line-1.jpg",
+      "format": "jpg",
+      "width": 1,
+      "height": 1
+    },
+    "line-2": {
+      "path": "/img/line-2.jpg",
+      "format": "jpg",
+      "width": 1,
+      "height": 1
+    },
+    "line-3": {
+      "path": "/img/line-3.jpg",
+      "format": "jpg",
+      "width": 1,
+      "height": 1
+    },
+    "line-4": {
+      "path": "/img/line-4.jpg",
+      "format": "jpg",
+      "width": 1,
+      "height": 1
+    },
+    "line-5": {
+      "path": "/img/line-5.jpg",
+      "format": "jpg",
+      "width": 1,
+      "height": 1
+    },
+    "line-6": {
+      "path": "/img/line-6.jpg",
+      "format": "jpg",
+      "width": 1,
+      "height": 1
+    },
+    "line-7": {
+      "path": "/img/line-7.jpg",
+      "format": "jpg",
+      "width": 1,
+      "height": 1
+    },
+    "line-8": {
+      "path": "/img/line-8.jpg",
+      "format": "jpg",
+      "width": 1,
+      "height": 1
+    },
+    "line-9": {
+      "path": "/img/line-9.jpg",
+      "format": "jpg",
+      "width": 1,
+      "height": 1
+    },
+    "line-10": {
+      "path": "/img/line-10.jpg",
+      "format": "jpg",
+      "width": 1,
+      "height": 1
+    },
+    "line-11": {
+      "path": "/img/line-11.jpg",
+      "format": "jpg",
+      "width": 1,
+      "height": 1
+    },
+    "line-12": {
+      "path": "/img/line-12.jpg",
+      "format": "jpg",
+      "width": 1,
+      "height": 1
+    },
+    "line-14": {
+      "path": "/img/line-14.jpg",
+      "format": "jpg",
+      "width": 1,
+      "height": 1
+    },
+    "line-17": {
+      "path": "/img/line-17.jpg",
+      "format": "jpg",
+      "width": 1,
+      "height": 1
+    },
+    "line-15": {
+      "path": "/img/line-15.jpg",
+      "format": "jpg",
+      "width": 1,
+      "height": 1
+    },
+    "line-16": {
+      "path": "/img/line-16.jpg",
+      "format": "jpg",
+      "width": 1,
+      "height": 1
+    }
+  }
+}

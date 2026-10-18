@@ -237,6 +237,7 @@ export function ProductSheet({
   profile,
   resale: resaleMode = 'offered',
   name,
+  start,
   onSaved,
   onClose,
 }: {
@@ -244,6 +245,15 @@ export function ProductSheet({
   profile: TerminologyProfile
   /** A new one's name, as typed where it is added from (a sale line's picker). */
   name?: string
+  /**
+   * A new one's unit, usual price and VAT as a line typed them (a quotation line saved as a work
+   * item, M3 Step 7).
+   */
+  start?: {
+    readonly unit?: StandardUnit
+    readonly price?: string
+    readonly vatCategory?: VatCategory
+  }
   /** Once saved (a sale line then names it). */
   onSaved?: (saved: ProductDto) => void
   /**
@@ -269,7 +279,14 @@ export function ProductSheet({
       product,
       resaleMode !== 'only' && context?.sellsOnlyServices === true ? 'service' : 'product',
     )
-    return !product && name ? { ...draft, name } : draft
+    if (product) return draft
+    return {
+      ...draft,
+      ...(name ? { name } : {}),
+      ...(start?.unit ? { unit: start.unit } : {}),
+      ...(start?.price ? { price: start.price } : {}),
+      ...(start?.vatCategory ? { vatCategory: start.vatCategory } : {}),
+    }
   })
   const [draft, setDraft] = useState<ProductDraft>(initialDraft)
   const [newMaterialId] = useState(() => newId())

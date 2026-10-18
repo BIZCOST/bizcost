@@ -44,7 +44,15 @@ const API_DB_ENTRY = {
 const API_ADMIN = {
   group: ['**/admin', '**/admin/*'],
   message:
-    'The Supabase Admin API (secret key) is for the account service (Auth), the business profile service (Storage: the logo) and the attachments service (Storage: receipts) only.',
+    'The Supabase Admin API (secret key) is for the account service (Auth), the business profile service (Storage: the logo), the attachments service (Storage: receipts) and the document files service (Storage: signatures, stamps, the images of PDFs and their issued copies) only.',
+}
+
+// Typst (typst.ts, D-224): only the documents' PDF service (packages/api/src/documents/pdf) compiles
+// documents; everything else asks it for a PDF.
+const API_TYPST = {
+  group: ['@myriaddreamin/*'],
+  message:
+    'Only the PDF service (packages/api/src/documents/pdf) may use the Typst compiler (D-224).',
 }
 
 // Every translation of every namespace, both languages: the web's browser code gets its messages from
@@ -158,26 +166,38 @@ export default tseslint.config(
   // The API reaches the database only through ctx.tenantTx / ctx.tx, which bind withTenantTx to the
   // verified caller and the request id (context.ts). The raw pool is never on the context.
   // The Supabase Admin API (secret key, packages/api/src/admin) is used by the account service (Auth
-  // admin: account deletion), the business profile service (Storage signed URLs for the logo) and the
-  // attachments service (Storage signed URLs for receipts) only.
+  // admin: account deletion), the business profile service (Storage signed URLs for the logo), the
+  // attachments service (Storage signed URLs for receipts) and the document files service (M3 Step 7:
+  // signatures, stamps, the images a PDF prints, issued PDFs) only.
   {
     files: ['packages/api/src/**/*.ts'],
     ignores: ['**/*.test.ts'],
-    rules: { 'no-restricted-imports': ['error', { paths: [API_DB_ENTRY], patterns: [API_ADMIN] }] },
+    rules: {
+      'no-restricted-imports': [
+        'error',
+        { paths: [API_DB_ENTRY], patterns: [API_ADMIN, API_TYPST] },
+      ],
+    },
   },
   {
     files: ['packages/api/src/context.ts'],
-    rules: { 'no-restricted-imports': ['error', { patterns: [API_ADMIN] }] },
+    rules: { 'no-restricted-imports': ['error', { patterns: [API_ADMIN, API_TYPST] }] },
+  },
+  {
+    files: ['packages/api/src/documents/pdf/**/*.ts'],
+    ignores: ['**/*.test.ts'],
+    rules: { 'no-restricted-imports': ['error', { paths: [API_DB_ENTRY], patterns: [API_ADMIN] }] },
   },
   {
     files: [
       'packages/api/src/services/account.ts',
       'packages/api/src/services/business-profile.ts',
       'packages/api/src/services/attachments.ts',
+      'packages/api/src/services/document-files.ts',
       'packages/api/src/admin/**/*.ts',
     ],
     ignores: ['**/*.test.ts'],
-    rules: { 'no-restricted-imports': ['error', { paths: [API_DB_ENTRY] }] },
+    rules: { 'no-restricted-imports': ['error', { paths: [API_DB_ENTRY], patterns: [API_TYPST] }] },
   },
   {
     files: ['packages/app-core/**'],

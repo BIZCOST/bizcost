@@ -24,8 +24,10 @@ import { profitPartsDto } from './reports'
 import {
   documentPaymentStateDto,
   refundSummaryDto,
-  saleLineInput,
+  saleDeliveryLineInput,
+  saleItemLineInput,
   salesChannelKindDto,
+  saleTypedLineInput,
 } from './sales'
 import { optionalLine } from './suppliers'
 
@@ -49,6 +51,14 @@ export const paymentStateDto = z.enum(PAYMENT_STATES)
 const uniqueIds = (items: readonly { id: string }[]) =>
   new Set(items.map((item) => item.id)).size === items.length
 
+/** An order's line: an item, the delivery charged, or a typed item (M3 Step 7, Q21). */
+export const orderLineInput = z.discriminatedUnion('kind', [
+  saleItemLineInput,
+  saleDeliveryLineInput,
+  saleTypedLineInput,
+])
+export type OrderLineInput = z.input<typeof orderLineInput>
+
 const orderFields = {
   /** The customer (a live one of the business); null: none named (a walk-in order). */
   customerId: zUuid.nullable().default(null),
@@ -64,6 +74,11 @@ const orderFields = {
   channelId: zUuid.nullable().default(null),
   /** A discount on the whole order: a % of its items, or an amount typed like their prices. */
   discount: discountInput.nullish().transform((value) => value ?? null),
+  /**
+   * "Round the total" (D-221; M3 Step 7, carried from a quotation): the total wanted, with VAT; null:
+   * none. Left out, an update keeps the order's.
+   */
+  roundTo: moneyInput.nullish(),
   deliveryNeeded: z.boolean().default(false),
   deliveryArea: optionalLine(DELIVERY_AREA_MAX_LENGTH),
   /**
@@ -72,9 +87,12 @@ const orderFields = {
    */
   deliveryCost: moneyInput.nullish(),
   notes: notesInput,
-  /** Its items and the delivery charged, in order; a pending order may have none yet. */
+  /**
+   * Its items (products and services, or typed ones carried from a quotation, Q21) and the delivery
+   * charged, in order; a pending order may have none yet.
+   */
   lines: z
-    .array(saleLineInput)
+    .array(orderLineInput)
     .max(SALE_LINES_MAX)
     .default([])
     .refine(uniqueIds, { message: 'duplicate line id' })
@@ -185,7 +203,9 @@ export const orderLineDto = z.object({
   id: zUuid,
   kind: z.enum(['item', 'delivery']),
   productId: zUuid.nullable(),
-  /** The product's name when the line was saved (editable), or the delivery's text. */
+  /** An item that is no product or service (typed on its quotation, Q21): send it back as `typed`. */
+  typed: z.boolean(),
+  /** The product's name when the line was saved (editable), the typed title, or the delivery's text. */
   description: z.string().nullable(),
   qty: zDecimal,
   unit: standardUnitDto.nullable(),
@@ -228,12 +248,18 @@ export const orderDto = z.object({
   currency: z.string(),
   /** The discount on the whole order, as typed. */
   discount: discountDto.nullable(),
+  /** "Round the total": the total wanted, the adjustment before VAT, the rounding difference. */
+  roundTo: zDecimal.nullable(),
+  adjustment: zDecimal,
+  roundingDifference: zDecimal,
   subtotal: zDecimal,
   /** Its lines' discounts and the order's. */
   discountTotal: zDecimal,
   netTotal: zDecimal,
   vatTotal: zDecimal,
   total: zDecimal,
+  /** What the customer owes for it: total + rounding difference. */
+  payable: zDecimal,
   deliveryNeeded: z.boolean(),
   deliveryArea: z.string().nullable(),
   /** What the delivery actually cost the business; null: not entered. */

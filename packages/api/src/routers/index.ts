@@ -7,6 +7,7 @@ import { costCategoryRouter } from './cost-category'
 import { customerRouter } from './customer'
 import { customerPaymentRouter, receivableRouter } from './customer-payment'
 import { dashboardRouter } from './dashboard'
+import { documentRouter } from './document'
 import { expensePaymentRouter, expenseRouter } from './expense'
 import { health } from './health'
 import { invitationRouter } from './invitation'
@@ -21,6 +22,7 @@ import { productCostRouter } from './product-cost'
 import { profitRouter } from './profit'
 import { purchaseRouter } from './purchase'
 import { purchaseReturnRouter } from './purchase-return'
+import { quotationRouter } from './quotation'
 import { recipeRouter } from './recipe'
 import { roleRouter } from './role'
 import { runningCostRouter } from './running-cost'
@@ -67,6 +69,8 @@ export const appRouter = router({
   order: orderRouter,
   customerPayment: customerPaymentRouter,
   receivable: receivableRouter,
+  quotation: quotationRouter,
+  document: documentRouter,
 })
 
 export type AppRouter = typeof appRouter

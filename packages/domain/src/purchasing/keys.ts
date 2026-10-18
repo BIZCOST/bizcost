@@ -124,9 +124,17 @@ export type StockMovementKind = (typeof STOCK_MOVEMENT_KINDS)[number]
 
 /**
  * `attachments.entity`: what a file is attached to. M2 Step 3: purchases (their receipts); M2 Step 5:
- * expenses (their receipts); M3 Step 5: orders (the customer's LPO, a photo of the order).
+ * expenses (their receipts); M3 Step 5: orders (the customer's LPO, a photo of the order); M3 Step 7:
+ * quotations (the customer's signed copy, drawings) and a quotation's lines (a drawing or a photo of
+ * one item, printed in the PDF's picture column: images only).
  */
-export const ATTACHMENT_ENTITIES = ['purchase', 'expense', 'order'] as const
+export const ATTACHMENT_ENTITIES = [
+  'purchase',
+  'expense',
+  'order',
+  'quotation',
+  'quotation_line',
+] as const
 export type AttachmentEntity = (typeof ATTACHMENT_ENTITIES)[number]
 
 /** Days of purchases the average uses until the business's first stock count (D-115). */

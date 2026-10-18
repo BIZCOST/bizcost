@@ -72,6 +72,11 @@ export const attachmentDto = z.object({
   sizeBytes: z.int().positive(),
   /** A signed download URL (valid for at least 5 minutes); null when the file is missing. */
   url: sensitive(z.string().nullable(), 'supplier_price'),
+  /**
+   * A quotation's files and its lines' pictures (M3 Step 7): the signed download URL for whoever sees
+   * the quotation (no prices paid on them, D-187); null for every other record (see `url`).
+   */
+  openUrl: z.string().nullable(),
   createdAt: isoTimestamp,
 })
 export type AttachmentDto = z.infer<typeof attachmentDto>

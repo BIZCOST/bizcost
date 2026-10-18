@@ -1,5 +1,7 @@
 import { randomBytes } from 'node:crypto'
 import type {
+  DocumentImageUploadUrlDto,
+  QuotationDto,
   CustomerDto,
   CustomerPaymentDto,
   DocumentPaymentsDto,
@@ -76,6 +78,11 @@ import { CapturedEmails, join, setupBusiness, WORKSHOP } from '../settings'
 // read the same sale (Step 3); a customer, a pending order with its deposit and its LPO, a delivered
 // order refunded by amount (with the money given back), and a One sale "they'll pay later" partly paid
 // (Step 5).
+//
+// M3 Step 7: Quotations is planned until Release B, so the suites run with the dev-only preview of
+// Quotations (D-125) and attack its procedures like the others. Each business also has the letterhead's
+// contact lines, a signature image (Settings → Documents), a draft quotation (a product line and a
+// typed line with its area, details, note and picture) and a sent one.
 
 export type Handler = ReturnType<typeof handlerFor>
 
@@ -98,7 +105,12 @@ export function openApi(router?: AnyRouter): Api {
   const db = connectApi()
   const admin = connectAdmin()
   const emails = new CapturedEmails()
-  const handler = handlerFor(db, router, { supabaseSecretKey: SECRET_KEY }, { emailSender: emails })
+  const handler = handlerFor(
+    db,
+    router,
+    { supabaseSecretKey: SECRET_KEY, previewModules: ['quotations'] },
+    { emailSender: emails },
+  )
   const users: TestUser[] = []
   return {
     db,
@@ -283,6 +295,16 @@ export interface Tenant {
   payLaterSale: SaleDto
   /** The payment recorded on it. */
   salePayment: CustomerPaymentDto
+  /** M3 Step 7: a draft quotation of the customer (a product line, a typed line with a picture). */
+  quotation: QuotationDto
+  /** The picture of its typed line. */
+  linePicture: AttachmentDto
+  /** A sent quotation of the customer (its revision 1). */
+  sentQuotation: QuotationDto
+  /** A quotation of the customer the customer accepted (no order made of it). */
+  acceptedQuotation: QuotationDto
+  /** The signature image of Settings → Documents (its object path). */
+  signaturePath: string
 }
 
 function ok<T>(result: CallResult<T>, what: string): T {
@@ -916,6 +938,125 @@ export async function createTenant(api: Api, label: string): Promise<Tenant> {
     }
   ).data
 
+  // M3 Step 7: the letterhead's contact lines, a signature, a draft quotation with a picture on a
+  // line, and a sent one.
+  const profileNow = ok(await as('business.profile', 'query'), 'profile') as BusinessProfileDto
+  ok(
+    await as('business.updateProfile', 'mutation', {
+      version: profileNow.version,
+      legalName,
+      legalNameAr,
+      vatRegistered: false,
+      trn: null,
+      letterhead: {
+        phone: '04 555 0142',
+        email: `office-${label.toLowerCase()}-${tag}@test.bizcost.local`,
+        addressLine: `Warehouse ${label} ${tag}`,
+        emirate: 'dubai',
+        tradeLicenceNo: `DED-${label}-${tag}`,
+      },
+    }),
+    'updateProfile (letterhead)',
+  )
+  const signatureUpload = ok(
+    await as('document.imageUploadUrl', 'mutation', {
+      kind: 'signature',
+      contentType: 'image/png',
+    }),
+    'document.imageUploadUrl',
+  ) as DocumentImageUploadUrlDto
+  expect((await uploadTo(signatureUpload.uploadUrl, PNG, 'image/png')).ok).toBe(true)
+  ok(
+    await as('document.setImage', 'mutation', { kind: 'signature', path: signatureUpload.path }),
+    'document.setImage',
+  )
+  const quotationDraft = ok(
+    await as('quotation.create', 'mutation', {
+      id: newId(),
+      customerId: customer.id,
+      businessDate: today,
+      locationId: branch.id,
+      customerRef: `ENQ-${label}-${tag}`,
+      site: `Villa ${label} ${tag}`,
+      notes: `Quote notes ${label} ${tag}`,
+      lines: [
+        { id: newId(), productId: product.id, qty: '2', unitPrice: '15.5' },
+        {
+          id: newId(),
+          productId: null,
+          area: `MAJLIS ${tag}`,
+          description: `Cladding ${label} ${tag}`,
+          details: `Oak veneer ${label} ${tag}`,
+          note: `Marble extra ${label} ${tag}`,
+          qty: '3.5',
+          unit: 'm2',
+          unitPrice: '650',
+        },
+      ],
+      stages: [{ due: `On signing ${tag}`, percent: '100' }],
+    }),
+    'quotation.create',
+  ) as QuotationDto
+  const pictureUpload = ok(
+    await as('attachment.uploadUrl', 'mutation', {
+      entity: 'quotation_line',
+      entityId: quotationDraft.lines[1]!.id,
+      contentType: 'image/png',
+    }),
+    'attachment.uploadUrl (picture)',
+  ) as AttachmentUploadUrlDto
+  expect((await uploadTo(pictureUpload.uploadUrl, PNG, 'image/png')).ok).toBe(true)
+  const linePicture = (
+    ok(
+      await as('attachment.add', 'mutation', {
+        entity: 'quotation_line',
+        entityId: quotationDraft.lines[1]!.id,
+        path: pictureUpload.path,
+        fileName: `picture-${label}-${tag}.png`,
+      }),
+      'attachment.add (picture)',
+    ) as { data: AttachmentDto }
+  ).data
+  const quotation = ok(
+    await as('quotation.get', 'query', { id: quotationDraft.id }),
+    'quotation.get',
+  ) as QuotationDto
+  const toSend = ok(
+    await as('quotation.create', 'mutation', {
+      id: newId(),
+      customerId: customer.id,
+      businessDate: today,
+      locationId: branch.id,
+      lines: [{ id: newId(), productId: product.id, qty: '1', unitPrice: '15.5' }],
+    }),
+    'quotation.create (to send)',
+  ) as QuotationDto
+  const sentQuotation = ok(
+    await as('quotation.send', 'mutation', { id: toSend.id, version: toSend.version }),
+    'quotation.send',
+  ) as QuotationDto
+  const toAccept = ok(
+    await as('quotation.create', 'mutation', {
+      id: newId(),
+      customerId: customer.id,
+      businessDate: today,
+      locationId: branch.id,
+      lines: [{ id: newId(), productId: product.id, qty: '1', unitPrice: '15.5' }],
+    }),
+    'quotation.create (to accept)',
+  ) as QuotationDto
+  const sentToAccept = ok(
+    await as('quotation.send', 'mutation', { id: toAccept.id, version: toAccept.version }),
+    'quotation.send (to accept)',
+  ) as QuotationDto
+  const acceptedQuotation = ok(
+    await as('quotation.accept', 'mutation', {
+      id: sentToAccept.id,
+      version: sentToAccept.version,
+    }),
+    'quotation.accept',
+  ) as QuotationDto
+
   return {
     id,
     label,
@@ -968,6 +1109,11 @@ export async function createTenant(api: Api, label: string): Promise<Tenant> {
     refund,
     payLaterSale,
     salePayment,
+    quotation,
+    linePicture,
+    sentQuotation,
+    acceptedQuotation,
+    signaturePath: signatureUpload.path,
   }
 }
 
@@ -1008,6 +1154,8 @@ export function queryInputOf(path: string, tenant: Tenant): unknown {
   if (path === 'customer.similar') return { name: tenant.customer.name }
   if (path === 'order.get') return { id: tenant.order.id }
   if (path === 'customerPayment.list') return { orderId: tenant.order.id }
+  if (path === 'quotation.get') return { id: tenant.quotation.id }
+  if (path === 'quotation.history') return { id: tenant.quotation.id }
   return undefined
 }
 
@@ -1100,6 +1248,22 @@ export function markersOf(tenant: Tenant): string[] {
     tenant.payLaterSale.notes ?? tenant.payLaterSale.id,
     tenant.salePayment.id,
     tenant.salePayment.note ?? tenant.salePayment.id,
+    tenant.quotation.id,
+    tenant.quotation.customerRef ?? tenant.quotation.id,
+    tenant.quotation.site ?? tenant.quotation.id,
+    tenant.quotation.notes ?? tenant.quotation.id,
+    ...tenant.quotation.lines.flatMap((l) => [
+      l.id,
+      l.area ?? l.id,
+      l.details ?? l.id,
+      l.note ?? l.id,
+    ]),
+    ...tenant.quotation.stages.map((s) => s.id),
+    tenant.linePicture.id,
+    tenant.linePicture.fileName,
+    tenant.sentQuotation.id,
+    tenant.acceptedQuotation.id,
+    tenant.signaturePath,
     ...Object.values(tenant.roles).map((role) => role.id),
     ...[tenant.owner, tenant.admin, tenant.employee].flatMap(({ user }) => [
       user.id,

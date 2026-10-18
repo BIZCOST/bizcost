@@ -1,5 +1,7 @@
 import { randomBytes } from 'node:crypto'
 import type {
+  DocumentSettingsDto,
+  QuotationDto,
   CustomerDto,
   OrderDto,
   BusinessProfileDto,
@@ -60,7 +62,8 @@ class InputsApi extends ProductCostsApi {
   override readonly handler = handlerFor(
     this.db,
     undefined,
-    { supabaseSecretKey: SECRET_KEY },
+    // Quotations is previewed (M3 Step 7, planned until Release B, D-125).
+    { supabaseSecretKey: SECRET_KEY, previewModules: ['quotations'] },
     { emailSender: this.emails },
   )
 }
@@ -396,6 +399,49 @@ function orderFields(customerId: string, extra: object = {}): Record<string, unk
   return fields
 }
 
+/** A quotation with every decimal field (M3 Step 7): discounts, "Round the total", stages. */
+function quotationInput(customerId: string, extra: object = {}) {
+  return {
+    id: newId(),
+    customerId,
+    businessDate: today,
+    discount: { amount: '1.25' },
+    roundTo: '50.5',
+    lines: [
+      {
+        id: newId(),
+        productId: latte.id,
+        qty: '2.5',
+        unitPrice: '12.25',
+        discount: { percent: '10' },
+      },
+      { id: newId(), productId: null, description: 'Fitting', qty: '1.5', unitPrice: '9.75' },
+    ],
+    stages: [
+      { due: 'Upon signing', percent: '62.5' },
+      { due: 'On delivery', percent: '37.5' },
+    ],
+    ...extra,
+  }
+}
+
+async function newQuotation(sent = false): Promise<QuotationDto> {
+  const created = ok(
+    await shop.run<QuotationDto>('quotation.create', quotationInput((await newCustomer()).id)),
+  )
+  if (!sent) return created
+  return ok(
+    await shop.run<QuotationDto>('quotation.send', { id: created.id, version: created.version }),
+  )
+}
+
+/** The fields of a quotation's update (no id). */
+function quotationFields(customerId: string, extra: object = {}): Record<string, unknown> {
+  const fields: Record<string, unknown> = quotationInput(customerId, extra)
+  delete fields.id
+  return fields
+}
+
 /** The import the last digits case made (its rows are read back through it). */
 let lastImportId = ''
 
@@ -588,6 +634,35 @@ const DIGITS: Record<string, Variant[]> = {
         method: 'cash',
         amount: '7.25',
       }),
+    },
+  ],
+  // Quotations (M3 Step 7), and the letterhead's phones on the business profile.
+  'business.updateProfile': [
+    {
+      input: async () => {
+        const profile = ok(await shop.run<BusinessProfileDto>('business.profile'))
+        return {
+          version: profile.version,
+          legalName: profile.legalName,
+          legalNameAr: profile.legalNameAr,
+          vatRegistered: profile.vatRegistered,
+          trn: profile.vatRegistered ? (profile.trn ?? '100123456700003') : null,
+          letterhead: { phone: '0501234567', phone2: '04 555 0142' },
+        }
+      },
+    },
+  ],
+  'quotation.create': [{ input: async () => quotationInput((await newCustomer()).id) }],
+  'quotation.update': [
+    {
+      input: async () => {
+        const quotation = await newQuotation()
+        return {
+          ...quotationFields(quotation.customerId),
+          id: quotation.id,
+          version: quotation.version,
+        }
+      },
     },
   ],
   'customerPayment.recordMany': [
@@ -872,6 +947,19 @@ const CREATES: Record<string, Create> = {
     },
     other: async (input) => ({ ...input, notes: `Other ${tag()}` }),
   },
+  // Quotations (M3 Step 7): a quotation, a revision and a copy name their new revision.
+  'quotation.create': {
+    input: async () => quotationInput((await newCustomer()).id),
+    other: async (input) => ({ ...input, notes: `Other ${tag()}` }),
+  },
+  'quotation.revise': {
+    input: async () => ({ id: (await newQuotation(true)).id, newId: newId() }),
+    other: async (input) => ({ ...input, id: (await newQuotation(true)).id }),
+  },
+  'quotation.copy': {
+    input: async () => ({ id: (await newQuotation()).id, newId: newId() }),
+    other: async (input) => ({ ...input, customerId: (await newCustomer()).id }),
+  },
   'saleImport.create': {
     input: async () => importInput(),
     other: async (input) => ({ ...input, fileName: `other ${tag()}.csv` }),
@@ -895,6 +983,8 @@ const NOT_CREATES: Record<string, string> = {
     'saves the answers for a draft import’s names (an alias a name or code; a new product by its own client id)',
   'saleImport.reverse':
     'reverses a finalized import or one of its days (idempotent), never makes a row of its own',
+  'quotation.toOrder':
+    'makes the order of an accepted quotation once: a repeat returns the order made whatever orderId it sends (an orderId another order has is CONFLICT), proven in quotations.api.test.ts',
 }
 
 function topLevelKeys(path: string): Set<string> {
@@ -1208,6 +1298,45 @@ const VERSIONED: Record<string, Versioned> = {
   'order.deliver': async () => {
     const order = await newOrder()
     return { id: order.id, version: order.version }
+  },
+  // Quotations and Settings → Documents (M3 Step 7).
+  'quotation.update': async () => {
+    const quotation = await newQuotation()
+    return {
+      ...quotationFields(quotation.customerId, { notes: 'Changed' }),
+      id: quotation.id,
+      version: quotation.version,
+    }
+  },
+  'quotation.discard': async () => {
+    const quotation = await newQuotation()
+    return { id: quotation.id, version: quotation.version }
+  },
+  'quotation.send': async () => {
+    const quotation = await newQuotation()
+    return { id: quotation.id, version: quotation.version }
+  },
+  'quotation.accept': async () => {
+    const quotation = await newQuotation(true)
+    return { id: quotation.id, version: quotation.version }
+  },
+  'quotation.decline': async () => {
+    const quotation = await newQuotation(true)
+    return { id: quotation.id, version: quotation.version }
+  },
+  'document.updateSettings': async () => {
+    const current = ok(await shop.run<DocumentSettingsDto>('document.settings'))
+    return {
+      version: current.version,
+      series: [],
+      footer: `Bank ${tag()}`,
+      quotationTerms: null,
+      quotationValidDays: 14,
+      accent: 'teal',
+      watermark: true,
+      wholeAmounts: false,
+      signatory: null,
+    }
   },
   'member.updateLocations': async () => {
     const member = await api.member(shop, 'employee')

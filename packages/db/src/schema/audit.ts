@@ -32,6 +32,8 @@ export const auditLog = app.table(
       foreignColumns: [businesses.id],
     }),
     index('audit_log_business_created_idx').on(t.businessId, t.createdAt),
+    // A record's history (M3 Step 7: who changed a quotation, and when).
+    index('audit_log_entity_idx').on(t.businessId, t.entityId, t.createdAt),
     check('audit_log_action_check', sql`action in ('insert', 'update', 'delete')`),
   ],
 )

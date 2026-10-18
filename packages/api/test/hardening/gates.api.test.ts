@@ -20,6 +20,7 @@ import {
   type ModuleId,
   type ModuleManifest,
   type RoleTemplateKey,
+  withPreviewModules,
 } from '@bizcost/modules'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { appRouter } from '../../src'
@@ -58,10 +59,10 @@ import { inputLeaves, inputSchemaOf } from './schema'
 //     (nothing written), accepted where it does.
 
 /**
- * The registry the suites' API serves: the manifests as released code has them (Release A, M3 Step 6,
- * released every module being built, so nothing is previewed).
+ * The registry the suites' API serves: the manifests as released code has them, with Quotations
+ * previewed (M3 Step 7: planned until Release B, D-125).
  */
-const MODULES: readonly ModuleManifest[] = MANIFESTS
+const MODULES: readonly ModuleManifest[] = withPreviewModules(['quotations'], MANIFESTS)
 
 /** Any of the groups, each with every module on; [] = no module gate. */
 type Gate = readonly (readonly ModuleId[])[]
@@ -82,7 +83,12 @@ const RECEIPTS: Gate = [
   ['files', 'expenses'],
   // An order's files (M3 Step 5: the customer's LPO).
   ['files', 'orders'],
+  // A quotation's files and its lines' pictures (M3 Step 7).
+  ['files', 'quotations'],
 ]
+const QUOTATIONS: Gate = [['quotations']]
+/** Settings → Documents (M3 Step 7): with Quotations served (or Invoices, once it is built). */
+const DOCUMENTS: Gate = [['quotations']]
 const CUSTOMERS: Gate = [['customers']]
 const ORDERS: Gate = [['orders']]
 const PAYMENTS: Gate = [['payments']]
@@ -144,6 +150,12 @@ const MODULE_GATES: Record<string, Gate> = {
   'customerPayment.reverse': PAYMENTS,
   'dashboard.cards': NONE,
   'dashboard.checklist': NONE,
+  // Settings → Documents (M3 Step 7).
+  'document.imageUploadUrl': DOCUMENTS,
+  'document.removeImage': DOCUMENTS,
+  'document.setImage': DOCUMENTS,
+  'document.settings': DOCUMENTS,
+  'document.updateSettings': DOCUMENTS,
   'expense.approve': EXPENSES,
   'expense.correct': EXPENSES,
   'expense.create': EXPENSES,
@@ -238,6 +250,20 @@ const MODULE_GATES: Record<string, Gate> = {
   'purchaseReturn.post': PURCHASES,
   'purchaseReturn.reverse': PURCHASES,
   'purchaseReturn.update': PURCHASES,
+  // Quotations (M3 Step 7, previewed): making an order of one also needs Orders (in the handler).
+  'quotation.accept': QUOTATIONS,
+  'quotation.copy': QUOTATIONS,
+  'quotation.create': QUOTATIONS,
+  'quotation.decline': QUOTATIONS,
+  'quotation.discard': QUOTATIONS,
+  'quotation.get': QUOTATIONS,
+  'quotation.history': QUOTATIONS,
+  'quotation.list': QUOTATIONS,
+  'quotation.pdf': QUOTATIONS,
+  'quotation.revise': QUOTATIONS,
+  'quotation.send': QUOTATIONS,
+  'quotation.toOrder': QUOTATIONS,
+  'quotation.update': QUOTATIONS,
   'receivable.list': PAYMENTS,
   'recipe.get': RECIPES,
   'recipe.save': RECIPES,
@@ -907,6 +933,57 @@ const HIDDEN_FIELDS: Record<string, HiddenField | { notHidden: string }> = {
     capability: 'vat_registered',
     input: (b) => create('order.create', orderInput(b, deliveryWithVat())),
   },
+  // A typed item (M3 Step 7, Q21: carried from a quotation): its VAT as typed.
+  'order.create lines.*.priceIncludesVat': {
+    capability: 'vat_registered',
+    input: (b) => create('order.create', orderInput(b, typedLine({ priceIncludesVat: true }))),
+  },
+  'order.update lines.*.priceIncludesVat': {
+    capability: 'vat_registered',
+    input: (b) => orderUpdate(b, typedLine({ priceIncludesVat: true })),
+  },
+  'order.create lines.*.vatCategory': {
+    capability: 'vat_registered',
+    input: (b) => create('order.create', orderInput(b, typedLine({ vatCategory: 'zero_rated' }))),
+  },
+  'order.update lines.*.vatCategory': {
+    capability: 'vat_registered',
+    input: (b) => orderUpdate(b, typedLine({ vatCategory: 'exempt' })),
+  },
+  // Quotations (M3 Step 7): the location, and a typed line's VAT as typed.
+  'quotation.create locationId': {
+    capability: 'multi_location',
+    input: async (b) =>
+      create('quotation.create', await quotationInput(b, { locationId: otherLocation(b) })),
+  },
+  'quotation.update locationId': {
+    capability: 'multi_location',
+    input: (b) => quotationUpdate(b, { locationId: otherLocation(b) }),
+  },
+  'quotation.create lines.*.priceIncludesVat': {
+    capability: 'vat_registered',
+    input: async (b) =>
+      create(
+        'quotation.create',
+        await quotationInput(b, quotationTyped({ priceIncludesVat: true })),
+      ),
+  },
+  'quotation.update lines.*.priceIncludesVat': {
+    capability: 'vat_registered',
+    input: (b) => quotationUpdate(b, quotationTyped({ priceIncludesVat: true })),
+  },
+  'quotation.create lines.*.vatCategory': {
+    capability: 'vat_registered',
+    input: async (b) =>
+      create(
+        'quotation.create',
+        await quotationInput(b, quotationTyped({ vatCategory: 'zero_rated' })),
+      ),
+  },
+  'quotation.update lines.*.vatCategory': {
+    capability: 'vat_registered',
+    input: (b) => quotationUpdate(b, quotationTyped({ vatCategory: 'exempt' })),
+  },
   'order.update lines.*.amountIncludesVat': {
     capability: 'vat_registered',
     input: (b) => orderUpdate(b, deliveryWithVat()),
@@ -964,6 +1041,55 @@ async function orderUpdate(b: Business, extra: object) {
   return {
     path: 'order.update',
     input: { ...fields, id: order.id, version: order.version },
+  }
+}
+
+/** A typed item of an order (M3 Step 7, Q21). */
+const typedLine = (extra: object) => ({
+  lines: [
+    { kind: 'typed', id: newId(), description: 'Site visit', qty: '1', unitPrice: '5', ...extra },
+  ],
+})
+
+/** A quotation's typed line (M3 Step 7). */
+const quotationTyped = (extra: object) => ({
+  lines: [
+    { id: newId(), productId: null, description: 'Site visit', qty: '1', unitPrice: '5', ...extra },
+  ],
+})
+
+/** Each business's customer, with Quotations turned on (previewed; the baker has it off). */
+const quotationCustomers = new Map<string, string>()
+
+async function quotationInput(b: Business, extra: object = {}) {
+  let customerId = quotationCustomers.get(b.id)
+  if (!customerId) {
+    const state = ok(await as<CustomizationDto>(b.owner, b.id, 'business.customization'))
+    if (!state.modules.find((m) => m.id === 'quotations')?.enabled) {
+      ok(
+        await as<CustomizeDto>(b.owner, b.id, 'business.customize', {
+          item: { kind: 'module', id: 'quotations' },
+          enabled: true,
+        }),
+      )
+    }
+    customerId = ok(
+      await as<{ id: string }>(b.owner, b.id, 'customer.create', { id: newId(), name: 'Noor' }),
+    ).id
+    quotationCustomers.set(b.id, customerId)
+  }
+  return { id: newId(), customerId, businessDate: b.today, lines: [], ...extra }
+}
+
+/** A quotation saved without the field, then the whole quotation with it. */
+async function quotationUpdate(b: Business, extra: object) {
+  const fields = await quotationInput(b)
+  const quotation = ok(
+    await as<{ id: string; version: number }>(b.owner, b.id, 'quotation.create', fields),
+  )
+  return {
+    path: 'quotation.update',
+    input: { ...fields, ...extra, id: quotation.id, version: quotation.version },
   }
 }
 

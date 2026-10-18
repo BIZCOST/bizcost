@@ -33,6 +33,14 @@ describe('hasVisibleCharacter', () => {
     expect(hasVisibleCharacter('a')).toBe(true)
     expect(hasVisibleCharacter('١')).toBe(true)
   })
+
+  it('needs more than a combining mark on its own or a blank filler (D-299)', () => {
+    for (const blank of ['́', 'ً', '⁠', '‎', 'ㅤ', '⠀', 'ᅟᅠ']) {
+      expect(hasVisibleCharacter(blank), JSON.stringify(blank)).toBe(false)
+    }
+    expect(hasVisibleCharacter('é')).toBe(true)
+    expect(hasVisibleCharacter('مَجلس')).toBe(true)
+  })
 })
 
 describe('catalog names', () => {

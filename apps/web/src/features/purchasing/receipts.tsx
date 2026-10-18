@@ -8,7 +8,6 @@ import {
   type AttachmentContentType,
   type AttachmentDto,
 } from '@bizcost/contracts'
-import type { AttachmentEntity } from '@bizcost/domain'
 import { formatNumber, type I18nKey } from '@bizcost/i18n'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
@@ -62,7 +61,7 @@ export function receiptProblem(file: File): I18nKey | null {
  * Uploads one file and attaches it to the purchase or expense `recordId` (`entity`); throws with the
  * problem's key.
  */
-export function useUploadReceipt(entity: AttachmentEntity = 'purchase') {
+export function useUploadReceipt(entity: RecordEntity = 'purchase') {
   const trpc = useTRPC()
   const queryClient = useQueryClient()
   const uploadUrl = useMutation(trpc.attachment.uploadUrl.mutationOptions())
@@ -100,13 +99,21 @@ export function useUploadReceipt(entity: AttachmentEntity = 'purchase') {
 }
 
 /** The query of the record the receipts belong to (it counts them). */
-function recordKey(trpc: ReturnType<typeof useTRPC>, entity: AttachmentEntity, id: string) {
+function recordKey(trpc: ReturnType<typeof useTRPC>, entity: RecordEntity, id: string) {
   return entity === 'expense'
     ? trpc.expense.get.queryKey({ id })
     : entity === 'order'
       ? trpc.order.get.queryKey({ id })
-      : trpc.purchase.get.queryKey({ id })
+      : entity === 'quotation'
+        ? trpc.quotation.get.queryKey({ id })
+        : trpc.purchase.get.queryKey({ id })
 }
+
+/**
+ * The records whose files these show: a purchase's and an expense's receipts, an order's files and a
+ * quotation's (M3 Step 7: the customer's signed copy, drawings; a line's picture has its own field).
+ */
+export type RecordEntity = 'purchase' | 'expense' | 'order' | 'quotation'
 
 /** A record's words: a purchase's and an expense's receipts, an order's files (M3 Step 5). */
 const WORDS = {
@@ -131,7 +138,14 @@ const WORDS = {
     none: 'orders.files.none',
     removeBody: 'orders.files.removeBody',
   },
-} as const satisfies Record<AttachmentEntity, Record<string, I18nKey>>
+  quotation: {
+    title: 'documents.quotations.files.title',
+    attached: 'documents.quotations.files.attached',
+    removed: 'documents.quotations.files.removed',
+    none: 'documents.quotations.files.none',
+    removeBody: 'documents.quotations.files.removeBody',
+  },
+} as const satisfies Record<RecordEntity, Record<string, I18nKey>>
 
 export class ReceiptError extends Error {
   constructor(readonly key: I18nKey) {
@@ -274,7 +288,7 @@ export function Receipts({
   recordId,
   canManage,
 }: {
-  entity?: AttachmentEntity
+  entity?: RecordEntity
   recordId: string
   canManage: boolean
 }) {
@@ -333,9 +347,10 @@ export function Receipts({
             >
               <FileIcon type={item.contentType} />
               <span className="min-w-0 flex-1">
-                {item.url ? (
+                {/* A quotation's files open for whoever sees the quotation (openUrl, D-187). */}
+                {(item.url ?? item.openUrl) ? (
                   <a
-                    href={item.url}
+                    href={(item.url ?? item.openUrl)!}
                     target="_blank"
                     rel="noreferrer"
                     dir="auto"
@@ -350,7 +365,9 @@ export function Receipts({
                 )}
                 <span className="flex flex-wrap items-center gap-x-2 text-xs text-muted-foreground">
                   {size(item.sizeBytes)}
-                  {item.url === undefined ? <Locked category="supplier_price" /> : null}
+                  {item.url === undefined && !item.openUrl ? (
+                    <Locked category="supplier_price" />
+                  ) : null}
                 </span>
               </span>
               {canManage ? (

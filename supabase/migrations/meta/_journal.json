@@ -393,6 +393,48 @@
       "when": 1792093042694,
       "tag": "20261015191810_sales_release",
       "breakpoints": true
+    },
+    {
+      "idx": 56,
+      "version": "7",
+      "when": 1792155822877,
+      "tag": "20261016130342_quotations_tables",
+      "breakpoints": true
+    },
+    {
+      "idx": 57,
+      "version": "7",
+      "when": 1792155879680,
+      "tag": "20261016130439_quotations_security",
+      "breakpoints": true
+    },
+    {
+      "idx": 58,
+      "version": "7",
+      "when": 1792156956368,
+      "tag": "20261016132236_order_round_total",
+      "breakpoints": true
+    },
+    {
+      "idx": 59,
+      "version": "7",
+      "when": 1792167999685,
+      "tag": "20261016162639_quotation_greeting",
+      "breakpoints": true
+    },
+    {
+      "idx": 60,
+      "version": "7",
+      "when": 1792274042091,
+      "tag": "20261017215402_quotation_revision_keys",
+      "breakpoints": true
+    },
+    {
+      "idx": 61,
+      "version": "7",
+      "when": 1792314043850,
+      "tag": "20261018090043_quotation_area_length",
+      "breakpoints": true
     }
   ]
 }

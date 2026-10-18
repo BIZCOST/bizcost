@@ -3,6 +3,7 @@ import { BUSINESS_NAME_MAX_LENGTH, LOGO_CONTENT_TYPES } from '../business'
 import { zUuid } from '../primitives'
 import { CONTROL_CHARACTER } from '../text'
 import { businessNameInput } from './business-setup'
+import { businessLetterheadDto, businessLetterheadInput } from './documents'
 import { localeDto } from './me'
 
 // Settings → Business profile, language and Customize BizCost (ROADMAP.md Step 6).
@@ -29,6 +30,11 @@ export const businessProfileDto = z.object({
   trn: z.string().nullable(),
   /** The business's language: names of new defaults and the default language of invitations. */
   defaultLocale: localeDto,
+  /**
+   * How to reach the business, its address and trade licence (M3 Step 7): printed on its documents'
+   * letterhead; the screens show them only while Quotations or Invoices is served.
+   */
+  letterhead: businessLetterheadDto,
   /** For optimistic concurrency: send it back with updateProfile. */
   version: z.int().positive(),
 })
@@ -54,6 +60,11 @@ export const updateBusinessProfileInput = z.object({
   legalNameAr: optionalNameInput,
   vatRegistered: z.boolean(),
   trn: z.string().max(40).nullable(),
+  /**
+   * The contact lines, address and trade licence, whole (M3 Step 7). Left out, they are kept; given
+   * while neither Quotations nor Invoices is served, MODULE_DISABLED.
+   */
+  letterhead: businessLetterheadInput.optional(),
 })
 export type UpdateBusinessProfileInput = z.input<typeof updateBusinessProfileInput>
 

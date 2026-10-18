@@ -161,6 +161,7 @@
       "weekDays": "من {{from}} إلى {{to}}",
       "deliveryRow": "رسوم التوصيل المحصّلة",
       "chargeRow": "رسوم أخرى",
+      "typedRow": "بنود مكتوبة (ليست في قائمتك)",
       "removed": "لم يعد في القائمة",
       "incomplete": "غير مكتمل",
       "beforeRunning": "قبل المصاريف التشغيلية",

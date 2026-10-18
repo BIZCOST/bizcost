@@ -11,6 +11,7 @@ export const SETTINGS_SECTIONS = [
   'business',
   'locations',
   'channels',
+  'documents',
   'members',
   'roles',
   'modules',
@@ -54,6 +55,13 @@ export function isSectionVisible(access: Access, section: SettingsSection): bool
       // Sales channels (M3 Step 2; D-226): Sales on, and the key to change them (Owner, Admin,
       // Manager).
       return hasModule(access, 'sales') && can(access, 'sales.channels.manage')
+    case 'documents':
+      // Settings → Documents (M3 Step 7): numbers, the letterhead, the footer, the signature and
+      // stamp; with Quotations or Invoices on, for the key to set them (Owner, Admin).
+      return (
+        (hasModule(access, 'quotations') || hasModule(access, 'invoices')) &&
+        can(access, 'settings.documents.manage')
+      )
     case 'members':
       return capability(access, 'has_team') && can(access, 'settings.members.view')
     case 'roles':
@@ -109,6 +117,7 @@ export const SECTION_TITLES: Readonly<Record<SettingsSection, I18nKey>> = {
   business: 'settings.business.title',
   locations: 'settings.locations.title',
   channels: 'settings.channels.title',
+  documents: 'settings.documents.title',
   members: 'settings.members.title',
   roles: 'settings.roles.title',
   modules: 'settings.modules.title',
@@ -144,6 +153,7 @@ export const SECTION_DESCRIPTIONS: Readonly<Record<SettingsSection, I18nKey>> = 
   business: 'settings.business.description',
   locations: 'settings.locations.description',
   channels: 'settings.channels.description',
+  documents: 'settings.documents.description',
   members: 'settings.members.description',
   roles: 'settings.roles.description',
   modules: 'settings.modules.description',

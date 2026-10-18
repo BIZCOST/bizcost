@@ -248,7 +248,8 @@ test("the home baker's order #1001 in Arabic on a phone: a deposit, delivered, p
   await shot(page, 'orders-ar-390-did-you-mean')
   await sheet.getByRole('button', { name: 'أضف', exact: true }).click()
   await expect(sheet).toBeHidden()
-  await expect(customer).toHaveValue('فاطمة · 050 123 4567')
+  // The phone in its own left-to-right isolate (D-297): its digits never read reversed.
+  await expect(customer).toHaveValue('فاطمة · \u2066050 123 4567\u2069')
 
   // The cake, when it's due, delivery to Al Barsha: charged 20, it costs her 25.
   await page.getByRole('combobox', { name: 'المنتج أو الخدمة' }).fill('كيك')
