@@ -14,7 +14,7 @@ import {
   type Emirate,
 } from '@bizcost/domain'
 import { isModuleActive } from '@bizcost/modules'
-import { sql } from 'drizzle-orm'
+import { sql, type SQL } from 'drizzle-orm'
 import type { z } from 'zod'
 import type { BusinessCtx } from '../business-context'
 import { fileNamePart } from '../documents/file-name'
@@ -43,8 +43,12 @@ import { uuidArray } from './stock'
 // period's. An invoice issued after its order's delivery day or its sale's day says what of it was
 // owed already through them (`owedThrough`): the work is charged once, a past period never changes
 // and each period starts where the one before ended. A pending order is not yet a charge (its deposit
-// shows as a payment, paid ahead). A reversed payment is not listed (it never counted). A sale says its
-// first items, a payment how it was paid. Since Release B (M3 Step 9) served with Customers and
+// shows as a payment, paid ahead). A payment, a sale they pay later or a refund reversed on its own day
+// is not listed (it never counted); one reversed on a later day (the books closed on its day) stays on
+// its day and its reversal is listed on the later day, as the books count it (D-334). A credit note
+// that takes back all that was left takes back its invoice's rounding difference; an order's while
+// its standing refunds take back all of its sale (D-333). A sale says its first items, a payment how
+// it was paid. Since Release B (M3 Step 9) served with Customers and
 // Payments for every business, orders-only ones included (B10); who sees them:
 // `payments.customers.view` and `customers.items.view` (the router: a statement names the customer's
 // particulars). Within one's branches when limited (Q12).
@@ -94,19 +98,61 @@ function entriesSql(ctx: BusinessCtx, customerId: string, to: string) {
   const srcOf = (alias: string) =>
     sql`case when ${sql.raw(alias)}.order_id is not null then 'order'
              when ${sql.raw(alias)}.sale_id is not null then 'sale' end::text`
+  // A sale (or refund) as it stood at the end of its day: finalized, or reversed on a later day (the
+  // books closed on its day, D-334: the books keep it there and count its reversal on the later day).
+  const stoodOnItsDay = (alias: string) => {
+    const a = sql.raw(alias)
+    return sql`(${a}.status = 'posted'
+      or (${a}.status = 'reversed' and ${a}.reversal_business_date > ${a}.business_date))`
+  }
+  const reversedLater = (alias: string) => {
+    const a = sql.raw(alias)
+    return sql`${a}.status = 'reversed' and ${a}.reversal_business_date > ${a}.business_date
+      and ${a}.reversal_business_date <= ${to}::date`
+  }
+  // An order's rounding difference is taken back while the refunds that stand take back all of its
+  // sale (D-333, as What customers owe counts it: obligationsOf). So the refund that brings them to all
+  // of it credits the 0.01 with its total, and the reversal (on a later day) that takes them below it
+  // charges it back with its total; any other refund or reversal moves its total only. The refunds of
+  // r's sale that stand at a moment are those posted by then and not reversed by then, among those that
+  // count: a refund reversed on its own day never counted (D-334), so it never stood.
+  const standingRefunds = (at: SQL) => sql`(
+      select coalesce(sum(-x.total), 0) from app.sales x
+       where x.business_id = r.business_id and x.refund_of_id = r.refund_of_id
+         and x.source = 'refund' and x.deleted_at is null and ${stoodOnItsDay('x')} and ${at})`
+  // Just after r was posted (r included), and just before r was reversed (r included).
+  const afterPosting = standingRefunds(sql`(x.posted_at, x.id) <= (r.posted_at, r.id)
+         and (x.status = 'posted' or x.reversed_at > r.posted_at)`)
+  const beforeReversal = standingRefunds(sql`(x.posted_at < r.reversed_at or x.id = r.id)
+         and (x.status = 'posted' or (x.reversed_at, x.id) >= (r.reversed_at, r.id))`)
+  // All of the sale taken back with r, and not without it (a refund of nothing never takes it twice).
+  const roundingWith = (standing: SQL) => sql`case
+      when r.order_id is not null and ${standing} = f.total and ${standing} + r.total <> f.total
+      then o.rounding_difference else 0 end`
+  const refundCredit = sql`-r.total + ${roundingWith(afterPosting)}`
+  const reversalCharge = sql`-r.total + ${roundingWith(beforeReversal)}`
+  // A payment as it stood at the end of its day: standing, or reversed on a later day.
+  const paymentStood = sql`(p.reversed_at is null
+    or coalesce(p.reversal_date, p.business_date) > p.business_date)`
+  const paymentScope = scope.all
+    ? sql``
+    : sql`and coalesce(iv.location_id, o.location_id, s.location_id)
+            = any(${uuidArray([...scope.ids])})`
   return sql`
     select i.issue_date::text as date, 'invoice'::text as kind, i.id, i.number, null::text as reference,
            trim_scale(i.payable)::text as charge, '0' as credit, false as paid_when_made, i.issued_at as created_at,
            ${none} as item_names, null::text as method, ${srcOf('i')} as src_kind,
-           coalesce(i.order_id, i.sale_id) as src_id, o.number as src_number, false as bills_less
+           coalesce(i.order_id, i.sale_id) as src_id, o.number as src_number, false as bills_less,
+           false as reversal
       from app.invoices i
       left join app.orders o on o.business_id = i.business_id and o.id = i.order_id
      where i.business_id = ${b} and i.customer_id = ${customerId} and i.status = 'issued'
        and i.deleted_at is null and i.issue_date <= ${to}::date${inScope('i')}
     union all
-    select c.issue_date::text, 'credit_note', c.id, c.number, i.number, '0', trim_scale(c.total)::text,
+    select c.issue_date::text, 'credit_note', c.id, c.number, i.number, '0',
+           trim_scale(c.total + c.rounding_difference)::text,
            false, c.issued_at, ${none}, null, ${srcOf('i')}, coalesce(i.order_id, i.sale_id), o.number,
-           c.counted_on is null and c.counted_elsewhere is null
+           c.counted_on is null and c.counted_elsewhere is null, false
       from app.credit_notes c
       join app.invoices i on i.business_id = c.business_id and i.id = c.invoice_id
       left join app.orders o on o.business_id = i.business_id and o.id = i.order_id
@@ -115,49 +161,84 @@ function entriesSql(ctx: BusinessCtx, customerId: string, to: string) {
     union all
     select o.delivered_on::text, 'order', o.id, o.number, null,
            trim_scale(o.total + o.rounding_difference)::text, '0', false, o.delivered_at, ${none}, null,
-           'order', o.id, o.number, false
+           'order', o.id, o.number, false, false
       from app.orders o
      where o.business_id = ${b} and o.customer_id = ${customerId} and o.status = 'delivered'
        and o.deleted_at is null and o.delivered_on <= ${to}::date${inScope('o')}
     union all
     select s.business_date::text, 'sale', s.id, null, null, trim_scale(s.total)::text, '0', false,
-           s.posted_at, ${items('s')}, null, 'sale', s.id, null, false
+           s.posted_at, ${items('s')}, null, 'sale', s.id, null, false, false
       from app.sales s
      where s.business_id = ${b} and s.customer_id = ${customerId} and s.source = 'single'
-       and s.pay_later and s.status = 'posted' and s.deleted_at is null
+       and s.pay_later and ${stoodOnItsDay('s')} and s.deleted_at is null
        and s.business_date <= ${to}::date${inScope('s')}
     union all
+    -- Its reversal on the later day takes it off (a sale they pay later is reversed once its payments
+    -- and refunds are, so nothing else of it changes).
+    select s.reversal_business_date::text, 'sale', s.id, null, null, '0', trim_scale(s.total)::text,
+           false, s.reversed_at, ${items('s')}, null, null, null, null, false, true
+      from app.sales s
+     where s.business_id = ${b} and s.customer_id = ${customerId} and s.source = 'single'
+       and s.pay_later and ${reversedLater('s')} and s.deleted_at is null${inScope('s')}
+    union all
     -- A source with refunds that stand is not invoiced, and an invoiced one is not refunded (D-305).
-    select r.business_date::text, 'refund', r.id, o.number, null, '0', trim_scale(-r.total)::text,
+    select r.business_date::text, 'refund', r.id, o.number, null, '0',
+           trim_scale(${refundCredit})::text,
            false, r.posted_at, ${items('r')}, null,
            case when r.order_id is null then 'sale' end::text,
-           case when r.order_id is null then r.refund_of_id end, null, false
+           case when r.order_id is null then r.refund_of_id end, null, false, false
       from app.sales r
       left join app.orders o on o.business_id = r.business_id and o.id = r.order_id
       left join app.sales f on f.business_id = r.business_id and f.id = r.refund_of_id
      where r.business_id = ${b} and r.customer_id = ${customerId} and r.source = 'refund'
-       and r.status = 'posted' and r.deleted_at is null and r.business_date <= ${to}::date
+       and ${stoodOnItsDay('r')} and r.deleted_at is null and r.business_date <= ${to}::date
        and ((r.order_id is not null and o.status = 'delivered')
          or (r.order_id is null and f.pay_later))${inScope('r')}
     union all
+    -- A refund reversed on a later day charges back what it took off as the refunds stood then.
+    select r.reversal_business_date::text, 'refund', r.id, o.number, null,
+           trim_scale(${reversalCharge})::text, '0',
+           false, r.reversed_at, ${items('r')}, null,
+           case when r.order_id is null then 'sale' end::text,
+           case when r.order_id is null then r.refund_of_id end, null, false, true
+      from app.sales r
+      left join app.orders o on o.business_id = r.business_id and o.id = r.order_id
+      left join app.sales f on f.business_id = r.business_id and f.id = r.refund_of_id
+     where r.business_id = ${b} and r.customer_id = ${customerId} and r.source = 'refund'
+       and ${reversedLater('r')} and r.deleted_at is null
+       and ((r.order_id is not null and o.status = 'delivered')
+         or (r.order_id is null and f.pay_later))${inScope('r')}
+    union all
+    -- A payment reversed on its own day never counted and is not listed; one reversed on a later day
+    -- (its day closed) stays on its day, and its reversal is listed on the later day (D-334).
     select p.business_date::text,
            case p.kind when 'refund' then 'money_back' else 'payment' end,
            p.id, null, coalesce(iv.number, o.number),
            case p.kind when 'refund' then trim_scale(p.amount)::text else '0' end,
            case p.kind when 'refund' then '0' else trim_scale(p.amount)::text end,
-           false, p.created_at, ${none}, p.method, null, null, null, false
+           false, p.created_at, ${none}, p.method, null, null, null, false, false
       from app.customer_payments p
       left join app.invoices iv on iv.business_id = p.business_id and iv.id = p.invoice_id
       left join app.orders o on o.business_id = p.business_id and o.id = p.order_id
       left join app.sales s on s.business_id = p.business_id and s.id = p.sale_id
-     where p.business_id = ${b} and p.customer_id = ${customerId} and p.reversed_at is null
+     where p.business_id = ${b} and p.customer_id = ${customerId} and ${paymentStood}
        and p.deleted_at is null and p.business_date <= ${to}::date
-       ${
-         scope.all
-           ? sql``
-           : sql`and coalesce(iv.location_id, o.location_id, s.location_id)
-                   = any(${uuidArray([...scope.ids])})`
-       }
+       ${paymentScope}
+    union all
+    select p.reversal_date::text,
+           case p.kind when 'refund' then 'money_back' else 'payment' end,
+           p.id, null, coalesce(iv.number, o.number),
+           case p.kind when 'refund' then '0' else trim_scale(p.amount)::text end,
+           case p.kind when 'refund' then trim_scale(p.amount)::text else '0' end,
+           false, p.reversed_at, ${none}, p.method, null, null, null, false, true
+      from app.customer_payments p
+      left join app.invoices iv on iv.business_id = p.business_id and iv.id = p.invoice_id
+      left join app.orders o on o.business_id = p.business_id and o.id = p.order_id
+      left join app.sales s on s.business_id = p.business_id and s.id = p.sale_id
+     where p.business_id = ${b} and p.customer_id = ${customerId} and p.reversed_at is not null
+       and p.reversal_date > p.business_date and p.reversal_date <= ${to}::date
+       and p.deleted_at is null
+       ${paymentScope}
     union all
     -- A sale paid when it was made: no charge of its own, so its payment counts on the day its first
     -- invoice is issued (toward that invoice).
@@ -165,7 +246,7 @@ function entriesSql(ctx: BusinessCtx, customerId: string, to: string) {
            trim_scale(s.total - coalesce((select sum(-r.total) from app.sales r
               where r.business_id = s.business_id and r.refund_of_id = s.id
                 and r.status = 'posted' and r.deleted_at is null), 0))::text,
-           true, fi.issued_at, ${items('s')}, null, null, null, null, false
+           true, fi.issued_at, ${items('s')}, null, null, null, null, false, false
       from app.sales s
       join lateral (
         select x.issue_date, x.issued_at from app.invoices x
@@ -228,16 +309,19 @@ async function statementOf(
       itemNames: r.item_names.filter((name) => name.trim() !== ''),
       method: r.method,
       owedThrough: r.owedThrough,
+      reversal: r.reversal,
       charge: r.charge,
       credit: r.credit,
       owed,
     }
   })
-  const charges = within.filter((r) => r.kind !== 'money_back').map((r) => r.charge)
-  const credited = within
-    .filter((r) => r.kind === 'credit_note' || r.kind === 'refund')
-    .map((r) => r.credit)
-  const paidRows = within.filter((r) => r.kind === 'payment' || r.kind === 'money_back')
+  // Invoiced and credited: the documents' charges and credits (a refund reversed later charges again,
+  // a sale reversed later credits, D-334); paid: the payments net of money given back.
+  const isPayment = (r: { kind: StatementEntryKind }) =>
+    r.kind === 'payment' || r.kind === 'money_back'
+  const charges = within.filter((r) => !isPayment(r)).map((r) => r.charge)
+  const credited = within.filter((r) => !isPayment(r)).map((r) => r.credit)
+  const paidRows = within.filter(isPayment)
   const paid = subtractDecimals(
     sumDecimals(paidRows.map((r) => r.credit)),
     sumDecimals(paidRows.map((r) => r.charge)),
@@ -361,6 +445,7 @@ export async function customerStatementPdf(
           itemNames: e.itemNames,
           method: e.method,
           owedThrough: e.owedThrough,
+          reversal: e.reversal,
           charge: e.charge,
           credit: e.credit,
           owed: e.owed,

@@ -393,6 +393,30 @@ async function newOrder(deliver = false): Promise<OrderDto> {
   ).data
 }
 
+/**
+ * The other kind of each discount (M3 Step 10: every decimal field is sent in some variant): the
+ * document's as a %, the item line's as an amount, and "Round the total".
+ */
+const otherDiscounts = () => ({
+  discount: { percent: '7.5' },
+  lines: [
+    {
+      kind: 'item',
+      id: newId(),
+      productId: latte.id,
+      qty: '1.5',
+      unitPrice: '12.25',
+      discount: { amount: '0.75' },
+    },
+  ],
+})
+const otherOrderDiscounts = () => ({ ...otherDiscounts(), roundTo: '20.5' })
+/** A quotation's or an invoice's lines have no kind. */
+const otherDocumentDiscounts = () => {
+  const { discount, lines } = otherDiscounts()
+  return { discount, lines: lines.map(({ kind: _kind, ...rest }) => rest) }
+}
+
 /** The fields of an order's update (no id). */
 function orderFields(customerId: string, extra: object = {}): Record<string, unknown> {
   const fields: Record<string, unknown> = orderInput(customerId, extra)
@@ -619,7 +643,10 @@ const DIGITS: Record<string, Variant[]> = {
       }),
     },
   ],
-  'purchase.create': [{ input: async () => fullPurchase() }],
+  'purchase.create': [
+    { input: async () => fullPurchase() },
+    { input: async () => fullPurchase({ discount: { percent: '2.5' } }) },
+  ],
   'purchase.update': [
     {
       input: async () => {
@@ -627,6 +654,18 @@ const DIGITS: Record<string, Variant[]> = {
           purchaseInput(today, [line(beans.id, '1', '1', { unit: 'kg' })]),
         )
         return { ...fullPurchase(), id: draft.id, version: draft.version }
+      },
+    },
+    {
+      input: async () => {
+        const draft = await shop.draft(
+          purchaseInput(today, [line(beans.id, '1', '1', { unit: 'kg' })]),
+        )
+        return {
+          ...fullPurchase({ discount: { percent: '2.5' } }),
+          id: draft.id,
+          version: draft.version,
+        }
       },
     },
   ],
@@ -645,6 +684,28 @@ const DIGITS: Record<string, Variant[]> = {
           businessDate: today,
           lines: [],
           splitAmount: '3.75',
+        }
+      },
+    },
+    {
+      input: async () => {
+        const draft = await creditDraft()
+        return {
+          id: draft.id,
+          version: draft.version,
+          businessDate: today,
+          lines: [{ id: newId(), purchaseLineId: draft.lines[0]!.purchaseLineId, amount: '0.75' }],
+        }
+      },
+    },
+    {
+      input: async () => {
+        const draft = await shop.returnDraft(await returnInput('return'))
+        return {
+          id: draft.id,
+          version: draft.version,
+          businessDate: today,
+          lines: [{ id: newId(), purchaseLineId: draft.lines[0]!.purchaseLineId, qty: '0.25' }],
         }
       },
     },
@@ -725,12 +786,23 @@ const DIGITS: Record<string, Variant[]> = {
           payment: { id: newId(), method: 'cash', amount: '5.5' },
         }),
     },
+    { input: async () => orderInput((await newCustomer()).id, otherOrderDiscounts()) },
   ],
   'order.update': [
     {
       input: async () => {
         const order = await newOrder()
         return { ...orderFields(order.customerId ?? ''), id: order.id, version: order.version }
+      },
+    },
+    {
+      input: async () => {
+        const order = await newOrder()
+        return {
+          ...orderFields(order.customerId ?? '', otherOrderDiscounts()),
+          id: order.id,
+          version: order.version,
+        }
       },
     },
   ],
@@ -762,12 +834,25 @@ const DIGITS: Record<string, Variant[]> = {
     },
   ],
   // Invoices and credit notes (M3 Step 8): a part of a quotation or an order (a % or an amount).
-  'invoice.create': [{ input: async () => invoiceInput(await invoiceCustomer()) }],
+  'invoice.create': [
+    { input: async () => invoiceInput(await invoiceCustomer()) },
+    { input: async () => invoiceInput(await invoiceCustomer(), otherDocumentDiscounts()) },
+  ],
   'invoice.update': [
     {
       input: async () => {
         const invoice = await newInvoice()
         return { ...invoiceFields(invoice.customerId), id: invoice.id, version: invoice.version }
+      },
+    },
+    {
+      input: async () => {
+        const invoice = await newInvoice()
+        return {
+          ...invoiceFields(invoice.customerId, otherDocumentDiscounts()),
+          id: invoice.id,
+          version: invoice.version,
+        }
       },
     },
   ],
@@ -780,6 +865,14 @@ const DIGITS: Record<string, Variant[]> = {
         part: { percent: '12.5' },
       }),
     },
+    {
+      input: async () => ({
+        id: (await acceptedQuotation()).id,
+        newId: newId(),
+        bills: 'part',
+        part: { amount: '4.75' },
+      }),
+    },
   ],
   'invoice.fromOrder': [
     {
@@ -788,6 +881,15 @@ const DIGITS: Record<string, Variant[]> = {
         newId: newId(),
         bills: 'part',
         part: { amount: '3.25' },
+        isDeposit: true,
+      }),
+    },
+    {
+      input: async () => ({
+        orderId: (await newOrder()).id,
+        newId: newId(),
+        bills: 'part',
+        part: { percent: '22.5' },
         isDeposit: true,
       }),
     },
@@ -820,14 +922,40 @@ const DIGITS: Record<string, Variant[]> = {
         return { ...fields, id: draft.id, version: draft.version }
       },
     },
+    {
+      input: async () => {
+        const draft = await newCreditNote()
+        const invoice = ok(await shop.run<InvoiceDto>('invoice.get', { id: draft.invoiceId }))
+        const fields: Record<string, unknown> = creditNoteFields(invoice, {
+          reason: 'price_changed',
+          by: 'amount',
+          lines: [{ invoiceLineId: invoice.lines[1]!.id, amount: '0.75' }],
+        })
+        delete fields.invoiceId
+        return { ...fields, id: draft.id, version: draft.version }
+      },
+    },
   ],
-  'quotation.create': [{ input: async () => quotationInput((await newCustomer()).id) }],
+  'quotation.create': [
+    { input: async () => quotationInput((await newCustomer()).id) },
+    { input: async () => quotationInput((await newCustomer()).id, otherDocumentDiscounts()) },
+  ],
   'quotation.update': [
     {
       input: async () => {
         const quotation = await newQuotation()
         return {
           ...quotationFields(quotation.customerId),
+          id: quotation.id,
+          version: quotation.version,
+        }
+      },
+    },
+    {
+      input: async () => {
+        const quotation = await newQuotation()
+        return {
+          ...quotationFields(quotation.customerId, otherDocumentDiscounts()),
           id: quotation.id,
           version: quotation.version,
         }
@@ -869,6 +997,29 @@ const DIGITS: Record<string, Variant[]> = {
           saleId: sale.id,
           by: 'amount',
           lines: [{ lineId: sale.lines[0]?.id, amount: '2.25' }],
+        }
+      },
+    },
+    {
+      // Money given back with the refund (an order paid in full).
+      input: async () => {
+        const order = await newOrder(true)
+        ok(
+          await shop.run('customerPayment.record', {
+            id: newId(),
+            orderId: order.id,
+            businessDate: today,
+            method: 'cash',
+            amount: order.payment!.owed,
+          }),
+        )
+        const sale = ok(await shop.run<{ data: SaleDto }>('sale.get', { id: order.saleId })).data
+        return {
+          id: newId(),
+          orderId: order.id,
+          by: 'amount',
+          lines: [{ lineId: sale.lines[0]?.id, amount: '1.75' }],
+          payment: { id: newId(), method: 'cash', amount: '1.75' },
         }
       },
     },
@@ -959,11 +1110,20 @@ describe('every quantity and price is read the same in ASCII, Arabic-Indic and E
 
   it.each(WITH_DECIMALS)('%s', async (path) => {
     const paths = decimalPaths(path)
+    // M3 Step 10: every decimal field is respelled in some variant (not only those a variant happens
+    // to send): a field no variant fills is never tried in Arabic-Indic digits.
+    const filled = new Set<string>()
     for (const variant of DIGITS[path] ?? []) {
       const scope = scopeOf(variant.where)
       const answers = {} as Record<Digits, Record<string, string>>
       for (const digits of ['ascii', 'arabic', 'eastern'] as const) {
         const input = await variant.input()
+        for (const at of paths) {
+          mapAtPaths(input, [at], (leaf) => {
+            filled.add(at)
+            return leaf
+          })
+        }
         const spelled = mapAtPaths(input, paths, (value) =>
           typeof value === 'string' ? spell(value, digits) : value,
         )
@@ -982,6 +1142,10 @@ describe('every quantity and price is read the same in ASCII, Arabic-Indic and E
       expect(answers.arabic, `${path} arabic`).toEqual(answers.ascii)
       expect(answers.eastern, `${path} eastern`).toEqual(answers.ascii)
     }
+    expect(
+      paths.filter((at) => !filled.has(at)),
+      `${path}: a variant that sends these decimal fields`,
+    ).toEqual([])
   })
 })
 

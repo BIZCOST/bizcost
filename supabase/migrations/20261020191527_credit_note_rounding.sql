@@ -1,0 +1,2 @@
+ALTER TABLE "app"."credit_notes" ADD COLUMN "rounding_difference" numeric(20, 4) DEFAULT '0' NOT NULL;--> statement-breakpoint
+ALTER TABLE "app"."credit_notes" ADD CONSTRAINT "credit_notes_rounding_check" CHECK (rounding_difference = 0 or status = 'issued');

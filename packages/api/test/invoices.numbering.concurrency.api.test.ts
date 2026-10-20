@@ -1,17 +1,35 @@
-import type { InvoiceDto } from '@bizcost/contracts'
+import type { CreditNoteDto, InvoiceDto } from '@bizcost/contracts'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import type { Person } from './purchasing'
 import { codeOf, ok } from './purchasing'
 import { InvoiceScope, InvoicesApi, typed } from './invoices'
+import { Races } from './races'
 
 // Invoice and credit note numbers (ROADMAP.md M3 Step 8; VAT ER Art. 59(1)(d): "a sequential Tax
 // Invoice number"): taken at issue, in one gapless series per business, the counter locked last (D-283).
 // Fifty drafts of five members issued at once get INV-0001…INV-0050, each once; every issue sent again
 // at the same time is answered with its own number and takes none; a refused issue takes none; credit
-// notes count in their own series (CN-0001…), and a series' first number is the business's own.
+// notes count in their own series (CN-0001…), and a series' first number is the business's own. The
+// issues "at once" are spread over five API instances, each with its own database connection
+// (races.ts), so they really run together (M3 Step 10; one instance runs its calls one at a time).
+// m3.concurrency.api.test.ts adds refusals, discards and credit notes racing in the same rounds.
 
 const api = new InvoicesApi()
-afterAll(() => api.close())
+const races = new Races(api.admin, 5)
+afterAll(async () => {
+  await races.close()
+  await api.close()
+})
+
+/** An issue as `person` on API instance `i`. */
+const issueOn = (scope: InvoiceScope, i: number, draft: InvoiceDto, person: Person = scope.owner) =>
+  races.call<InvoiceDto>(
+    scope,
+    i,
+    'invoice.issue',
+    { id: draft.id, version: draft.version },
+    person,
+  )
 
 const sorted = (numbers: readonly (string | null)[]) => [...numbers].sort()
 const series = (prefix: string, from: number, count: number, padding = 4) =>
@@ -40,11 +58,11 @@ describe('invoice numbers under contention', () => {
         drafts.push([person, draft])
       }
     }
-    // Each issue sent twice at the same time (a double tap, a retry): both answered.
+    // Each issue sent twice at the same time on two instances (a double tap, a retry): both answered.
     const results = await Promise.all(
-      drafts.flatMap(([person, draft]) => [
-        scope.issueRaw(draft, person),
-        scope.issueRaw(draft, person),
+      drafts.flatMap(([person, draft], k) => [
+        issueOn(scope, k, draft, person),
+        issueOn(scope, k + 2, draft, person),
       ]),
     )
     for (const result of results) expect(result.error, result.raw).toBeUndefined()
@@ -85,16 +103,24 @@ describe('invoice numbers under contention', () => {
       lines: [typed('Wardrobe', '2', '500')],
     })
     expect(invoice.number).toBe('INV-0053')
-    const notes = await Promise.all(
-      [1, 2].map(async () =>
-        scope.issueCredit(
-          await scope.creditDraft(invoice.id, {
-            by: 'amount',
-            lines: [{ invoiceLineId: invoice.lines[0]!.id, amount: '10' }],
-          }),
-        ),
+    const drafts = await Promise.all(
+      [1, 2].map(() =>
+        scope.creditDraft(invoice.id, {
+          by: 'amount',
+          lines: [{ invoiceLineId: invoice.lines[0]!.id, amount: '10' }],
+        }),
       ),
     )
+    const notes = (
+      await Promise.all(
+        drafts.map((note, k) =>
+          races.call<CreditNoteDto>(scope, k, 'creditNote.issue', {
+            id: note.id,
+            version: note.version,
+          }),
+        ),
+      )
+    ).map((result) => ok(result))
     expect(sorted(notes.map((n) => n.number))).toEqual(['CN-0001', 'CN-0002'])
     const later = await scope.issued({ customerId, lines: [typed('Drawer', '1', '30')] })
     expect(later.number).toBe('INV-0054')
@@ -119,7 +145,9 @@ describe("a series' first number is the business's own", () => {
         scope.invoice({ customerId, lines: [typed(`Counter ${i}`, '1', '200')] }),
       ),
     )
-    const issued = await Promise.all(drafts.map((draft) => scope.issue(draft)))
+    const issued = (await Promise.all(drafts.map((draft, k) => issueOn(scope, k, draft)))).map(
+      (result) => ok(result),
+    )
     expect(sorted(issued.map((i) => i.number))).toEqual([
       'TI-457',
       'TI-458',

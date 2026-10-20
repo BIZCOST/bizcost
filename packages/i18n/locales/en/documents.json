@@ -135,6 +135,7 @@
       "zeroRatedDifference": "Zero-rated difference",
       "exemptDifference": "Exempt difference",
       "total": "Total credited",
+      "payable": "Credited in all",
       "reason": "Reason for this credit note"
     },
     "reasons": {
@@ -167,6 +168,12 @@
       "money_back": "Money given back",
       "money_backOn": "Money given back – {{reference}}",
       "paidWhenMade": "Paid at the sale",
+      "saleReversed": "Sale reversed",
+      "refundReversed": "Refund reversed",
+      "paymentReversed": "Payment reversed",
+      "paymentReversedOn": "Payment reversed – {{reference}}",
+      "money_backReversed": "Money given back, reversed",
+      "money_backReversedOn": "Money given back, reversed – {{reference}}",
       "owedThroughOrder": "Already owed for order {{order}}: {{amount}}",
       "owedThroughSale": "Already owed for the sale: {{amount}}",
       "stillOwedOrder": "Still owed for order {{order}}: {{amount}}",

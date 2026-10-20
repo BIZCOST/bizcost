@@ -1,6 +1,6 @@
 import { createClient } from '@supabase/supabase-js'
 import postgres from 'postgres'
-import { deleteBusinesses, tenantTables } from './clean'
+import { chooseTestData, deleteBusinesses, IN_USE_MINUTES, tenantTables, TEST_EMAIL } from './clean'
 import { useLocalStack } from './local-stack'
 
 // `pnpm dev:clean-test-data` (docs/ARCHITECTURE.md §Local setup; D-182): removes what the test
@@ -21,6 +21,11 @@ import { useLocalStack } from './local-stack'
 //     Storage API);
 //   - the Auth users themselves (their identities and sessions go with them), their profiles when no
 //     business that stays still names them, and the Auth server's log lines about them.
+// What a run may still be using is left for a later clean-up (D-338, chooseTestData): a business
+// made, changed or written to (an audit row of it) in the last IN_USE_MINUTES, a user made, changed
+// or signed in then or a member of such a business, and the Auth log lines of that time. So a clean-up
+// started while a suite runs (another agent's, or one's own in another window) never takes a business
+// from under a test.
 // Rows are deleted with session_replication_role = replica inside one transaction per batch of
 // businesses, which skips the append-only and audit triggers: local only. Then VACUUM (ANALYZE), or
 // VACUUM (FULL, ANALYZE) of the app tables with --full (gives the space back to the disk; locks each
@@ -30,8 +35,6 @@ import { useLocalStack } from './local-stack'
 // addresses and the database setting only the local stack has, the guard of supabase/seed.sql and
 // demo:seed). --dry-run lists what it would remove and changes nothing.
 
-/** The emails of the test suites' users (lower case). */
-const TEST_EMAIL = '^[^@\\s]+@(test\\.bizcost\\.local|example\\.test)$'
 /** Businesses per transaction. */
 const BATCH = 250
 /** Storage objects per removal request. */
@@ -62,50 +65,6 @@ async function sizes(sql: Sql, label: string) {
   return Number(db?.size ?? 0)
 }
 
-/** Works out the test users and the businesses to remove, in temporary tables of this session. */
-async function identify(sql: Sql) {
-  await sql`drop table if exists pg_temp.clean_known, pg_temp.clean_users, pg_temp.clean_businesses`
-  // Every email known for every user id, from each place that keeps one.
-  await sql`
-    create temp table clean_known as
-      select id, lower(email) as email from auth.users where email is not null
-      union
-      select (payload->'traits'->>'user_id')::uuid, lower(payload->'traits'->>'user_email')
-        from auth.audit_log_entries
-       where payload->'traits'->>'user_email' is not null
-         and payload->'traits'->>'user_id' ~ '^[0-9a-f-]{36}$'
-      union
-      select user_id, lower(email::text) from app.business_members
-       where user_id is not null and email is not null`
-  // A test user: every email known for it is a test suite's.
-  await sql`
-    create temp table clean_users as
-      select id from clean_known group by id having bool_and(email ~ ${TEST_EMAIL})`
-  await sql`alter table clean_users add primary key (id)`
-  // A business all of whose members are test users (or, with none, made by one).
-  await sql`
-    create temp table clean_businesses as
-      select b.id from app.businesses b
-       where (
-         exists (select 1 from app.business_members m where m.business_id = b.id)
-         and not exists (
-           select 1 from app.business_members m
-            where m.business_id = b.id
-              and (m.user_id is null or m.user_id not in (select id from clean_users)))
-       ) or (
-         not exists (select 1 from app.business_members m where m.business_id = b.id)
-         and b.created_by in (select id from clean_users)
-       )`
-  await sql`alter table clean_businesses add primary key (id)`
-  // The guard, once more: nothing chosen carries an address that is not a test suite's.
-  const [bad] = await sql<{ n: number }[]>`
-    select count(*)::int as n from clean_known k
-      join clean_users u on u.id = k.id
-     where k.email !~ ${TEST_EMAIL}`
-  if ((bad?.n ?? 0) > 0)
-    throw new Error('refusing: a chosen user has an address that is not a test one')
-}
-
 async function report(sql: Sql, tables: string[]) {
   const [users] = await sql<{ all: number; live: number }[]>`
     select count(*)::int as all,
@@ -115,9 +74,16 @@ async function report(sql: Sql, tables: string[]) {
     select (select count(*)::int from clean_businesses) as n,
            (select count(*)::int from app.businesses) - (select count(*)::int from clean_businesses)
              as kept`
+  const [inUse] = await sql<{ businesses: number; users: number }[]>`
+    select (select count(*)::int from clean_in_use_businesses) as businesses,
+           (select count(*)::int from clean_in_use_users) as users`
   console.log(`\nTest users: ${users?.all ?? 0} (${users?.live ?? 0} still in Auth)`)
   console.log(
-    `Businesses to remove: ${businesses?.n ?? 0} (kept: ${businesses?.kept ?? 0}, each with a member who is not a test user)`,
+    `Businesses to remove: ${businesses?.n ?? 0} (kept: ${businesses?.kept ?? 0}, each with a member who is not a test user, or in use)`,
+  )
+  console.log(
+    `In use (made, changed or written to in the last ${IN_USE_MINUTES} minutes), left for a later ` +
+      `clean-up: ${inUse?.businesses ?? 0} businesses, ${inUse?.users ?? 0} users`,
   )
   const counts: [string, number][] = []
   for (const table of tables) {
@@ -137,8 +103,9 @@ async function report(sql: Sql, tables: string[]) {
      where p.id in (select id from clean_users)`
   const [authLog] = await sql<{ n: number }[]>`
     select count(*)::int as n from auth.audit_log_entries e
-     where lower(coalesce(e.payload->'traits'->>'user_email', '')) ~ ${TEST_EMAIL}
-        or lower(coalesce(e.payload->>'actor_username', '')) ~ ${TEST_EMAIL}`
+     where (lower(coalesce(e.payload->'traits'->>'user_email', '')) ~ ${TEST_EMAIL}
+        or lower(coalesce(e.payload->>'actor_username', '')) ~ ${TEST_EMAIL})
+       and e.created_at <= now() - make_interval(mins => ${IN_USE_MINUTES})`
   console.log(`  storage objects              ${objects?.n ?? 0}`)
   console.log(`  profiles (at most)           ${profiles?.n ?? 0}`)
   console.log(`  auth.audit_log_entries       ${authLog?.n ?? 0}`)
@@ -173,7 +140,7 @@ async function main() {
   const sql = postgres(url, { max: 1, onnotice: () => {} })
   try {
     const before = await sizes(sql, 'Before')
-    await identify(sql)
+    await chooseTestData(sql)
     const tables = await tenantTables(sql)
     await report(sql, tables)
     if (dryRun) {
@@ -204,8 +171,9 @@ async function main() {
       const auth = await tx`delete from auth.users where id in (select id from clean_users)`
       const log = await tx`
         delete from auth.audit_log_entries e
-         where lower(coalesce(e.payload->'traits'->>'user_email', '')) ~ ${TEST_EMAIL}
-            or lower(coalesce(e.payload->>'actor_username', '')) ~ ${TEST_EMAIL}`
+         where (lower(coalesce(e.payload->'traits'->>'user_email', '')) ~ ${TEST_EMAIL}
+            or lower(coalesce(e.payload->>'actor_username', '')) ~ ${TEST_EMAIL})
+           and e.created_at <= now() - make_interval(mins => ${IN_USE_MINUTES})`
       return { profiles: profiles.count, auth: auth.count, log: log.count }
     })
     console.log(

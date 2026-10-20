@@ -151,6 +151,7 @@ export interface CreditNoteRecord extends Record<string, unknown> {
   net_total: string
   vat_total: string
   total: string
+  rounding_difference: string
   vat_rates: CreditNoteDto['vatRates']
   value_before: string | null
   value_after: string | null
@@ -199,6 +200,7 @@ const HEAD_COLUMNS = sql`
   c.reason, c.reason_text, c.credit_by, c.counted_elsewhere, c.vat_registered,
   trim(c.currency) as currency, trim_scale(c.net_total)::text as net_total,
   trim_scale(c.vat_total)::text as vat_total, trim_scale(c.total)::text as total, c.vat_rates,
+  trim_scale(c.rounding_difference)::text as rounding_difference,
   trim_scale(c.value_before)::text as value_before, trim_scale(c.value_after)::text as value_after,
   trim_scale(coalesce((select sum(e.net_total) from app.credit_notes e
      where e.business_id = c.business_id and e.invoice_id = c.invoice_id and e.status = 'issued'
@@ -425,6 +427,8 @@ async function readCreditNote(tx: Tx, ctx: BusinessCtx, id: string): Promise<Cre
     netTotal: head.net_total,
     vatTotal: head.vat_total,
     total: head.total,
+    roundingDifference: head.rounding_difference,
+    payable: sumDecimals([head.total, head.rounding_difference]),
     vatRates: head.vat_rates,
     values: valuesOf(head),
     lines: lines.map((l) => ({
@@ -1062,10 +1066,19 @@ export function issueCreditNote(ctx: BusinessCtx, input: VersionInput): Promise<
     await replaceLines(tx, ctx.businessId, head.id, rows)
     // ER Art. 60(1)(e): the invoice's value of the supply less the credit notes issued before.
     const [earlier] = (await tx.execute(sql`
-      select coalesce(array_agg(trim_scale(c.net_total)::text), '{}') as nets from app.credit_notes c
+      select coalesce(array_agg(trim_scale(c.net_total)::text), '{}') as nets,
+             trim_scale(coalesce(sum(c.total), 0))::text as totals,
+             trim_scale(coalesce(sum(c.rounding_difference), 0))::text as roundings
+        from app.credit_notes c
        where c.business_id = ${ctx.businessId} and c.invoice_id = ${invoice.id}
          and c.status = 'issued' and c.deleted_at is null
-    `)) as unknown as { nets: string[] }[]
+    `)) as unknown as { nets: string[]; totals: string; roundings: string }[]
+    // The one that leaves nothing of the invoice to credit takes back its rounding difference too
+    // (D-221: it sits outside every line), so a document taken back whole owes nothing (D-333).
+    const roundingDifference =
+      compareDecimal(sumDecimals([earlier?.totals ?? '0', header.total]), invoice.total) === 0
+        ? subtractDecimals(invoice.rounding_difference, earlier?.roundings ?? '0')
+        : '0'
     const currency = isCurrencyCode(invoice.currency) ? invoice.currency : 'AED'
     let values: ReturnType<typeof creditNoteValues>
     try {
@@ -1105,6 +1118,7 @@ export function issueCreditNote(ctx: BusinessCtx, input: VersionInput): Promise<
         number,
         issueDate: business.today,
         countedOn,
+        roundingDifference,
         valueBefore: values.valueBefore,
         valueAfter: values.valueAfter,
         issuedAt: sql`now()`,

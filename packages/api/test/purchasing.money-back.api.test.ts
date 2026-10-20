@@ -169,4 +169,60 @@ describe('money back from the supplier', () => {
     const again = ok(await shop.as<MinePayableListDto>(member, 'payable.mine', {}))
     expect(again).toMatchObject({ moneyBack: '0', owedAfterMoneyBack: '105' })
   })
+
+  it('a purchase overpaid by 200 after a supplier credit note: money back of 200 settles it, received by a member it lowers what the business owes them (definition of done)', async () => {
+    const own = await api.member(shop, 'admin')
+    const flour = await shop.material()
+    // The member paid a purchase of 1,000 from their own money: the business owes them 1,000.
+    await shop.buy(
+      purchaseInput(today, [line(flour.id, '10', '100')], {
+        paymentMethod: 'paid_by_member',
+        paidByMemberId: own.memberId,
+      }),
+    )
+    // A purchase of 1,000 on credit, paid in full; then the supplier's credit note of 200 by amount.
+    const purchase = await shop.buy(
+      purchaseInput(today, [line(flour.id, '10', '100')], {
+        supplierId: (await shop.supplier()).id,
+        paymentMethod: 'supplier_credit',
+      }),
+    )
+    ok(await shop.run('purchasePayment.record', pay(purchase.id, '1000')))
+    await shop.postReturn(
+      await shop.returnDraft({
+        id: newId(),
+        purchaseId: purchase.id,
+        kind: 'credit_note',
+        businessDate: today,
+        lines: [{ id: newId(), purchaseLineId: purchase.lines[0]!.id, amount: '200' }],
+      }),
+    )
+    expect(await payments(purchase.id)).toMatchObject({
+      total: '1000',
+      returned: '200',
+      paid: '1000',
+      overpaid: '200',
+    })
+    expect(
+      codeOf(
+        await shop.run('purchasePayment.record', pay(purchase.id, '200.01', { kind: 'refund' })),
+      ),
+    ).toBe('exceeds_outstanding')
+    ok(
+      await shop.run(
+        'purchasePayment.record',
+        pay(purchase.id, '200', { kind: 'refund', receivedByMemberId: own.memberId }),
+      ),
+    )
+    expect(await payments(purchase.id)).toMatchObject({
+      moneyBack: '200',
+      outstanding: '0',
+      overpaid: '0',
+    })
+    expect(ok(await shop.as<MinePayableListDto>(own, 'payable.mine', {}))).toMatchObject({
+      outstanding: '1000',
+      moneyBack: '200',
+      owedAfterMoneyBack: '800',
+    })
+  })
 })

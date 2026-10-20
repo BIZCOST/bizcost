@@ -484,6 +484,48 @@
       "when": 1792489464056,
       "tag": "20261020094424_invoices_need_sales",
       "breakpoints": true
+    },
+    {
+      "idx": 69,
+      "version": "7",
+      "when": 1792503409368,
+      "tag": "20261020133649_sale_fill_speed",
+      "breakpoints": true
+    },
+    {
+      "idx": 70,
+      "version": "7",
+      "when": 1792504353446,
+      "tag": "20261020135233_document_render_target",
+      "breakpoints": true
+    },
+    {
+      "idx": 71,
+      "version": "7",
+      "when": 1792504844212,
+      "tag": "20261020140044_orders_and_imports_guards",
+      "breakpoints": true
+    },
+    {
+      "idx": 72,
+      "version": "7",
+      "when": 1792523727355,
+      "tag": "20261020191527_credit_note_rounding",
+      "breakpoints": true
+    },
+    {
+      "idx": 73,
+      "version": "7",
+      "when": 1792523768039,
+      "tag": "20261020191608_step10_review_guards",
+      "breakpoints": true
+    },
+    {
+      "idx": 74,
+      "version": "7",
+      "when": 1792534200537,
+      "tag": "20261020221000_step10_second_review",
+      "breakpoints": true
     }
   ]
 }

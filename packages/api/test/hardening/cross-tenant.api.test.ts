@@ -1,5 +1,5 @@
 import { FIELD_WRAPPER_TYPES, type AppErrorCode } from '@bizcost/contracts'
-import { newId } from '@bizcost/domain'
+import { ATTACHMENT_ENTITIES, newId, type AttachmentEntity } from '@bizcost/domain'
 import { QUESTION_SET_VERSION } from '@bizcost/modules'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { z } from 'zod'
@@ -54,6 +54,29 @@ interface Probe {
   notReferences?: Record<string, string>
   /** Reference fields no variant fills with the victim's row: path → why that is safe. */
   unattacked?: Record<string, string>
+}
+
+/**
+ * A record of each kind a file belongs to (a draft where only a draft takes one: a quotation's and an
+ * invoice's lines), and the file it holds in the fixture.
+ */
+const FILE_RECORDS: Record<AttachmentEntity, (t: Tenant) => string | undefined> = {
+  purchase: (t) => t.purchase.id,
+  expense: (t) => t.expense.id,
+  order: (t) => t.order.id,
+  quotation: (t) => t.quotation.id,
+  quotation_line: (t) => t.quotation.lines[0]?.id,
+  invoice: (t) => t.invoice.id,
+  invoice_line: (t) => t.draftInvoice.lines[0]?.id,
+}
+const FILES_OF: Record<AttachmentEntity, (t: Tenant) => string> = {
+  purchase: (t) => t.attachment.id,
+  expense: (t) => t.expenseAttachment.id,
+  order: (t) => t.orderFile.id,
+  quotation: (t) => t.signedCopy.id,
+  quotation_line: (t) => t.linePicture.id,
+  invoice: (t) => t.invoiceFile.id,
+  invoice_line: (t) => t.invoiceLinePicture.id,
 }
 
 const NO_ROWS = 'names no rows: it acts on the x-business-id business, which businessScoped checks'
@@ -921,93 +944,61 @@ const PROBES: Record<string, Probe> = {
     reason: 'looked up (and locked) in the x-business-id business',
     variants: (victim) => [{ input: { id: victim.purchaseReturn.id }, own: ['not_found'] }],
   },
+  // Every kind of record a file belongs to is attacked (M3 Step 10: an order's, a quotation's and an
+  // invoice's files, an invoice line's picture); FILE_RECORDS fails for a kind added without it.
   'attachment.list': {
     base: 'business',
     reason: 'the record is looked up in the x-business-id business',
-    variants: (victim) => [
-      { input: { entity: 'purchase', entityId: victim.purchase.id }, own: ['not_found'] },
-      { input: { entity: 'expense', entityId: victim.expense.id }, own: ['not_found'] },
-      { input: { entity: 'quotation', entityId: victim.quotation.id }, own: ['not_found'] },
-      {
-        input: { entity: 'quotation_line', entityId: victim.quotation.lines[0]?.id },
-        own: ['not_found'],
-      },
-    ],
+    variants: (victim) =>
+      ATTACHMENT_ENTITIES.map((entity) => ({
+        input: { entity, entityId: FILE_RECORDS[entity](victim) },
+        own: ['not_found'] as const,
+      })),
   },
   'attachment.uploadUrl': {
     base: 'business',
     reason: 'the record is looked up in the x-business-id business; the path is made by the server',
-    variants: (victim) => [
-      {
-        input: { entity: 'purchase', entityId: victim.purchase.id, contentType: 'image/png' },
-        own: ['not_found'],
-      },
-      {
-        input: { entity: 'expense', entityId: victim.expense.id, contentType: 'image/png' },
-        own: ['not_found'],
-      },
-      {
-        input: {
-          entity: 'quotation_line',
-          entityId: victim.quotation.lines[0]?.id,
-          contentType: 'image/png',
-        },
-        own: ['not_found'],
-      },
-    ],
+    variants: (victim) =>
+      ATTACHMENT_ENTITIES.map((entity) => ({
+        input: { entity, entityId: FILE_RECORDS[entity](victim), contentType: 'image/png' },
+        own: ['not_found'] as const,
+      })),
   },
   'attachment.add': {
     base: 'business',
     reason:
       'only an attachment path of the x-business-id business that it issued, for a record of it ' +
       '(D-085)',
-    variants: (victim, attacker) => [
-      {
-        input: {
-          entity: 'purchase',
-          entityId: attacker.purchase.id,
-          path: `${victim.id}/purchase/${newId()}.png`,
-          fileName: 'x.png',
+    variants: (victim, attacker) =>
+      ATTACHMENT_ENTITIES.flatMap((entity) => [
+        {
+          input: {
+            entity,
+            entityId: FILE_RECORDS[entity](attacker),
+            path: `${victim.id}/${entity}/${newId()}.png`,
+            fileName: 'x.png',
+          },
+          own: ['validation'] as const,
         },
-        own: ['validation'],
-      },
-      {
-        input: {
-          entity: 'purchase',
-          entityId: victim.purchase.id,
-          path: `${attacker.id}/purchase/${newId()}.png`,
-          fileName: 'x.png',
+        {
+          input: {
+            entity,
+            entityId: FILE_RECORDS[entity](victim),
+            path: `${attacker.id}/${entity}/${newId()}.png`,
+            fileName: 'x.png',
+          },
+          own: ['not_found'] as const,
         },
-        own: ['not_found'],
-      },
-      {
-        input: {
-          entity: 'quotation_line',
-          entityId: attacker.quotation.lines[0]?.id,
-          path: `${victim.id}/quotation_line/${newId()}.png`,
-          fileName: 'x.png',
-        },
-        own: ['validation'],
-      },
-      {
-        input: {
-          entity: 'quotation_line',
-          entityId: victim.quotation.lines[0]?.id,
-          path: `${attacker.id}/quotation_line/${newId()}.png`,
-          fileName: 'x.png',
-        },
-        own: ['not_found'],
-      },
-    ],
+      ]),
   },
   'attachment.remove': {
     base: 'business',
     reason: 'looked up in the x-business-id business',
-    variants: (victim) => [
-      { input: { id: victim.attachment.id }, own: ['not_found'] },
-      { input: { id: victim.expenseAttachment.id }, own: ['not_found'] },
-      { input: { id: victim.linePicture.id }, own: ['not_found'] },
-    ],
+    variants: (victim) =>
+      ATTACHMENT_ENTITIES.map((entity) => ({
+        input: { id: FILES_OF[entity](victim) },
+        own: ['not_found'] as const,
+      })),
   },
   // What is owed and its payments (the owner's requests of 2026-09-29): the purchase and the payment
   // are looked up in the x-business-id business, and a payment id used anywhere is CONFLICT.

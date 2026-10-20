@@ -1,12 +1,14 @@
-import type {
-  AttachmentUploadUrlDto,
-  BusinessProfileDto,
-  DocumentImageUploadUrlDto,
-  DocumentSettingsDto,
-  LogoUploadUrlDto,
-  QuotationDto,
+import {
+  DOCUMENT_IMAGE_KINDS,
+  type AttachmentUploadUrlDto,
+  type BusinessProfileDto,
+  type DocumentImageUploadUrlDto,
+  type DocumentSettingsDto,
+  type InvoiceDto,
+  type LogoUploadUrlDto,
+  type QuotationDto,
 } from '@bizcost/contracts'
-import { newId } from '@bizcost/domain'
+import { ATTACHMENT_ENTITIES, newId, type AttachmentEntity } from '@bizcost/domain'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { mutate, query, SUPABASE_URL, signIn, type Session } from '../helpers'
 import {
@@ -295,6 +297,13 @@ interface Objects {
   linePicture: string
   invoicePdf: string
   creditNotePdf: string
+  // M3 Step 10: the stamp, an order's file (the LPO), a quotation's signed copy, an invoice's file
+  // (a signed delivery note) and an invoice line's picture.
+  stamp: string
+  orderFile: string
+  signedCopy: string
+  invoiceFile: string
+  invoiceLinePicture: string
 }
 
 const objectsOf = new Map<Tenant, Objects>()
@@ -308,7 +317,9 @@ beforeAll(async () => {
     const rows = await api.admin<{ id: string; path: string }[]>`
       select id, path from app.attachments
        where business_id = ${t.id}
-         and id in (${t.attachment.id}, ${t.expenseAttachment.id}, ${t.linePicture.id})`
+         and id in (${t.attachment.id}, ${t.expenseAttachment.id}, ${t.linePicture.id},
+                    ${t.orderFile.id}, ${t.signedCopy.id}, ${t.invoiceFile.id},
+                    ${t.invoiceLinePicture.id})`
     const pathOf = (id: string) => rows.find((r) => r.id === id)?.path ?? ''
     const pdfs = await api.admin<{ kind: string; path: string }[]>`
       select 'invoice' as kind, u.path from app.invoices i
@@ -327,6 +338,11 @@ beforeAll(async () => {
       linePicture: pathOf(t.linePicture.id),
       invoicePdf: pdfOf('invoice'),
       creditNotePdf: pdfOf('credit_note'),
+      stamp: t.stampPath,
+      orderFile: pathOf(t.orderFile.id),
+      signedCopy: pathOf(t.signedCopy.id),
+      invoiceFile: pathOf(t.invoiceFile.id),
+      invoiceLinePicture: pathOf(t.invoiceLinePicture.id),
     })
     const receipt = await mutate<AttachmentUploadUrlDto>(api.handler, 'attachment.uploadUrl', {
       token: t.owner.token,
@@ -362,6 +378,7 @@ const KINDS = [
   'logo',
   'purchase',
   'expense',
+  'order',
   'signature',
   'stamp',
   'quotation',
@@ -386,9 +403,21 @@ describe('Storage straight from the client, with a real user token', () => {
     digests = { A: await tenantDigest(api.admin, A), B: await tenantDigest(api.admin, B) }
   })
 
-  it('every kind of object is there to attack: a logo, two receipts, a signature, a picture and two issued PDFs in each business', async () => {
+  it('every kind of object is there to attack: a logo, two receipts, a signature, a stamp, two pictures, an order’s, a quotation’s and an invoice’s files and two issued PDFs in each business', async () => {
+    // Every folder a business has holds an object here (KINDS lists them all): a new kind of file
+    // fails until it is attacked too.
+    const folders = (t: Tenant) => [...new Set(pathsOf(t).map((path) => path.split('/')[1]))].sort()
     for (const t of [A, B]) {
       const objects = objectsOf.get(t)!
+      expect(folders(t)).toEqual([...KINDS].sort())
+      expect([...KINDS].sort()).toEqual(
+        [...ATTACHMENT_ENTITIES, ...DOCUMENT_IMAGE_KINDS, 'logo', 'document'].sort(),
+      )
+      expect(objects.stamp).toMatch(new RegExp(`^${t.id}/stamp/`))
+      expect(objects.orderFile).toMatch(new RegExp(`^${t.id}/order/`))
+      expect(objects.signedCopy).toMatch(new RegExp(`^${t.id}/quotation/`))
+      expect(objects.invoiceFile).toMatch(new RegExp(`^${t.id}/invoice/`))
+      expect(objects.invoiceLinePicture).toMatch(new RegExp(`^${t.id}/invoice_line/`))
       expect(objects.purchaseReceipt).toMatch(new RegExp(`^${t.id}/purchase/`))
       expect(objects.expenseReceipt).toMatch(new RegExp(`^${t.id}/expense/`))
       expect(objects.signature).toMatch(new RegExp(`^${t.id}/signature/`))
@@ -687,6 +716,100 @@ describe('signed URLs the API issued', () => {
       picture,
       [...pathsOf(A), ...pathsOf(B), ...openUploadsOf.get(B)!].filter((path) => path !== picture),
     )
+  })
+
+  it('the stamp’s download URL for business A cannot be re-pointed elsewhere (M3 Step 10)', async () => {
+    const settings = await query<DocumentSettingsDto>(api.handler, 'document.settings', {
+      token: A.owner.token,
+      businessId: A.id,
+    })
+    expect(settings.error, settings.raw).toBeUndefined()
+    const stamp = objectsOf.get(A)!.stamp
+    await expectConfined(
+      settings.data?.stampUrl ?? '',
+      stamp,
+      [...pathsOf(A), ...pathsOf(B), ...openUploadsOf.get(B)!].filter((path) => path !== stamp),
+    )
+  })
+
+  it('the download URLs of an order’s file, a signed quotation, an invoice’s file and an invoice line’s picture of business A cannot be re-pointed elsewhere (M3 Step 10)', async () => {
+    const files: [AttachmentEntity, string, keyof Objects][] = [
+      ['order', A.order.id, 'orderFile'],
+      ['quotation', A.acceptedQuotation.id, 'signedCopy'],
+      ['invoice', A.invoice.id, 'invoiceFile'],
+      ['invoice_line', A.draftInvoice.lines[0]!.id, 'invoiceLinePicture'],
+    ]
+    for (const [entity, entityId, kind] of files) {
+      const listed = await query<{ data: { items: { url: string | null }[] } }>(
+        api.handler,
+        'attachment.list',
+        { token: A.owner.token, businessId: A.id, input: { entity, entityId } },
+      )
+      expect(listed.error, listed.raw).toBeUndefined()
+      const own = objectsOf.get(A)![kind]
+      await expectConfined(
+        listed.data?.data.items[0]?.url ?? '',
+        own,
+        [...pathsOf(A), ...pathsOf(B), ...openUploadsOf.get(B)!].filter((path) => path !== own),
+      )
+    }
+  })
+
+  it('a stamp’s upload URL for business A cannot write into business B, nor over A’s objects (M3 Step 10)', async () => {
+    const issued = await mutate<DocumentImageUploadUrlDto>(api.handler, 'document.imageUploadUrl', {
+      token: A.owner.token,
+      businessId: A.id,
+      input: { kind: 'stamp', contentType: 'image/png' },
+    })
+    expect(issued.error, issued.raw).toBeUndefined()
+    await expectUploadConfined(issued.data!, [
+      ...freshPaths(B),
+      ...openUploadsOf.get(B)!,
+      ...pathsOf(B),
+      ...pathsOf(A),
+      ...openUploadsOf.get(A)!,
+    ])
+  })
+
+  it('the upload URL of every kind of M3 file of business A cannot write into business B, nor over A’s objects (M3 Step 10)', async () => {
+    // A line takes one picture: the quotation's line without one, and a new draft invoice's line.
+    const draft = await mutate<InvoiceDto>(api.handler, 'invoice.create', {
+      token: A.owner.token,
+      businessId: A.id,
+      input: {
+        id: newId(),
+        customerId: A.customer.id,
+        locationId: A.branch.id,
+        lines: [{ id: newId(), productId: null, description: 'Fitting', qty: '1', unitPrice: '9' }],
+      },
+    })
+    expect(draft.error, draft.raw).toBeUndefined()
+    const records: [AttachmentEntity, string][] = [
+      ['order', A.order.id],
+      ['quotation', A.sentQuotation.id],
+      ['quotation_line', A.quotation.lines[0]!.id],
+      ['invoice', A.invoice.id],
+      ['invoice_line', draft.data!.lines[0]!.id],
+    ]
+    // Every kind of record a file belongs to is here or above (purchases' and expenses' receipts).
+    expect([...records.map(([entity]) => entity), 'purchase', 'expense'].sort()).toEqual(
+      [...ATTACHMENT_ENTITIES].sort(),
+    )
+    for (const [entity, entityId] of records) {
+      const issued = await mutate<AttachmentUploadUrlDto>(api.handler, 'attachment.uploadUrl', {
+        token: A.owner.token,
+        businessId: A.id,
+        input: { entity, entityId, contentType: 'image/png' },
+      })
+      expect(issued.error, `${entity}: ${issued.raw}`).toBeUndefined()
+      await expectUploadConfined(issued.data!, [
+        ...freshPaths(B),
+        ...openUploadsOf.get(B)!,
+        ...pathsOf(B),
+        ...pathsOf(A),
+        ...openUploadsOf.get(A)!,
+      ])
+    }
   })
 
   it('a signature’s upload URL for business A cannot write into business B, nor over A’s objects', async () => {

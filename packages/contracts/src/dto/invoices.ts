@@ -622,6 +622,13 @@ export const creditNoteDto = z.object({
   netTotal: zDecimal,
   vatTotal: zDecimal,
   total: zDecimal,
+  /**
+   * The invoice's rounding difference it takes back (D-333): set at issue on the credit note that
+   * leaves nothing of the invoice to credit, zero otherwise (and on a draft).
+   */
+  roundingDifference: zDecimal,
+  /** What it takes off what is owed: its total and the rounding difference it takes back. */
+  payable: zDecimal,
   vatRates: z.array(quotationVatRateDto),
   /**
    * ER Art. 60(1)(e): the invoice's value of the supply (less earlier credit notes), the value after
@@ -738,6 +745,12 @@ export const statementEntryDto = z.object({
    * takes off only `credit`). Null for another entry (D-313).
    */
   owedThrough: z.object({ amount: zDecimal, orderNumber: z.string().nullable() }).nullable(),
+  /**
+   * It undoes an earlier entry of a day the books closed on (D-334), listed on the day of the
+   * reversal: a sale they pay later reversed (a credit), a refund or a payment reversed (a charge),
+   * money given back reversed (a credit). The entry it undoes stays on its own day.
+   */
+  reversal: z.boolean(),
   /**
    * What it adds to what is owed on its day (an invoice: less what its order or sale charged on an
    * earlier day; a delivered order: what its invoices did not bill by the end of its delivery day;

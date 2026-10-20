@@ -75,6 +75,7 @@ import { assertModuleActive, assertPermission, assertQueryable, passes } from '.
 import { decodeCursor, encodeCursor, requestHashOf } from './catalog'
 import { resolveLocation } from './purchases'
 import {
+  chunksOf,
   insertMaterialRows,
   itemMaterialsOf,
   lineCostColumns,
@@ -1415,15 +1416,23 @@ interface SaleLineRow {
 }
 
 /**
- * The sale_lines rows of the sales posted, inserted in one statement, each column as one array
- * parameter (columnArray: a month of a shop's items is tens of thousands of lines).
+ * The sale_lines rows of the sales posted, at most ROWS_PER_STATEMENT a statement (D-331, D-336: a
+ * month of a shop's items is tens of thousands of lines, and an import may hold 100,000), each column
+ * as one array parameter (columnArray).
  */
 async function insertSaleLines(
   tx: Tx,
   businessId: string,
   rows: readonly SaleLineRow[],
 ): Promise<void> {
-  if (rows.length === 0) return
+  for (const chunk of chunksOf(rows)) await insertSaleLineChunk(tx, businessId, chunk)
+}
+
+async function insertSaleLineChunk(
+  tx: Tx,
+  businessId: string,
+  rows: readonly SaleLineRow[],
+): Promise<void> {
   const column = (key: keyof SaleLineRow, type: Parameters<typeof columnArray>[1]) =>
     columnArray(
       rows.map((row) => row[key]),

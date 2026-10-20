@@ -1,12 +1,11 @@
 import type { MaterialDto, ProductDto, PurchaseDto, SaleDto } from '@bizcost/contracts'
-import type { Db } from '@bizcost/db'
 import { newId } from '@bizcost/domain'
-import type postgres from 'postgres'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
-import { connectAdmin, connectApi, handlerFor, mutate, type CallResult } from './helpers'
+import { connectAdmin, type CallResult } from './helpers'
 import { ledgerDrift } from './ledger'
 import { tag } from './product-costs'
-import { line, ok, purchaseInput, type Handler } from './purchasing'
+import { line, ok, purchaseInput } from './purchasing'
+import { Races } from './races'
 import { CAFE, item, SalesApi, SaleScope, shift } from './sales'
 import { BAKER } from './settings'
 
@@ -36,8 +35,7 @@ import { BAKER } from './settings'
 const INSTANCES = 6
 
 let api: SalesApi
-let dbs: Db[]
-let handlers: Handler[]
+let races: Races
 let cafe: SaleScope
 let today: string
 let shopId: string
@@ -46,8 +44,7 @@ let products: ProductDto[]
 
 beforeAll(async () => {
   api = new SalesApi()
-  dbs = Array.from({ length: INSTANCES }, () => connectApi())
-  handlers = dbs.map((db) => handlerFor(db))
+  races = new Races(api.admin, INSTANCES)
   cafe = await SaleScope.open(api, CAFE)
   today = await cafe.today()
   shopId = await cafe.channelId()
@@ -88,17 +85,13 @@ beforeAll(async () => {
 }, 120_000)
 
 afterAll(async () => {
-  for (const db of dbs) await db.$client.end()
+  await races.close()
   await api.close()
 })
 
 /** A call as the owner on instance `i` (its own connection). */
 function on<T>(i: number, path: string, input: object): Promise<CallResult<T>> {
-  return mutate<T>(handlers[i % INSTANCES]!, path, {
-    token: cafe.owner.token,
-    businessId: cafe.id,
-    input,
-  })
+  return races.call<T>(cafe, i, path, input)
 }
 
 interface Call {
@@ -283,79 +276,9 @@ describe('50 sales and 20 purchases at once, with reversals and fills (D-228)', 
 // Forced interleavings (D-228, D-236): the rounds above race by chance; these force each edge of the
 // lock order. An admin connection holds a row one call needs; the calls start one after the other on
 // their own instances, each once the ones before it wait on a lock (pg_locks); then the holder
-// commits and they all finish, none refused, nothing left unpriced that a standing purchase prices.
+// commits and they all finish, none refused, nothing left unpriced that a standing purchase prices
+// (races.ts).
 // ---------------------------------------------------------------------------------------------------
-
-type Holder = (sql: postgres.TransactionSql) => Promise<unknown>
-type Run = (instance: number) => Promise<CallResult<unknown>>
-
-/** The database backend of instance `i`'s connection (its pool has one). */
-async function backendOf(i: number): Promise<number> {
-  const [row] = await dbs[i % INSTANCES]!.$client<{ pid: number }[]>`select pg_backend_pid() as pid`
-  return row!.pid
-}
-
-/** Waits until `count` of these backends wait on a lock (30 s at most). */
-async function untilWaiting(pids: readonly number[], count: number, what: string) {
-  for (let tries = 0; tries < 600; tries++) {
-    const [row] = await api.admin<{ n: number }[]>`
-      select count(distinct pid)::int as n from pg_locks
-       where not granted and pid = any(${`{${pids.join(',')}}`}::int[])`
-    if (row!.n >= count) return
-    await new Promise((resolve) => setTimeout(resolve, 50))
-  }
-  throw new Error(`${what}: ${count} calls were expected to wait on a lock`)
-}
-
-/**
- * `hold` takes its locks in an admin transaction; each of `runs` starts on its own instance once the
- * ones before it wait; when all wait, the holder commits. Their results, none refused.
- */
-async function interleaved(what: string, hold: Holder, runs: readonly Run[]) {
-  const holder = connectAdmin()
-  try {
-    let release!: () => void
-    const released = new Promise<void>((resolve) => (release = resolve))
-    let holding!: () => void
-    const held = new Promise<void>((resolve) => (holding = resolve))
-    const transaction = holder.begin(async (sql) => {
-      await hold(sql)
-      holding()
-      await released
-    })
-    await held
-    const pids = await Promise.all(runs.map((_, i) => backendOf(i)))
-    const running: Promise<CallResult<unknown>>[] = []
-    for (const [i, run] of runs.entries()) {
-      running.push(run(i))
-      await untilWaiting(pids.slice(0, i + 1), i + 1, what)
-    }
-    release()
-    await transaction
-    const results = await Promise.all(running)
-    expect(
-      results.filter((r) => r.error).map((r) => `${r.error?.data.appCode} ${r.error?.message}`),
-      what,
-    ).toEqual([])
-    return results
-  } finally {
-    await holder.end()
-  }
-}
-
-/** A call as `scope`'s owner on instance `i`. */
-function callAs(
-  scope: SaleScope,
-  i: number,
-  path: string,
-  input: object,
-): Promise<CallResult<unknown>> {
-  return mutate(handlers[i % INSTANCES]!, path, {
-    token: scope.owner.token,
-    businessId: scope.id,
-    input,
-  })
-}
 
 /** The cost rows of a sale as stored: each line's cost and time cost, and its unpriced materials. */
 async function costsOf(saleId: string) {
@@ -377,12 +300,12 @@ describe('each edge of the lock order, forced (D-228)', () => {
     })
     const purchase = await cafe.draft(purchaseInput(today, [line(material.id, '4', '9')]))
     // The sale is held at its lines' update: it has its cost rows FOR SHARE and has read no purchase.
-    await interleaved(
+    await races.interleaved(
       'sale then purchase',
       (sql) => sql`select id from app.sale_lines where sale_id = ${sale.id} for update`,
       [
-        (i) => callAs(cafe, i, 'sale.post', { id: sale.id, version: sale.version }),
-        (i) => callAs(cafe, i, 'purchase.post', { id: purchase.id, version: purchase.version }),
+        (i) => races.call(cafe, i, 'sale.post', { id: sale.id, version: sale.version }),
+        (i) => races.call(cafe, i, 'purchase.post', { id: purchase.id, version: purchase.version }),
       ],
     )
     // 250 ml at 9 a litre, filled by the purchase once the sale committed.
@@ -399,12 +322,12 @@ describe('each edge of the lock order, forced (D-228)', () => {
     })
     const purchase = await cafe.draft(purchaseInput(today, [line(material.id, '4', '9')]))
     // The purchase is held at its receipts (after its cost rows FOR UPDATE and its balances).
-    await interleaved(
+    await races.interleaved(
       'purchase then sale',
       (sql) => sql`select id from app.purchase_lines where purchase_id = ${purchase.id} for update`,
       [
-        (i) => callAs(cafe, i, 'purchase.post', { id: purchase.id, version: purchase.version }),
-        (i) => callAs(cafe, i, 'sale.post', { id: sale.id, version: sale.version }),
+        (i) => races.call(cafe, i, 'purchase.post', { id: purchase.id, version: purchase.version }),
+        (i) => races.call(cafe, i, 'sale.post', { id: sale.id, version: sale.version }),
       ],
     )
     const [frozen] = await cafe.frozen(sale.id)
@@ -430,14 +353,14 @@ describe('each edge of the lock order, forced (D-228)', () => {
     const buyA = await cafe.draft(purchaseInput(today, [line(a.id, '2', '5')]))
     const buyB = await cafe.draft(purchaseInput(today, [line(b.id, '2', '8')]))
     // The first fill holds the line (lock 6) and waits at a's row; the second waits for the line.
-    await interleaved(
+    await races.interleaved(
       'two fills of one line',
       (sql) => sql`
         select id from app.sale_line_materials
          where sale_id = ${sale.id} and material_id = ${a.id} for update`,
       [
-        (i) => callAs(cafe, i, 'purchase.post', { id: buyA.id, version: buyA.version }),
-        (i) => callAs(cafe, i, 'purchase.post', { id: buyB.id, version: buyB.version }),
+        (i) => races.call(cafe, i, 'purchase.post', { id: buyA.id, version: buyA.version }),
+        (i) => races.call(cafe, i, 'purchase.post', { id: buyB.id, version: buyB.version }),
       ],
     )
     // 100 ml at 5 a litre + 200 ml at 8 a litre = 0.5 + 1.6.
@@ -467,7 +390,7 @@ describe('each edge of the lock order, forced (D-228)', () => {
       await held
       // Posted (and the sale filled) while the header is still held.
       const posted = await Promise.race([
-        callAs(cafe, 0, 'purchase.post', { id: purchase.id, version: purchase.version }),
+        races.call(cafe, 0, 'purchase.post', { id: purchase.id, version: purchase.version }),
         new Promise<'waited'>((resolve) => setTimeout(() => resolve('waited'), 20_000)),
       ])
       release()
@@ -496,12 +419,12 @@ describe('each edge of the lock order, forced (D-228)', () => {
     // The rate set while a sale posts: the sale holds the business row FOR SHARE (no rate read), the
     // update waits for it, then fills it.
     const first = await sell('2')
-    await interleaved(
+    await races.interleaved(
       'rate while a sale posts',
       (sql) => sql`select id from app.sale_lines where sale_id = ${first.id} for update`,
       [
-        (i) => callAs(baker, i, 'sale.post', { id: first.id, version: first.version }),
-        (i) => callAs(baker, i, 'productCost.updateSettings', { ownerHourlyRate: '40' }),
+        (i) => races.call(baker, i, 'sale.post', { id: first.id, version: first.version }),
+        (i) => races.call(baker, i, 'productCost.updateSettings', { ownerHourlyRate: '40' }),
       ],
     )
     expect(await timeOf(first.id)).toBe('40') // 60 minutes at 40 an hour
@@ -512,13 +435,13 @@ describe('each edge of the lock order, forced (D-228)', () => {
     const waiting = await baker.sell({ businessDate: day, lines: [item(cake.id, '1', '60')] })
     expect(await timeOf(waiting.id)).toBeNull()
     const second = await sell('3')
-    await interleaved(
+    await races.interleaved(
       'a sale while the rate is set',
       (sql) =>
         sql`select id from app.sale_lines where sale_id = ${waiting.id} and kind = 'item' for update`,
       [
-        (i) => callAs(baker, i, 'productCost.updateSettings', { ownerHourlyRate: '50' }),
-        (i) => callAs(baker, i, 'sale.post', { id: second.id, version: second.version }),
+        (i) => races.call(baker, i, 'productCost.updateSettings', { ownerHourlyRate: '50' }),
+        (i) => races.call(baker, i, 'sale.post', { id: second.id, version: second.version }),
       ],
     )
     expect(await timeOf(waiting.id)).toBe('25') // 30 minutes at 50, filled by the update

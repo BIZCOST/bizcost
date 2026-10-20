@@ -160,6 +160,49 @@ describe('stale permissions: the next request tells', () => {
     expect((await context(lead, A.id)).data?.roleTemplateKey).toBe('employee')
   })
 
+  // M3 (Q12): "Branches they work in" changes what a member sees and enters as a role does.
+  it('a change of branches: the refused call carries the new version, and the context has the new branches', async () => {
+    const seller = await api.newPerson()
+    const memberId = await join(api.db, A.owner.user, A.id, seller.user, 'sales')
+    const before = await context(seller, A.id)
+    expect(before.data?.locationScope).toEqual({ all: true })
+    const sell = () =>
+      callProcedure(api.handler, { path: 'sale.create', type: 'mutation' }, seller.token, {
+        businessId: A.id,
+        input: {
+          id: newId(),
+          source: 'single',
+          businessDate: A.sale.businessDate,
+          locationId: A.defaultLocationId,
+          channelId: A.channel.id,
+          lines: [],
+        },
+      })
+    // Before: a draft at the default location is theirs to save.
+    expect((await sell()).error).toBeUndefined()
+    const scope = await query<{ version: number }>(api.handler, 'member.locations', {
+      token: A.owner.token,
+      businessId: A.id,
+      input: { memberId },
+    })
+    const limited = await callProcedure(
+      api.handler,
+      { path: 'member.updateLocations', type: 'mutation' },
+      A.owner.token,
+      {
+        businessId: A.id,
+        input: { memberId, version: scope.data!.version, locationIds: [A.branch.id] },
+      },
+    )
+    expect(limited.error, limited.raw).toBeUndefined()
+    const refused = await sell()
+    expect(refused.error?.data.appCode, refused.raw).toBe('forbidden')
+    expect(version(refused)).toBe(version(before) + 1)
+    const after = await context(seller, A.id)
+    expect(version(after)).toBe(version(refused))
+    expect(after.data?.locationScope).toEqual({ all: false, ids: [A.branch.id] })
+  })
+
   it('a removed member: FORBIDDEN without a version, and `me` drops the business', async () => {
     const leaver = await api.newPerson()
     const memberId = await join(api.db, A.owner.user, A.id, leaver.user, 'employee')

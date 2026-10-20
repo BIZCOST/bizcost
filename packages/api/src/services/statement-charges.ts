@@ -29,6 +29,11 @@ export interface EntryRecord extends Record<string, unknown> {
   src_number: string | null
   /** A credit note that only billed less (D-305): its order bills it again. */
   bills_less: boolean
+  /**
+   * It undoes an earlier entry on a later day (the books closed on that entry's day, D-334): a sale
+   * reversed (a credit), a refund or a payment reversed (a charge), money given back reversed (a credit).
+   */
+  reversal: boolean
 }
 
 /** An entry with what it adds or takes off on its own day (`ownCharges`). */
@@ -79,6 +84,11 @@ export function ownCharges(rows: readonly EntryRecord[]): StatementRow[] {
   const sources = new Map<string, SourceState>()
   const out: StatementRow[] = []
   const apply = (state: SourceState, row: StatementRow) => {
+    if (row.reversal) {
+      // A refund reversed on a later day stands no more (a sale's reversal names no source).
+      if (row.kind === 'refund') state.refunded = subtractDecimals(state.refunded, row.charge)
+      return
+    }
     if (row.kind === 'order' || row.kind === 'sale') {
       state.base = row.charge
       state.open = true
@@ -115,7 +125,7 @@ export function ownCharges(rows: readonly EntryRecord[]): StatementRow[] {
         }
         sources.set(id, state)
       }
-      const self = own.find((row) => row.kind === 'order' || row.kind === 'sale')
+      const self = own.find((row) => (row.kind === 'order' || row.kind === 'sale') && !row.reversal)
       if (self) {
         // Its own day: it charges what its invoices of the day do not (they charge in full).
         for (const row of own) apply(state, row)

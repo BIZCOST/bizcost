@@ -466,6 +466,8 @@ async function renderCreditNote(ctx: BusinessCtx, head: CreditNoteRecord): Promi
         netTotal: head.net_total,
         vatTotal: head.vat_total,
         total: head.total,
+        roundingDifference: head.rounding_difference,
+        payable: sumDecimals([head.total, head.rounding_difference]),
         vatRates: head.vat_rates,
         valueBefore: values.valueBefore,
         valueAfter: values.valueAfter,

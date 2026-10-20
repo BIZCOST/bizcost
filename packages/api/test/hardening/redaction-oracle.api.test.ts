@@ -2257,7 +2257,16 @@ describe('filtering, sorting, searching or exporting on hidden values is FORBIDD
       queryLeaves(p.path).some((leaf) => leaf.name === 'search'),
     )
     expect(searchable.map((p) => p.path)).toEqual(
-      expect.arrayContaining(['purchase.list', 'expense.list', 'productCost.list']),
+      expect.arrayContaining([
+        'purchase.list',
+        'expense.list',
+        'productCost.list',
+        'sale.list',
+        'order.list',
+        'quotation.list',
+        'invoice.list',
+        'creditNote.list',
+      ]),
     )
     const amounts = [
       UNIT_PRICE,
@@ -2272,6 +2281,10 @@ describe('filtering, sorting, searching or exporting on hidden values is FORBIDD
       PRODUCT_PRICE,
       POOL_RENT,
       POOL_BILL,
+      // M3 Step 10: a sale's frozen cost, a channel's commission and a delivery cost filled.
+      RECIPE_COST,
+      FEE_PERCENT,
+      FILLED_DELIVERY,
     ]
     for (const procedure of searchable) {
       const owner = members.get('owner')!

@@ -1,5 +1,5 @@
 import type { InvoiceDto, OwedDocumentDto, ReceivableListDto } from '@bizcost/contracts'
-import { newId } from '@bizcost/domain'
+import { newId, plusDays } from '@bizcost/domain'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { formatDate } from '../src/documents/pdf/build'
 import { normalizeText, pdfFullText } from '../src/documents/pdf/text-layer'
@@ -65,13 +65,16 @@ describe("the fit-out company's tax invoice (definition of done)", () => {
     expect(text).toContain(normalizeText('فاتورة'))
     expect(text).toContain(normalizeText('يبية'))
     // (b) the supplier's name, address and TRN; (c) the recipient's.
+    expect(text).toContain(normalizeText(invoice.seller!.name))
     expect(text).toContain('Warehouse 7, Al Quoz Industrial 3')
     expect(text).toContain(SELLER_TRN)
     expect(text).toContain('Gulf Horizon Properties LLC')
     expect(text).toContain('Office 1402, Marina Plaza')
     expect(text).toContain(BUYER_TRN)
-    // (d) its sequential number; (e) the date of issue.
+    // (d) its sequential number; (e) the date of issue ((f) the date of supply is printed only when it
+    // is another day: the next test).
     expect(text).toContain('INV-0001')
+    expect(text).toContain(formatDate(invoice.issueDate!).en)
     // (g) each line's description; (h) unit price, quantity, VAT rate and amount; (i) the discount.
     expect(text).toContain('Gypsum partition')
     expect(text).toContain('45.00')
@@ -86,6 +89,29 @@ describe("the fit-out company's tax invoice (definition of done)", () => {
     const again = await scope.invoicePdf(invoice.id)
     expect(again.base64).toBe(pdf.base64)
   })
+
+  it('(f) the date of supply: an invoice of an order delivered 6 days before it prints both dates', async () => {
+    const shop = await InvoiceScope.open(api)
+    await shop.taxReady()
+    const customer = await shop.buyer()
+    const service = await shop.service('1000')
+    const today = await shop.today()
+    const deliveredOn = plusDays(today, -6)
+    const order = await shop.order({
+      businessDate: deliveredOn,
+      customerId: customer.id,
+      channelId: await shop.channelId(),
+      lines: [{ kind: 'item', id: newId(), productId: service.id, qty: '1', unitPrice: '1000' }],
+    })
+    const issued = await shop.issue(
+      await shop.fromOrder((await shop.deliver(order, deliveredOn)).id),
+    )
+    expect(issued).toMatchObject({ issueDate: today, supplyDate: deliveredOn })
+    const text = await pdfFullText(decode((await shop.invoicePdf(issued.id)).base64))
+    expect(text).toContain('Date of supply')
+    expect(text).toContain(formatDate(deliveredOn).en)
+    expect(text).toContain(formatDate(today).en)
+  }, 60_000)
 
   it('a credit note for 100 m² of painting: CN-0001, credited 1,890.00, still owed 12,521.25', async () => {
     const painting = invoice.lines[1]!

@@ -37,7 +37,7 @@ import type {
   SupplierDto,
 } from '@bizcost/contracts'
 import type { Db } from '@bizcost/db'
-import { newId } from '@bizcost/domain'
+import { newId, type AttachmentEntity } from '@bizcost/domain'
 import type { RoleTemplateKey } from '@bizcost/modules'
 import type { AnyRouter } from '@trpc/server'
 import { expect } from 'vitest'
@@ -316,6 +316,16 @@ export interface Tenant {
   creditNote: CreditNoteDto
   /** A draft credit note of the invoice. */
   draftCreditNote: CreditNoteDto
+  /** M3 Step 10: the order's file (the customer's LPO). */
+  orderFile: AttachmentDto
+  /** The accepted quotation's signed copy. */
+  signedCopy: AttachmentDto
+  /** The issued invoice's file (a signed delivery note). */
+  invoiceFile: AttachmentDto
+  /** The picture of the draft invoice's line. */
+  invoiceLinePicture: AttachmentDto
+  /** The stamp image of Settings → Documents (its object path). */
+  stampPath: string
 }
 
 function ok<T>(result: CallResult<T>, what: string): T {
@@ -1155,6 +1165,38 @@ export async function createTenant(api: Api, label: string): Promise<Tenant> {
     'creditNote.create (draft)',
   ) as CreditNoteDto
 
+  // M3 Step 10: a file of every other kind an M3 record holds, and the stamp.
+  const attach = async (entity: AttachmentEntity, entityId: string, fileName: string) => {
+    const issued = ok(
+      await as('attachment.uploadUrl', 'mutation', { entity, entityId, contentType: 'image/png' }),
+      `attachment.uploadUrl (${entity})`,
+    ) as AttachmentUploadUrlDto
+    expect((await uploadTo(issued.uploadUrl, PNG, 'image/png')).ok).toBe(true)
+    return (
+      ok(
+        await as('attachment.add', 'mutation', { entity, entityId, path: issued.path, fileName }),
+        `attachment.add (${entity})`,
+      ) as { data: AttachmentDto }
+    ).data
+  }
+  const orderFile = await attach('order', order.id, `lpo-${label}-${tag}.png`)
+  const signedCopy = await attach('quotation', acceptedQuotation.id, `signed-${label}-${tag}.png`)
+  const invoiceFile = await attach('invoice', invoice.id, `delivery-note-${label}-${tag}.png`)
+  const invoiceLinePicture = await attach(
+    'invoice_line',
+    draftInvoice.lines[0]!.id,
+    `invoice-picture-${label}-${tag}.png`,
+  )
+  const stampUpload = ok(
+    await as('document.imageUploadUrl', 'mutation', { kind: 'stamp', contentType: 'image/png' }),
+    'document.imageUploadUrl (stamp)',
+  ) as DocumentImageUploadUrlDto
+  expect((await uploadTo(stampUpload.uploadUrl, PNG, 'image/png')).ok).toBe(true)
+  ok(
+    await as('document.setImage', 'mutation', { kind: 'stamp', path: stampUpload.path }),
+    'document.setImage (stamp)',
+  )
+
   return {
     id,
     label,
@@ -1217,6 +1259,11 @@ export async function createTenant(api: Api, label: string): Promise<Tenant> {
     draftInvoice,
     creditNote,
     draftCreditNote,
+    orderFile,
+    signedCopy,
+    invoiceFile,
+    invoiceLinePicture,
+    stampPath: stampUpload.path,
   }
 }
 
@@ -1390,6 +1437,10 @@ export function markersOf(tenant: Tenant): string[] {
     tenant.creditNote.reasonText,
     tenant.draftCreditNote.id,
     tenant.draftCreditNote.reasonText,
+    ...[tenant.orderFile, tenant.signedCopy, tenant.invoiceFile, tenant.invoiceLinePicture].flatMap(
+      (file) => [file.id, file.fileName],
+    ),
+    tenant.stampPath,
     ...Object.values(tenant.roles).map((role) => role.id),
     ...[tenant.owner, tenant.admin, tenant.employee].flatMap(({ user }) => [
       user.id,

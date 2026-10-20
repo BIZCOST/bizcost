@@ -11,7 +11,7 @@ import type {
   ProductDto,
   PurchaseDto,
 } from '@bizcost/contracts'
-import { newId } from '@bizcost/domain'
+import { compareDecimal, newId, type AttachmentEntity } from '@bizcost/domain'
 import {
   ALWAYS_ENABLED_MODULE_IDS,
   MODULES as MANIFESTS,
@@ -23,6 +23,7 @@ import {
 } from '@bizcost/modules'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { appRouter } from '../../src'
+import { pdfFullText } from '../../src/documents/pdf/text-layer'
 import type { CallResult } from '../helpers'
 import { BAKER, join, setupBusiness, WORKSHOP } from '../settings'
 import {
@@ -37,7 +38,7 @@ import {
   type Tenant,
 } from './fixture'
 import { updateFieldsOf } from '../sales'
-import { inputLeaves, inputSchemaOf } from './schema'
+import { inputLeaves, inputSchemaOf, optionsOf } from './schema'
 
 // What a business has switched off is refused by the API, not only hidden by the screens (ROADMAP.md
 // M2 Step 8 and definition of done: "Only the released M2 modules appear; capabilities hide VAT
@@ -1052,6 +1053,27 @@ const HIDDEN_FIELDS: Record<string, HiddenField | { notHidden: string }> = {
     capability: 'vat_registered',
     input: (b) => invoiceUpdate(b, quotationTyped({ vatCategory: 'exempt' })),
   },
+  // What a query reads by (M3 Step 10): a branch only with branches.
+  'sale.list locationId': {
+    notHidden:
+      'a filter: with one location every sale is at it, and a member limited to branches sees only ' +
+      'theirs whatever it names (Q12; the branch limits below)',
+  },
+  'sale.daySheet locationId': {
+    capability: 'multi_location',
+    input: async (b) => ({
+      path: 'sale.daySheet',
+      input: {
+        businessDate: b.today,
+        channelId: await firstChannel(b),
+        locationId: otherLocation(b),
+      },
+    }),
+  },
+  'profit.summary groupBy=branch': {
+    capability: 'multi_location',
+    input: (b) => create('profit.summary', { from: b.today, to: b.today, groupBy: 'branch' }),
+  },
   'member.updateLocations locationIds.*': {
     capability: 'multi_location',
     input: async (b) => {
@@ -1208,6 +1230,16 @@ async function importCreate(b: Business, extra: object) {
 
 /** Field names about what a capability turns on or off. */
 const CAPABILITY_FIELD = /vat|location|paidBy|paymentMethod|approval|ownerMinutes|ownerHourlyRate/i
+/** Options of a query's field about one (M3 Step 10: Real profit by branch). */
+const CAPABILITY_OPTION = /branch|location/i
+
+/** The business's first sales channel. */
+async function firstChannel(b: Business): Promise<string> {
+  const channels = ok(
+    await as<{ data: { items: { id: string }[] } }>(b.owner, b.id, 'channel.list', {}),
+  ).data.items
+  return channels[0]!.id
+}
 
 describe('a capability that does not apply is refused by the API (CAPABILITY_DISABLED)', () => {
   beforeAll(async () => {
@@ -1254,12 +1286,18 @@ describe('a capability that does not apply is refused by the API (CAPABILITY_DIS
     }
   })
 
-  it('every field a capability hides is classified', () => {
-    const found = BUSINESS.filter((p) => p.type === 'mutation').flatMap((procedure) => {
+  it('every field a capability hides is classified, in what is entered and in what is read', () => {
+    const found = BUSINESS.flatMap((procedure) => {
       const schema = inputSchemaOf(appRouter, procedure.path)
-      return (schema ? inputLeaves(schema) : [])
-        .filter((leaf) => CAPABILITY_FIELD.test(leaf.name))
-        .map((leaf) => `${procedure.path} ${leaf.path}`)
+      return (schema ? inputLeaves(schema) : []).flatMap((leaf) => {
+        if (CAPABILITY_FIELD.test(leaf.name)) return [`${procedure.path} ${leaf.path}`]
+        // A query's options (By branch): each one about a capability is classified on its own.
+        return procedure.type === 'query'
+          ? (optionsOf(leaf.schema) ?? [])
+              .filter((option) => CAPABILITY_OPTION.test(option))
+              .map((option) => `${procedure.path} ${leaf.path}=${option}`)
+          : []
+      })
     })
     expect(found.sort()).toEqual(Object.keys(HIDDEN_FIELDS).sort())
   })
@@ -1313,4 +1351,791 @@ describe('a capability that does not apply is refused by the API (CAPABILITY_DIS
       expect(result.error, `${path}: ${result.raw}`).toBeUndefined()
     }
   })
+})
+
+// ---------------------------------------------------------------------------------------------------
+// Branch limits (Q12; M3 Step 10)
+// ---------------------------------------------------------------------------------------------------
+//
+// "A member limited to branches sees and enters sales, orders, imports and reports only for those
+// branches; products, customers and costs stay business-wide" (Q12 A; D-236, D-273, D-296, D-320).
+// For EVERY business procedure, BRANCH_LIMITS says why it is business-wide, or how a member limited
+// to the default location is kept from the other branch, where the fixture's sale, imports, orders,
+// payments, quotations, invoices, credit notes and their files are. The member is an Admin (every
+// key), so only the branch refuses:
+//   - `refused`: a record of the other branch is NOT_FOUND (as if it did not exist), entering at it
+//     FORBIDDEN; nothing is written;
+//   - `lists`: served, with nothing of the other branch (its records' ids and words) where the owner's
+//     same answer has them; `check` holds what an aggregate must (nothing sold at their branch).
+// A procedure added without an entry fails the first test.
+
+interface BranchCall {
+  input: unknown
+  code: 'not_found' | 'forbidden'
+}
+
+interface BranchLimit {
+  /** Business-wide: why the branch does not limit it. */
+  wide?: string
+  /** Calls that name the other branch or one of its records: each refused with its code. */
+  refused?: (t: Tenant) => BranchCall[]
+  /** An input whose answer shows the owner the other branch's records, and the member none. */
+  lists?: (t: Tenant) => unknown
+  /** What else holds of the member's answer to `lists` (and of the owner's, the control). */
+  check?: (mine: unknown, owners: unknown, t: Tenant) => void | Promise<void>
+  /** Proven by its own case below (it needs another kind of business). */
+  below?: string
+}
+
+const COSTS_WIDE = 'products, materials and costs stay business-wide (Q12)'
+const SETTINGS_WIDE = 'the business, its settings and its letterhead: one for every branch'
+const TEAM_WIDE =
+  'the team: a limited member changes no one beyond their branches (D-236, sales-visibility.api)'
+const CUSTOMERS_WIDE = 'customers stay business-wide (Q12)'
+
+/** Routers whose every procedure is business-wide. */
+const WIDE_ROUTERS: Record<string, string> = {
+  books: 'the books-closed date is the business’s',
+  business: SETTINGS_WIDE,
+  location: 'the business’s branches themselves (Settings → Branches)',
+  member: TEAM_WIDE,
+  invitation: TEAM_WIDE,
+  role: TEAM_WIDE,
+  material: COSTS_WIDE,
+  product: COSTS_WIDE,
+  recipe: COSTS_WIDE,
+  productCost: COSTS_WIDE,
+  supplier: 'suppliers, purchases and what is owed to them are costs: business-wide (Q12)',
+  purchase: 'purchases are costs: business-wide (Q12)',
+  purchaseReturn: 'purchases are costs: business-wide (Q12)',
+  purchasePayment: 'purchases are costs: business-wide (Q12)',
+  payable: 'what the business owes is costs: business-wide (Q12)',
+  costCategory: 'expenses and running costs are costs: business-wide (Q12)',
+  expense: 'expenses are costs: business-wide (Q12)',
+  expensePayment: 'expenses are costs: business-wide (Q12)',
+  runningCost: 'running costs are costs: business-wide (Q12)',
+  channel: 'a sales channel sells in every branch',
+  channelStatement:
+    'a channel’s statement is its fees for a period, every branch’s: costs, business-wide (Q12)',
+  importProfile: 'the layouts of files imported serve every branch',
+  document: SETTINGS_WIDE,
+}
+
+/** The other branch's records and files the fixture made: what the member may never be shown. */
+function branchMarkers(t: Tenant): string[] {
+  return [
+    t.sale.id,
+    t.sale.notes ?? t.sale.id,
+    t.saleImport.id,
+    t.draftImport.id,
+    t.order.id,
+    t.order.notes ?? t.order.id,
+    t.deliveredOrder.id,
+    t.refund.id,
+    t.payLaterSale.id,
+    t.orderPayment.id,
+    t.salePayment.id,
+    t.invoicePayment.id,
+    t.quotation.id,
+    t.quotation.site ?? t.quotation.id,
+    t.sentQuotation.id,
+    t.acceptedQuotation.id,
+    t.invoice.id,
+    t.invoice.notes ?? t.invoice.id,
+    t.draftInvoice.id,
+    t.creditNote.id,
+    t.creditNote.reasonText,
+    t.draftCreditNote.id,
+    t.linePicture.id,
+    t.orderFile.id,
+    t.signedCopy.id,
+    t.invoiceFile.id,
+    t.invoiceLinePicture.id,
+  ]
+}
+
+/** A record of each kind a file of an order, a quotation or an invoice belongs to (other branch). */
+function branchRecordOf(t: Tenant): [AttachmentEntity, string][] {
+  return [
+    ['order', t.order.id],
+    ['quotation', t.quotation.id],
+    ['quotation_line', t.quotation.lines[0]!.id],
+    ['invoice', t.invoice.id],
+    ['invoice_line', t.draftInvoice.lines[0]!.id],
+  ]
+}
+
+const notFound = (input: unknown): BranchCall => ({ input, code: 'not_found' })
+const forbidden = (input: unknown): BranchCall => ({ input, code: 'forbidden' })
+
+/** A draft sale at the other branch (the fixture's draft of Today's sales is at the default one). */
+let branchDraft: { id: string; version: number }
+/**
+ * The member's own drafts at their branch (the default location): moving one to the other branch is
+ * entering at it (FORBIDDEN).
+ */
+const ownDrafts = {} as Record<
+  'sale' | 'order' | 'quotation' | 'invoice',
+  { id: string; version: number }
+>
+let branchToday: string
+
+function monthSoFar(t: Tenant) {
+  return { from: `${t.sale.businessDate.slice(0, 7)}-01`, to: t.sale.businessDate }
+}
+
+const BRANCH_LIMITS: Record<string, BranchLimit> = {
+  // Files of an order, a quotation and an invoice follow their record (purchases' and expenses'
+  // receipts are costs: business-wide).
+  'attachment.add': {
+    refused: (t) =>
+      branchRecordOf(t).map(([entity, entityId]) =>
+        notFound({ entity, entityId, path: `${t.id}/${entity}/${newId()}.png`, fileName: 'x.png' }),
+      ),
+  },
+  'attachment.list': {
+    refused: (t) => branchRecordOf(t).map(([entity, entityId]) => notFound({ entity, entityId })),
+  },
+  'attachment.remove': {
+    refused: (t) =>
+      [t.orderFile, t.signedCopy, t.linePicture, t.invoiceFile, t.invoiceLinePicture].map((f) =>
+        notFound({ id: f.id }),
+      ),
+  },
+  'attachment.uploadUrl': {
+    refused: (t) =>
+      branchRecordOf(t).map(([entity, entityId]) =>
+        notFound({ entity, entityId, contentType: 'image/png' }),
+      ),
+  },
+  'creditNote.create': {
+    refused: (t) => [
+      notFound({
+        id: newId(),
+        invoiceId: t.invoice.id,
+        eventDate: branchToday,
+        reason: 'price_changed',
+        reasonText: 'Price agreed again',
+        by: 'amount',
+        lines: [{ invoiceLineId: t.invoice.lines[1]!.id, amount: '1' }],
+      }),
+    ],
+  },
+  'creditNote.discard': {
+    refused: (t) => [notFound({ id: t.draftCreditNote.id, version: t.draftCreditNote.version })],
+  },
+  'creditNote.get': { refused: (t) => [notFound({ id: t.creditNote.id })] },
+  'creditNote.history': { refused: (t) => [notFound({ id: t.creditNote.id })] },
+  'creditNote.issue': {
+    refused: (t) => [notFound({ id: t.draftCreditNote.id, version: t.draftCreditNote.version })],
+  },
+  'creditNote.list': { lists: () => ({}) },
+  'creditNote.pdf': { refused: (t) => [notFound({ id: t.creditNote.id })] },
+  'creditNote.update': {
+    refused: (t) => [
+      notFound({
+        id: t.draftCreditNote.id,
+        version: t.draftCreditNote.version,
+        eventDate: branchToday,
+        reason: 'goods_returned',
+        reasonText: 'Returned',
+        by: 'quantity',
+        lines: [{ invoiceLineId: t.invoice.lines[0]!.id, qty: '1' }],
+      }),
+    ],
+  },
+  'customer.archive': { wide: CUSTOMERS_WIDE },
+  'customer.create': { wide: CUSTOMERS_WIDE },
+  'customer.get': { wide: CUSTOMERS_WIDE },
+  'customer.list': { wide: CUSTOMERS_WIDE },
+  'customer.pick': { wide: CUSTOMERS_WIDE },
+  'customer.similar': { wide: CUSTOMERS_WIDE },
+  'customer.unarchive': { wide: CUSTOMERS_WIDE },
+  'customer.update': { wide: CUSTOMERS_WIDE },
+  // A customer's statement: their documents and payments of the member's branches only.
+  'customer.statement': {
+    lists: (t) => ({ customerId: t.customer.id, ...monthSoFar(t) }),
+    check: (mine, owners) => {
+      expect((owners as { entries: unknown[] }).entries.length).toBeGreaterThan(0)
+      expect((mine as { entries: unknown[] }).entries).toEqual([])
+    },
+  },
+  'customer.statementPdf': {
+    lists: (t) => ({ customerId: t.customer.id, ...monthSoFar(t) }),
+    check: async (mine, owners, t) => {
+      const text = (answer: unknown) =>
+        pdfFullText(new Uint8Array(Buffer.from((answer as { base64: string }).base64, 'base64')))
+      const number = t.invoice.number ?? ''
+      expect(number).not.toBe('')
+      expect(await text(owners)).toContain(number)
+      expect(await text(mine)).not.toContain(number)
+    },
+  },
+  'customerPayment.list': {
+    refused: (t) => [
+      notFound({ orderId: t.order.id }),
+      notFound({ saleId: t.payLaterSale.id }),
+      notFound({ invoiceId: t.invoice.id }),
+    ],
+    lists: (t) => ({ customerId: t.customer.id }),
+  },
+  'customerPayment.record': {
+    refused: (t) =>
+      [{ orderId: t.order.id }, { saleId: t.payLaterSale.id }, { invoiceId: t.invoice.id }].map(
+        (on) =>
+          notFound({ id: newId(), ...on, businessDate: branchToday, method: 'cash', amount: '1' }),
+      ),
+  },
+  'customerPayment.recordMany': {
+    refused: (t) =>
+      [{ invoiceId: t.invoice.id }, { orderId: t.order.id }, { saleId: t.payLaterSale.id }].map(
+        (document) =>
+          notFound({
+            customerId: t.customer.id,
+            businessDate: branchToday,
+            method: 'cash',
+            amount: '1',
+            documents: [{ id: newId(), ...document }],
+          }),
+      ),
+  },
+  'customerPayment.reverse': {
+    refused: (t) =>
+      [t.orderPayment, t.salePayment, t.invoicePayment].map((p) => notFound({ id: p.id })),
+  },
+  // The cards: their branches' sales, orders and what their customers owe.
+  'dashboard.cards': {
+    lists: () => undefined,
+    check: (mine, owners) => {
+      interface Cards {
+        data: {
+          sales: { value: string } | null
+          recentOrders: unknown[] | null
+          customersOwe: { owed: string } | null
+          topProducts: { byQuantity: unknown[] } | null
+        }
+      }
+      const theirs = (mine as Cards).data
+      const all = (owners as Cards).data
+      expect(compareDecimal(all.sales?.value ?? '0', '0')).toBe(1)
+      expect(theirs.sales?.value ?? '0').toBe('0')
+      expect(all.recentOrders?.length).toBeGreaterThan(0)
+      // Their own order at their branch only.
+      expect((theirs.recentOrders ?? []).map((o) => (o as { id: string }).id)).toEqual([
+        ownDrafts.order.id,
+      ])
+      expect(compareDecimal(all.customersOwe?.owed ?? '0', '0')).toBe(1)
+      expect(theirs.customersOwe?.owed ?? '0').toBe('0')
+      expect(theirs.topProducts?.byQuantity ?? []).toEqual([])
+    },
+  },
+  'dashboard.checklist': {
+    wide:
+      'the getting-started steps follow the business’s data (done or not), as for an Employee ' +
+      'who sees only their own sales (PRODUCT §10)',
+  },
+  'invoice.copyToQuotation': { refused: (t) => [notFound({ id: t.invoice.id, newId: newId() })] },
+  'invoice.create': {
+    refused: (t) => [
+      forbidden({ id: newId(), customerId: t.customer.id, locationId: t.branch.id, lines: [] }),
+    ],
+  },
+  'invoice.depositsWithoutInvoice': {
+    below: 'deposits without a tax invoice are a VAT-registered business’s: the case below',
+  },
+  'invoice.discard': {
+    refused: (t) => [notFound({ id: t.draftInvoice.id, version: t.draftInvoice.version })],
+  },
+  'invoice.fromOrder': { refused: (t) => [notFound({ orderId: t.order.id, newId: newId() })] },
+  'invoice.fromQuotation': {
+    refused: (t) => [notFound({ id: t.acceptedQuotation.id, newId: newId() })],
+  },
+  'invoice.fromSale': {
+    refused: (t) => [notFound({ saleId: t.payLaterSale.id, newId: newId() })],
+  },
+  'invoice.get': { refused: (t) => [notFound({ id: t.invoice.id })] },
+  'invoice.history': { refused: (t) => [notFound({ id: t.invoice.id })] },
+  'invoice.issue': {
+    refused: (t) => [notFound({ id: t.draftInvoice.id, version: t.draftInvoice.version })],
+  },
+  'invoice.list': { lists: () => ({}) },
+  'invoice.pdf': { refused: (t) => [notFound({ id: t.invoice.id })] },
+  'invoice.update': {
+    refused: (t) => [
+      notFound({
+        id: t.draftInvoice.id,
+        version: t.draftInvoice.version,
+        customerId: t.customer.id,
+        lines: [],
+      }),
+      forbidden({
+        ...ownDrafts.invoice,
+        customerId: t.customer.id,
+        locationId: t.branch.id,
+        lines: [],
+      }),
+    ],
+  },
+  'order.cancel': {
+    refused: (t) => [notFound({ id: t.order.id, version: t.order.version, reason: 'No longer' })],
+  },
+  'order.create': {
+    refused: (t) => [
+      forbidden({
+        id: newId(),
+        customerId: t.customer.id,
+        businessDate: branchToday,
+        locationId: t.branch.id,
+        lines: [],
+      }),
+    ],
+  },
+  'order.deliver': { refused: (t) => [notFound({ id: t.order.id, version: t.order.version })] },
+  'order.get': { refused: (t) => [notFound({ id: t.order.id })] },
+  'order.list': { lists: () => ({}) },
+  'order.undoDelivery': { refused: (t) => [notFound({ id: t.deliveredOrder.id })] },
+  'order.update': {
+    refused: (t) => [
+      notFound({ id: t.order.id, version: t.order.version, businessDate: branchToday, lines: [] }),
+      forbidden({
+        ...ownDrafts.order,
+        customerId: t.customer.id,
+        businessDate: branchToday,
+        locationId: t.branch.id,
+        lines: [],
+      }),
+    ],
+  },
+  // Reports: their branches' sales only (and no business-level line).
+  'profit.summary': {
+    lists: (t) => ({ ...monthSoFar(t), groupBy: 'product' }),
+    check: (mine, owners) => {
+      interface Summary {
+        data: { groups: unknown[]; businessLevel: boolean; total: { sales: string } }
+      }
+      expect((owners as Summary).data.groups.length).toBeGreaterThan(0)
+      expect((mine as Summary).data.groups).toEqual([])
+      expect((mine as Summary).data.businessLevel).toBe(false)
+      expect((mine as Summary).data.total.sales).toBe('0')
+    },
+  },
+  'quotation.accept': {
+    refused: (t) => [notFound({ id: t.sentQuotation.id, version: t.sentQuotation.version })],
+  },
+  'quotation.copy': { refused: (t) => [notFound({ id: t.quotation.id, newId: newId() })] },
+  'quotation.create': {
+    refused: (t) => [
+      forbidden({
+        id: newId(),
+        customerId: t.customer.id,
+        businessDate: branchToday,
+        locationId: t.branch.id,
+        lines: [],
+      }),
+    ],
+  },
+  'quotation.decline': {
+    refused: (t) => [notFound({ id: t.sentQuotation.id, version: t.sentQuotation.version })],
+  },
+  'quotation.discard': {
+    refused: (t) => [notFound({ id: t.quotation.id, version: t.quotation.version })],
+  },
+  'quotation.get': { refused: (t) => [notFound({ id: t.quotation.id })] },
+  'quotation.history': { refused: (t) => [notFound({ id: t.quotation.id })] },
+  'quotation.list': { lists: () => ({}) },
+  'quotation.pdf': { refused: (t) => [notFound({ id: t.quotation.id })] },
+  'quotation.revise': { refused: (t) => [notFound({ id: t.sentQuotation.id, newId: newId() })] },
+  'quotation.send': {
+    refused: (t) => [notFound({ id: t.quotation.id, version: t.quotation.version })],
+  },
+  'quotation.toOrder': {
+    refused: (t) => [notFound({ id: t.acceptedQuotation.id, orderId: newId() })],
+  },
+  'quotation.update': {
+    refused: (t) => [
+      notFound({
+        id: t.quotation.id,
+        version: t.quotation.version,
+        customerId: t.customer.id,
+        businessDate: branchToday,
+        lines: [],
+      }),
+      forbidden({
+        ...ownDrafts.quotation,
+        customerId: t.customer.id,
+        businessDate: branchToday,
+        locationId: t.branch.id,
+        lines: [],
+      }),
+    ],
+  },
+  'receivable.list': { lists: () => ({}) },
+  'sale.correct': { refused: (t) => [notFound({ id: t.sale.id, newId: newId() })] },
+  'sale.create': {
+    refused: (t) => [
+      forbidden({
+        id: newId(),
+        source: 'single',
+        businessDate: branchToday,
+        locationId: t.branch.id,
+        lines: [],
+      }),
+    ],
+  },
+  'sale.daySheet': {
+    refused: (t) => [
+      forbidden({ businessDate: branchToday, channelId: t.channel.id, locationId: t.branch.id }),
+    ],
+  },
+  'sale.discard': { refused: () => [notFound({ ...branchDraft })] },
+  'sale.fillDeliveryCost': { refused: (t) => [notFound({ id: t.sale.id, deliveryCost: '1' })] },
+  'sale.get': { refused: (t) => [notFound({ id: t.sale.id })] },
+  'sale.list': { lists: () => ({}) },
+  'sale.post': { refused: () => [notFound({ ...branchDraft })] },
+  'sale.refund': {
+    refused: (t) => [
+      notFound({
+        id: newId(),
+        saleId: t.sale.id,
+        by: 'amount',
+        businessDate: branchToday,
+        lines: [{ lineId: t.sale.lines[0]!.id, amount: '1' }],
+      }),
+      notFound({
+        id: newId(),
+        orderId: t.deliveredOrder.id,
+        by: 'amount',
+        businessDate: branchToday,
+        lines: [{ lineId: t.refund.lines[0]?.refundOfLineId ?? newId(), amount: '1' }],
+      }),
+    ],
+  },
+  'sale.reverse': { refused: (t) => [notFound({ id: t.sale.id })] },
+  'sale.update': {
+    refused: (t) => [
+      notFound({
+        ...updateFieldsOf({ source: 'single', businessDate: branchToday, lines: [] }),
+        ...branchDraft,
+      }),
+      forbidden({
+        ...updateFieldsOf({
+          source: 'single',
+          businessDate: branchToday,
+          locationId: t.branch.id,
+          channelId: t.channel.id,
+          lines: [],
+        }),
+        ...ownDrafts.sale,
+      }),
+    ],
+  },
+  'saleImport.addRows': {
+    refused: (t) => [
+      notFound({
+        id: t.draftImport.id,
+        rows: [
+          {
+            position: 1,
+            businessDate: branchToday,
+            name: t.product.name,
+            qty: '1',
+            amount: '1',
+            refunds: '0',
+            fileRows: 1,
+          },
+        ],
+      }),
+    ],
+  },
+  'saleImport.create': {
+    refused: (t) => [
+      forbidden({
+        id: newId(),
+        channelId: t.channel.id,
+        locationId: t.branch.id,
+        fileName: 'sales.csv',
+        fileHash: randomBytes(32).toString('hex'),
+        fingerprint: randomBytes(32).toString('hex'),
+        shape: 'summary',
+        periodFrom: branchToday,
+        periodTo: branchToday,
+        mapping: { headerRow: 0, columns: { name: 0, total: 1 }, headers: {}, dateOrder: 'dmy' },
+        amountsIncludeVat: false,
+        rowsRead: 1,
+        rowsLeftOut: 0,
+        rowCount: 1,
+      }),
+    ],
+  },
+  'saleImport.discard': {
+    refused: (t) => [notFound({ id: t.draftImport.id, version: t.draftImport.version })],
+  },
+  'saleImport.get': { refused: (t) => [notFound({ id: t.saleImport.id })] },
+  'saleImport.list': { lists: () => ({}) },
+  'saleImport.match': {
+    refused: (t) => [
+      notFound({
+        id: t.draftImport.id,
+        answers: [{ name: t.product.name, target: 'product', productId: t.product.id }],
+      }),
+    ],
+  },
+  'saleImport.post': {
+    refused: (t) => [notFound({ id: t.draftImport.id, version: t.draftImport.version })],
+  },
+  'saleImport.reverse': { refused: (t) => [notFound({ id: t.saleImport.id })] },
+  'saleImport.setOverlap': {
+    refused: (t) => [
+      notFound({ id: t.draftImport.id, version: t.draftImport.version, overlap: 'skip' }),
+    ],
+  },
+}
+
+function branchLimitOf(path: string): BranchLimit | undefined {
+  const wide = WIDE_ROUTERS[path.split('.')[0] ?? '']
+  return BRANCH_LIMITS[path] ?? (wide ? { wide } : undefined)
+}
+
+/** A member of `b` (an Admin: every key) limited to `locationId`. */
+async function limitedTo(b: { id: string; owner: Person }, locationId: string): Promise<Person> {
+  const person = await api.newPerson()
+  const memberId = await join(api.db, b.owner.user, b.id, person.user, 'admin')
+  const scope = ok(await as<{ version: number }>(b.owner, b.id, 'member.locations', { memberId }))
+  ok(
+    await as(b.owner, b.id, 'member.updateLocations', {
+      memberId,
+      version: scope.version,
+      locationIds: [locationId],
+    }),
+  )
+  return person
+}
+
+describe('a member limited to a branch sees and enters only that branch’s sales, orders, quotations, invoices, payments and reports (Q12)', () => {
+  let limited: Person
+  let before: Record<string, string>
+
+  beforeAll(async () => {
+    await allOn()
+    branchToday = tenant.sale.businessDate
+    const draft = ok(
+      await as<{ data: { id: string; version: number } }>(tenant.owner, tenant.id, 'sale.create', {
+        id: newId(),
+        source: 'single',
+        businessDate: branchToday,
+        locationId: tenant.branch.id,
+        channelId: tenant.channel.id,
+        lines: [],
+      }),
+    ).data
+    branchDraft = { id: draft.id, version: draft.version }
+    limited = await limitedTo(tenant, tenant.defaultLocationId)
+    // Their own drafts at their branch.
+    const draftOf = async (path: string, input: object) => {
+      const made = ok(
+        await as<{ id: string; version: number; data?: { id: string; version: number } }>(
+          limited,
+          tenant.id,
+          path,
+          { id: newId(), ...input },
+        ),
+      )
+      const record = made.data ?? made
+      return { id: record.id, version: record.version }
+    }
+    ownDrafts.sale = await draftOf('sale.create', {
+      source: 'single',
+      businessDate: branchToday,
+      channelId: tenant.channel.id,
+      lines: [],
+    })
+    ownDrafts.order = await draftOf('order.create', {
+      customerId: tenant.customer.id,
+      businessDate: branchToday,
+      channelId: tenant.channel.id,
+      lines: [],
+    })
+    ownDrafts.quotation = await draftOf('quotation.create', {
+      customerId: tenant.customer.id,
+      businessDate: branchToday,
+      lines: [],
+    })
+    ownDrafts.invoice = await draftOf('invoice.create', {
+      customerId: tenant.customer.id,
+      lines: [],
+    })
+    before = await tenantDigest(api.admin, tenant)
+  }, 120_000)
+
+  it('BRANCH_LIMITS classifies every business procedure; a router business-wide as a whole has no entry of its own', () => {
+    const missing = BUSINESS.map((p) => p.path).filter((path) => !branchLimitOf(path))
+    expect(missing, 'add the procedure to BRANCH_LIMITS').toEqual([])
+    const paths = new Set(BUSINESS.map((p) => p.path))
+    expect(Object.keys(BRANCH_LIMITS).filter((path) => !paths.has(path))).toEqual([])
+    for (const path of Object.keys(BRANCH_LIMITS)) {
+      expect(WIDE_ROUTERS[path.split('.')[0] ?? ''], path).toBeUndefined()
+    }
+    for (const [path, limit] of Object.entries(BRANCH_LIMITS)) {
+      const kinds = [limit.wide, limit.below, limit.refused ?? limit.lists].filter(Boolean)
+      expect(kinds.length, `${path}: wide, below, or refused and lists`).toBe(1)
+    }
+  })
+
+  it('the member works at the default location only; the fixture’s records are at the other branch', async () => {
+    const context = ok(await as<BusinessContextDto>(limited, tenant.id, 'business.context'))
+    expect(context.locationScope).toEqual({ all: false, ids: [tenant.defaultLocationId] })
+    for (const located of [tenant.sale, tenant.order, tenant.quotation, tenant.invoice]) {
+      expect(located.locationId).toBe(tenant.branch.id)
+    }
+  })
+
+  const REFUSED = BUSINESS.filter((p) => BRANCH_LIMITS[p.path]?.refused)
+  const LISTS = BUSINESS.filter((p) => BRANCH_LIMITS[p.path]?.lists)
+
+  it.each(REFUSED.map((p) => [p.path, p] as const))(
+    '%s: a record of the other branch is NOT_FOUND, entering at it FORBIDDEN',
+    async (_path, procedure) => {
+      const calls = BRANCH_LIMITS[procedure.path]!.refused!(tenant)
+      expect(calls.length).toBeGreaterThan(0)
+      for (const { input, code } of calls) {
+        const result = await callProcedure(api.handler, procedure, limited.token, {
+          businessId: tenant.id,
+          input,
+        })
+        const what = `${procedure.path} ${JSON.stringify(input)}`
+        expect(result.error?.data.appCode, `${what}: ${result.raw}`).toBe(code)
+        const sent = JSON.stringify(input)
+        const shown = branchMarkers(tenant).filter(
+          (m) => !sent.includes(m) && result.raw.includes(m),
+        )
+        expect(shown, what).toEqual([])
+        // The control: the same query is served to the owner.
+        if (procedure.type === 'query') {
+          const owners = await callProcedure(api.handler, procedure, tenant.owner.token, {
+            businessId: tenant.id,
+            input,
+          })
+          expect(owners.error, `${what} as the owner: ${owners.raw}`).toBeUndefined()
+        }
+      }
+    },
+  )
+
+  it('nothing was written by the refused calls', async () => {
+    expect(await tenantDigest(api.admin, tenant)).toEqual(before)
+  })
+
+  it.each(LISTS.map((p) => [p.path, p] as const))(
+    '%s: served with nothing of the other branch, which the owner’s answer has',
+    async (_path, procedure) => {
+      const limit = BRANCH_LIMITS[procedure.path]!
+      const input = limit.lists!(tenant)
+      const call = (person: Person) =>
+        callProcedure(api.handler, procedure, person.token, { businessId: tenant.id, input })
+      const mine = await call(limited)
+      const owners = await call(tenant.owner)
+      expect(mine.error, mine.raw).toBeUndefined()
+      expect(owners.error, owners.raw).toBeUndefined()
+      const markers = branchMarkers(tenant)
+      expect(markers.filter((m) => mine.raw.includes(m))).toEqual([])
+      if (limit.check) await limit.check(mine.data, owners.data, tenant)
+      else expect(markers.filter((m) => owners.raw.includes(m)).length).toBeGreaterThan(0)
+    },
+  )
+
+  it('deposits without a tax invoice: only the member’s branches’ (a VAT-registered business)', async () => {
+    const vat = await business(WORKSHOP)
+    const branch = ok(
+      await as<LocationDto>(vat.owner, vat.id, 'location.create', {
+        id: newId(),
+        name: `Marina ${newId()}`,
+      }),
+    )
+    const customer = ok(
+      await as<{ id: string }>(vat.owner, vat.id, 'customer.create', { id: newId(), name: 'Noor' }),
+    )
+    const order = ok(
+      await as<{ data: { id: string } }>(vat.owner, vat.id, 'order.create', {
+        id: newId(),
+        customerId: customer.id,
+        businessDate: vat.today,
+        locationId: branch.id,
+        lines: [
+          { kind: 'typed', id: newId(), description: 'Wardrobe', qty: '1', unitPrice: '500' },
+        ],
+        payment: { id: newId(), method: 'bank_transfer', amount: '100' },
+      }),
+    ).data
+    const person = await limitedTo(vat, vat.defaultLocationId)
+    const owners = await as(vat.owner, vat.id, 'invoice.depositsWithoutInvoice')
+    expect(owners.error, owners.raw).toBeUndefined()
+    expect(owners.raw).toContain(order.id)
+    const theirs = await as(person, vat.id, 'invoice.depositsWithoutInvoice')
+    expect(theirs.error, theirs.raw).toBeUndefined()
+    expect(theirs.raw).not.toContain(order.id)
+  })
+})
+
+// ---------------------------------------------------------------------------------------------------
+// Own records (Q10, D-181, D-214, D-273; M3 Step 10)
+// ---------------------------------------------------------------------------------------------------
+//
+// The Employee (no "see every sale" nor "see every order", no quotations, invoices or payments)
+// works only on what they entered. Every call above that names one of the owner's records (the
+// fixture's sale, import, orders, quotations, invoices, credit notes, payments and files) is refused
+// them, NOT_FOUND or FORBIDDEN, with nothing of it, and nothing written; every list above shows them
+// none of it.
+
+describe('the Employee acts on no one else’s sale, order, quotation, invoice, payment or file', () => {
+  let before: Record<string, string>
+
+  beforeAll(async () => {
+    await allOn()
+    before = await tenantDigest(api.admin, tenant)
+  })
+
+  const REFUSED = BUSINESS.filter((p) => BRANCH_LIMITS[p.path]?.refused)
+  const LISTS = BUSINESS.filter((p) => BRANCH_LIMITS[p.path]?.lists)
+
+  it.each(REFUSED.map((p) => [p.path, p] as const))(
+    '%s with the owner’s records: refused, with nothing of them',
+    async (_path, procedure) => {
+      // Entering at a branch is theirs to do (they are not limited): only the owner's records count.
+      const calls = BRANCH_LIMITS[procedure.path]!.refused!(tenant).filter(
+        (call) => call.code === 'not_found',
+      )
+      for (const { input } of calls) {
+        const result = await callProcedure(api.handler, procedure, tenant.employee.token, {
+          businessId: tenant.id,
+          input,
+        })
+        const what = `${procedure.path} ${JSON.stringify(input)}`
+        expect(['not_found', 'forbidden'], `${what}: ${result.raw}`).toContain(
+          result.error?.data.appCode,
+        )
+        const sent = JSON.stringify(input)
+        const shown = branchMarkers(tenant).filter(
+          (m) => !sent.includes(m) && result.raw.includes(m),
+        )
+        expect(shown, what).toEqual([])
+      }
+    },
+  )
+
+  it('nothing was written by the refused calls', async () => {
+    expect(await tenantDigest(api.admin, tenant)).toEqual(before)
+  })
+
+  it.each(LISTS.map((p) => [p.path, p] as const))(
+    '%s: nothing of the owner’s records (served or refused)',
+    async (_path, procedure) => {
+      const input = BRANCH_LIMITS[procedure.path]!.lists!(tenant)
+      const result = await callProcedure(api.handler, procedure, tenant.employee.token, {
+        businessId: tenant.id,
+        input,
+      })
+      if (result.error) expect(result.error.data.appCode, result.raw).toBe('forbidden')
+      expect(branchMarkers(tenant).filter((m) => result.raw.includes(m))).toEqual([])
+    },
+  )
 })

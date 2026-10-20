@@ -938,6 +938,12 @@ export interface PdfCreditNote {
   readonly netTotal: string
   readonly vatTotal: string
   readonly total: string
+  /**
+   * The invoice's rounding difference it takes back with the rest of the invoice (D-333), and its
+   * total with it; printed when not zero. Default: none.
+   */
+  readonly roundingDifference?: string
+  readonly payable?: string
   readonly vatRates: PdfQuotation['vatRates']
   /** ER Art. 60(1)(e): the invoice's value of the supply (less earlier credit notes) and after it. */
   readonly valueBefore: string
@@ -1018,7 +1024,21 @@ export function buildCreditNotePdfInput(source: {
       }),
     )
   }
-  rows.push({ label: both('pdf.credit.total'), amount: money(cn.total), strong: true })
+  const rounding = cn.roundingDifference ?? '0'
+  const hasDifference = compareDecimal(rounding, '0') !== 0
+  rows.push({ label: both('pdf.credit.total'), amount: money(cn.total), strong: !hasDifference })
+  if (hasDifference) {
+    rows.push({
+      label: both('pdf.totals.roundingDifference'),
+      amount: money(rounding),
+      strong: false,
+    })
+    rows.push({
+      label: both('pdf.credit.payable'),
+      amount: money(cn.payable ?? sumDecimals([cn.total, rounding])),
+      strong: true,
+    })
+  }
   const references: DocumentPdfReference[] = [
     { label: both('pdf.references.invoiceNo'), value: cn.invoiceNumber },
     { label: both('pdf.references.invoiceDate'), value: formatDate(cn.invoiceDate) },
@@ -1082,6 +1102,8 @@ export interface PdfStatementEntry {
   readonly method?: 'cash' | 'card' | 'bank_transfer' | 'cheque' | null
   /** What of an invoice its order or sale charged already, of a credit note its order owes again. */
   readonly owedThrough?: { readonly amount: string; readonly orderNumber: string | null } | null
+  /** It undoes an earlier entry of a closed day, on the day of the reversal (D-334). */
+  readonly reversal?: boolean
   readonly charge: string
   readonly credit: string
   readonly owed: string
@@ -1114,10 +1136,14 @@ const PLAIN_STATEMENT_LABELS = ['charge', 'credit', 'invoiced', 'credited'] as c
 /** A statement entry's document in both languages: "Invoice INV-0001", "Payment – INV-0001". */
 function entryDocument(entry: PdfStatementEntry): Bilingual {
   if (entry.paidWhenMade) return both('pdf.statement.paidWhenMade')
+  const reversed = entry.reversal === true ? 'Reversed' : ''
   if (entry.kind === 'payment' || entry.kind === 'money_back') {
     return entry.reference
-      ? both(`pdf.statement.${entry.kind}On`, { reference: entry.reference })
-      : both(`pdf.statement.${entry.kind}`)
+      ? both(`pdf.statement.${entry.kind}${reversed}On`, { reference: entry.reference })
+      : both(`pdf.statement.${entry.kind}${reversed}`)
+  }
+  if (reversed !== '' && (entry.kind === 'sale' || entry.kind === 'refund')) {
+    return both(`pdf.statement.${entry.kind}Reversed`)
   }
   if (entry.kind === 'sale' || entry.kind === 'refund') return both(`pdf.statement.${entry.kind}`)
   return both(`pdf.statement.${entry.kind}`, { number: entry.number ?? '' })

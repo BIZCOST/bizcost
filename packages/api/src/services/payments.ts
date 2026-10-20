@@ -854,8 +854,12 @@ export async function reverseExpensePayment(
 // Locks: recording or reversing a customer payment locks its order or sale FOR UPDATE first (lock 1),
 // then the business row FOR SHARE: the same order as an order's delivery, undo and refunds (the order,
 // then its sale) and a sale's refunds and reversal (the sale), so a payment, a delivery, a refund and a
-// cancel of one order wait for each other and each reads what the one before committed. "Pay several
-// at once" locks its documents in one order (orders by id, then sales by id) before the business row.
+// cancel of one order wait for each other and each reads what the one before committed. A payment on
+// an invoice made from an order or a sale locks the invoice, then that source (D-332): the invoice's
+// owed counts its source's payments and the source's what is paid on its invoices (D-313), so every
+// payment of one obligation waits on the source, whichever document it names. "Pay several at once"
+// locks its documents in one order (invoices by id, then orders by id, those named and the invoices'
+// own, then sales likewise) before the business row.
 // Customer payments are sales amounts, not a redaction category: who sees them is the key
 // payments.customers.view, and who records them payments.customers.record (the routers check them).
 // ---------------------------------------------------------------------------------------------------
@@ -895,15 +899,49 @@ export interface ReceivableHead extends Record<string, unknown> {
   invoiced: boolean
 }
 
+/** The order or sale an invoice was made from (null: from a quotation, or from scratch). */
+async function invoiceSourceOf(
+  tx: Tx,
+  businessId: string,
+  invoiceId: string,
+): Promise<{ kind: 'order' | 'sale'; id: string } | null> {
+  const [row] = (await tx.execute(sql`
+    select i.order_id, i.sale_id from app.invoices i
+     where i.business_id = ${businessId} and i.id = ${invoiceId}
+  `)) as unknown as { order_id: string | null; sale_id: string | null }[]
+  if (row?.order_id) return { kind: 'order', id: row.order_id }
+  if (row?.sale_id) return { kind: 'sale', id: row.sale_id }
+  return null
+}
+
+/** Locks orders or sales FOR UPDATE by ascending id (an invoice's source, D-332). */
+async function lockSources(
+  tx: Tx,
+  businessId: string,
+  kind: 'order' | 'sale',
+  ids: readonly string[],
+): Promise<void> {
+  if (ids.length === 0) return
+  await tx.execute(sql`
+    select d.id from ${RECEIVABLE_TABLES[kind]} d
+     where d.business_id = ${businessId} and d.id = any(${uuidArray([...new Set(ids)].sort())})
+     order by d.id
+       for update
+  `)
+}
+
 /**
- * Locks an order or a sale FOR UPDATE (lock 1) and reads it: NOT_FOUND unless a live one of the
- * business in the caller's branches. A new statement after it reads what was committed meanwhile.
+ * Locks an order, a sale or an invoice FOR UPDATE (lock 1) and reads it: NOT_FOUND unless a live one
+ * of the business in the caller's branches. An invoice made from an order or a sale locks that source
+ * next (D-332; `source: false` when the caller locks the sources itself, after all its invoices). A
+ * new statement after it reads what was committed meanwhile.
  */
 export async function lockReceivable(
   tx: Tx,
   ctx: BusinessCtx,
   kind: ReceivableKindDto,
   id: string,
+  options: { readonly source?: boolean } = {},
 ): Promise<ReceivableHead> {
   const [row] = (await tx.execute(sql`
     select d.id from ${RECEIVABLE_TABLES[kind]} d
@@ -912,6 +950,10 @@ export async function lockReceivable(
        for update
   `)) as unknown as { id: string }[]
   if (!row) throw new AppError('not_found')
+  if (kind === 'invoice' && options.source !== false) {
+    const source = await invoiceSourceOf(tx, ctx.businessId, id)
+    if (source) await lockSources(tx, ctx.businessId, source.kind, [source.id])
+  }
   const invoiced = (column: string) => sql`exists (
     select 1 from app.invoices i
      where i.business_id = ${ctx.businessId} and i.${sql.raw(column)} = ${id}
@@ -1423,13 +1465,23 @@ export function recordManyCustomerPayments(
     `)) as unknown as { id: string }[]
     if (!customer) throw new AppError('not_found')
     // Lock 1, in one order for every caller: invoices by id (an invoice is locked before the order or
-    // sale it was made from, as its issue and its credit notes do), then orders, then sales.
-    const rank = { invoice: 0, order: 1, sale: 2 } as const
-    const order = [...documents].sort((a, b) =>
-      a.kind === b.kind ? (a.id < b.id ? -1 : a.id > b.id ? 1 : 0) : rank[a.kind] - rank[b.kind],
-    )
+    // sale it was made from, as its issue and its credit notes do), then orders by id (those named and
+    // the invoices' own, D-332), then sales likewise.
+    const byId = (a: { id: string }, b: { id: string }) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0)
     const heads = new Map<string, ReceivableHead>()
-    for (const d of order) heads.set(d.id, await lockReceivable(tx, ctx, d.kind, d.id))
+    const sources = { order: new Set<string>(), sale: new Set<string>() }
+    for (const d of documents.filter((x) => x.kind === 'invoice').sort(byId)) {
+      heads.set(d.id, await lockReceivable(tx, ctx, 'invoice', d.id, { source: false }))
+      const source = await invoiceSourceOf(tx, ctx.businessId, d.id)
+      if (source) sources[source.kind].add(source.id)
+    }
+    for (const kind of ['order', 'sale'] as const) {
+      const named = new Set(documents.filter((x) => x.kind === kind).map((x) => x.id))
+      for (const id of [...new Set([...named, ...sources[kind]])].sort()) {
+        if (named.has(id)) heads.set(id, await lockReceivable(tx, ctx, kind, id))
+        else await lockSources(tx, ctx.businessId, kind, [id])
+      }
+    }
     const answer = async (): Promise<RecordManyCustomerPaymentsDto> => {
       const ids = documents.map((d) => d.paymentId)
       const recorded = (await tx.execute(sql`

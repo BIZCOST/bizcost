@@ -271,7 +271,7 @@ const HEAD_COLUMNS = sql`
   i.customer_emirate, trim(i.customer_country) as customer_country, i.seller_name, i.seller_name_ar,
   i.seller_trn, i.seller_trade_licence, i.seller_trade_licence_authority, i.seller_address_line,
   i.seller_city, i.seller_emirate, i.letterhead, i.pdf_upload_id,
-  trim_scale(coalesce((select sum(c.total) from app.credit_notes c
+  trim_scale(coalesce((select sum(c.total + c.rounding_difference) from app.credit_notes c
      where c.business_id = i.business_id and c.invoice_id = i.id and c.status = 'issued'
        and c.deleted_at is null), 0))::text as credited,
   exists (select 1 from app.sales s
@@ -780,7 +780,7 @@ export function listInvoices(ctx: BusinessCtx, input: ListInput): Promise<Invoic
                     where l.business_id = i.business_id and l.invoice_id = i.id
                       and l.deleted_at is null and l.kind <> 'deduction'
                     order by l.position, l.id limit 2) as line_titles,
-             trim_scale(coalesce((select sum(c.total) from app.credit_notes c
+             trim_scale(coalesce((select sum(c.total + c.rounding_difference) from app.credit_notes c
                 where c.business_id = i.business_id and c.invoice_id = i.id
                   and c.status = 'issued' and c.deleted_at is null), 0))::text as credited,
              trim_scale(greatest(d.left_n, 0))::text as owed,
@@ -1791,10 +1791,13 @@ async function billedOf(tx: Tx, businessId: string, source: Source): Promise<Bil
   const rows = (await tx.execute(sql`
     select i.id, i.number, i.is_deposit,
            trim_scale(i.payable - coalesce((
-             select sum(c.total) from app.credit_notes c
+             select sum(c.total + c.rounding_difference) from app.credit_notes c
               where c.business_id = i.business_id and c.invoice_id = i.id and ${UNBILLED}), 0))::text
              as payable,
-           trim_scale(i.rounding_difference)::text as rounding_difference, i.vat_registered,
+           trim_scale(i.rounding_difference - coalesce((
+             select sum(c.rounding_difference) from app.credit_notes c
+              where c.business_id = i.business_id and c.invoice_id = i.id and ${UNBILLED}), 0))::text
+             as rounding_difference, i.vat_registered,
            (select coalesce(jsonb_agg(jsonb_build_object(
               'vatCategory', r.vat_category, 'vatRate', trim_scale(r.vat_rate)::text,
               'net', trim_scale(r.net)::text, 'vat', trim_scale(r.vat)::text)), '[]'::jsonb)
@@ -2341,7 +2344,8 @@ async function depositDayOf(tx: Tx, businessId: string, orderId: string): Promis
     )
     select min(p.business_date)::text as day from paid p
      where p.amount > 0 and p.running > coalesce((
-       select sum(i.payable - coalesce((select sum(c.total) from app.credit_notes c
+       select sum(i.payable - coalesce((select sum(c.total + c.rounding_difference)
+                from app.credit_notes c
                 where c.business_id = i.business_id and c.invoice_id = i.id and ${UNBILLED}), 0))
          from app.invoices i
         where i.business_id = ${businessId} and i.order_id = ${orderId} and i.status = 'issued'
@@ -3028,7 +3032,8 @@ export function depositsWithoutInvoice(ctx: BusinessCtx): Promise<DepositsWithou
       -- billed less, D-305): a deposit invoice credited in full covers nothing any more.
       covered as (
         select i.order_id,
-               sum(i.payable - coalesce((select sum(c.total) from app.credit_notes c
+               sum(i.payable - coalesce((select sum(c.total + c.rounding_difference)
+                 from app.credit_notes c
                  where c.business_id = i.business_id and c.invoice_id = i.id and ${UNBILLED}), 0))
                  as amount
           from app.invoices i

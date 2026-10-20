@@ -28,6 +28,7 @@ function entry(input: Partial<EntryRecord> & Pick<EntryRecord, 'kind' | 'date'>)
     src_id: null,
     src_number: null,
     bills_less: false,
+    reversal: false,
     ...input,
   }
 }
@@ -150,6 +151,41 @@ describe('ownCharges: each entry as it stood at the end of its day', () => {
       entry({ kind: 'invoice', date: day(2), charge: '2100', src_kind: 'sale', src_id: SALE }),
     ]
     expect(shown(sameDay).map((r) => [r.kind, r.charge])).toEqual([['invoice', '2100']])
+  })
+
+  it('a refund reversed on a later day stands no more: the sale invoiced after carries all of it (D-334)', () => {
+    const rows = [
+      entry({ kind: 'sale', date: day(2), charge: '2100', src_kind: 'sale', src_id: SALE }),
+      entry({ kind: 'refund', date: day(3), credit: '100', src_kind: 'sale', src_id: SALE }),
+      entry({
+        kind: 'refund',
+        date: day(5),
+        charge: '100',
+        src_kind: 'sale',
+        src_id: SALE,
+        reversal: true,
+      }),
+      entry({ kind: 'invoice', date: day(6), charge: '2100', src_kind: 'sale', src_id: SALE }),
+    ]
+    const out = shown(rows)
+    expect(out.map((r) => [r.kind, r.charge, r.credit])).toEqual([
+      ['sale', '2100', '0'],
+      ['refund', '0', '100'],
+      ['refund', '100', '0'],
+      ['invoice', '0', '0'],
+    ])
+    expect(owedOf(out)).toBe('2100')
+  })
+
+  it('a sale reversed on a later day stays on its own day, its reversal on the later one (D-334)', () => {
+    const rows = [
+      entry({ kind: 'sale', date: day(2), charge: '100', src_kind: 'sale', src_id: SALE }),
+      entry({ kind: 'sale', date: day(5), credit: '100', reversal: true }),
+    ]
+    expect(shown(rows).map((r) => [r.kind, r.date, r.charge, r.credit])).toEqual([
+      ['sale', day(2), '100', '0'],
+      ['sale', day(5), '0', '100'],
+    ])
   })
 
   it('an invoice of a sale that rounds its total down takes the difference off on its day', () => {

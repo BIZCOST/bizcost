@@ -35,12 +35,58 @@ import { jsonRecords, uuidArray } from './stock'
 // The fills run AFTER the locks of what triggers them, and touch only sale_line_materials rows and
 // sale_lines costs that are still null, never a sale's header: the lines to fill are locked FOR NO
 // KEY UPDATE by ascending id (two purchases filling materials of one line wait for each other there,
-// so the second sees the first's material and gives the line its cost), then each value is written
-// only `where … is null`. A sale's reversal locks only its header, so a reversal and a fill never wait
+// so the second sees the first's material and gives the line its cost), then read again, and each
+// value still null is written once, by the row's id (writeFilled, D-336; the database refuses a value
+// written twice). A sale's reversal locks only its header, so a reversal and a fill never wait
 // on each other. The new lock edge: cost rows → sale lines (a purchase's posting, a return's or credit
 // note's reversal: D-236), business row → sale lines (the hourly rate); nothing locks in the other
 // direction. Every statement here takes its ids and rows as ONE parameter (uuidArray, jsonRecords), so
-// no number of lines or waiting sales reaches the driver's limit of parameters (D-236).
+// no number of lines or waiting sales reaches the driver's limit of parameters (D-236), and writes or
+// locks at most ROWS_PER_STATEMENT rows (D-331): however many sales wait for a first purchase, each
+// statement's work stays bounded, far within the 15 s statement timeout on a loaded machine.
+
+/**
+ * The most rows one statement here writes or locks (D-331). A row costs its triggers and its audit
+ * row (D-259), so 21,600 rows in one update took 1.6 s alone and passed 15 s under a loaded run; a
+ * thousand take a fraction of that. The rows are written in the same order and the same transaction,
+ * and the locks taken in the same ascending order, chunk after chunk.
+ */
+export const ROWS_PER_STATEMENT = 1000
+
+/**
+ * Writes the fill-once values of one chunk of rows of `table` (at most ROWS_PER_STATEMENT, D-331): the
+ * rows are found by their ids (`id = any(…)`, the primary key) and each takes its values from ONE jsonb
+ * object keyed by its id, so the statement plans no join and its work is the chunk's own, whatever the
+ * planner's statistics say of the business (D-336). Joined to the chunk's rows by id, with `… is null`
+ * among its conditions, a business the statistics had not counted (every new one: its rows "never"
+ * null) was estimated at one row, and the plan read the whole chunk again for each row of the
+ * business: 22 chunks of a first purchase took 26 s of its 27. The lines are locked before (lockLines),
+ * so no other fill writes these rows meanwhile, and the database refuses a fill-once value written
+ * twice (guard_posted_lines_changed, D-328).
+ */
+async function writeFilled(
+  tx: Tx,
+  table: 'sale_line_materials' | 'sale_lines',
+  set: ReturnType<typeof sql>,
+  rows: readonly ({ id: string } & Record<string, string>)[],
+): Promise<void> {
+  for (const chunk of chunksOf(rows)) {
+    const values = JSON.stringify(Object.fromEntries(chunk.map((r) => [r.id, r])))
+    await tx.execute(sql`
+      update app.${sql.raw(table)} t
+         set ${set}
+        from (select ${values}::text::jsonb as j) v
+       where t.id = any(${uuidArray(chunk.map((r) => r.id))})
+    `)
+  }
+}
+
+/** `rows` in consecutive chunks of at most ROWS_PER_STATEMENT, in order. */
+export function chunksOf<T>(rows: readonly T[], size = ROWS_PER_STATEMENT): T[][] {
+  const chunks: T[][] = []
+  for (let i = 0; i < rows.length; i += size) chunks.push(rows.slice(i, i + size))
+  return chunks
+}
 
 /** One standing receipt line per material: what D-222's averageAsOf reads. */
 interface PurchaseLineRecord extends Record<string, unknown> {
@@ -246,15 +292,19 @@ export function materialRows(
 }
 
 /**
- * Inserts the materials of every line of a sale being posted, in one statement whose rows are one
+ * Inserts the materials of every line of a sale being posted, in statements whose rows are one
  * parameter (jsonRecords): 300 lines of a recipe of 60 materials are 18,000 rows, far beyond the
- * driver's 65,534 parameters had each value been one (D-209's rule: no valid sale fails to post).
+ * driver's 65,534 parameters had each value been one (D-209's rule: no valid sale fails to post), and
+ * at most ROWS_PER_STATEMENT rows a statement (D-331).
  */
 export async function insertMaterialRows(
   tx: Tx,
   rows: ReturnType<typeof materialRows>,
 ): Promise<void> {
-  if (rows.length === 0) return
+  for (const chunk of chunksOf(rows)) await insertMaterialChunk(tx, chunk)
+}
+
+async function insertMaterialChunk(tx: Tx, rows: ReturnType<typeof materialRows>): Promise<void> {
   await tx.execute(sql`
     insert into app.sale_line_materials
            (id, business_id, sale_id, sale_line_id, material_id, base_qty, unit_cost, cost, basis)
@@ -296,15 +346,20 @@ interface FillMaterialRecord extends Record<string, unknown> {
   basis: SaleMaterialBasis | null
 }
 
-/** Locks `lineIds` FOR NO KEY UPDATE by ascending id, then reads them with their sale's day. */
+/**
+ * Locks `lineIds` FOR NO KEY UPDATE by ascending id (a chunk at a time, each after the one before it:
+ * the same order), then reads them with their sale's day.
+ */
 async function lockLines(tx: Tx, businessId: string, lineIds: readonly string[]) {
   const ids = [...new Set(lineIds)].sort()
-  await tx.execute(sql`
-    select l.id from app.sale_lines l
-     where l.business_id = ${businessId} and l.id = any(${uuidArray(ids)})
-     order by l.id
-       for no key update
-  `)
+  for (const chunk of chunksOf(ids)) {
+    await tx.execute(sql`
+      select l.id from app.sale_lines l
+       where l.business_id = ${businessId} and l.id = any(${uuidArray(chunk)})
+       order by l.id
+         for no key update
+    `)
+  }
   // A new statement: it sees what a fill that held these lines committed. A refund's line (M3 Step
   // 5) is priced as of the day of the sale it takes back, so it mirrors that sale's cost.
   return (await tx.execute(sql`
@@ -412,25 +467,22 @@ export async function fillSaleMaterialCosts(
     if (line.cost === null && after.cost !== null)
       lineUpdates.push({ id: line.id, cost: after.cost })
   }
-  // Each a single statement whose rows are one parameter (jsonRecords): a purchase may fill the rows
-  // of thousands of sales entered before it (Q5) and still post.
-  if (materialUpdates.length > 0) {
-    await tx.execute(sql`
-      update app.sale_line_materials m
-         set unit_cost = v.unit_cost, cost = v.cost, basis = v.basis
-        from jsonb_to_recordset(${jsonRecords(materialUpdates)})
-             as v(id uuid, unit_cost numeric, cost numeric, basis text)
-       where m.business_id = ${businessId} and m.id = v.id and m.cost is null
-    `)
-  }
-  if (lineUpdates.length > 0) {
-    await tx.execute(sql`
-      update app.sale_lines l
-         set cost = v.cost
-        from jsonb_to_recordset(${jsonRecords(lineUpdates)}) as v(id uuid, cost numeric)
-       where l.business_id = ${businessId} and l.id = v.id and l.cost is null
-    `)
-  }
+  // ROWS_PER_STATEMENT rows a statement, each found by its id (D-331, D-336): a purchase may fill the
+  // rows of thousands of sales entered before it (Q5) and still post.
+  await writeFilled(
+    tx,
+    'sale_line_materials',
+    sql`unit_cost = (v.j -> t.id::text ->> 'unit_cost')::numeric,
+        cost = (v.j -> t.id::text ->> 'cost')::numeric,
+        basis = v.j -> t.id::text ->> 'basis'`,
+    materialUpdates,
+  )
+  await writeFilled(
+    tx,
+    'sale_lines',
+    sql`cost = (v.j -> t.id::text ->> 'cost')::numeric`,
+    lineUpdates,
+  )
 }
 
 /**
@@ -467,11 +519,10 @@ export async function fillSaleTimeCosts(
     })
     if (after.time.state === 'applied') updates.push({ id: line.id, cost: after.time.cost })
   }
-  if (updates.length === 0) return
-  await tx.execute(sql`
-    update app.sale_lines l
-       set time_cost = v.cost
-      from jsonb_to_recordset(${jsonRecords(updates)}) as v(id uuid, cost numeric)
-     where l.business_id = ${businessId} and l.id = v.id and l.time_cost is null
-  `)
+  await writeFilled(
+    tx,
+    'sale_lines',
+    sql`time_cost = (v.j -> t.id::text ->> 'cost')::numeric`,
+    updates,
+  )
 }

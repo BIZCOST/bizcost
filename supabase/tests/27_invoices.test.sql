@@ -371,7 +371,7 @@ select is(pg_temp.api_exec('user A', 'biz A', $$
                           payable = 100
    where id = pg_temp.id('inv3') $$), 'ok 1',
           'setup: invoice 3 bills the order (100)');
-select is(pg_temp.api_exec('user A', 'biz A', pg_temp.issue_sql('inv3', 3)), 'ok 1',
+select is(pg_temp.api_exec('user A', 'biz A', pg_temp.issue_sql('inv3', 2)), 'ok 1',
           'setup: invoice 3 issued');
 select is(pg_temp.state_of(pg_temp.api_exec('user A', 'biz A',
   pg_temp.pay_sql('pay order', 'order_id', 'order A'))), '23514',
@@ -404,7 +404,7 @@ select is(pg_temp.state_of(pg_temp.api_exec('user A', 'biz A', pg_temp.posted_sa
           'check: a credit note''s sale says how it credits');
 select is(pg_temp.api_exec('user A', 'biz A', pg_temp.inv_sql('inv4', ', sale_id',
   ', pg_temp.id(''sale A'')')), 'ok 1', 'setup: invoice 4 bills the recorded sale');
-select is(pg_temp.api_exec('user A', 'biz A', pg_temp.issue_sql('inv4', 4)), 'ok 1',
+select is(pg_temp.api_exec('user A', 'biz A', pg_temp.issue_sql('inv4', 3)), 'ok 1',
           'setup: invoice 4 issued');
 
 -- 8. A sale an invoice was made from, files, counters, PDFs (12) ---------------------------------
@@ -430,7 +430,7 @@ select is(pg_temp.state_of(pg_temp.api_exec('user A', 'biz A', $$
   values (pg_temp.id('pdf pic'), pg_temp.id('biz A'), 'invoice_line', pg_temp.id('inv5 line'),
           pg_temp.id('biz A')::text || '/invoice_line/0190a1b2-c3d4-7e5f-8a9b-0c1d2e3f4a5d.pdf',
           'plan.pdf', 'application/pdf', 1000) $$)), '23514', 'an invoice line''s picture is an image');
-select is(pg_temp.api_exec('user A', 'biz A', pg_temp.issue_sql('inv5', 5)), 'ok 1',
+select is(pg_temp.api_exec('user A', 'biz A', pg_temp.issue_sql('inv5', 4)), 'ok 1',
           'setup: invoice 5 issued');
 select is(pg_temp.state_of(pg_temp.api_exec('user A', 'biz A', $$
   insert into app.attachments (id, business_id, entity, entity_id, path, file_name, content_type,
@@ -448,7 +448,7 @@ select is(pg_temp.api_exec('user A', 'biz A', $$
           'an issued invoice''s own file (a signed delivery note)');
 select is(pg_temp.api_exec('user A', 'biz A', $$
   insert into app.document_counters (id, business_id, series, next_no, first_no, prefix, padding)
-  values (pg_temp.id('counter inv'), pg_temp.id('biz A'), 'invoice', 6, 1, 'INV-', 4),
+  values (pg_temp.id('counter inv'), pg_temp.id('biz A'), 'invoice', 5, 1, 'INV-', 4),
          (pg_temp.id('counter cn'), pg_temp.id('biz A'), 'credit_note', 2, 1, 'CN-', 4) $$), 'ok 2',
           'the invoice and credit note series');
 select is(pg_temp.state_of(pg_temp.api_exec('user A', 'biz A', $$
@@ -472,7 +472,7 @@ select is(pg_temp.api_exec('user A', 'biz A', pg_temp.credit_sql('cn3a', 'inv3')
           'setup: a credit note of invoice 3');
 select is(pg_temp.api_exec('user A', 'biz A', $$
   update app.credit_notes
-     set status = 'issued', seq = 3, number = 'CN-0003', issue_date = date '2026-01-21',
+     set status = 'issued', seq = 2, number = 'CN-0002', issue_date = date '2026-01-21',
          issued_at = now(), issued_by = pg_temp.id('user A'), value_before = 100, value_after = 40,
          net_total = 60, total = 60, customer_name = 'Gulf Horizon', seller_name = 'Alpha Joinery'
    where id = pg_temp.id('cn3a') $$), 'ok 1', 'setup: it credits 60 of its 100');
@@ -483,7 +483,7 @@ select is(pg_temp.state_of(pg_temp.api_exec('user A', 'biz A', $$
           'an order is not cancelled while its invoice is credited in part');
 select is(pg_temp.api_exec('user A', 'biz A', pg_temp.credit_sql('cn3b', 'inv3',
   ', status, seq, number, issue_date, issued_at, issued_by, value_before, value_after, net_total, total, customer_name, seller_name',
-  ', ''issued'', 4, ''CN-0004'', date ''2026-01-21'', now(), pg_temp.id(''user A''), 40, 0, 40, 40, ''Gulf Horizon'', ''Alpha Joinery''')),
+  ', ''issued'', 3, ''CN-0003'', date ''2026-01-21'', now(), pg_temp.id(''user A''), 40, 0, 40, 40, ''Gulf Horizon'', ''Alpha Joinery''')),
           'ok 1', 'setup: a second credit note takes the rest');
 select is(pg_temp.api_exec('user A', 'biz A', $$
   update app.orders set status = 'cancelled', cancelled_at = now(),
@@ -514,13 +514,13 @@ select is(pg_temp.api_exec('user A', 'biz A', $$
 select is(pg_temp.api_exec('user A', 'biz A', pg_temp.inv_sql('inv6',
   ', order_id, net_total, total, payable', ', pg_temp.id(''order P''), 300, 300, 300')), 'ok 1',
           'setup: an invoice of 300 of it');
-select is(pg_temp.api_exec('user A', 'biz A', pg_temp.issue_sql('inv6', 6)), 'ok 1',
+select is(pg_temp.api_exec('user A', 'biz A', pg_temp.issue_sql('inv6', 5)), 'ok 1',
           'setup: issued');
 select is(pg_temp.api_exec('user A', 'biz A', pg_temp.pay_sql('pay part', 'order_id', 'order P')),
           'ok 1', 'an order its invoices bill in part still takes a payment');
 select is(pg_temp.api_exec('user A', 'biz A', pg_temp.inv_sql('inv7',
   ', order_id, net_total, total, payable', ', pg_temp.id(''order P''), 700, 700, 700')) || ' / ' ||
-  pg_temp.api_exec('user A', 'biz A', pg_temp.issue_sql('inv7', 7)), 'ok 1 / ok 1',
+  pg_temp.api_exec('user A', 'biz A', pg_temp.issue_sql('inv7', 6)), 'ok 1 / ok 1',
           'setup: the rest invoiced');
 select is(pg_temp.state_of(pg_temp.api_exec('user A', 'biz A',
   pg_temp.pay_sql('pay full', 'order_id', 'order P'))), '23514',
@@ -543,7 +543,7 @@ select is(pg_temp.api_exec('user A', 'biz A', $$
   pg_temp.api_exec('user A', 'biz A', pg_temp.inv_sql('inv8',
     ', quotation_id, bills, bill_amount, bill_stage, net_total, total, payable',
     ', pg_temp.id(''q1''), ''part'', 100, 0, 100, 100, 100')) || ' / ' ||
-  pg_temp.api_exec('user A', 'biz A', pg_temp.issue_sql('inv8', 8)) || ' / ' ||
+  pg_temp.api_exec('user A', 'biz A', pg_temp.issue_sql('inv8', 7)) || ' / ' ||
   pg_temp.api_exec('user A', 'biz A', $$
     update app.quotations set order_id = pg_temp.id('order A') where id = pg_temp.id('q1') $$),
           'ok 1 / ok 1 / ok 1 / ERROR 23514: a quotation an issued invoice bills is not made an order',
@@ -552,7 +552,7 @@ select is(pg_temp.api_exec('user A', 'biz A', pg_temp.inv_sql('inv9', ', order_i
     ', pg_temp.id(''order P'')')) || ' / ' ||
   pg_temp.api_exec('user A', 'biz A', $$
     update app.invoices set location_id = pg_temp.id('loc A2') where id = pg_temp.id('inv9') $$) ||
-  ' / ' || pg_temp.api_exec('user A', 'biz A', pg_temp.issue_sql('inv9', 9)),
+  ' / ' || pg_temp.api_exec('user A', 'biz A', pg_temp.issue_sql('inv9', 8)),
           'ok 1 / ok 1 / ERROR 23514: an invoice made from a source is issued from its branch',
           'an invoice made from an order is issued from its branch');
 

@@ -135,6 +135,7 @@
       "zeroRatedDifference": "فرق خاضع لنسبة الصفر",
       "exemptDifference": "فرق معفى",
       "total": "إجمالي المبلغ الدائن",
+      "payable": "إجمالي المبلغ الدائن مع فرق التقريب",
       "reason": "سبب الإشعار الدائن"
     },
     "reasons": {
@@ -167,6 +168,12 @@
       "money_back": "مبلغ أُعيد للعميل",
       "money_backOn": "مبلغ أُعيد للعميل – ⁦{{reference}}⁩",
       "paidWhenMade": "دُفع عند البيع",
+      "saleReversed": "إبطال عملية بيع",
+      "refundReversed": "إبطال استرداد",
+      "paymentReversed": "إبطال دفعة",
+      "paymentReversedOn": "إبطال دفعة – ⁦{{reference}}⁩",
+      "money_backReversed": "إبطال مبلغ أُعيد للعميل",
+      "money_backReversedOn": "إبطال مبلغ أُعيد للعميل – ⁦{{reference}}⁩",
       "owedThroughOrder": "مستحق سابقًا عن الطلب ⁦{{order}}⁩: {{amount}}",
       "owedThroughSale": "مستحق سابقًا عن عملية البيع: {{amount}}",
       "stillOwedOrder": "ما زال مستحقًا عن الطلب ⁦{{order}}⁩: {{amount}}",

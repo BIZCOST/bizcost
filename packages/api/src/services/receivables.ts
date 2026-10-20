@@ -69,7 +69,8 @@ export function obligationsOf(businessId: string, asOf: string | null = null): S
              coalesce(cp.paid, 0) as own_paid, coalesce(cp.refunded, 0) as own_refunded
         from app.invoices i
         left join (
-          select c.invoice_id, sum(c.total) as credited from app.credit_notes c
+          select c.invoice_id, sum(c.total + c.rounding_difference) as credited
+            from app.credit_notes c
            where c.business_id = ${businessId} and c.status = 'issued' and c.deleted_at is null${issued('c')}
            group by c.invoice_id
         ) cn on cn.invoice_id = i.id
@@ -116,7 +117,7 @@ export function obligationsOf(businessId: string, asOf: string | null = null): S
              o.due_date, trim(o.currency) as currency, o.created_at,
              o.total + o.rounding_difference - coalesce((
                select sum(v.total_n - coalesce((
-                        select sum(c.total) from app.credit_notes c
+                        select sum(c.total + c.rounding_difference) from app.credit_notes c
                          where c.business_id = v.business_id and c.invoice_id = v.id
                            and c.status = 'issued' and c.deleted_at is null and c.counted_on is null
                            and c.counted_elsewhere is null${issued('c')}), 0))
@@ -159,7 +160,10 @@ export function obligationsOf(businessId: string, asOf: string | null = null): S
                -- What the customer owes for an order: its total and its rounding difference (M3 Step 7).
                case when o.status = 'cancelled' then 0::numeric
                     else o.total + o.rounding_difference end as total_n,
-               coalesce(rf.credited, 0) as credited_n,
+               -- Refunds that take back all of its sale take back its rounding difference too (D-333).
+               coalesce(rf.credited, 0)
+                 + case when o.status = 'delivered' and rf.credited = os.total
+                        then o.rounding_difference else 0 end as credited_n,
                coalesce(cp.paid, 0) as paid_n, coalesce(cp.refunded, 0) as refunded_n,
                false as invoiced, null::text as source_kind, null::uuid as source_id
           from app.orders o
@@ -169,6 +173,7 @@ export function obligationsOf(businessId: string, asOf: string | null = null): S
                and r.deleted_at is null and r.order_id is not null
              group by r.order_id
           ) rf on rf.order_id = o.id
+          left join app.sales os on os.business_id = o.business_id and os.id = o.sale_id
           left join (
             select p.order_id,
                    coalesce(sum(p.amount) filter (where p.kind = 'payment'), 0) as paid,

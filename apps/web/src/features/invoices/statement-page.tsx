@@ -91,6 +91,25 @@ function useEntryName() {
   return (entry: StatementEntryDto): string => {
     const number = entry.number ?? ''
     const reference = entry.reference ?? ''
+    // A reversal of an entry of a closed day, listed on the day of the reversal (D-334).
+    if (entry.reversal) {
+      switch (entry.kind) {
+        case 'sale':
+          return t('documents.pdf.statement.saleReversed')
+        case 'refund':
+          return t('documents.pdf.statement.refundReversed')
+        case 'payment':
+          return entry.reference
+            ? t('documents.pdf.statement.paymentReversedOn', { reference })
+            : t('documents.pdf.statement.paymentReversed')
+        case 'money_back':
+          return entry.reference
+            ? t('documents.pdf.statement.money_backReversedOn', { reference })
+            : t('documents.pdf.statement.money_backReversed')
+        default:
+          break
+      }
+    }
     switch (entry.kind) {
       case 'invoice':
         return t('documents.pdf.statement.invoice', { number })

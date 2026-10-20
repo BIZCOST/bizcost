@@ -973,7 +973,12 @@ test('what an expense pays: a bonus as an extra, the electricity bill, and the e
   // so the expense says what it pays, by name, never with its amount; Finalize needs it. An extra.
   await owner.goto(`${base}/expenses/new`)
   await owner.getByRole('textbox', { name: 'Amount' }).fill('300')
-  await expect(owner.locator('[data-pays-choice]')).toHaveCount(0)
+  // Before a category, no running cost can be paid: no bill and no "Extra expense". With Sales on,
+  // the question already offers a channel's app fees and delivery once the channels load (D-249),
+  // so wait for those rather than for no question at all (that raced the channels' read).
+  await expect(owner.locator('[data-pays-option="ordinary"]')).toBeVisible()
+  await expect(owner.locator('[data-pays-option="extra"]')).toHaveCount(0)
+  await expect(owner.locator('[data-pays-choice]').getByText(/^Bill for /)).toHaveCount(0)
   await owner
     .getByRole('combobox', { name: 'Category', exact: true })
     .selectOption({ label: 'Salaries' })

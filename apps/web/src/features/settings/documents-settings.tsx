@@ -223,7 +223,8 @@ function ImageField({
   return (
     <div className="min-w-0 space-y-2">
       <p className="text-sm font-medium">{t(`settings.documents.images.${kind}`)}</p>
-      <div className="flex items-center gap-3">
+      {/* Its buttons go under the picture where the column is too narrow for both (768 px). */}
+      <div className="flex flex-wrap items-center gap-3">
         <span className="relative flex h-20 w-28 shrink-0 items-center justify-center overflow-hidden rounded-xl border bg-white">
           {url ? (
             // A signed URL of the business's private bucket: a plain image.

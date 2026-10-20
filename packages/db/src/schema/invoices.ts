@@ -368,6 +368,9 @@ export const creditNotes = tenantTable(
     netTotal: money('net_total').notNull().default('0'),
     vatTotal: money('vat_total').notNull().default('0'),
     total: money('total').notNull().default('0'),
+    // The invoice's rounding difference (D-221), taken back by the credit note that leaves nothing of
+    // the invoice to credit (set at issue, D-333): what it takes back is total + rounding difference.
+    roundingDifference: money('rounding_difference').notNull().default('0'),
     vatRates: jsonb('vat_rates')
       .$type<readonly StoredVatRate[]>()
       .notNull()
@@ -434,6 +437,7 @@ export const creditNotes = tenantTable(
     check('credit_notes_customer_trn_check', sql`customer_trn ~ '^[0-9]{15}$'`),
     check('credit_notes_seller_trn_check', sql`seller_trn ~ '^[0-9]{15}$'`),
     check('credit_notes_pdf_check', sql`pdf_upload_id is null or status = 'issued'`),
+    check('credit_notes_rounding_check', sql`rounding_difference = 0 or status = 'issued'`),
   ],
 )
 
