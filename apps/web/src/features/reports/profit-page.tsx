@@ -71,6 +71,7 @@ import {
   partAmount,
   partsShown,
   percentOfSales,
+  shownPartAmount,
   withoutMinus,
   type CostPart,
 } from './profit-view'
@@ -1037,7 +1038,7 @@ function Groups({
                 </td>
                 {profitShown
                   ? parts.map((part) => {
-                      const value = partAmount(group, part)
+                      const value = shownPartAmount(group, part)
                       return (
                         <td
                           key={part}
@@ -1121,7 +1122,7 @@ function Groups({
                   </summary>
                   <dl className="mt-1 space-y-1">
                     {parts.map((part) => {
-                      const value = partAmount(group, part)
+                      const value = shownPartAmount(group, part)
                       return (
                         <div
                           key={part}

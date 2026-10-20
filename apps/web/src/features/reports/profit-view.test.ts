@@ -6,6 +6,7 @@ import {
   partAmount,
   partsShown,
   percentOfSales,
+  shownPartAmount,
   withoutMinus,
 } from './profit-view'
 
@@ -87,5 +88,24 @@ describe('how complete the costs are, in words (D-250)', () => {
     expect(completenessShare('0.2', false)).toEqual({ words: 'percentLittle', percent: '1' })
     expect(completenessShare('0', false)).toEqual({ words: 'percent', percent: '0' })
     expect(completenessShare('100', true)).toEqual({ words: 'percent', percent: '100' })
+  })
+})
+
+describe('a row whose part has nothing counted yet (D-186: never 0)', () => {
+  it('a product sold without its recipe shows no materials amount, not 0.00', () => {
+    expect(shownPartAmount(sum({ reasons: ['no_recipe'] }), 'materials')).toBeNull()
+    expect(shownPartAmount(sum({ reasons: ['unpriced_materials'] }), 'materials')).toBeNull()
+  })
+
+  it('keeps an amount that is counted, and a 0 with nothing missing', () => {
+    expect(shownPartAmount(sum({ materials: '12.5', reasons: ['no_recipe'] }), 'materials')).toBe(
+      '12.5',
+    )
+    expect(shownPartAmount(sum(), 'materials')).toBe('0')
+    expect(shownPartAmount(sum({ reasons: ['no_recipe'] }), 'running')).toBe('0')
+  })
+
+  it('a withheld part stays withheld', () => {
+    expect(shownPartAmount(sum({ materials: null as unknown as string }), 'materials')).toBeNull()
   })
 })

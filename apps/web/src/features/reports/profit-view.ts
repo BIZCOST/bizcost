@@ -70,6 +70,24 @@ export function partsShown(
   })
 }
 
+/**
+ * A part's amount in one group's figures as the row shows it: null ("—") when nothing is counted in
+ * it yet because of a reason it is missing, so a product sold without its recipe never reads as
+ * using no materials (0.00; D-186: nothing missing is ever 0). A part with something counted keeps
+ * its amount (the row says it is incomplete).
+ */
+export function shownPartAmount(
+  sum: Pick<
+    ProfitPartsDto,
+    'materials' | 'fees' | 'deliveryCost' | 'runningCosts' | 'ownerTime' | 'reasons'
+  >,
+  part: CostPart,
+): string | null {
+  const value = partAmount(sum, part)
+  const missing = (sum.reasons ?? []).some((reason) => PART_REASONS[part].includes(reason))
+  return value !== null && !nonZero(value) && missing ? null : value
+}
+
 /** `amount` as a percentage of `sales` (12 decimals), or null when nothing was sold. */
 export function percentOfSales(amount: string | null, sales: string): string | null {
   if (amount === null) return null
