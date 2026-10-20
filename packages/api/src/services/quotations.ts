@@ -183,6 +183,7 @@ interface HeadRecord extends Record<string, unknown> {
   copied_from_number: string | null
   latest: boolean
   other_has_order: boolean
+  invoiced: boolean
   today: string
   entered_by_name: string | null
   mine: boolean
@@ -248,6 +249,10 @@ const HEAD_COLUMNS = sql`
   exists (select 1 from app.quotations r
            where r.business_id = q.business_id and r.root_id = q.root_id and r.id <> q.id
              and r.order_id is not null) as other_has_order,
+  exists (select 1 from app.invoices i
+           join app.quotations r on r.business_id = i.business_id and r.id = i.quotation_id
+          where i.business_id = q.business_id and r.root_id = q.root_id
+            and i.status = 'issued' and i.deleted_at is null) as invoiced,
   ${TODAY}::text as today, ${memberName(sql`q.created_by`)} as entered_by_name,
   q.created_by = app.current_user_id() as mine, q.created_at, q.updated_at, q.version`
 
@@ -422,6 +427,7 @@ async function readQuotation(tx: Tx, ctx: BusinessCtx, id: string): Promise<Read
     orderId: head.order_id,
     orderNumber: head.order_number,
     otherHasOrder: head.other_has_order,
+    invoiced: head.invoiced,
     copiedFromId: head.copied_from_id,
     copiedFromNumber: head.copied_from_number,
     enteredByName: team ? head.entered_by_name : null,
@@ -937,6 +943,7 @@ function transition(action: QuotationAction, head: HeadRecord) {
     latest: head.latest,
     hasOrder: head.order_id !== null,
     otherHasOrder: head.other_has_order,
+    invoiced: head.invoiced,
   })
   if (!result.ok) throw new AppError(result.refusal)
   return result

@@ -2,6 +2,9 @@ import {
   catalogIdInput,
   createCustomerInput,
   customerDto,
+  customerStatementDto,
+  customerStatementInput,
+  documentPdfDto,
   customerListDto,
   customerListInput,
   customerPickDto,
@@ -20,6 +23,7 @@ import {
   unarchiveCustomer,
   updateCustomer,
 } from '../services/customers'
+import { customerStatement, customerStatementPdf } from '../services/statements'
 import {
   businessProcedure,
   requireAnyPermission,
@@ -50,7 +54,29 @@ const pickers = customersModule.use(
   ),
 )
 
+/**
+ * A customer's statement (M3 Step 8, Q27): what was invoiced or delivered, credited, paid and still
+ * owed over a period, with Payments on and payments.customers.view; served with Invoices until Release
+ * B, which serves it with Customers and Payments for every business (B10: the Invoices gate goes). It
+ * names the customer's particulars (TRN, licence, address, phone), so it needs customers.items.view too
+ * (D-263; the customer's page that opens it already does; M3 Step 8 review, D-313).
+ */
+const statements = viewCustomers
+  .use(requireModule('payments'))
+  .use(requireModule('invoices'))
+  .use(requirePermission('payments.customers.view'))
+
 export const customerRouter = router({
+  /** `customer.statement`: a customer's period, owed at the start and the end. */
+  statement: statements
+    .input(customerStatementInput)
+    .output(customerStatementDto)
+    .query(({ ctx, input }) => customerStatement(ctx, input)),
+  /** `customer.statementPdf`: the statement on the business's letterhead (rate-limited). */
+  statementPdf: statements
+    .input(customerStatementInput)
+    .output(documentPdfDto)
+    .mutation(({ ctx, input }) => customerStatementPdf(ctx, input)),
   /** `customer.list`: by name (names may repeat), with a search in the name or the phone. */
   list: viewCustomers
     .input(customerListInput)

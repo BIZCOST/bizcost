@@ -340,7 +340,9 @@
       "description": "كيف يُرقَّم كل مستند. غيّر رقم البداية قبل أول مستند فقط، لتكمل من نظامك القديم.",
       "series": {
         "quotation": "عروض الأسعار",
-        "order": "الطلبات"
+        "order": "الطلبات",
+        "invoice": "الفواتير",
+        "credit_note": "الإشعارات الدائنة"
       },
       "prefix": "يبدأ بـ",
       "padding": "عدد الخانات",
@@ -554,6 +556,10 @@
     "quotations_documents_view": "يرى عروض الأسعار",
     "quotations_documents_manage": "يُعدّ عروض الأسعار",
     "quotations_documents_decide": "يسجّل ردّ العميل",
+    "invoices_documents_view": "يرى الفواتير",
+    "invoices_documents_manage": "يُعِدّ الفواتير",
+    "invoices_documents_issue": "يُصدِر الفواتير",
+    "invoices_documents_credit": "يُصدِر الإشعارات الدائنة",
     "data_cost_view": "يرى التكاليف",
     "data_profit_margin_view": "يرى الأرباح وهوامش الربح",
     "data_supplier_price_view": "يرى أسعار الموردين",
@@ -629,6 +635,10 @@
     "quotations_documents_view": "كل عروض الأسعار ونسخها المعدّلة وملفات PDF الخاصة بها.",
     "quotations_documents_manage": "إعداد عروض الأسعار وإرسالها وتعديلها ونسخها، وتحويل العرض المقبول إلى طلب.",
     "quotations_documents_decide": "تسجيل قبول عرض السعر المُرسَل أو رفضه، وإرفاق النسخة الموقّعة.",
+    "invoices_documents_view": "كل الفواتير والإشعارات الدائنة، وملفات PDF الخاصة بها.",
+    "invoices_documents_manage": "إعداد الفواتير من البداية أو من عرض سعر أو طلب أو عملية بيع، ونسخ فاتورة إلى عرض سعر.",
+    "invoices_documents_issue": "إصدار الفاتورة: تأخذ رقمها ولا يمكن تغييرها بعد ذلك.",
+    "invoices_documents_credit": "إعداد الإشعارات الدائنة التي تصحّح فاتورة صادرة، وإصدارها.",
     "data_cost_view": "التكلفة الحقيقية للمنتجات والمواد والعمل.",
     "data_cost_view_food": "التكلفة الحقيقية للمنتجات والمكونات والمستلزمات والعمل.",
     "data_cost_view_factory": "التكلفة الحقيقية للمنتجات والمواد الخام والعمل.",

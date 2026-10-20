@@ -37,7 +37,7 @@ export function mayOrderQuotations(context: BusinessContextDto): boolean {
 
 /** What a revision offers this member (the domain's transitions, then the member's keys). */
 export function offeredActions(
-  quotation: Pick<QuotationDto, 'status' | 'latest' | 'orderId' | 'otherHasOrder'>,
+  quotation: Pick<QuotationDto, 'status' | 'latest' | 'orderId' | 'otherHasOrder' | 'invoiced'>,
   context: BusinessContextDto,
 ): Set<QuotationAction> {
   const actions = quotationActions({
@@ -45,6 +45,7 @@ export function offeredActions(
     latest: quotation.latest,
     hasOrder: quotation.orderId !== null,
     otherHasOrder: quotation.otherHasOrder,
+    invoiced: quotation.invoiced,
   })
   return new Set(
     actions.filter((action) => {

@@ -53,7 +53,7 @@ import { assertModuleActive, assertQueryable, passes } from '../trpc'
 import { containsPattern, decodeCursor, encodeCursor, requestHashOf } from './catalog'
 import { resolveLocation } from './purchases'
 import { resolveCustomer } from './customers'
-import { paymentStateOf, readObligation } from './receivables'
+import { invoicedPaymentState, paymentStateOf, readObligation } from './receivables'
 import {
   insertMaterialRows,
   itemMaterialsOf,
@@ -182,6 +182,9 @@ interface SaleRecord extends Record<string, unknown> {
   order_number: string | null
   refund_of_id: string | null
   refund_by: 'quantity' | 'amount' | null
+  invoice_ref_id: string | null
+  invoice_ref_number: string | null
+  credit_note_number: string | null
   created_at: Date | string
   version: number
 }
@@ -265,12 +268,22 @@ export async function readSale(tx: Tx, ctx: BusinessCtx, id: string): Promise<Sa
            s.posted_at, s.reversed_at, s.reversal_business_date::text as reversal_business_date,
            s.copied_from_id, s.import_id, s.customer_id, cu.name as customer_name,
            cu.phone as customer_phone, s.pay_later, s.order_id, o.number as order_number,
-           s.refund_of_id, s.refund_by, s.created_at, s.version
+           s.refund_of_id, s.refund_by, inv.id as invoice_ref_id, inv.number as invoice_ref_number,
+           cn.number as credit_note_number, s.created_at, s.version
       from app.sales s
       join app.locations l on l.business_id = s.business_id and l.id = s.location_id
       join app.sales_channels c on c.business_id = s.business_id and c.id = s.channel_id
       left join app.customers cu on cu.business_id = s.business_id and cu.id = s.customer_id
       left join app.orders o on o.business_id = s.business_id and o.id = s.order_id
+      left join app.credit_notes cn on cn.business_id = s.business_id and cn.id = s.credit_note_id
+      -- M3 Step 8: the invoice this sale counts, the one its credit note corrects, or the issued
+      -- invoice made from it (a One sale).
+      left join lateral (
+        select i.id, i.number from app.invoices i
+         where i.business_id = s.business_id and i.status = 'issued' and i.deleted_at is null
+           and (i.id = s.invoice_id or i.id = cn.invoice_id or i.sale_id = s.id)
+         order by i.seq limit 1
+      ) inv on true
      where ${where([
        sql`s.business_id = ${ctx.businessId}`,
        sql`s.id = ${id}`,
@@ -435,6 +448,11 @@ export async function readSale(tx: Tx, ctx: BusinessCtx, id: string): Promise<Sa
     orderNumber: head.order_number,
     refundOfId: head.refund_of_id,
     refundBy: head.refund_by,
+    invoice:
+      head.invoice_ref_id && head.invoice_ref_number
+        ? { id: head.invoice_ref_id, number: head.invoice_ref_number }
+        : null,
+    creditNoteNumber: head.credit_note_number,
     refunds: refunds.map((r) => ({
       id: r.id,
       businessDate: r.business_date,
@@ -442,7 +460,12 @@ export async function readSale(tx: Tx, ctx: BusinessCtx, id: string): Promise<Sa
       total: r.total,
       status: r.status,
     })),
-    payment: payment ? paymentStateOf(payment) : null,
+    // An invoiced sale is no obligation: what its invoices are paid and owe (A2, M3 Step 8).
+    payment: payment
+      ? paymentStateOf(payment)
+      : head.pay_later && head.status === 'posted' && seesPayments(ctx)
+        ? await invoicedPaymentState(tx, ctx.businessId, 'sale', id)
+        : null,
     createdAt: isoOf(head.created_at),
     version: head.version,
   }
@@ -495,6 +518,7 @@ interface ListRecord extends Record<string, unknown> {
   mine: boolean
   customer_name: string | null
   order_number: string | null
+  document_number: string | null
   refund_of_id: string | null
   pay_later: boolean
   version: number
@@ -573,11 +597,14 @@ export function listSales(ctx: BusinessCtx, input: ListInput): Promise<SaleListD
                       and l.kind = 'item' and l.deleted_at is null
                     order by l.position, l.id
                     limit 2) as item_names,
-             cu.name as customer_name, o.number as order_number, s.refund_of_id, s.pay_later
+             cu.name as customer_name, o.number as order_number, s.refund_of_id, s.pay_later,
+             coalesce(iv.number, cn.number) as document_number
         from app.sales s
         join app.sales_channels c on c.business_id = s.business_id and c.id = s.channel_id
         left join app.customers cu on cu.business_id = s.business_id and cu.id = s.customer_id
         left join app.orders o on o.business_id = s.business_id and o.id = s.order_id
+        left join app.invoices iv on iv.business_id = s.business_id and iv.id = s.invoice_id
+        left join app.credit_notes cn on cn.business_id = s.business_id and cn.id = s.credit_note_id
        where ${where(page)}
        order by s.business_date desc, s.id desc
        limit ${input.limit + 1}
@@ -635,6 +662,7 @@ export function listSales(ctx: BusinessCtx, input: ListInput): Promise<SaleListD
         mine: r.mine,
         customerName: r.customer_name,
         orderNumber: r.order_number,
+        documentNumber: r.document_number,
         refundOfId: r.refund_of_id,
         payLater: r.pay_later,
         version: r.version,
@@ -1561,6 +1589,12 @@ export async function reverseInTx(
   }
   if (head.status === 'reversed') return
   if (head.status !== 'posted') throw new AppError('document_not_posted')
+  // An issued invoice is corrected only by a credit note (M3 Step 8): its sale, a credit note's, and a
+  // sale an issued invoice was made from are never reversed.
+  if (head.source === 'invoice' || head.source === 'credit_note') {
+    throw new AppError('sale_has_invoice')
+  }
+  await assertNotInvoiced(tx, ctx.businessId, { saleId: id })
   await assertNoDependents(tx, ctx.businessId, id)
   const business = await lockPostingBusiness(tx, ctx.businessId)
   const reversalBusinessDate = reversalDateOf(business, head.business_date)
@@ -1593,6 +1627,53 @@ export async function assertNoDependents(tx: Tx, businessId: string, id: string)
   `)) as unknown as { payments: boolean; refunds: boolean }[]
   if (row?.payments) throw new AppError('sale_has_payments')
   if (row?.refunds) throw new AppError('sale_has_refunds')
+}
+
+/**
+ * SALE_HAS_INVOICE when an issued invoice was made from the sale or the order (M3 Step 8): what it owes
+ * lives on its invoices, and only a credit note corrects them (sale.reverse, sale.refund, sale.correct,
+ * order.undoDelivery, order.cancel).
+ */
+export async function assertNotInvoiced(
+  tx: Tx,
+  businessId: string,
+  ref: { readonly saleId?: string; readonly orderId?: string | null },
+): Promise<void> {
+  const [row] = (await tx.execute(sql`
+    select exists (
+      select 1 from app.invoices i
+       where i.business_id = ${businessId} and i.status = 'issued' and i.deleted_at is null
+         and (i.sale_id = ${ref.saleId ?? null}::uuid or i.order_id = ${ref.orderId ?? null}::uuid
+              or i.order_id = (select s.order_id from app.sales s
+                                where s.business_id = ${businessId}
+                                  and s.id = ${ref.saleId ?? null}::uuid))
+    ) as invoiced
+  `)) as unknown as { invoiced: boolean }[]
+  if (row?.invoiced) throw new AppError('sale_has_invoice')
+}
+
+/**
+ * SALE_HAS_INVOICE while an issued invoice of the order is not fully credited (`order.cancel`, M3 Step
+ * 8, D-305): a job cancelled after its deposit invoice credits that invoice first (a pending order's
+ * credit notes post no sale), and the order is cancelled after.
+ */
+export async function assertInvoicesCredited(
+  tx: Tx,
+  businessId: string,
+  orderId: string,
+): Promise<void> {
+  const [row] = (await tx.execute(sql`
+    select exists (
+      select 1 from app.invoices i
+       where i.business_id = ${businessId} and i.order_id = ${orderId}
+         and i.status = 'issued' and i.deleted_at is null
+         and i.total > coalesce((
+           select sum(c.total) from app.credit_notes c
+            where c.business_id = i.business_id and c.invoice_id = i.id
+              and c.status = 'issued' and c.deleted_at is null), 0)
+    ) as open
+  `)) as unknown as { open: boolean }[]
+  if (row?.open) throw new AppError('sale_has_invoice')
 }
 
 /** `sale.reverse`: see reverseInTx. Idempotent. */

@@ -81,9 +81,10 @@ export function orderActions(ctx: OrderActionContext): OrderAction[] {
 
 /**
  * `document_counters.series`: what a running number counts. M3 Step 5: orders; Step 7: quotations
- * (Q-0001…, which may skip, Q25). Invoices and credit notes come with Step 8, on the same design.
+ * (Q-0001…, which may skip, Q25); Step 8: invoices (INV-0001…) and credit notes (CN-0001…), each one
+ * gapless running series per business, taken at issue and never reset (Q25).
  */
-export const DOCUMENT_SERIES = ['order', 'quotation'] as const
+export const DOCUMENT_SERIES = ['order', 'quotation', 'invoice', 'credit_note'] as const
 export type DocumentSeries = (typeof DOCUMENT_SERIES)[number]
 
 /**
@@ -99,7 +100,12 @@ export const DOCUMENT_COUNTER_DEFAULTS: Readonly<
 > = {
   order: { first: 1001, prefix: '#', padding: 0 },
   quotation: { first: 1, prefix: 'Q-', padding: 4 },
+  invoice: { first: 1, prefix: 'INV-', padding: 4 },
+  credit_note: { first: 1, prefix: 'CN-', padding: 4 },
 }
+
+/** The series whose numbers never skip: taken at issue, in the issuing transaction (Q25). */
+export const GAPLESS_SERIES: readonly DocumentSeries[] = ['invoice', 'credit_note']
 
 /** The most digits a number is padded to. */
 export const DOCUMENT_NUMBER_PADDING_MAX = 12

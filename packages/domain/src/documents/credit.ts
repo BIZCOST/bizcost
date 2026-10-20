@@ -2,7 +2,7 @@ import type Decimal from 'decimal.js'
 import { compareDecimal, Dec, plain, roundHalfUp, toDec } from '../numbers/decimal'
 import { checkDecimal } from '../numbers/kinds'
 import { currencyMinorUnit, fitsCurrency, type CurrencyCode } from '../numbers/rounding'
-import { proportionOf, subtractDecimals, sumDecimals } from './split'
+import { proportionOf, splitDecimals, subtractDecimals, sumDecimals } from './split'
 
 // What is left to refund or credit on each line of a finalized sale, and how a refund line is made
 // (M3 Step 5; the plan's "credit maths"; VAT Executive Regulation Art. 60: a credit states the value
@@ -201,6 +201,76 @@ export function fitCredit(
     vat: plain(vat.negated()),
     total: plain(total.negated()),
   }
+}
+
+/**
+ * What a credit note works its VAT out from at one rate (more than zero) of its invoice: the invoice's
+ * VAT at that rate (after any deposit it took off), what the credit notes issued before took back at it
+ * (their lines' amounts typed before VAT, `net`, and with VAT, `gross`, and their VAT), and whether this
+ * one takes back all that is left of the invoice's lines at the rate.
+ */
+export interface CreditRateBasis {
+  readonly vatRate: string
+  readonly invoiceVat: string
+  readonly before: { readonly net: string; readonly gross: string; readonly vat: string }
+  readonly takesAllLeft: boolean
+}
+
+/** A line of a credit note at the rate: what it takes back as its prices are typed (positive). */
+export interface CreditRateLine {
+  readonly priceIncludesVat: boolean
+  readonly typed: string
+}
+
+/**
+ * The VAT a credit note takes back at one rate, and its share on each of its lines (M3 Step 8 review;
+ * PINT-AE aligned-ibrp-s-09 on every credit note, as on its invoice, D-220): the VAT of the running
+ * total of the invoice's credit notes at the rate (this one's amounts added to those before them, the
+ * VAT worked out once on the sum as computeSale does: prices without VAT times the rate, prices with
+ * VAT their VAT inside) less the VAT the credit notes before took back, so each note's VAT is within a
+ * fils of its taxable amount × the rate however many lines it takes, and the notes' VAT adds up to the
+ * invoice's; the note that takes back all that is left takes exactly the VAT left. Never below zero nor
+ * more than the VAT left. Shared over the lines by what each takes back (largest remainder): a line
+ * keeps what it took as typed (its net, or its total when its price includes VAT), so its VAT and its
+ * other amount move together. Returns the lines' VAT in order.
+ */
+export function creditRateVat(
+  basis: CreditRateBasis,
+  lines: readonly CreditRateLine[],
+  currency: CurrencyCode,
+): string[] {
+  const digits = currencyMinorUnit(currency)
+  const r = toDec(basis.vatRate)
+  if (!r.gt(0) || lines.length === 0) return lines.map(() => '0')
+  const net = lines
+    .filter((l) => !l.priceIncludesVat)
+    .reduce((a, l) => a.plus(toDec(l.typed)), toDec('0'))
+  const gross = lines
+    .filter((l) => l.priceIncludesVat)
+    .reduce((a, l) => a.plus(toDec(l.typed)), toDec('0'))
+  const before = toDec(basis.before.vat)
+  const left = Dec.max(toDec(basis.invoiceVat).minus(before), 0)
+  let vat: Decimal
+  if (basis.takesAllLeft) {
+    vat = left
+  } else {
+    const allNet = toDec(basis.before.net).plus(net)
+    const allGross = toDec(basis.before.gross).plus(gross)
+    // (net × rate × (100 + rate) + gross × rate × 100) ÷ (100 × (100 + rate)), divided once.
+    const exact = allNet
+      .times(r)
+      .times(r.plus(100))
+      .plus(allGross.times(r).times(100))
+      .dividedBy(r.plus(100).times(100))
+    vat = Dec.min(Dec.max(roundHalfUp(exact, digits).minus(before), 0), left)
+  }
+  // Never more VAT than what the lines priced with it hold, when only they credit at the rate.
+  if (net.isZero()) vat = Dec.min(vat, gross)
+  return splitDecimals(
+    vat,
+    lines.map((l) => toDec(l.typed)),
+    digits,
+  ).map((share) => plain(share))
 }
 
 /** What a set of credit lines takes back in all (positive): Σ of their nets, VAT and totals. */

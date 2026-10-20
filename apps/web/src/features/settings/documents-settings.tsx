@@ -376,8 +376,13 @@ function DocumentsForm({
 
   if (!context) return null
   const letterhead = profile.letterhead
+  // Each series with its module: quotations, orders, and invoices with their credit notes (M3 Step 8).
   const seriesShown = draft.series.filter((series) =>
-    series.series === 'quotation' ? hasModule(context, 'quotations') : hasModule(context, 'orders'),
+    series.series === 'quotation'
+      ? hasModule(context, 'quotations')
+      : series.series === 'order'
+        ? hasModule(context, 'orders')
+        : hasModule(context, 'invoices'),
   )
 
   return (

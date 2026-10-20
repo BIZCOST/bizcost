@@ -165,6 +165,23 @@ export const APP_ERROR_CODES = [
    * from there (Settings → Documents, M3 Step 7, Q25).
    */
   'series_started',
+  /**
+   * Reversing a sale, undoing an order's delivery, cancelling an order or refunding a sale that an
+   * issued invoice refers to: an issued invoice is corrected by a credit note (M3 Step 8).
+   */
+  'sale_has_invoice',
+  /**
+   * Issuing a tax invoice without what VAT ER Art. 59(1) asks (the business's TRN and address, a
+   * VAT-registered customer's address, B16, C5): `names` lists what is missing (M3 Step 8).
+   */
+  'details_missing',
+  /** A credit note of more than is left of an invoice's line (its quantity, or its value; M3 Step 8). */
+  'exceeds_invoice',
+  /**
+   * Making an order from a quotation an issued invoice bills (a deposit or a stage): it is invoiced from
+   * the quotation to the end, so the work is billed and counted once (M3 Step 8).
+   */
+  'quotation_invoiced',
   'internal',
 ] as const
 export type AppErrorCode = (typeof APP_ERROR_CODES)[number]

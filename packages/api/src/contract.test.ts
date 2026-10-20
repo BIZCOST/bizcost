@@ -56,12 +56,22 @@ describe('appRouter contract', () => {
       'costCategory.list',
       'costCategory.unarchive',
       'costCategory.update',
+      'creditNote.create',
+      'creditNote.discard',
+      'creditNote.get',
+      'creditNote.history',
+      'creditNote.issue',
+      'creditNote.list',
+      'creditNote.pdf',
+      'creditNote.update',
       'customer.archive',
       'customer.create',
       'customer.get',
       'customer.list',
       'customer.pick',
       'customer.similar',
+      'customer.statement',
+      'customer.statementPdf',
       'customer.unarchive',
       'customer.update',
       'customerPayment.list',
@@ -105,6 +115,19 @@ describe('appRouter contract', () => {
       'invitation.preview',
       'invitation.resend',
       'invitation.revoke',
+      'invoice.copyToQuotation',
+      'invoice.create',
+      'invoice.depositsWithoutInvoice',
+      'invoice.discard',
+      'invoice.fromOrder',
+      'invoice.fromQuotation',
+      'invoice.fromSale',
+      'invoice.get',
+      'invoice.history',
+      'invoice.issue',
+      'invoice.list',
+      'invoice.pdf',
+      'invoice.update',
       'location.create',
       'location.list',
       'location.remove',
@@ -347,7 +370,8 @@ describe('numbers a client sends', () => {
 
   it('the only number fields are whole counters, never a quantity or price', () => {
     // M3 Step 4: an import's counts, its rows' positions and the file's columns and rows (whole).
-    // M3 Step 7: a document series' padding and first number, and a quotation's days valid.
+    // M3 Step 7: a document series' padding and first number, and a quotation's days valid. M3 Step 8:
+    // the payment stage an invoice bills.
     expect([...new Set(numbers.map((leaf) => leaf.name))].sort()).toEqual([
       'column',
       'columns',
@@ -363,6 +387,7 @@ describe('numbers a client sends', () => {
       'rowCount',
       'rowsLeftOut',
       'rowsRead',
+      'stage',
       'version',
     ])
     expect(numbers.filter((leaf) => parseLeaf(leaf.schema, 1.5).ok).map((l) => l.at)).toEqual([])

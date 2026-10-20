@@ -1,4 +1,5 @@
 import type {
+  BusinessContextDto,
   BusinessProfileDto,
   InvitationDto,
   LocationDto,
@@ -11,6 +12,7 @@ import { NO_ADJUSTMENTS, QUESTION_SET_VERSION } from '@bizcost/modules'
 import { DemoApi } from './client'
 import { seedCosting, type CostingResult, type CostingSummary } from './costing'
 import { seedDocuments } from './documents'
+import { seedInvoices } from './invoices'
 import {
   DEMO_PASSWORD,
   DEMO_PERSONAS,
@@ -28,7 +30,9 @@ import {
 // M3 Step 6): sales channels, Today's sales and One sale, sales files imported and app statements,
 // customers, orders with deposits, deliveries, payments and refunds, over the month before last, last
 // month and this month so far, so each business shows a whole month of real profit. A business that
-// quotes gets its letterhead and a quotation or two (demo/documents.ts; Quotations previewed, D-125).
+// quotes gets its letterhead and a quotation or two (demo/documents.ts; Quotations previewed, D-125),
+// and a business that invoices its invoices, credit notes and their payments (demo/invoices.ts, M3
+// Step 8; Invoices previewed).
 
 interface Row {
   business: string
@@ -206,7 +210,13 @@ async function seedPersona(
   const rows = [owner, ...(await ensureTeam(api, persona, token, businessId))]
   const costing = await ensureCosting(api, persona, token, businessId)
   // Its letterhead and quotations (M3 Step 7, D-298): after its customers (the costing seed adds them).
-  if (persona.documents) {
+  // Then its invoices (M3 Step 8): after its orders, sales and quotations.
+  const served = new Set(
+    (await api.query<BusinessContextDto>('business.context', token, businessId)).modules.map(
+      (m) => m.id,
+    ),
+  )
+  if (persona.documents && (served.has('quotations') || served.has('invoices'))) {
     const documents = await seedDocuments(api, token, businessId, persona.documents)
     rows.push({
       business: persona.legalNameAr,
@@ -215,6 +225,19 @@ async function seedPersona(
       state: [
         documents.letterhead ? 'letterhead set' : 'letterhead kept',
         `${documents.quotations} quotation(s) added`,
+      ].join(', '),
+    })
+  }
+  if (persona.invoices && served.has('invoices')) {
+    const invoices = await seedInvoices(api, token, businessId, persona.invoices)
+    rows.push({
+      business: persona.legalNameAr,
+      email: user.email,
+      role: 'invoices',
+      state: [
+        `${invoices.invoices} invoice(s)`,
+        `${invoices.creditNotes} credit note(s)`,
+        `${invoices.payments} payment(s) added`,
       ].join(', '),
     })
   }

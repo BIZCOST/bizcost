@@ -76,10 +76,12 @@ export const attachments = tenantTable(
       sql`btrim(file_name) <> '' and char_length(file_name) <= 200`,
     ),
     check('attachments_size_check', sql`size_bytes > 0`),
-    // A quotation line's picture prints in its PDF: images only (M3 Step 7).
+    // A quotation line's picture prints in its PDF (M3 Step 7), and an invoice line's (Step 8):
+    // images only.
     check(
       'attachments_line_image_check',
-      sql`entity <> 'quotation_line' or content_type in ('image/png', 'image/jpeg', 'image/webp')`,
+      sql`entity not in ('quotation_line', 'invoice_line')
+        or content_type in ('image/png', 'image/jpeg', 'image/webp')`,
     ),
   ],
 )

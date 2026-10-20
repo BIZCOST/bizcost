@@ -14,11 +14,11 @@ export const baseURL = `http://localhost:${port}`
  * A development server (`next dev`) with the dev-only preview of the modules being built (D-125,
  * D-127), on E2E_PREVIEW_PORT (default: the port after E2E_PORT). Only the specs of those modules run
  * on it: a production build never shows a module before its release, whatever its environment says.
- * M3 Step 7: Quotations (released with Release B, M3 Step 9).
+ * M3 Step 7: Quotations; M3 Step 8: Invoices (both released with Release B, M3 Step 9).
  */
 export const previewPort = Number(process.env.E2E_PREVIEW_PORT ?? port + 1)
 export const previewBaseURL = `http://localhost:${previewPort}`
-export const PREVIEW_MODULES = 'quotations'
+export const PREVIEW_MODULES = 'quotations,invoices'
 
 export interface Stack {
   apiUrl: string

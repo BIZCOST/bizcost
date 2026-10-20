@@ -36,6 +36,7 @@ describe('permission groups of the Roles section', () => {
       'payments',
       'reports',
       'quotations',
+      'invoices',
       'data',
     ])
     expect(groups.flatMap((g) => g.keys).sort()).toEqual([...PERMISSION_CATALOG].sort())
@@ -47,7 +48,7 @@ describe('permission groups of the Roles section', () => {
   })
 
   it('give a released module its own group, before private data', () => {
-    const catalog = [...PERMISSION_CATALOG, 'invoices.documents.view'] as PermissionKey[]
+    const catalog = [...PERMISSION_CATALOG, 'inventory.stock.view'] as PermissionKey[]
     expect(permissionGroups(catalog).map((g) => g.id)).toEqual([
       'dashboard',
       'business',
@@ -66,9 +67,10 @@ describe('permission groups of the Roles section', () => {
       'reports',
       'quotations',
       'invoices',
+      'inventory',
       'data',
     ])
-    expect(groupTitleKey('invoices')).toBe('modules.invoices.name')
+    expect(groupTitleKey('inventory')).toBe('modules.inventory.name')
   })
 
   it('have a label and a hint for every permission and a title for every group, in both languages', () => {

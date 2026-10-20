@@ -55,7 +55,7 @@ import { decodeCursor, encodeCursor, requestHashOf } from './catalog'
 import { assertActivePayer } from './purchases'
 import {
   owedDocumentOf,
-  readObligation,
+  readDocumentObligation,
   readObligations,
   type ObligationRecord,
 } from './receivables'
@@ -869,6 +869,7 @@ type RecordManyInput = z.output<typeof recordManyCustomerPaymentsInput>
 const RECEIVABLE_TABLES: Readonly<Record<ReceivableKindDto, SQL>> = {
   order: sql.raw('app.orders'),
   sale: sql.raw('app.sales'),
+  invoice: sql.raw('app.invoices'),
 }
 
 /** The branches the caller may see (Q12): a document of another branch is NOT_FOUND. */
@@ -887,6 +888,11 @@ export interface ReceivableHead extends Record<string, unknown> {
   business_date: string
   customer_id: string | null
   currency: string
+  /**
+   * An order or sale paid through its issued invoices (A2, M3 Step 8): a sale with one, an order they
+   * bill in full (an order they bill in part still takes payments for the rest, D-313).
+   */
+  invoiced: boolean
 }
 
 /**
@@ -906,14 +912,34 @@ export async function lockReceivable(
        for update
   `)) as unknown as { id: string }[]
   if (!row) throw new AppError('not_found')
+  const invoiced = (column: string) => sql`exists (
+    select 1 from app.invoices i
+     where i.business_id = ${ctx.businessId} and i.${sql.raw(column)} = ${id}
+       and i.status = 'issued' and i.deleted_at is null)`
   const [head] = (await tx.execute(
     kind === 'order'
       ? sql`select o.id, o.status, null::text as source, null::boolean as pay_later,
-                   o.business_date::text as business_date, o.customer_id, trim(o.currency) as currency
+                   o.business_date::text as business_date, o.customer_id, trim(o.currency) as currency,
+                   (${invoiced('order_id')} and (o.status = 'cancelled'
+                     or o.total + o.rounding_difference <= app.order_billed(o.business_id, o.id)))
+                     as invoiced
               from app.orders o where o.business_id = ${ctx.businessId} and o.id = ${id}`
-      : sql`select s.id, s.status, s.source, s.pay_later, s.business_date::text as business_date,
-                   s.customer_id, trim(s.currency) as currency
-              from app.sales s where s.business_id = ${ctx.businessId} and s.id = ${id}`,
+      : kind === 'sale'
+        ? sql`select s.id, s.status, s.source, s.pay_later, s.business_date::text as business_date,
+                     s.customer_id, trim(s.currency) as currency, ${invoiced('sale_id')} as invoiced
+                from app.sales s where s.business_id = ${ctx.businessId} and s.id = ${id}`
+        : // An invoice's payments may be dated from the earliest of its source's day (a deposit paid
+          // before its invoice was issued, recorded on it), its date of supply and its own days.
+          sql`select i.id, i.status, null::text as source, null::boolean as pay_later,
+                     least(coalesce(i.issue_date, i.created_at::date), i.created_at::date,
+                           i.supply_date, q.business_date, o.business_date, s.business_date)::text
+                       as business_date,
+                     i.customer_id, trim(i.currency) as currency, false as invoiced
+                from app.invoices i
+                left join app.quotations q on q.business_id = i.business_id and q.id = i.quotation_id
+                left join app.orders o on o.business_id = i.business_id and o.id = i.order_id
+                left join app.sales s on s.business_id = i.business_id and s.id = i.sale_id
+               where i.business_id = ${ctx.businessId} and i.id = ${id}`,
   )) as unknown as ReceivableHead[]
   if (!head) throw new AppError('not_found')
   return head
@@ -926,6 +952,15 @@ export async function lockReceivable(
  * order's sale or a refund: their order or sale is paid).
  */
 function assertPayable(kind: ReceivableKindDto, head: ReceivableHead, payment: PaymentKind): void {
+  if (kind === 'invoice') {
+    if (head.status !== 'issued') throw new AppError('document_not_posted')
+    return
+  }
+  // Once invoiced in full, what is owed lives on its invoices (A2): a payment, or money given back
+  // when one shows paid beyond, is recorded on them (an order invoiced in part takes both, D-313).
+  if (head.invoiced) {
+    throw invalid(`${kind}Id: it was invoiced; record the payment on its invoice`)
+  }
   if (kind === 'order') {
     if (head.status === 'cancelled' && payment === 'payment') throw new AppError('order_cancelled')
     return
@@ -944,7 +979,9 @@ interface CustomerPaymentRecord extends Record<string, unknown> {
   customer_name: string | null
   order_id: string | null
   sale_id: string | null
+  invoice_id: string | null
   order_number: string | null
+  invoice_number: string | null
   business_date: string
   method: SettlementMethod
   amount: string
@@ -960,7 +997,8 @@ interface CustomerPaymentRecord extends Record<string, unknown> {
 }
 
 const CUSTOMER_PAYMENT_COLUMNS = sql`p.id, p.kind, p.customer_id, cu.name as customer_name,
-  p.order_id, p.sale_id, o.number as order_number, p.business_date::text as business_date, p.method,
+  p.order_id, p.sale_id, p.invoice_id, o.number as order_number, iv.number as invoice_number,
+  p.business_date::text as business_date, p.method,
   trim_scale(p.amount)::text as amount, trim(p.currency) as currency, p.note, p.created_at,
   p.reversed_at, p.reversal_date::text as reversal_date,
   rb.id as recorded_by_id, rb.display_name as recorded_by_name,
@@ -969,6 +1007,7 @@ const CUSTOMER_PAYMENT_COLUMNS = sql`p.id, p.kind, p.customer_id, cu.name as cus
 const CUSTOMER_PAYMENT_JOINS = sql`
   left join app.customers cu on cu.business_id = p.business_id and cu.id = p.customer_id
   left join app.orders o on o.business_id = p.business_id and o.id = p.order_id
+  left join app.invoices iv on iv.business_id = p.business_id and iv.id = p.invoice_id
   left join app.business_members rb on rb.business_id = p.business_id and rb.id = (
     select m.id from app.business_members m
      where m.business_id = p.business_id and m.user_id = p.created_by
@@ -985,9 +1024,9 @@ function customerPaymentOf(r: CustomerPaymentRecord, named: boolean): CustomerPa
     kind: r.kind,
     customerId: r.customer_id,
     customerName: r.customer_name,
-    documentKind: r.order_id !== null ? 'order' : 'sale',
-    documentId: r.order_id ?? r.sale_id ?? '',
-    documentNumber: r.order_number,
+    documentKind: r.order_id !== null ? 'order' : r.invoice_id !== null ? 'invoice' : 'sale',
+    documentId: r.order_id ?? r.invoice_id ?? r.sale_id ?? '',
+    documentNumber: r.order_number ?? r.invoice_number,
     businessDate: r.business_date,
     method: r.method,
     amount: r.amount,
@@ -1005,7 +1044,11 @@ function customerPaymentOf(r: CustomerPaymentRecord, named: boolean): CustomerPa
   }
 }
 
-/** The payments of one order or sale (reversed ones too), newest first. */
+/**
+ * The payments recorded on one order, sale or invoice (reversed ones too), newest first. An invoice's
+ * are its own: what its order or sale paid toward it is said apart (`fromSource`), and those payments
+ * are listed and reversed where they were recorded.
+ */
 async function paymentsOfDocument(
   tx: Tx,
   ctx: BusinessCtx,
@@ -1013,15 +1056,55 @@ async function paymentsOfDocument(
   id: string,
 ): Promise<CustomerPaymentDto[]> {
   const businessId = ctx.businessId
+  const on =
+    kind === 'order'
+      ? sql`p.order_id = ${id}`
+      : kind === 'sale'
+        ? sql`p.sale_id = ${id}`
+        : sql`p.invoice_id = ${id}`
   const rows = (await tx.execute(sql`
     select ${CUSTOMER_PAYMENT_COLUMNS}
       from app.customer_payments p
       ${CUSTOMER_PAYMENT_JOINS}
-     where p.business_id = ${businessId} and p.deleted_at is null
-       and ${kind === 'order' ? sql`p.order_id = ${id}` : sql`p.sale_id = ${id}`}
+     where p.business_id = ${businessId} and p.deleted_at is null and ${on}
      order by p.business_date desc, p.created_at desc, p.id desc
   `)) as unknown as CustomerPaymentRecord[]
   return rows.map((row) => customerPaymentOf(row, namesMembers(ctx)))
+}
+
+/**
+ * What an invoice made from an order or a sale counts of that order's or sale's payments (A2): what
+ * it is paid, less what was paid on the invoice itself (net of money given back on it). Null
+ * otherwise.
+ */
+async function paidFromSource(
+  tx: Tx,
+  businessId: string,
+  invoiceId: string,
+  obligation: ObligationRecord,
+): Promise<DocumentPaymentsDto['fromSource']> {
+  const [source] = (await tx.execute(sql`
+    select i.order_id, i.sale_id, o.number as order_number,
+           trim_scale(coalesce((select sum(case p.kind when 'refund' then -p.amount else p.amount end)
+              from app.customer_payments p
+             where p.business_id = i.business_id and p.invoice_id = i.id
+               and p.reversed_at is null and p.deleted_at is null), 0))::text as own
+      from app.invoices i
+      left join app.orders o on o.business_id = i.business_id and o.id = i.order_id
+     where i.business_id = ${businessId} and i.id = ${invoiceId}
+  `)) as unknown as {
+    order_id: string | null
+    sale_id: string | null
+    order_number: string | null
+    own: string
+  }[]
+  if (!source) return null
+  const amount = subtractDecimals(obligation.paid, obligation.refunded, source.own)
+  if (compareDecimal(amount, '0') <= 0) return null
+  if (source.order_id !== null) {
+    return { kind: 'order', id: source.order_id, number: source.order_number, amount }
+  }
+  return source.sale_id !== null ? { kind: 'sale', id: source.sale_id, number: null, amount } : null
 }
 
 /** The document, what it is owed, and its payments (NOT_FOUND: not an obligation). */
@@ -1031,19 +1114,29 @@ async function documentPayments(
   kind: ReceivableKindDto,
   id: string,
 ): Promise<DocumentPaymentsDto> {
-  const obligation = await readObligation(tx, ctx.businessId, kind, id)
+  // An invoiced order or sale: its page lists its payments, with what its invoices (and an order's
+  // rest) are paid and owe together (A2, D-313).
+  const obligation = await readDocumentObligation(tx, ctx.businessId, kind, id)
   if (!obligation) throw new AppError('not_found')
   return {
     document: owedDocumentOf(obligation),
     items: await paymentsOfDocument(tx, ctx, kind, id),
+    fromSource:
+      kind === 'invoice' ? await paidFromSource(tx, ctx.businessId, id, obligation) : null,
   }
 }
 
 /** Which document an input names. */
-function documentOf(input: { orderId?: string | undefined; saleId?: string | undefined }) {
+function documentOf(input: {
+  orderId?: string | undefined
+  saleId?: string | undefined
+  invoiceId?: string | undefined
+}): { kind: ReceivableKindDto; id: string } {
   return input.orderId !== undefined
-    ? { kind: 'order' as const, id: input.orderId }
-    : { kind: 'sale' as const, id: input.saleId ?? '' }
+    ? { kind: 'order', id: input.orderId }
+    : input.invoiceId !== undefined
+      ? { kind: 'invoice', id: input.invoiceId }
+      : { kind: 'sale', id: input.saleId ?? '' }
 }
 
 /**
@@ -1064,7 +1157,7 @@ export function listCustomerPayments(
       `)) as unknown as { id: string }[]
       if (!visible) throw new AppError('not_found')
       const view = await documentPayments(tx, ctx, kind, id)
-      return { document: view.document, items: view.items, nextCursor: null }
+      return { ...view, nextCursor: null }
     }
     const [customer] = (await tx.execute(sql`
       select c.id from app.customers c
@@ -1089,7 +1182,8 @@ export function listCustomerPayments(
          ${
            scope.all
              ? sql``
-             : sql`and coalesce(o.location_id, s.location_id) = any(${uuidArray([...scope.ids])})`
+             : sql`and coalesce(o.location_id, s.location_id, iv.location_id)
+                     = any(${uuidArray([...scope.ids])})`
          }
          ${
            cursor
@@ -1105,6 +1199,7 @@ export function listCustomerPayments(
     return {
       document: null,
       items: page.map((row) => customerPaymentOf(row, namesMembers(ctx))),
+      fromSource: null,
       nextCursor:
         rows.length > input.limit && last
           ? encodeCursor({ key: `${last.business_date}|${last.created_key}`, id: last.id })
@@ -1154,7 +1249,8 @@ export async function recordCustomerPaymentInTx(
   if (!fitsCurrency(payment.amount, head.currency)) {
     throw invalid('amount: more decimals than the currency has')
   }
-  const obligation = await readObligation(tx, ctx.businessId, document.kind, document.id)
+  // An order invoiced in part: what it owes in all (its invoices first, then its rest, D-313).
+  const obligation = await readDocumentObligation(tx, ctx.businessId, document.kind, document.id)
   if (!obligation) throw invalid(`${document.kind}: nothing is owed on it`)
   assertWithin(obligation, payment.kind, payment.amount)
   await createIdempotent(tx, customerPayments, {
@@ -1163,6 +1259,7 @@ export async function recordCustomerPaymentInTx(
     customerId: head.customer_id,
     orderId: document.kind === 'order' ? document.id : null,
     saleId: document.kind === 'sale' ? document.id : null,
+    invoiceId: document.kind === 'invoice' ? document.id : null,
     kind: payment.kind,
     businessDate: payment.businessDate,
     method: payment.method,
@@ -1233,14 +1330,19 @@ export function reverseCustomerPayment(
 ): Promise<DocumentPaymentsDto> {
   return ctx.tx(async (tx) => {
     const [found] = (await tx.execute(sql`
-      select p.order_id, p.sale_id from app.customer_payments p
+      select p.order_id, p.sale_id, p.invoice_id from app.customer_payments p
        where p.business_id = ${ctx.businessId} and p.id = ${input.id} and p.deleted_at is null
-    `)) as unknown as { order_id: string | null; sale_id: string | null }[]
+    `)) as unknown as {
+      order_id: string | null
+      sale_id: string | null
+      invoice_id: string | null
+    }[]
     if (!found) throw new AppError('not_found')
-    const document =
-      found.order_id !== null
-        ? { kind: 'order' as const, id: found.order_id }
-        : { kind: 'sale' as const, id: found.sale_id ?? '' }
+    const document = documentOf({
+      orderId: found.order_id ?? undefined,
+      saleId: found.sale_id ?? undefined,
+      invoiceId: found.invoice_id ?? undefined,
+    })
     // The document first, as recording a payment, a delivery and a refund lock it.
     await lockReceivable(tx, ctx, document.kind, document.id)
     const [payment] = (await tx.execute(sql`
@@ -1262,7 +1364,12 @@ export function reverseCustomerPayment(
       // the document would still owe nothing; else the money given back is reversed first
       // (PAYMENT_HAS_MONEY_BACK). A cancelled order (0) would otherwise owe its deposit again, which no
       // payment can settle (D-273).
-      const obligation = await readObligation(tx, ctx.businessId, document.kind, document.id)
+      const obligation = await readDocumentObligation(
+        tx,
+        ctx.businessId,
+        document.kind,
+        document.id,
+      )
       if (obligation && compareDecimal(obligation.refunded, '0') > 0) {
         const leftAfter = subtractDecimals(
           obligation.total,
@@ -1315,9 +1422,11 @@ export function recordManyCustomerPayments(
          and c.deleted_at is null
     `)) as unknown as { id: string }[]
     if (!customer) throw new AppError('not_found')
-    // Lock 1, in one order for every caller: orders by id, then sales by id.
+    // Lock 1, in one order for every caller: invoices by id (an invoice is locked before the order or
+    // sale it was made from, as its issue and its credit notes do), then orders, then sales.
+    const rank = { invoice: 0, order: 1, sale: 2 } as const
     const order = [...documents].sort((a, b) =>
-      a.kind === b.kind ? (a.id < b.id ? -1 : a.id > b.id ? 1 : 0) : a.kind === 'order' ? -1 : 1,
+      a.kind === b.kind ? (a.id < b.id ? -1 : a.id > b.id ? 1 : 0) : rank[a.kind] - rank[b.kind],
     )
     const heads = new Map<string, ReceivableHead>()
     for (const d of order) heads.set(d.id, await lockReceivable(tx, ctx, d.kind, d.id))

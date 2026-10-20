@@ -4,6 +4,7 @@ import { attachmentRouter } from './attachment'
 import { booksRouter } from './books'
 import { businessRouter } from './business'
 import { costCategoryRouter } from './cost-category'
+import { creditNoteRouter } from './credit-note'
 import { customerRouter } from './customer'
 import { customerPaymentRouter, receivableRouter } from './customer-payment'
 import { dashboardRouter } from './dashboard'
@@ -11,6 +12,7 @@ import { documentRouter } from './document'
 import { expensePaymentRouter, expenseRouter } from './expense'
 import { health } from './health'
 import { invitationRouter } from './invitation'
+import { invoiceRouter } from './invoice'
 import { locationRouter } from './location'
 import { materialRouter } from './material'
 import { me } from './me'
@@ -71,6 +73,8 @@ export const appRouter = router({
   receivable: receivableRouter,
   quotation: quotationRouter,
   document: documentRouter,
+  invoice: invoiceRouter,
+  creditNote: creditNoteRouter,
 })
 
 export type AppRouter = typeof appRouter

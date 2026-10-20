@@ -435,6 +435,41 @@
       "when": 1792314043850,
       "tag": "20261018090043_quotation_area_length",
       "breakpoints": true
+    },
+    {
+      "idx": 62,
+      "version": "7",
+      "when": 1792332502571,
+      "tag": "20261018140822_invoices_tables",
+      "breakpoints": true
+    },
+    {
+      "idx": 63,
+      "version": "7",
+      "when": 1792332540000,
+      "tag": "20261018140900_invoices_security",
+      "breakpoints": true
+    },
+    {
+      "idx": 64,
+      "version": "7",
+      "when": 1792437881818,
+      "tag": "20261019192441_invoices_order_cancel",
+      "breakpoints": true
+    },
+    {
+      "idx": 65,
+      "version": "7",
+      "when": 1792457307591,
+      "tag": "20261020004827_invoices_review_columns",
+      "breakpoints": true
+    },
+    {
+      "idx": 66,
+      "version": "7",
+      "when": 1792457309699,
+      "tag": "20261020004829_invoices_review_guards",
+      "breakpoints": true
     }
   ]
 }

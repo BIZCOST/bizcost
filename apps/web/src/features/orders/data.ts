@@ -58,6 +58,9 @@ export function useRefreshOrders() {
           trpc.sale.daySheet.pathKey(),
           trpc.customerPayment.pathKey(),
           trpc.receivable.pathKey(),
+          // M3 Step 8: what an invoice is paid and owes, and a customer's statement.
+          trpc.invoice.pathKey(),
+          trpc.customer.statement.pathKey(),
           ...profitQueryKeys(trpc),
         ].map((queryKey) => queryClient.invalidateQueries({ queryKey })),
       ),

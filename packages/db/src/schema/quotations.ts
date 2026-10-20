@@ -26,6 +26,7 @@ import { timestamptz } from './_app'
 import { tenantRef, tenantTable } from './_helpers'
 import { productsServices } from './catalog'
 import { customers } from './customers'
+import { invoices } from './invoices'
 import { locations } from './locations'
 import { orders } from './orders'
 
@@ -54,8 +55,8 @@ export interface StoredVatRate {
 // total typed `round_to`, the adjustment before VAT and the rounding difference, D-221), and the VAT
 // per rate as computed (`vat_rates`), kept on every save of the draft. `intro`, `terms`, `notes` and
 // the payment stages (quotation_stages) are printed on its PDF. One revision of a quotation becomes
-// an order at most (`order_id`); `invoice_id` links Step 8's invoice (its foreign key comes with the
-// invoices table). The customer is required ("Dear …").
+// an order at most (`order_id`); `invoice_id` links the first invoice issued from it (M3 Step 8; a
+// quotation billed in stages names its others on theirs). The customer is required ("Dear …").
 export const quotations = tenantTable(
   'quotations',
   {
@@ -132,6 +133,8 @@ export const quotations = tenantTable(
     tenantRef('quotations_customer_fk', [t.businessId, t.customerId], customers),
     tenantRef('quotations_location_fk', [t.businessId, t.locationId], locations),
     tenantRef('quotations_order_fk', [t.businessId, t.orderId], orders),
+    tenantRef('quotations_invoice_fk', [t.businessId, t.invoiceId], invoices),
+    index('quotations_invoice_idx').on(t.businessId, t.invoiceId),
     // The series `quotation` is the table: one integer per quotation, shared by its revisions.
     // A revision counts n + 1 over the live ones: a discarded draft revision's count is used again
     // (D-296).
@@ -310,21 +313,25 @@ export const quotationStages = tenantTable(
   ],
 )
 
+/** What a PDF was made of (document_renders.kind). */
+export const DOCUMENT_RENDER_KINDS = ['quotation', 'invoice', 'credit_note', 'statement'] as const
+export type DocumentRenderKind = (typeof DOCUMENT_RENDER_KINDS)[number]
+
 /**
- * A PDF made of a document (M3 Step 7: a quotation; Step 8: invoices, credit notes, statements): who
- * asked and when, so the database can hold the rate limit (app.document_render_limits) for every API
- * instance at once. Append-only.
+ * A PDF made of a document (M3 Step 7: a quotation; Step 8: invoices, credit notes and a customer's
+ * statement, whose `document_id` is the customer's): who asked and when, so the database can hold the
+ * rate limit (app.document_render_limits) for every API instance at once. Append-only.
  */
 export const documentRenders = tenantTable(
   'document_renders',
   {
-    kind: text('kind').$type<'quotation'>().notNull(),
+    kind: text('kind').$type<DocumentRenderKind>().notNull(),
     documentId: uuid('document_id').notNull(),
   },
   (t) => [
     index('document_renders_created_idx').on(t.businessId, t.createdAt),
     index('document_renders_created_by_idx').on(t.businessId, t.createdBy, t.createdAt),
-    check('document_renders_kind_check', sql`kind in ('quotation')`),
+    check('document_renders_kind_check', sql`kind in (${quoted(DOCUMENT_RENDER_KINDS)})`),
   ],
 )
 

@@ -240,8 +240,8 @@ describe('the dev-only preview (D-125)', () => {
   const registry = MODULES.map((m) => (m.id === 'quotations' ? building : m))
   const quotationsOn = resolveEnabledModules([{ key: 'quotations', enabled: true }])
 
-  it('may show only planned modules whose build started: Quotations (M3 Step 7)', () => {
-    expect(PREVIEWABLE_MODULE_IDS).toEqual(['quotations'])
+  it('may show only planned modules whose build started: Quotations (M3 Step 7), Invoices (Step 8)', () => {
+    expect(PREVIEWABLE_MODULE_IDS).toEqual(['quotations', 'invoices'])
   })
 
   it('parses a comma or space separated list, ignores released modules, and names what it cannot preview', () => {
@@ -266,34 +266,35 @@ describe('the dev-only preview (D-125)', () => {
       invalid: [],
     })
     // Unknown, or planned without a build: refused by name.
-    expect(parsePreviewModules('quotations,invoices,Quotations,nope', registry)).toEqual({
+    expect(parsePreviewModules('quotations,inventory,Quotations,nope', registry)).toEqual({
       ids: ['quotations'],
       released: [],
-      invalid: ['invoices', 'Quotations', 'nope'],
+      invalid: ['inventory', 'Quotations', 'nope'],
     })
-    // The real registry previews only the modules being built (Quotations since M3 Step 7).
-    expect(parsePreviewModules('quotations,invoices,materials,sales')).toEqual({
-      ids: ['quotations'],
+    // The real registry previews only the modules being built (Quotations since M3 Step 7, Invoices
+    // since Step 8).
+    expect(parsePreviewModules('quotations,invoices,inventory,materials,sales')).toEqual({
+      ids: ['quotations', 'invoices'],
       released: ['materials', 'sales'],
-      invalid: ['invoices'],
+      invalid: ['inventory'],
     })
   })
 
   it('counts the named modules as released, and nothing else', () => {
-    const previewed = withPreviewModules(['quotations', 'invoices'], registry)
+    const previewed = withPreviewModules(['quotations', 'inventory'], registry)
     expect(
       isModuleActive(
         previewed.find((m) => m.id === 'quotations')!,
         quotationsOn,
       ),
     ).toBe(true)
-    expect(previewed.find((m) => m.id === 'invoices')?.availability).toBe('planned')
+    expect(previewed.find((m) => m.id === 'inventory')?.availability).toBe('planned')
     // The registry passed in is untouched.
     expect(building.availability).toBe('planned')
     expect(isModuleActive(building, quotationsOn)).toBe(false)
     expect(withPreviewModules([], registry)).toBe(registry)
     // With the real registry nothing changes for a module not being built, or released.
-    expect(withPreviewModules(['invoices', 'materials', 'sales'])).toBe(MODULES)
+    expect(withPreviewModules(['inventory', 'materials', 'sales'])).toBe(MODULES)
     expect(
       withPreviewModules(['quotations']).find((m) => m.id === 'quotations')?.availability,
     ).toBe('released')

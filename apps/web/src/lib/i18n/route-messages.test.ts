@@ -16,6 +16,7 @@ import {
   CUSTOMERS_MESSAGES,
   DASHBOARD_MESSAGES,
   EXPENSES_MESSAGES,
+  INVOICES_MESSAGES,
   MEMBER_ACCESS_MESSAGES,
   ORDERS_MESSAGES,
   PRODUCT_COSTS_MESSAGES,
@@ -233,6 +234,11 @@ describe("each route's messages have the keys its code translates", () => {
           'features/documents',
           'features/catalog',
           'features/purchasing/receipts.tsx',
+          // M3 Step 8: "Make an invoice" and the order's invoices.
+          'features/invoices/bill-dialog.tsx',
+          'features/invoices/source-invoices.tsx',
+          'features/invoices/invoice-row.tsx',
+          'features/invoices/badges.tsx',
           'components/ui',
         ],
         ORDERS_MESSAGES,
@@ -263,11 +269,69 @@ describe("each route's messages have the keys its code translates", () => {
     ).toEqual({})
   })
 
+  it('Invoices: the list, the editor, the invoice, its PDF, credit notes and payments (M3 Step 8)', () => {
+    const invoices = 'features/invoices'
+    expect(
+      missing(
+        [
+          ...[
+            'badges.tsx',
+            'bill-dialog.tsx',
+            'counted-question.tsx',
+            'credit-note-sheet.tsx',
+            'credit-notes.tsx',
+            'data.ts',
+            'deposits.tsx',
+            'invoice-draft.ts',
+            'invoice-editor.tsx',
+            'invoice-history.tsx',
+            'invoice-page.tsx',
+            'invoice-row.tsx',
+            'invoice-view.tsx',
+            'invoice-words.ts',
+            'invoices-page.tsx',
+            'issue-dialog.tsx',
+            'source-invoices.tsx',
+            'source-picker.tsx',
+          ].map((file) => `${invoices}/${file}`),
+          'features/quotations/document-lines.tsx',
+          'features/quotations/document-line-list.tsx',
+          'features/quotations/quotation-lines.tsx',
+          'features/quotations/quotation-areas.tsx',
+          'features/quotations/quotation-totals.tsx',
+          'features/quotations/totals-editor.tsx',
+          'features/quotations/pdf-dialog.tsx',
+          'features/quotations/picture-cropper.tsx',
+          'features/receivables/payments-panel.tsx',
+          'features/receivables/payment-sheet.tsx',
+          'features/customers/customer-picker.tsx',
+          'features/customers/customer-sheet.tsx',
+          'features/customers/customer-draft.ts',
+          'features/documents/amounts.tsx',
+          'features/documents/confirm-dialog.tsx',
+          'features/documents/line-editor.tsx',
+          'features/documents/name-picker.tsx',
+          'features/documents/panel.tsx',
+          'features/documents/search-box.tsx',
+          'features/catalog',
+          'features/purchasing/receipts.tsx',
+          'components/ui',
+        ],
+        INVOICES_MESSAGES,
+      ),
+    ).toEqual({})
+  })
+
   it("Customers: the list and a customer's page (M3 Step 5)", () => {
     expect(
       missing(
         [
           'features/customers',
+          // M3 Step 8: their invoices and their statement.
+          'features/invoices/statement-page.tsx',
+          'features/invoices/invoice-row.tsx',
+          'features/invoices/badges.tsx',
+          'features/quotations/pdf-dialog.tsx',
           'features/orders/badges.tsx',
           'features/receivables',
           'features/documents/amounts.tsx',
@@ -383,6 +447,9 @@ describe("each route's messages have the keys its code translates", () => {
       PRODUCT_COSTS_MESSAGES,
       SALES_MESSAGES,
       QUOTATIONS_MESSAGES,
+      INVOICES_MESSAGES,
+      ORDERS_MESSAGES,
+      CUSTOMERS_MESSAGES,
       REPORTS_MESSAGES,
       SETTINGS_MESSAGES,
       MEMBER_ACCESS_MESSAGES,

@@ -109,6 +109,19 @@ export async function seedDocuments(
   // The contact lines, when none is filled in yet.
   const profile = await api.query<BusinessProfileDto>('business.profile', token, businessId)
   const contacts = profile.letterhead
+  // A city the address left out (the e-invoicing address has a street, a city and an emirate,
+  // PINT-AE IBR-143-AE): filled in once, the rest kept as it is.
+  if (contacts.addressLine && !contacts.city && spec.letterhead.city) {
+    await api.mutate('business.updateProfile', token, businessId, {
+      version: profile.version,
+      legalName: profile.legalName,
+      legalNameAr: profile.legalNameAr,
+      vatRegistered: profile.vatRegistered,
+      trn: profile.trn,
+      letterhead: { ...contacts, city: spec.letterhead.city },
+    })
+    letterhead = true
+  }
   if (!contacts.phone && !contacts.email && !contacts.addressLine) {
     await api.mutate('business.updateProfile', token, businessId, {
       version: profile.version,
@@ -253,6 +266,7 @@ export const FITOUT_DOCUMENTS: DemoDocuments = {
     phone2: '+971 50 555 0199',
     email: 'hello@moderntouch.example',
     addressLine: 'مستودع 7، القوز الصناعية 3',
+    city: 'دبي',
     emirate: 'dubai',
     tradeLicenceNo: 'DED-778812',
     tradeLicenceAuthority: 'دائرة الاقتصاد والسياحة في دبي',
@@ -345,7 +359,80 @@ export const FITOUT_DOCUMENTS: DemoDocuments = {
       ],
       send: true,
     },
+    // M3 Step 8: an office billed in full once done (FITOUT_INVOICES, with a credit note).
+    {
+      customer: 'شركة الأفق للاستشارات',
+      customerRef: 'DEMO-FO-131',
+      site: 'مكاتب الأفق، برج الأعمال',
+      lines: [
+        {
+          description: 'جدار جبسي مزدوج مع عزل صوتي',
+          qty: '42',
+          unit: 'm2',
+          unitPrice: '120',
+        },
+        {
+          description: 'قاطع زجاجي مقسّى 12 مم',
+          details: 'بإطار ألمنيوم أسود',
+          qty: '18',
+          unit: 'm2',
+          unitPrice: '680',
+        },
+        { description: 'باب خشبي للمكاتب', qty: '6', unit: 'piece', unitPrice: '1850' },
+        {
+          description: 'سقف مستعار مع إضاءة',
+          qty: '120',
+          unit: 'm2',
+          unitPrice: '95',
+        },
+      ],
+      send: true,
+      accept: true,
+    },
   ],
+}
+
+/** The factory: its letterhead for the tax invoices of its orders (it sends no quotations here). */
+export const FACTORY_DOCUMENTS: DemoDocuments = {
+  letterhead: {
+    phone: '+971 6 555 0190',
+    email: 'sales@alnaqaa.example',
+    addressLine: 'المنطقة الصناعية 15',
+    city: 'الشارقة',
+    emirate: 'sharjah',
+    tradeLicenceNo: 'SHJ-77120',
+    tradeLicenceAuthority: 'دائرة التنمية الاقتصادية بالشارقة',
+  },
+  settings: {
+    accent: 'slate',
+    signatory: 'سلطان المزروعي',
+    footer:
+      'البنك: بنك الشارقة التجريبي\nاسم الحساب: مصنع النقاء لمواد التنظيف\nIBAN: AE33 0410 0000 1234 5678 333',
+    quotationTerms: 'الأسعار تشمل التوصيل داخل الشارقة ودبي.',
+    quotationValidDays: 15,
+  },
+  quotations: [],
+}
+
+/** The designer: her letterhead for the plain invoices of her work (no logo, no VAT). */
+export const DESIGNER_DOCUMENTS: DemoDocuments = {
+  letterhead: {
+    phone: '+971 56 555 0144',
+    email: 'hello@nouradesign.example',
+    addressLine: 'Al Khalidiya',
+    city: 'Abu Dhabi',
+    emirate: 'abu_dhabi',
+    tradeLicenceNo: 'ADF-30987',
+    tradeLicenceAuthority: 'Abu Dhabi Department of Economic Development',
+  },
+  settings: {
+    accent: 'teal',
+    signatory: 'Noura Al Ali',
+    footer: 'Bank: Abu Dhabi Sample Bank\nIBAN: AE00 0000 0000 0000 0000 222',
+    quotationTerms: 'Two rounds of changes are included.\nFinal files after the last payment.',
+    quotationValidDays: 14,
+  },
+  quotations: [],
 }
 
 /** The carpentry workshop: furniture made to order, no logo (its names carry the letterhead). */
@@ -354,6 +441,7 @@ export const WORKSHOP_DOCUMENTS: DemoDocuments = {
     phone: '+971 6 555 0177',
     email: 'orders@alitqan.example',
     addressLine: 'Industrial Area 2, Street 14',
+    city: 'Sharjah',
     emirate: 'sharjah',
     tradeLicenceNo: 'SHJ-55120',
     tradeLicenceAuthority: 'Sharjah Economic Development Department',

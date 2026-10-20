@@ -59,10 +59,10 @@ import { inputLeaves, inputSchemaOf } from './schema'
 //     (nothing written), accepted where it does.
 
 /**
- * The registry the suites' API serves: the manifests as released code has them, with Quotations
- * previewed (M3 Step 7: planned until Release B, D-125).
+ * The registry the suites' API serves: the manifests as released code has them, with Quotations and
+ * Invoices previewed (M3 Steps 7 and 8: planned until Release B, D-125).
  */
-const MODULES: readonly ModuleManifest[] = withPreviewModules(['quotations'], MANIFESTS)
+const MODULES: readonly ModuleManifest[] = withPreviewModules(['quotations', 'invoices'], MANIFESTS)
 
 /** Any of the groups, each with every module on; [] = no module gate. */
 type Gate = readonly (readonly ModuleId[])[]
@@ -85,10 +85,16 @@ const RECEIPTS: Gate = [
   ['files', 'orders'],
   // A quotation's files and its lines' pictures (M3 Step 7).
   ['files', 'quotations'],
+  // An invoice's files and its lines' pictures (M3 Step 8).
+  ['files', 'invoices'],
 ]
 const QUOTATIONS: Gate = [['quotations']]
-/** Settings → Documents (M3 Step 7): with Quotations served (or Invoices, once it is built). */
-const DOCUMENTS: Gate = [['quotations']]
+/** Settings → Documents (M3 Step 7): with Quotations or Invoices served. */
+const DOCUMENTS: Gate = [['quotations'], ['invoices']]
+/** Invoices and credit notes (M3 Step 8). */
+const INVOICES: Gate = [['invoices']]
+/** A customer's statement (M3 Step 8, Q27): with Invoices until Release B (B10). */
+const STATEMENTS: Gate = [['customers', 'payments', 'invoices']]
 const CUSTOMERS: Gate = [['customers']]
 const ORDERS: Gate = [['orders']]
 const PAYMENTS: Gate = [['payments']]
@@ -135,6 +141,15 @@ const MODULE_GATES: Record<string, Gate> = {
   'costCategory.list': EXPENSES_OR_RUNNING_COSTS,
   'costCategory.unarchive': EXPENSES_OR_RUNNING_COSTS,
   'costCategory.update': EXPENSES_OR_RUNNING_COSTS,
+  // Credit notes (M3 Step 8).
+  'creditNote.create': INVOICES,
+  'creditNote.discard': INVOICES,
+  'creditNote.get': INVOICES,
+  'creditNote.history': INVOICES,
+  'creditNote.issue': INVOICES,
+  'creditNote.list': INVOICES,
+  'creditNote.pdf': INVOICES,
+  'creditNote.update': INVOICES,
   // Customers and customer payments (M3 Step 5).
   'customer.archive': CUSTOMERS,
   'customer.create': CUSTOMERS,
@@ -142,6 +157,8 @@ const MODULE_GATES: Record<string, Gate> = {
   'customer.list': CUSTOMERS,
   'customer.pick': CUSTOMERS,
   'customer.similar': CUSTOMERS,
+  'customer.statement': STATEMENTS,
+  'customer.statementPdf': STATEMENTS,
   'customer.unarchive': CUSTOMERS,
   'customer.update': CUSTOMERS,
   'customerPayment.list': PAYMENTS,
@@ -184,6 +201,20 @@ const MODULE_GATES: Record<string, Gate> = {
   'invitation.list': NONE,
   'invitation.resend': NONE,
   'invitation.revoke': NONE,
+  // Invoices (M3 Step 8; from a quotation, an order or a sale: their own module, checked inside).
+  'invoice.copyToQuotation': INVOICES,
+  'invoice.create': INVOICES,
+  'invoice.depositsWithoutInvoice': INVOICES,
+  'invoice.discard': INVOICES,
+  'invoice.fromOrder': INVOICES,
+  'invoice.fromQuotation': INVOICES,
+  'invoice.fromSale': INVOICES,
+  'invoice.get': INVOICES,
+  'invoice.history': INVOICES,
+  'invoice.issue': INVOICES,
+  'invoice.list': INVOICES,
+  'invoice.pdf': INVOICES,
+  'invoice.update': INVOICES,
   'location.create': NONE,
   'location.list': NONE,
   'location.remove': NONE,
@@ -988,6 +1019,37 @@ const HIDDEN_FIELDS: Record<string, HiddenField | { notHidden: string }> = {
     capability: 'vat_registered',
     input: (b) => orderUpdate(b, deliveryWithVat()),
   },
+  // Invoices (M3 Step 8): the location, and a typed line's VAT as typed.
+  'invoice.create locationId': {
+    capability: 'multi_location',
+    input: async (b) =>
+      create('invoice.create', await invoiceInput(b, { locationId: otherLocation(b) })),
+  },
+  'invoice.update locationId': {
+    capability: 'multi_location',
+    input: (b) => invoiceUpdate(b, { locationId: otherLocation(b) }),
+  },
+  'invoice.create lines.*.priceIncludesVat': {
+    capability: 'vat_registered',
+    input: async (b) =>
+      create('invoice.create', await invoiceInput(b, quotationTyped({ priceIncludesVat: true }))),
+  },
+  'invoice.update lines.*.priceIncludesVat': {
+    capability: 'vat_registered',
+    input: (b) => invoiceUpdate(b, quotationTyped({ priceIncludesVat: true })),
+  },
+  'invoice.create lines.*.vatCategory': {
+    capability: 'vat_registered',
+    input: async (b) =>
+      create(
+        'invoice.create',
+        await invoiceInput(b, quotationTyped({ vatCategory: 'zero_rated' })),
+      ),
+  },
+  'invoice.update lines.*.vatCategory': {
+    capability: 'vat_registered',
+    input: (b) => invoiceUpdate(b, quotationTyped({ vatCategory: 'exempt' })),
+  },
   'member.updateLocations locationIds.*': {
     capability: 'multi_location',
     input: async (b) => {
@@ -1058,27 +1120,50 @@ const quotationTyped = (extra: object) => ({
   ],
 })
 
-/** Each business's customer, with Quotations turned on (previewed; the baker has it off). */
-const quotationCustomers = new Map<string, string>()
+/** Each business's customer, with `module` turned on (previewed; the baker has them off). */
+const documentCustomers = new Map<string, string>()
 
-async function quotationInput(b: Business, extra: object = {}) {
-  let customerId = quotationCustomers.get(b.id)
+async function documentCustomer(b: Business, module: 'quotations' | 'invoices') {
+  const state = ok(await as<CustomizationDto>(b.owner, b.id, 'business.customization'))
+  if (!state.modules.find((m) => m.id === module)?.enabled) {
+    ok(
+      await as<CustomizeDto>(b.owner, b.id, 'business.customize', {
+        item: { kind: 'module', id: module },
+        enabled: true,
+      }),
+    )
+  }
+  let customerId = documentCustomers.get(b.id)
   if (!customerId) {
-    const state = ok(await as<CustomizationDto>(b.owner, b.id, 'business.customization'))
-    if (!state.modules.find((m) => m.id === 'quotations')?.enabled) {
-      ok(
-        await as<CustomizeDto>(b.owner, b.id, 'business.customize', {
-          item: { kind: 'module', id: 'quotations' },
-          enabled: true,
-        }),
-      )
-    }
     customerId = ok(
       await as<{ id: string }>(b.owner, b.id, 'customer.create', { id: newId(), name: 'Noor' }),
     ).id
-    quotationCustomers.set(b.id, customerId)
+    documentCustomers.set(b.id, customerId)
   }
+  return customerId
+}
+
+async function quotationInput(b: Business, extra: object = {}) {
+  const customerId = await documentCustomer(b, 'quotations')
   return { id: newId(), customerId, businessDate: b.today, lines: [], ...extra }
+}
+
+/** A draft invoice without lines (M3 Step 8; the default location). */
+async function invoiceInput(b: Business, extra: object = {}) {
+  const customerId = await documentCustomer(b, 'invoices')
+  return { id: newId(), customerId, lines: [], ...extra }
+}
+
+/** An invoice saved without the field, then the whole draft with it. */
+async function invoiceUpdate(b: Business, extra: object) {
+  const fields = await invoiceInput(b)
+  const invoice = ok(
+    await as<{ id: string; version: number }>(b.owner, b.id, 'invoice.create', fields),
+  )
+  return {
+    path: 'invoice.update',
+    input: { ...fields, ...extra, id: invoice.id, version: invoice.version },
+  }
 }
 
 /** A quotation saved without the field, then the whole quotation with it. */

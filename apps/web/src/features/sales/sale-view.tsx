@@ -49,6 +49,8 @@ import { useLocale, useTerminology } from '@/lib/i18n/client'
 import { useBusinessContext } from '@/lib/trpc/client'
 import { cn } from '@/lib/utils'
 import { maySeeCustomers } from '@/features/customers/data'
+import { mayManageInvoices } from '@/features/invoices/data'
+import { InvoiceSaleDialog } from '@/features/invoices/source-picker'
 import { mayRecordPayments } from '@/features/orders/data'
 import { CustomerPaymentsPanel } from '@/features/receivables/payments-panel'
 import { useCountedAmount, useRefreshSales } from './data'
@@ -81,37 +83,56 @@ export function useSaleTitle() {
   const { t } = useTranslation()
   const businessDate = useBusinessDate()
   return (
-    sale: Pick<SaleDto, 'source' | 'businessDate' | 'periodFrom' | 'netTotal' | 'orderNumber'>,
+    sale: Pick<
+      SaleDto,
+      | 'source'
+      | 'businessDate'
+      | 'periodFrom'
+      | 'netTotal'
+      | 'orderNumber'
+      | 'invoice'
+      | 'creditNoteNumber'
+    >,
   ) =>
     sale.source === 'single'
       ? t('sales.view.title', { date: businessDate(sale.businessDate) })
-      : sale.source === 'order'
-        ? t('orders.sale.orderTitle', {
-            number: isolate(sale.orderNumber ?? ''),
+      : sale.source === 'invoice'
+        ? t('documents.invoices.links.saleOfInvoice', {
+            number: isolate(sale.invoice?.number ?? ''),
             date: businessDate(sale.businessDate),
           })
-        : sale.source === 'refund'
-          ? t('orders.sale.refundTitle', { date: businessDate(sale.businessDate) })
-          : sale.source === 'import'
-            ? sale.periodFrom
-              ? t(
-                  sale.netTotal.startsWith('-')
-                    ? 'sales.view.importedRefundPeriodTitle'
-                    : 'sales.view.importedPeriodTitle',
-                  { from: businessDate(sale.periodFrom), to: businessDate(sale.businessDate) },
-                )
-              : t(
-                  sale.netTotal.startsWith('-')
-                    ? 'sales.view.importedRefundTitle'
-                    : 'sales.view.importedTitle',
-                  { date: businessDate(sale.businessDate) },
-                )
-            : sale.periodFrom
-              ? t('sales.view.sheetPeriodTitle', {
-                  from: businessDate(sale.periodFrom),
-                  to: businessDate(sale.businessDate),
-                })
-              : t('sales.view.sheetTitle', { date: businessDate(sale.businessDate) })
+        : sale.source === 'credit_note'
+          ? t('documents.invoices.links.saleOfCreditNote', {
+              number: isolate(sale.creditNoteNumber ?? ''),
+              date: businessDate(sale.businessDate),
+            })
+          : sale.source === 'order'
+            ? t('orders.sale.orderTitle', {
+                number: isolate(sale.orderNumber ?? ''),
+                date: businessDate(sale.businessDate),
+              })
+            : sale.source === 'refund'
+              ? t('orders.sale.refundTitle', { date: businessDate(sale.businessDate) })
+              : sale.source === 'import'
+                ? sale.periodFrom
+                  ? t(
+                      sale.netTotal.startsWith('-')
+                        ? 'sales.view.importedRefundPeriodTitle'
+                        : 'sales.view.importedPeriodTitle',
+                      { from: businessDate(sale.periodFrom), to: businessDate(sale.businessDate) },
+                    )
+                  : t(
+                      sale.netTotal.startsWith('-')
+                        ? 'sales.view.importedRefundTitle'
+                        : 'sales.view.importedTitle',
+                      { date: businessDate(sale.businessDate) },
+                    )
+                : sale.periodFrom
+                  ? t('sales.view.sheetPeriodTitle', {
+                      from: businessDate(sale.periodFrom),
+                      to: businessDate(sale.businessDate),
+                    })
+                  : t('sales.view.sheetTitle', { date: businessDate(sale.businessDate) })
 }
 
 /** A product sold without what it uses while Materials is on: its cost is not known (D-223). */
@@ -320,7 +341,7 @@ export function SaleView({
   const post = useMutation(trpc.sale.post.mutationOptions())
   const discard = useMutation(trpc.sale.discard.mutationOptions())
   const [confirm, setConfirm] = useState<
-    'reverse' | 'correct' | 'finalize' | 'discard' | 'fill' | 'refund' | null
+    'reverse' | 'correct' | 'finalize' | 'discard' | 'fill' | 'refund' | 'invoice' | null
   >(null)
   const [confirmError, setConfirmError] = useState<I18nKey | null>(null)
   const [busy, setBusy] = useState(false)
@@ -338,11 +359,24 @@ export function SaleView({
   // order; a refund is reversed, never corrected or refunded (D-265, D-266).
   const fromOrder = sale.source === 'order'
   const isRefund = sale.source === 'refund'
+  // M3 Step 8: an invoice's or a credit note's sale, and a sale an issued invoice bills, are corrected
+  // only by a credit note on the invoice (SALE_HAS_INVOICE).
+  const ofDocument = sale.source === 'invoice' || sale.source === 'credit_note'
+  const invoiced = sale.invoice !== null
+  const fixed = ofDocument || invoiced
+  const canInvoice =
+    posted &&
+    sale.source === 'single' &&
+    sale.customerId !== null &&
+    !invoiced &&
+    sale.refunds.every((refund) => refund.status !== 'posted') &&
+    mayManageInvoices(context)
   const standingRefunds = sale.refunds.filter((refund) => refund.status === 'posted')
   const canRefund =
     posted &&
     canReverse &&
     (sale.source === 'single' || sale.source === 'day_sheet') &&
+    sale.invoice === null &&
     refundableLines(sale.lines, 'amount').length > 0
   // What was sold: the items, and an imported service charge (a sale with no cost, M3 Step 4).
   const items = sale.lines.filter((line) => line.kind === 'item' || line.kind === 'charge')
@@ -537,6 +571,22 @@ export function SaleView({
               </Link>
             </Button>
           ) : null}
+          {sale.invoice ? (
+            <Button asChild variant="outline">
+              <Link href={`/b/${businessId}/invoices/${sale.invoice.id}`}>
+                <ReceiptTextIcon aria-hidden />
+                {t('documents.invoices.links.openInvoice', {
+                  number: isolate(sale.invoice.number),
+                })}
+              </Link>
+            </Button>
+          ) : null}
+          {canInvoice ? (
+            <Button variant="outline" data-sale-invoice onClick={() => open('invoice')}>
+              <ReceiptTextIcon aria-hidden />
+              {t('documents.invoices.links.invoiceSale')}
+            </Button>
+          ) : null}
           {isRefund && sale.refundOfId ? (
             <Button asChild variant="outline">
               <Link href={`${listHref}/${sale.refundOfId}`}>
@@ -551,13 +601,13 @@ export function SaleView({
               {t('orders.view.refund')}
             </Button>
           ) : null}
-          {posted && canReverse && canManage && !imported && !fromOrder && !isRefund ? (
+          {posted && canReverse && canManage && !imported && !fromOrder && !isRefund && !fixed ? (
             <Button variant="outline" onClick={() => open('correct')}>
               <CopyIcon aria-hidden />
               {t('sales.view.correct')}
             </Button>
           ) : null}
-          {posted && canReverse && !imported && !fromOrder ? (
+          {posted && canReverse && !imported && !fromOrder && !fixed ? (
             <Button variant="destructive" onClick={() => open('reverse')}>
               <Undo2Icon aria-hidden />
               {t('sales.view.reverse')}
@@ -637,6 +687,18 @@ export function SaleView({
         {fromOrder && posted ? (
           <FormAlert tone="info">{t('orders.sale.fromOrderNote')}</FormAlert>
         ) : null}
+        {fixed && posted ? (
+          <FormAlert tone="info">
+            {t(
+              sale.source === 'invoice'
+                ? 'documents.invoices.links.saleOfInvoiceNote'
+                : sale.source === 'credit_note'
+                  ? 'documents.invoices.links.saleOfCreditNoteNote'
+                  : 'documents.invoices.links.invoicedSaleNote',
+              { number: isolate(sale.invoice?.number ?? '') },
+            )}
+          </FormAlert>
+        ) : null}
 
         <Panel title={t('sales.editor.details')}>
           <dl className="grid grid-cols-2 gap-4 lg:grid-cols-3">
@@ -673,7 +735,11 @@ export function SaleView({
                         ? sale.refundBy === 'amount'
                           ? 'orders.sale.kindRefundAmount'
                           : 'orders.sale.kindRefundQty'
-                        : 'sales.view.kindSingle',
+                        : sale.source === 'invoice'
+                          ? 'documents.invoices.links.kindInvoice'
+                          : sale.source === 'credit_note'
+                            ? 'documents.invoices.links.kindCreditNote'
+                            : 'sales.view.kindSingle',
               )}
             </Detail>
             {sale.customerName ? (
@@ -912,9 +978,10 @@ export function SaleView({
               label: saleTitle(sale),
             }}
             canRecord={mayRecordPayments(context)}
-            canPay={posted}
+            canPay={posted && !invoiced}
             today={today}
             closedThrough={closedThrough}
+            hint={invoiced ? t('documents.invoices.links.paidOnInvoices') : undefined}
           />
         ) : null}
 
@@ -956,6 +1023,14 @@ export function SaleView({
         ) : null}
       </div>
 
+      {confirm === 'invoice' ? (
+        <InvoiceSaleDialog
+          saleId={sale.id}
+          label={`${saleTitle(sale)}${names ? ` · ${names}` : ''}`}
+          amount={money(sale.total, sale.currency)}
+          onClose={() => setConfirm(null)}
+        />
+      ) : null}
       {confirm === 'refund' ? (
         <RefundSheet
           sale={sale}

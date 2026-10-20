@@ -75,6 +75,7 @@
     "orders": "الطلبات",
     "receivables": "مستحقات العملاء",
     "quotations": "عروض الأسعار",
+    "invoices": "الفواتير",
     "new_product": "منتج أو خدمة جديدة",
     "new_product_projects": "خدمة أو بند عمل جديد",
     "new_product_services": "خدمة جديدة",

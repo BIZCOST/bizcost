@@ -379,6 +379,11 @@ export const quotationDto = z.object({
   orderNumber: z.string().nullable(),
   /** Another revision of its number became an order (it cannot become one too). */
   otherHasOrder: z.boolean(),
+  /**
+   * An issued invoice bills a revision of it (a deposit, a stage): it is invoiced from the quotation
+   * to the end and never made an order (QUOTATION_INVOICED, M3 Step 8).
+   */
+  invoiced: z.boolean(),
   /** The revision it was copied from, and its number. */
   copiedFromId: zUuid.nullable(),
   copiedFromNumber: z.string().nullable(),

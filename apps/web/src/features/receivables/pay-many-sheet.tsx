@@ -46,6 +46,7 @@ import {
 import { cn } from '@/lib/utils'
 import { allocate, owedIn } from './pay-many'
 import { useOwedTitle } from './owed-title'
+import { paidDocumentInput } from './payment-sheet'
 
 // "Pay several at once" (M3 Step 5; Q17, M14, D-267): one amount a customer paid, applied to their
 // open orders and sales, oldest first (each may be left out), each up to what it still owes. The
@@ -160,7 +161,7 @@ export function PayManySheet({
         note,
         documents: reached.map((document) => ({
           id: ids.get(keyOf(document))!,
-          ...(document.kind === 'order' ? { orderId: document.id } : { saleId: document.id }),
+          ...paidDocumentInput(document),
         })),
       })
       await refresh()

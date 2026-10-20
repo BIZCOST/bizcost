@@ -31,6 +31,10 @@
       "en": "Credit Note",
       "ar": "إشعار دائن"
     },
+    "title.statement": {
+      "en": "Statement of Account",
+      "ar": "كشف حساب"
+    },
     "draft": {
       "en": "Draft",
       "ar": "مسودة"
@@ -67,6 +71,30 @@
       "en": "Your reference",
       "ar": "مرجعكم"
     },
+    "lpo": {
+      "en": "LPO no.",
+      "ar": "رقم أمر الشراء"
+    },
+    "supplyDate": {
+      "en": "Date of supply",
+      "ar": "تاريخ التوريد"
+    },
+    "currency": {
+      "en": "Currency",
+      "ar": "العملة"
+    },
+    "period": {
+      "en": "Period",
+      "ar": "الفترة"
+    },
+    "periodValue": {
+      "en": "{{from}} – {{to}}",
+      "ar": "{{from}} – {{to}}"
+    },
+    "issuedOn": {
+      "en": "Issued on",
+      "ar": "تاريخ الإصدار"
+    },
     "references.invoiceNo": {
       "en": "Invoice no.",
       "ar": "رقم الفاتورة"
@@ -74,6 +102,18 @@
     "references.invoiceDate": {
       "en": "Invoice date",
       "ar": "تاريخ الفاتورة"
+    },
+    "references.quotation": {
+      "en": "Quotation",
+      "ar": "عرض السعر"
+    },
+    "references.order": {
+      "en": "Order",
+      "ar": "الطلب"
+    },
+    "references.invoiceSupplyDate": {
+      "en": "Invoice date of supply",
+      "ar": "تاريخ توريد الفاتورة"
     },
     "trn": {
       "en": "TRN",
@@ -90,6 +130,10 @@
     "billTo": {
       "en": "Bill to",
       "ar": "فاتورة إلى"
+    },
+    "customer": {
+      "en": "Customer",
+      "ar": "العميل"
     },
     "site": {
       "en": "Project",
@@ -354,6 +398,186 @@
     "unit.h": {
       "en": "hr",
       "ar": "ساعة"
+    },
+    "vatCategory.zeroRated": {
+      "en": "0%",
+      "ar": "0%"
+    },
+    "vatCategory.exempt": {
+      "en": "Exempt",
+      "ar": "معفى"
+    },
+    "method.cash": {
+      "en": "Cash",
+      "ar": "نقدًا"
+    },
+    "method.card": {
+      "en": "Card",
+      "ar": "بطاقة"
+    },
+    "method.bank_transfer": {
+      "en": "Bank transfer",
+      "ar": "تحويل بنكي"
+    },
+    "method.cheque": {
+      "en": "Cheque",
+      "ar": "شيك"
+    },
+    "method.paidWhenMade": {
+      "en": "Paid at the sale",
+      "ar": "دُفع عند البيع"
+    },
+    "method.paidEarlier": {
+      "en": "Paid before this invoice",
+      "ar": "مدفوع قبل هذه الفاتورة"
+    },
+    "credit.valueBefore": {
+      "en": "Value of the supply on the invoice",
+      "ar": "قيمة التوريد في الفاتورة"
+    },
+    "credit.valueAfter": {
+      "en": "Correct value of the supply",
+      "ar": "القيمة الصحيحة للتوريد"
+    },
+    "credit.difference": {
+      "en": "Difference",
+      "ar": "الفرق"
+    },
+    "credit.vatOnDifference": {
+      "en": "VAT {{rate}}% on the difference",
+      "ar": "ضريبة القيمة المضافة {{rate}}% على الفرق"
+    },
+    "credit.zeroRatedDifference": {
+      "en": "Zero-rated difference",
+      "ar": "فرق خاضع لنسبة الصفر"
+    },
+    "credit.exemptDifference": {
+      "en": "Exempt difference",
+      "ar": "فرق معفى"
+    },
+    "credit.total": {
+      "en": "Total credited",
+      "ar": "إجمالي المبلغ الدائن"
+    },
+    "credit.reason": {
+      "en": "Reason for this credit note",
+      "ar": "سبب الإشعار الدائن"
+    },
+    "reasons.cancelled": {
+      "en": "Supply cancelled",
+      "ar": "إلغاء التوريد"
+    },
+    "reasons.tax_treatment_changed": {
+      "en": "Nature of the supply changed",
+      "ar": "تغيّر طبيعة التوريد"
+    },
+    "reasons.price_changed": {
+      "en": "Price changed",
+      "ar": "تغيّر السعر"
+    },
+    "reasons.goods_returned": {
+      "en": "Goods returned",
+      "ar": "إرجاع السلع"
+    },
+    "reasons.tax_charged_in_error": {
+      "en": "Tax charged in error",
+      "ar": "احتساب الضريبة بالخطأ"
+    },
+    "statement.date": {
+      "en": "Date",
+      "ar": "التاريخ"
+    },
+    "statement.document": {
+      "en": "Document",
+      "ar": "المستند"
+    },
+    "statement.charge": {
+      "en": "Charges",
+      "ar": "الفواتير والتسليمات"
+    },
+    "statement.credit": {
+      "en": "Payments and credits",
+      "ar": "الدفعات والإشعارات الدائنة"
+    },
+    "statement.owed": {
+      "en": "Owed",
+      "ar": "المستحق"
+    },
+    "statement.opening": {
+      "en": "Owed at the start",
+      "ar": "المستحق في البداية"
+    },
+    "statement.invoiced": {
+      "en": "Invoiced and delivered",
+      "ar": "الفواتير والتسليمات"
+    },
+    "statement.credited": {
+      "en": "Credited",
+      "ar": "الإشعارات الدائنة"
+    },
+    "statement.paid": {
+      "en": "Paid",
+      "ar": "المدفوع"
+    },
+    "statement.closing": {
+      "en": "Owed at the end",
+      "ar": "المستحق في النهاية"
+    },
+    "statement.openingRow": {
+      "en": "Owed at the start of the period",
+      "ar": "المستحق في بداية الفترة"
+    },
+    "statement.empty": {
+      "en": "Nothing in this period.",
+      "ar": "لا شيء في هذه الفترة."
+    },
+    "statement.invoice": {
+      "en": "Invoice {{number}}",
+      "ar": "فاتورة ⁦{{number}}⁩"
+    },
+    "statement.credit_note": {
+      "en": "Credit note {{number}}",
+      "ar": "إشعار دائن ⁦{{number}}⁩"
+    },
+    "statement.order": {
+      "en": "Order {{number}}",
+      "ar": "طلب ⁦{{number}}⁩"
+    },
+    "statement.sale": {
+      "en": "Sale",
+      "ar": "عملية بيع"
+    },
+    "statement.refund": {
+      "en": "Refund",
+      "ar": "استرداد"
+    },
+    "statement.payment": {
+      "en": "Payment",
+      "ar": "دفعة"
+    },
+    "statement.paymentOn": {
+      "en": "Payment – {{reference}}",
+      "ar": "دفعة – ⁦{{reference}}⁩"
+    },
+    "statement.money_back": {
+      "en": "Money given back",
+      "ar": "مبلغ أُعيد للعميل"
+    },
+    "statement.money_backOn": {
+      "en": "Money given back – {{reference}}",
+      "ar": "مبلغ أُعيد للعميل – ⁦{{reference}}⁩"
+    },
+    "statement.paidWhenMade": {
+      "en": "Paid at the sale",
+      "ar": "دُفع عند البيع"
+    },
+    "statement.ahead": {
+      "en": "paid ahead",
+      "ar": "مدفوع مقدّمًا"
+    },
+    "statement.closingAhead": {
+      "en": "Paid ahead at the end",
+      "ar": "مدفوع مقدّمًا في النهاية"
     }
   },
   "title": {

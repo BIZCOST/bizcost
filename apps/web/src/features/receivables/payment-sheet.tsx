@@ -58,6 +58,15 @@ export interface PaidDocument {
   readonly label: string
 }
 
+/** The document a payment names, as the API takes it: an order, a sale or an invoice (M3 Step 8). */
+export function paidDocumentInput(document: Pick<PaidDocument, 'kind' | 'id'>) {
+  return document.kind === 'order'
+    ? { orderId: document.id }
+    : document.kind === 'invoice'
+      ? { invoiceId: document.id }
+      : { saleId: document.id }
+}
+
 export function CustomerPaymentSheet({
   document,
   mode,
@@ -104,7 +113,11 @@ export function CustomerPaymentSheet({
         today,
         closedThrough,
         beforeKey:
-          document.kind === 'order' ? 'orders.payment.beforeOrder' : 'orders.payment.beforeSale',
+          document.kind === 'order'
+            ? 'orders.payment.beforeOrder'
+            : document.kind === 'invoice'
+              ? 'orders.payment.beforeInvoice'
+              : 'orders.payment.beforeSale',
         overKey: refund ? 'orders.payment.overMoneyBack' : undefined,
       }),
     [draft, code, max, document, today, closedThrough, refund],
@@ -134,19 +147,17 @@ export function CustomerPaymentSheet({
     try {
       const result = await record.mutateAsync({
         id: paymentId,
-        ...(document.kind === 'order' ? { orderId: document.id } : { saleId: document.id }),
+        ...paidDocumentInput(document),
         kind: mode,
         businessDate,
         method,
         amount,
         note,
       })
-      queryClient.setQueryData(
-        trpc.customerPayment.list.queryKey(
-          document.kind === 'order' ? { orderId: document.id } : { saleId: document.id },
-        ),
-        { ...result, nextCursor: null },
-      )
+      queryClient.setQueryData(trpc.customerPayment.list.queryKey(paidDocumentInput(document)), {
+        ...result,
+        nextCursor: null,
+      })
       await refresh()
       toast.success(t(refund ? 'orders.payment.moneyBackRecorded' : 'orders.payment.recorded'))
       onRecorded?.(result)

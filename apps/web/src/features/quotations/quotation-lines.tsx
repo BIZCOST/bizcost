@@ -443,6 +443,7 @@ export function QuotationLineRow({
   onNewArea,
   canMove,
   onMove,
+  typedLabel,
 }: {
   index: number
   line: QuotationLineDraft
@@ -469,6 +470,8 @@ export function QuotationLineRow({
   /** Whether it can move up (-1) or down (1): inside its area, or past the block beside it. */
   canMove: (step: -1 | 1) => boolean
   onMove: (step: -1 | 1) => void
+  /** "Typed on this quotation" (an invoice says its own). */
+  typedLabel?: string
 }) {
   const { t } = useTranslation()
   const term = useTerminology()
@@ -591,7 +594,9 @@ export function QuotationLineRow({
           </>
         ) : line.title.trim() !== '' ? (
           <>
-            <span className="text-muted-foreground">{t('documents.quotations.editor.typed')}</span>
+            <span className="text-muted-foreground">
+              {typedLabel ?? t('documents.quotations.editor.typed')}
+            </span>
             {onSaveAsItem ? (
               <Button
                 type="button"

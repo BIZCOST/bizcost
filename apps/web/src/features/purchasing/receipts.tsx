@@ -106,14 +106,17 @@ function recordKey(trpc: ReturnType<typeof useTRPC>, entity: RecordEntity, id: s
       ? trpc.order.get.queryKey({ id })
       : entity === 'quotation'
         ? trpc.quotation.get.queryKey({ id })
-        : trpc.purchase.get.queryKey({ id })
+        : entity === 'invoice'
+          ? trpc.invoice.get.queryKey({ id })
+          : trpc.purchase.get.queryKey({ id })
 }
 
 /**
  * The records whose files these show: a purchase's and an expense's receipts, an order's files and a
- * quotation's (M3 Step 7: the customer's signed copy, drawings; a line's picture has its own field).
+ * quotation's (M3 Step 7: the customer's signed copy, drawings; a line's picture has its own field),
+ * and an invoice's (M3 Step 8: the customer's LPO, a signed delivery note).
  */
-export type RecordEntity = 'purchase' | 'expense' | 'order' | 'quotation'
+export type RecordEntity = 'purchase' | 'expense' | 'order' | 'quotation' | 'invoice'
 
 /** A record's words: a purchase's and an expense's receipts, an order's files (M3 Step 5). */
 const WORDS = {
@@ -144,6 +147,13 @@ const WORDS = {
     removed: 'documents.quotations.files.removed',
     none: 'documents.quotations.files.none',
     removeBody: 'documents.quotations.files.removeBody',
+  },
+  invoice: {
+    title: 'documents.invoices.files.title',
+    attached: 'documents.invoices.files.attached',
+    removed: 'documents.invoices.files.removed',
+    none: 'documents.invoices.files.none',
+    removeBody: 'documents.invoices.files.removeBody',
   },
 } as const satisfies Record<RecordEntity, Record<string, I18nKey>>
 

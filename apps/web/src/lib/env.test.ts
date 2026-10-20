@@ -158,8 +158,8 @@ describe('parseServerEnv', () => {
     it('refuses a module that cannot be previewed (unknown or not being built)', () => {
       const dev = { ...base, NODE_ENV: 'development' }
       expect(() =>
-        parseServerEnv({ ...dev, BIZCOST_PREVIEW_MODULES: 'materials,invoices' }),
-      ).toThrow(/BIZCOST_PREVIEW_MODULES: invoices/)
+        parseServerEnv({ ...dev, BIZCOST_PREVIEW_MODULES: 'materials,inventory' }),
+      ).toThrow(/BIZCOST_PREVIEW_MODULES: inventory/)
       // Quotations is being built (M3 Step 7): previewed on a local server.
       expect(
         parseServerEnv({ ...dev, BIZCOST_PREVIEW_MODULES: 'materials,quotations' }).previewModules,

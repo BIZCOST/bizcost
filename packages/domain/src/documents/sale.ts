@@ -697,10 +697,14 @@ export function pintLineOf(
   const adjustment = toDec(amounts.adjustment).times(sign)
   const rated = amounts.vatRate !== null && toDec(amounts.vatRate).gt(0)
   if (!(amounts.priceIncludesVat && rated)) {
+    // A price typed in 4 decimals gives a subtotal rounded to the currency (10 × 0.0005 = 0.01): the
+    // net price is then that subtotal for the whole quantity, so the line still adds up exactly.
+    const subtotal = toDec(amounts.subtotal).abs()
+    const exact = quantity.times(toDec(line.unitPrice).abs()).eq(subtotal)
     return {
       quantity: quantity.toString() as Quantity,
-      netPrice: toDec(line.unitPrice).toString() as Money,
-      baseQuantity: '1' as Quantity,
+      netPrice: (exact ? toDec(line.unitPrice) : subtotal).toString() as Money,
+      baseQuantity: (exact ? '1' : quantity.toString()) as Quantity,
       allowances: print(
         toDec(amounts.discount)
           .abs()

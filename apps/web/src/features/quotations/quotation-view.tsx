@@ -1,14 +1,8 @@
 'use client'
 
 import { apiErrorCode, apiErrorKey, useTRPC } from '@bizcost/app-core'
-import type { QuotationDto, QuotationLineDto } from '@bizcost/contracts'
-import {
-  compareDecimal,
-  newId,
-  quotationListStatus,
-  subtractDecimals,
-  sumDecimals,
-} from '@bizcost/domain'
+import type { QuotationDto } from '@bizcost/contracts'
+import { newId, quotationListStatus, subtractDecimals, sumDecimals } from '@bizcost/domain'
 import { formatDate, type I18nKey } from '@bizcost/i18n'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
@@ -19,6 +13,7 @@ import {
   FileTextIcon,
   FilePenLineIcon,
   PencilIcon,
+  ReceiptTextIcon,
   SendIcon,
   Trash2Icon,
   XCircleIcon,
@@ -35,13 +30,15 @@ import { PageContainer } from '@/components/shell/page-container'
 import { Button } from '@/components/ui/button'
 import { NativeSelect } from '@/components/ui/native-select'
 import { Textarea } from '@/components/ui/textarea'
-import { useFormatQuantity, useUnitQuantity } from '@/features/catalog/unit-parts'
-import { NBSP } from '@/features/catalog/units'
+import { useFormatQuantity } from '@/features/catalog/unit-parts'
 import { CustomerPicker, type PickedCustomer } from '@/features/customers/customer-picker'
 import { mayAddCustomers, maySeeCustomers } from '@/features/customers/data'
 import { useBusinessDate, useMoney } from '@/features/documents/amounts'
 import { ConfirmDialog } from '@/features/documents/confirm-dialog'
 import { Panel } from '@/features/documents/panel'
+import { BillDialog } from '@/features/invoices/bill-dialog'
+import { mayManageInvoices, mayViewInvoices } from '@/features/invoices/data'
+import { SourceInvoices, useInvoicedInFull } from '@/features/invoices/source-invoices'
 import { hasModule } from '@/features/purchasing/data'
 import {
   RECEIPT_ACCEPT,
@@ -53,8 +50,8 @@ import {
 import { useChannels } from '@/features/sales/data'
 import { useLocale, useTerminology } from '@/lib/i18n/client'
 import { useBusinessContext } from '@/lib/trpc/client'
-import { cn } from '@/lib/utils'
 import { QuotationStatusBadge } from './badges'
+import { DocumentLineList } from './document-line-list'
 import { mayManageQuotations, offeredActions, useRefreshQuotations } from './data'
 import { QuotationPdfDialog } from './quotation-pdf'
 import { QuotationTotals } from './quotation-totals'
@@ -68,7 +65,17 @@ import { totalsOf } from './totals'
 // and when; its revisions and files are listed. Each action asks first, in plain words.
 
 type Dialog =
-  'send' | 'sent' | 'pdf' | 'accept' | 'decline' | 'revise' | 'copy' | 'order' | 'discard' | null
+  | 'send'
+  | 'sent'
+  | 'pdf'
+  | 'accept'
+  | 'decline'
+  | 'revise'
+  | 'copy'
+  | 'order'
+  | 'invoice'
+  | 'discard'
+  | null
 
 function Detail({ label, children }: { label: string; children: ReactNode }) {
   return (
@@ -76,109 +83,6 @@ function Detail({ label, children }: { label: string; children: ReactNode }) {
       <dt className="text-sm text-muted-foreground">{label}</dt>
       <dd className="mt-0.5 font-medium break-words">{children}</dd>
     </div>
-  )
-}
-
-/** Consecutive lines of one area (or of none), as the PDF groups them. */
-function groupsOf(lines: readonly QuotationLineDto[]) {
-  const groups: { area: string | null; lines: QuotationLineDto[] }[] = []
-  for (const line of lines) {
-    const last = groups.at(-1)
-    if (last && last.area === line.area) last.lines.push(line)
-    else groups.push({ area: line.area, lines: [line] })
-  }
-  return groups
-}
-
-function LineItem({
-  line,
-  number,
-  currency,
-  vat,
-}: {
-  line: QuotationLineDto
-  number: number
-  currency: string
-  vat: boolean
-}) {
-  const { t } = useTranslation()
-  const money = useMoney()
-  const unitQuantity = useUnitQuantity()
-  const amount = subtractDecimals(line.subtotal, line.lineDiscount)
-  const picture = Boolean(line.picture?.url)
-  // A phone gives the text the width: the amount goes under it and the picture is smaller; from md
-  // the amount sits beside the text (D-297).
-  return (
-    <li
-      data-quotation-line
-      className={cn(
-        'grid items-start gap-x-3 gap-y-1.5 py-3 first:pt-0 last:pb-0',
-        picture
-          ? 'grid-cols-[1.25rem_4rem_minmax(0,1fr)] md:grid-cols-[1.25rem_5rem_minmax(0,1fr)_auto]'
-          : 'grid-cols-[1.25rem_minmax(0,1fr)] md:grid-cols-[1.25rem_minmax(0,1fr)_auto]',
-      )}
-    >
-      <span className="row-span-2 mt-0.5 text-sm text-muted-foreground tabular-nums md:row-span-1">
-        {number}
-      </span>
-      {line.picture?.url ? (
-        // A signed URL of the business's private bucket: a plain image.
-        <img
-          src={line.picture.url}
-          alt={t('documents.quotations.editor.pictureAlt')}
-          data-line-picture
-          className="row-span-2 h-12 w-16 rounded-lg border object-cover md:row-span-1 md:h-15 md:w-20"
-        />
-      ) : null}
-      <div className="min-w-0">
-        <p className="text-start font-medium break-words">
-          <bdi>{line.description}</bdi>
-        </p>
-        {line.details ? (
-          <p dir="auto" className="mt-0.5 text-sm whitespace-pre-line text-muted-foreground">
-            {line.details}
-          </p>
-        ) : null}
-        {line.note ? (
-          <p dir="auto" className="mt-0.5 text-sm font-medium whitespace-pre-line text-destructive">
-            {line.note}
-          </p>
-        ) : null}
-        <p className="mt-1 text-sm text-muted-foreground">
-          <bdi>
-            {(line.unit ? unitQuantity(line.qty, line.unit) : line.qty).replaceAll(' ', NBSP)}
-          </bdi>
-          {' × '}
-          <bdi className="tabular-nums">{money(line.unitPrice, currency)}</bdi>
-          {line.discount ? (
-            <>
-              {' · '}
-              {'percent' in line.discount
-                ? t('purchasing.view.discountPercent', { percent: line.discount.percent })
-                : t('purchasing.view.discountAmount', {
-                    amount: money(line.discount.amount, currency),
-                  })}
-            </>
-          ) : null}
-          {line.typed ? <> · {t('documents.quotations.view.typed')}</> : null}
-        </p>
-      </div>
-      <p
-        className={cn(
-          'pt-0.5 text-start font-medium md:row-start-1 md:text-end',
-          picture ? 'col-start-3 md:col-start-4' : 'col-start-2 md:col-start-3',
-        )}
-      >
-        <bdi className="tabular-nums">{money(amount, currency)}</bdi>
-        {vat ? (
-          <span className="ms-1.5 text-xs font-normal text-muted-foreground md:ms-0 md:block">
-            {line.priceIncludesVat && line.vatRate !== null && compareDecimal(line.vatRate, '0') > 0
-              ? t('sales.view.inclVat')
-              : t('sales.list.beforeVat')}
-          </span>
-        ) : null}
-      </p>
-    </li>
   )
 }
 
@@ -264,6 +168,12 @@ export function QuotationView({ quotation, today }: { quotation: QuotationDto; t
   const [dueDate, setDueDate] = useState('')
   const [channelId, setChannelId] = useState('')
   const [newIds] = useState(() => ({ revise: newId(), copy: newId(), order: newId() }))
+  // M3 Step 8: an accepted quotation invoiced in full has nothing more to invoice.
+  const invoicedInFull = useInvoicedInFull(
+    { quotationId: quotation.id },
+    quotation.payable,
+    quotation.status === 'accepted' && context !== undefined && mayViewInvoices(context),
+  )
   const signedInput = useRef<HTMLInputElement>(null)
   if (!context) return null
 
@@ -448,9 +358,15 @@ export function QuotationView({ quotation, today }: { quotation: QuotationDto; t
   const canOrder = actions.has('to_order')
   const canCopy = actions.has('copy')
   const canDiscard = actions.has('discard')
-  const groups = groupsOf(quotation.lines)
-  const hasAreas = groups.some((group) => group.area !== null)
-  let counter = 0
+  // M3 Step 8: an accepted quotation is invoiced (everything, a stage, a part or a deposit), unless it
+  // became an order (the order is invoiced then).
+  const canInvoice =
+    quotation.status === 'accepted' &&
+    quotation.latest &&
+    quotation.orderId === null &&
+    !quotation.otherHasOrder &&
+    !invoicedInFull &&
+    mayManageInvoices(context)
 
   return (
     <PageContainer>
@@ -502,6 +418,12 @@ export function QuotationView({ quotation, today }: { quotation: QuotationDto; t
             <Button variant="outline" onClick={() => open('accept')}>
               <CheckCircle2Icon aria-hidden />
               {t('documents.quotations.view.accept')}
+            </Button>
+          ) : null}
+          {canInvoice ? (
+            <Button data-quotation-invoice onClick={() => open('invoice')}>
+              <ReceiptTextIcon aria-hidden />
+              {t('documents.invoices.links.invoiceQuotation')}
             </Button>
           ) : null}
           {canOrder ? (
@@ -676,61 +598,7 @@ export function QuotationView({ quotation, today }: { quotation: QuotationDto; t
                 {t('documents.quotations.view.noLines')}
               </p>
             ) : (
-              <div className="space-y-4">
-                {groups.map((group, index) => (
-                  <section
-                    key={`${group.area ?? ''}-${index}`}
-                    aria-label={
-                      group.area ??
-                      (hasAreas ? t('documents.quotations.editor.areas.none') : undefined)
-                    }
-                  >
-                    {group.area ? (
-                      <div className="mb-2 flex flex-wrap items-baseline gap-x-2 border-s-4 border-primary/60 ps-2">
-                        <h3
-                          dir="auto"
-                          data-area
-                          className="text-sm font-semibold text-primary [overflow-wrap:anywhere]"
-                        >
-                          {group.area}
-                        </h3>
-                        <span data-area-count className="text-xs text-muted-foreground">
-                          {t('documents.quotations.editor.areas.count', {
-                            count: group.lines.length,
-                          })}
-                        </span>
-                      </div>
-                    ) : hasAreas ? (
-                      // Lines without an area among areas: a heading of their own, so they never
-                      // read as more lines of the area before them.
-                      <div className="mb-2 flex flex-wrap items-baseline gap-x-2 border-s-4 border-muted-foreground/30 ps-2">
-                        <h3 data-no-area className="text-sm font-semibold text-muted-foreground">
-                          {t('documents.quotations.editor.areas.none')}
-                        </h3>
-                        <span className="text-xs text-muted-foreground">
-                          {t('documents.quotations.editor.areas.count', {
-                            count: group.lines.length,
-                          })}
-                        </span>
-                      </div>
-                    ) : null}
-                    <ul className="divide-y">
-                      {group.lines.map((line) => {
-                        counter += 1
-                        return (
-                          <LineItem
-                            key={line.id}
-                            line={line}
-                            number={counter}
-                            currency={quotation.currency}
-                            vat={vat}
-                          />
-                        )
-                      })}
-                    </ul>
-                  </section>
-                ))}
-              </div>
+              <DocumentLineList lines={quotation.lines} currency={quotation.currency} vat={vat} />
             )}
           </Panel>
 
@@ -834,6 +702,9 @@ export function QuotationView({ quotation, today }: { quotation: QuotationDto; t
                 ))}
               </ol>
             </Panel>
+          ) : null}
+          {quotation.status === 'accepted' && mayViewInvoices(context) ? (
+            <SourceInvoices filter={{ quotationId: quotation.id }} currency={quotation.currency} />
           ) : null}
           <History quotationId={quotation.id} />
         </aside>
@@ -1043,6 +914,23 @@ export function QuotationView({ quotation, today }: { quotation: QuotationDto; t
           ) : null}
         </div>
       </ConfirmDialog>
+      {dialog === 'invoice' ? (
+        <BillDialog
+          source={{
+            kind: 'quotation',
+            id: quotation.id,
+            number: quotation.number,
+            payable: quotation.payable,
+            currency: quotation.currency,
+            stages: quotation.stages.map((stage) => ({
+              label: stage.label,
+              percent: stage.percent,
+              amount: stage.amount,
+            })),
+          }}
+          onClose={() => setDialog(null)}
+        />
+      ) : null}
       <ConfirmDialog
         open={dialog === 'discard'}
         icon={Trash2Icon}

@@ -282,9 +282,10 @@ describe('the Auth admin API with a real user token', () => {
 //
 // Each business has objects of every kind the bucket holds: its logo and its receipts (a purchase's
 // and an expense's, M2 Steps 3 and 5), its signature (Settings → Documents) and a quotation line's
-// picture (M3 Step 7), and two uploads the API issued and nobody used (a logo's and a receipt's: the
-// Storage guard would let Storage write there). Quotation PDFs are never stored: each is made when
-// asked for and returned (quotation.pdf).
+// picture (M3 Step 7), its issued invoice's and credit note's PDFs (M3 Step 8: stored once issued,
+// under {business}/document/), and two uploads the API issued and nobody used (a logo's and a
+// receipt's: the Storage guard would let Storage write there). Quotation PDFs are never stored: each
+// is made when asked for and returned (quotation.pdf).
 
 interface Objects {
   logo: string
@@ -292,6 +293,8 @@ interface Objects {
   expenseReceipt: string
   signature: string
   linePicture: string
+  invoicePdf: string
+  creditNotePdf: string
 }
 
 const objectsOf = new Map<Tenant, Objects>()
@@ -307,12 +310,23 @@ beforeAll(async () => {
        where business_id = ${t.id}
          and id in (${t.attachment.id}, ${t.expenseAttachment.id}, ${t.linePicture.id})`
     const pathOf = (id: string) => rows.find((r) => r.id === id)?.path ?? ''
+    const pdfs = await api.admin<{ kind: string; path: string }[]>`
+      select 'invoice' as kind, u.path from app.invoices i
+        join app.file_uploads u on u.business_id = i.business_id and u.id = i.pdf_upload_id
+       where i.business_id = ${t.id} and i.id = ${t.invoice.id}
+      union all
+      select 'credit_note', u.path from app.credit_notes c
+        join app.file_uploads u on u.business_id = c.business_id and u.id = c.pdf_upload_id
+       where c.business_id = ${t.id} and c.id = ${t.creditNote.id}`
+    const pdfOf = (kind: string) => pdfs.find((r) => r.kind === kind)?.path ?? ''
     objectsOf.set(t, {
       logo: t.logoPath,
       purchaseReceipt: pathOf(t.attachment.id),
       expenseReceipt: pathOf(t.expenseAttachment.id),
       signature: t.signaturePath,
       linePicture: pathOf(t.linePicture.id),
+      invoicePdf: pdfOf('invoice'),
+      creditNotePdf: pdfOf('credit_note'),
     })
     const receipt = await mutate<AttachmentUploadUrlDto>(api.handler, 'attachment.uploadUrl', {
       token: t.owner.token,
@@ -344,7 +358,18 @@ function png(who: Identity, extra: Record<string, string> = {}) {
 }
 
 /** Every folder of a business in the bucket. */
-const KINDS = ['logo', 'purchase', 'expense', 'signature', 'stamp', 'quotation', 'quotation_line']
+const KINDS = [
+  'logo',
+  'purchase',
+  'expense',
+  'signature',
+  'stamp',
+  'quotation',
+  'quotation_line',
+  'invoice',
+  'invoice_line',
+  'document',
+]
 
 /** New paths of every kind in a business (never issued). */
 const freshPaths = (t: Tenant) => KINDS.map((kind) => `${t.id}/${kind}/${newId()}.png`)
@@ -361,13 +386,15 @@ describe('Storage straight from the client, with a real user token', () => {
     digests = { A: await tenantDigest(api.admin, A), B: await tenantDigest(api.admin, B) }
   })
 
-  it('every kind of object is there to attack: a logo, two receipts, a signature and a picture in each business', async () => {
+  it('every kind of object is there to attack: a logo, two receipts, a signature, a picture and two issued PDFs in each business', async () => {
     for (const t of [A, B]) {
       const objects = objectsOf.get(t)!
       expect(objects.purchaseReceipt).toMatch(new RegExp(`^${t.id}/purchase/`))
       expect(objects.expenseReceipt).toMatch(new RegExp(`^${t.id}/expense/`))
       expect(objects.signature).toMatch(new RegExp(`^${t.id}/signature/`))
       expect(objects.linePicture).toMatch(new RegExp(`^${t.id}/quotation_line/`))
+      expect(objects.invoicePdf).toMatch(new RegExp(`^${t.id}/document/`))
+      expect(objects.creditNotePdf).toMatch(new RegExp(`^${t.id}/document/`))
       for (const path of pathsOf(t)) expect(await objectEtag(path), path).toBeDefined()
       for (const path of openUploadsOf.get(t)!) expect(await objectEtag(path), path).toBeUndefined()
     }
@@ -395,6 +422,7 @@ describe('Storage straight from the client, with a real user token', () => {
           })
           expect(refused(read), `${what} GET ${route} ${path}: ${read.status}`).toBe(true)
           expect(read.text).not.toContain('PNG')
+          expect(read.text).not.toContain('%PDF')
         }
       }
     }

@@ -1936,6 +1936,7 @@ const PROBES: Record<string, Probe> = {
     variants: (victim) => [
       { input: { orderId: victim.order.id }, own: ['not_found'] },
       { input: { saleId: victim.payLaterSale.id }, own: ['not_found'] },
+      { input: { invoiceId: victim.invoice.id }, own: ['not_found'] },
       { input: { customerId: victim.customer.id }, own: ['not_found'] },
     ],
   },
@@ -1949,6 +1950,7 @@ const PROBES: Record<string, Probe> = {
       return [
         { input: { ...fields, id: newId(), orderId: victim.order.id }, own: ['not_found'] },
         { input: { ...fields, id: newId(), saleId: victim.payLaterSale.id }, own: ['not_found'] },
+        { input: { ...fields, id: newId(), invoiceId: victim.invoice.id }, own: ['not_found'] },
         {
           input: { ...fields, id: victim.orderPayment.id, orderId: attacker.order.id },
           own: ['conflict'],
@@ -1990,6 +1992,14 @@ const PROBES: Record<string, Probe> = {
             ...fields,
             customerId: attacker.customer.id,
             documents: [{ id: newId(), saleId: victim.payLaterSale.id }],
+          },
+          own: ['not_found'],
+        },
+        {
+          input: {
+            ...fields,
+            customerId: attacker.customer.id,
+            documents: [{ id: newId(), invoiceId: victim.invoice.id }],
           },
           own: ['not_found'],
         },
@@ -2483,6 +2493,311 @@ const PROBES: Record<string, Probe> = {
     variants: (victim) => [
       {
         input: { id: victim.sentQuotation.id, version: victim.sentQuotation.version },
+        own: ['not_found'],
+      },
+    ],
+  },
+  // M3 Step 8: invoices, credit notes and statements.
+  'invoice.list': {
+    base: 'business',
+    reason: `${NO_ROWS}; a customer, order or quotation filter is looked up in that business (NOT_FOUND)`,
+    variants: (victim) => [
+      { input: { status: 'all' } },
+      { input: { customerId: victim.customer.id }, own: ['not_found'] },
+      { input: { orderId: victim.order.id }, own: ['not_found'] },
+      { input: { quotationId: victim.acceptedQuotation.id }, own: ['not_found'] },
+    ],
+  },
+  'invoice.get': {
+    base: 'business',
+    reason: 'looked up in the x-business-id business (and the caller’s branches)',
+    variants: (victim) => [
+      { input: { id: victim.invoice.id }, own: ['not_found'] },
+      { input: { id: victim.draftInvoice.id }, own: ['not_found'] },
+    ],
+  },
+  'invoice.history': {
+    base: 'business',
+    reason: 'looked up in the x-business-id business (and the caller’s branches)',
+    variants: (victim) => [{ input: { id: victim.invoice.id }, own: ['not_found'] }],
+  },
+  'invoice.pdf': {
+    base: 'business',
+    reason:
+      'looked up in the x-business-id business; its stored PDF and its images are read only from ' +
+      'that business’s own Storage folders',
+    variants: (victim) => [{ input: { id: victim.invoice.id }, own: ['not_found'] }],
+  },
+  'invoice.depositsWithoutInvoice': {
+    base: 'business',
+    reason: NO_ROWS,
+    variants: () => [{ input: {} }],
+  },
+  'invoice.create': {
+    base: 'business',
+    reason:
+      'its customer, branch, channel and products are looked up in the x-business-id business; an ' +
+      'invoice or line id used anywhere is CONFLICT',
+    variants: (victim, attacker) => {
+      const fields = { customerId: attacker.customer.id, locationId: attacker.branch.id }
+      const line = { productId: null, description: 'Work', qty: '1', unitPrice: '1' }
+      return [
+        { input: { ...fields, id: victim.invoice.id }, own: ['conflict'] },
+        { input: { ...fields, id: newId(), customerId: victim.customer.id }, own: ['not_found'] },
+        { input: { ...fields, id: newId(), locationId: victim.branch.id }, own: ['not_found'] },
+        { input: { ...fields, id: newId(), channelId: victim.channel.id }, own: ['not_found'] },
+        {
+          input: {
+            ...fields,
+            id: newId(),
+            lines: [{ ...line, id: newId(), productId: victim.product.id }],
+          },
+          own: ['not_found'],
+        },
+        {
+          input: { ...fields, id: newId(), lines: [{ ...line, id: victim.invoice.lines[0]?.id }] },
+          own: ['conflict'],
+        },
+      ]
+    },
+  },
+  'invoice.update': {
+    base: 'business',
+    reason:
+      'the invoice (locked) and its customer, branch, channel and products are looked up in the ' +
+      'x-business-id business; a line id used anywhere is CONFLICT',
+    variants: (victim, attacker) => {
+      const own = { id: attacker.draftInvoice.id, version: attacker.draftInvoice.version }
+      const line = { productId: null, description: 'Work', qty: '1', unitPrice: '1' }
+      return [
+        {
+          input: { id: victim.draftInvoice.id, version: victim.draftInvoice.version },
+          own: ['not_found'],
+        },
+        { input: { ...own, customerId: victim.customer.id }, own: ['not_found'] },
+        { input: { ...own, locationId: victim.branch.id }, own: ['not_found'] },
+        { input: { ...own, channelId: victim.channel.id }, own: ['not_found'] },
+        {
+          input: { ...own, lines: [{ ...line, id: newId(), productId: victim.product.id }] },
+          own: ['not_found'],
+        },
+        {
+          input: { ...own, lines: [{ ...line, id: victim.draftInvoice.lines[0]?.id }] },
+          own: ['conflict'],
+        },
+      ]
+    },
+  },
+  'invoice.discard': {
+    base: 'business',
+    reason: 'looked up (and locked) in the x-business-id business',
+    variants: (victim) => [
+      {
+        input: { id: victim.draftInvoice.id, version: victim.draftInvoice.version },
+        own: ['not_found'],
+      },
+    ],
+  },
+  'invoice.issue': {
+    base: 'business',
+    reason: 'looked up (and locked) in the x-business-id business; its number is never taken',
+    variants: (victim) => [
+      {
+        input: { id: victim.draftInvoice.id, version: victim.draftInvoice.version },
+        own: ['not_found'],
+      },
+    ],
+  },
+  'invoice.fromQuotation': {
+    base: 'business',
+    reason:
+      'the quotation is looked up (and locked) in the x-business-id business; a new id used ' +
+      'anywhere is CONFLICT',
+    variants: (victim, attacker) => [
+      { input: { id: victim.acceptedQuotation.id, newId: newId() }, own: ['not_found'] },
+      {
+        input: { id: attacker.acceptedQuotation.id, newId: victim.invoice.id },
+        own: ['conflict'],
+      },
+    ],
+  },
+  'invoice.fromOrder': {
+    base: 'business',
+    reason:
+      'the order is looked up (and locked) in the x-business-id business; a new id used anywhere ' +
+      'is CONFLICT',
+    variants: (victim, attacker) => [
+      { input: { orderId: victim.order.id, newId: newId() }, own: ['not_found'] },
+      { input: { orderId: attacker.order.id, newId: victim.invoice.id }, own: ['conflict'] },
+    ],
+  },
+  'invoice.fromSale': {
+    base: 'business',
+    reason:
+      'the sale is looked up (and locked) in the x-business-id business; a new id used anywhere ' +
+      'is CONFLICT',
+    variants: (victim, attacker) => [
+      { input: { saleId: victim.payLaterSale.id, newId: newId() }, own: ['not_found'] },
+      {
+        input: { saleId: attacker.payLaterSale.id, newId: victim.invoice.id },
+        own: ['conflict'],
+      },
+    ],
+  },
+  'invoice.copyToQuotation': {
+    base: 'business',
+    reason:
+      'the invoice is looked up in the x-business-id business; a quotation id used anywhere is ' +
+      'CONFLICT, and the number is never taken',
+    variants: (victim, attacker) => [
+      { input: { id: victim.invoice.id, newId: newId() }, own: ['not_found'] },
+      { input: { id: attacker.invoice.id, newId: victim.quotation.id }, own: ['conflict'] },
+    ],
+  },
+  'creditNote.list': {
+    base: 'business',
+    reason: `${NO_ROWS}; an invoice or customer filter is looked up in that business (NOT_FOUND)`,
+    variants: (victim) => [
+      { input: { status: 'all' } },
+      { input: { invoiceId: victim.invoice.id }, own: ['not_found'] },
+      { input: { customerId: victim.customer.id }, own: ['not_found'] },
+    ],
+  },
+  'creditNote.get': {
+    base: 'business',
+    reason: 'looked up in the x-business-id business (and its invoice in the caller’s branches)',
+    variants: (victim) => [
+      { input: { id: victim.creditNote.id }, own: ['not_found'] },
+      { input: { id: victim.draftCreditNote.id }, own: ['not_found'] },
+    ],
+  },
+  'creditNote.history': {
+    base: 'business',
+    reason: 'looked up in the x-business-id business',
+    variants: (victim) => [{ input: { id: victim.creditNote.id }, own: ['not_found'] }],
+  },
+  'creditNote.pdf': {
+    base: 'business',
+    reason: 'looked up in the x-business-id business; its stored PDF read only from its own folder',
+    variants: (victim) => [{ input: { id: victim.creditNote.id }, own: ['not_found'] }],
+  },
+  'creditNote.create': {
+    base: 'business',
+    reason:
+      'the invoice (locked) and each of its lines are looked up in the x-business-id business; a ' +
+      'credit note id used anywhere is CONFLICT',
+    variants: (victim, attacker) => {
+      const fields = {
+        eventDate: attacker.order.businessDate,
+        reason: 'price_changed',
+        reasonText: 'Price cut',
+        by: 'amount',
+      }
+      const line = { invoiceLineId: attacker.invoice.lines[0]?.id, amount: '1' }
+      return [
+        {
+          input: {
+            ...fields,
+            id: victim.creditNote.id,
+            invoiceId: attacker.invoice.id,
+            lines: [line],
+          },
+          own: ['conflict'],
+        },
+        {
+          input: { ...fields, id: newId(), invoiceId: victim.invoice.id, lines: [line] },
+          own: ['not_found'],
+        },
+        {
+          input: {
+            ...fields,
+            id: newId(),
+            invoiceId: attacker.invoice.id,
+            lines: [{ invoiceLineId: victim.invoice.lines[0]?.id, amount: '1' }],
+          },
+          own: ['not_found'],
+        },
+      ]
+    },
+  },
+  'creditNote.update': {
+    base: 'business',
+    reason:
+      'the credit note (locked), its invoice and each line are looked up in the x-business-id ' +
+      'business',
+    variants: (victim, attacker) => {
+      const fields = {
+        eventDate: attacker.order.businessDate,
+        reason: 'goods_returned',
+        reasonText: 'Return',
+        by: 'quantity',
+      }
+      return [
+        {
+          input: {
+            ...fields,
+            id: victim.draftCreditNote.id,
+            version: victim.draftCreditNote.version,
+            lines: [{ invoiceLineId: attacker.invoice.lines[0]?.id, qty: '1' }],
+          },
+          own: ['not_found'],
+        },
+        {
+          input: {
+            ...fields,
+            id: attacker.draftCreditNote.id,
+            version: attacker.draftCreditNote.version,
+            lines: [{ invoiceLineId: victim.invoice.lines[0]?.id, qty: '1' }],
+          },
+          own: ['not_found'],
+        },
+      ]
+    },
+  },
+  'creditNote.discard': {
+    base: 'business',
+    reason: 'looked up (and locked) in the x-business-id business',
+    variants: (victim) => [
+      {
+        input: { id: victim.draftCreditNote.id, version: victim.draftCreditNote.version },
+        own: ['not_found'],
+      },
+    ],
+  },
+  'creditNote.issue': {
+    base: 'business',
+    reason: 'looked up (and locked) in the x-business-id business; its number is never taken',
+    variants: (victim) => [
+      {
+        input: { id: victim.draftCreditNote.id, version: victim.draftCreditNote.version },
+        own: ['not_found'],
+      },
+    ],
+  },
+  'customer.statement': {
+    base: 'business',
+    reason: 'the customer is looked up in the x-business-id business',
+    variants: (victim, attacker) => [
+      {
+        input: {
+          customerId: victim.customer.id,
+          from: attacker.order.businessDate,
+          to: attacker.order.businessDate,
+        },
+        own: ['not_found'],
+      },
+    ],
+  },
+  'customer.statementPdf': {
+    base: 'business',
+    reason: 'the customer is looked up in the x-business-id business',
+    variants: (victim, attacker) => [
+      {
+        input: {
+          customerId: victim.customer.id,
+          from: attacker.order.businessDate,
+          to: attacker.order.businessDate,
+        },
         own: ['not_found'],
       },
     ],

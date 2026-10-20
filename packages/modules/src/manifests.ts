@@ -685,6 +685,42 @@ const QUOTATIONS = {
   requiresCapabilities: [],
 } as const satisfies ModuleManifest
 
+// Invoices (M3 Step 8; planned until Release B, M3 Step 9: served only under the dev-only preview,
+// D-125): invoices and credit notes numbered gaplessly at issue (INV-0001…, CN-0001…), a full «فاتورة
+// ضريبية · Tax Invoice» with VAT registration and a plain «فاتورة · Invoice» without it (Q26), made from
+// scratch, an accepted quotation (in stages or with deposits, Q22), an order or a recorded sale, paid
+// through Payments, and the customers' statements (Q27). `invoices.documents.view` sees them (in one's
+// branches, Q12); `.manage` prepares drafts and copies an invoice to a quotation; `.issue` issues them
+// (the number is taken, it is frozen); `.credit` prepares and issues credit notes. Prices are not
+// sensitive (D-187). It needs Products & Services, Customers and Payments. No requiresCapabilities: a
+// business that is not VAT-registered sends plain invoices (§6.6).
+const INVOICES = {
+  id: 'invoices',
+  kind: 'optional',
+  availability: 'planned',
+  phase: 3,
+  deps: ['products', 'customers', 'payments'],
+  permissionKeys: [
+    'invoices.documents.view',
+    'invoices.documents.manage',
+    'invoices.documents.issue',
+    'invoices.documents.credit',
+  ],
+  nav: [
+    {
+      id: 'invoices',
+      labelKey: 'nav.invoices',
+      path: 'invoices',
+      icon: 'receipt-text',
+      group: 'sales',
+      permission: 'invoices.documents.view',
+    },
+  ],
+  quickActions: [],
+  sensitiveFields: [],
+  requiresCapabilities: [],
+} as const satisfies ModuleManifest
+
 interface PlannedManifest extends ModuleManifest {
   readonly availability: 'planned'
   readonly permissionKeys: readonly []
@@ -734,8 +770,7 @@ export const MODULES = [
   PAYMENTS,
   REPORTS,
   QUOTATIONS,
-  // No requiresCapabilities: a business that is not VAT-registered sends plain invoices (§6.6).
-  planned('invoices', 'optional', 3, { deps: ['products', 'customers', 'payments'] }),
+  INVOICES,
   planned('inventory', 'optional', 4, {
     deps: ['materials'],
     requiresCapabilities: ['keeps_stock'],

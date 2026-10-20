@@ -1,6 +1,8 @@
 import { randomBytes } from 'node:crypto'
 import type {
+  CreditNoteDto,
   DocumentImageUploadUrlDto,
+  InvoiceDto,
   QuotationDto,
   CustomerDto,
   CustomerPaymentDto,
@@ -83,6 +85,10 @@ import { CapturedEmails, join, setupBusiness, WORKSHOP } from '../settings'
 // Quotations (D-125) and attack its procedures like the others. Each business also has the letterhead's
 // contact lines, a signature image (Settings → Documents), a draft quotation (a product line and a
 // typed line with its area, details, note and picture) and a sent one.
+//
+// M3 Step 8: Invoices is planned until Release B too, so it is previewed with Quotations. Each business
+// also has an issued (plain) invoice of the customer (a product line and a typed one, its LPO and a
+// payment on it), a draft invoice, an issued credit note of the invoice and a draft credit note.
 
 export type Handler = ReturnType<typeof handlerFor>
 
@@ -108,7 +114,7 @@ export function openApi(router?: AnyRouter): Api {
   const handler = handlerFor(
     db,
     router,
-    { supabaseSecretKey: SECRET_KEY, previewModules: ['quotations'] },
+    { supabaseSecretKey: SECRET_KEY, previewModules: ['quotations', 'invoices'] },
     { emailSender: emails },
   )
   const users: TestUser[] = []
@@ -305,6 +311,16 @@ export interface Tenant {
   acceptedQuotation: QuotationDto
   /** The signature image of Settings → Documents (its object path). */
   signaturePath: string
+  /** M3 Step 8: an issued invoice of the customer (a product line, a typed line, its LPO). */
+  invoice: InvoiceDto
+  /** A payment recorded on it. */
+  invoicePayment: CustomerPaymentDto
+  /** A draft invoice of the customer (typed line). */
+  draftInvoice: InvoiceDto
+  /** An issued credit note of the invoice (by amount on its typed line). */
+  creditNote: CreditNoteDto
+  /** A draft credit note of the invoice. */
+  draftCreditNote: CreditNoteDto
 }
 
 function ok<T>(result: CallResult<T>, what: string): T {
@@ -1057,6 +1073,93 @@ export async function createTenant(api: Api, label: string): Promise<Tenant> {
     'quotation.accept',
   ) as QuotationDto
 
+  // M3 Step 8: an issued invoice with a payment, a draft invoice, an issued and a draft credit note.
+  const invoiceDraft = ok(
+    await as('invoice.create', 'mutation', {
+      id: newId(),
+      customerId: customer.id,
+      locationId: branch.id,
+      channelId: channel.id,
+      lpoReference: `LPO-INV-${label}-${tag}`,
+      countedElsewhere: false,
+      notes: `Invoice note ${label} ${tag}`,
+      lines: [
+        { id: newId(), productId: product.id, qty: '2', unitPrice: '20' },
+        {
+          id: newId(),
+          productId: null,
+          description: `Fitting ${label} ${tag}`,
+          qty: '1',
+          unitPrice: '30',
+        },
+      ],
+    }),
+    'invoice.create',
+  ) as InvoiceDto
+  const invoice = ok(
+    await as('invoice.issue', 'mutation', { id: invoiceDraft.id, version: invoiceDraft.version }),
+    'invoice.issue',
+  ) as InvoiceDto
+  const invoicePayments = ok(
+    await as('customerPayment.record', 'mutation', {
+      id: newId(),
+      invoiceId: invoice.id,
+      businessDate: today,
+      method: 'bank_transfer',
+      amount: '10',
+      note: `Invoice payment ${label} ${tag}`,
+    }),
+    'customerPayment.record (invoice)',
+  ) as DocumentPaymentsDto
+  const draftInvoice = ok(
+    await as('invoice.create', 'mutation', {
+      id: newId(),
+      customerId: customer.id,
+      locationId: branch.id,
+      lines: [
+        {
+          id: newId(),
+          productId: null,
+          description: `Draft work ${label} ${tag}`,
+          qty: '1',
+          unitPrice: '12',
+        },
+      ],
+    }),
+    'invoice.create (draft)',
+  ) as InvoiceDto
+  const creditNoteDraft = ok(
+    await as('creditNote.create', 'mutation', {
+      id: newId(),
+      invoiceId: invoice.id,
+      eventDate: today,
+      reason: 'price_changed',
+      reasonText: `Credit ${label} ${tag}`,
+      by: 'amount',
+      lines: [{ invoiceLineId: invoice.lines[1]!.id, amount: '5' }],
+    }),
+    'creditNote.create',
+  ) as CreditNoteDto
+  const creditNote = ok(
+    await as('creditNote.issue', 'mutation', {
+      id: creditNoteDraft.id,
+      version: creditNoteDraft.version,
+    }),
+    'creditNote.issue',
+  ) as CreditNoteDto
+  const draftCreditNote = ok(
+    await as('creditNote.create', 'mutation', {
+      id: newId(),
+      invoiceId: invoice.id,
+      eventDate: today,
+      reason: 'goods_returned',
+      reasonText: `Return ${label} ${tag}`,
+      by: 'quantity',
+      lines: [{ invoiceLineId: invoice.lines[0]!.id, qty: '1' }],
+    }),
+    'creditNote.create (draft)',
+  ) as CreditNoteDto
+
   return {
     id,
     label,
@@ -1114,6 +1217,11 @@ export async function createTenant(api: Api, label: string): Promise<Tenant> {
     sentQuotation,
     acceptedQuotation,
     signaturePath: signatureUpload.path,
+    invoice,
+    invoicePayment: invoicePayments.items[0]!,
+    draftInvoice,
+    creditNote,
+    draftCreditNote,
   }
 }
 
@@ -1156,6 +1264,17 @@ export function queryInputOf(path: string, tenant: Tenant): unknown {
   if (path === 'customerPayment.list') return { orderId: tenant.order.id }
   if (path === 'quotation.get') return { id: tenant.quotation.id }
   if (path === 'quotation.history') return { id: tenant.quotation.id }
+  if (path === 'invoice.get') return { id: tenant.invoice.id }
+  if (path === 'invoice.history') return { id: tenant.invoice.id }
+  if (path === 'creditNote.get') return { id: tenant.creditNote.id }
+  if (path === 'creditNote.history') return { id: tenant.creditNote.id }
+  if (path === 'customer.statement') {
+    return {
+      customerId: tenant.customer.id,
+      from: `${tenant.invoice.issueDate!.slice(0, 7)}-01`,
+      to: tenant.invoice.issueDate,
+    }
+  }
   return undefined
 }
 
@@ -1264,6 +1383,18 @@ export function markersOf(tenant: Tenant): string[] {
     tenant.sentQuotation.id,
     tenant.acceptedQuotation.id,
     tenant.signaturePath,
+    tenant.invoice.id,
+    tenant.invoice.lpoReference ?? tenant.invoice.id,
+    tenant.invoice.notes ?? tenant.invoice.id,
+    ...tenant.invoice.lines.flatMap((l) => [l.id, l.description]),
+    tenant.invoicePayment.id,
+    tenant.invoicePayment.note ?? tenant.invoicePayment.id,
+    tenant.draftInvoice.id,
+    ...tenant.draftInvoice.lines.flatMap((l) => [l.id, l.description]),
+    tenant.creditNote.id,
+    tenant.creditNote.reasonText,
+    tenant.draftCreditNote.id,
+    tenant.draftCreditNote.reasonText,
     ...Object.values(tenant.roles).map((role) => role.id),
     ...[tenant.owner, tenant.admin, tenant.employee].flatMap(({ user }) => [
       user.id,

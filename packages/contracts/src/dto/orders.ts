@@ -271,6 +271,11 @@ export const orderDto = z.object({
   /** Delivered: the day it counts as a sale on, and its sale. */
   deliveredOn: zBusinessDate.nullable(),
   saleId: zUuid.nullable(),
+  /**
+   * Its issued invoices bill all of it (M3 Step 8, D-313): payments are recorded on them. One they
+   * bill in part still takes payments for what they don't bill yet.
+   */
+  paidThroughInvoices: z.boolean(),
   deliveredAt: isoTimestamp.nullable(),
   cancelledAt: isoTimestamp.nullable(),
   cancelReason: z.string().nullable(),

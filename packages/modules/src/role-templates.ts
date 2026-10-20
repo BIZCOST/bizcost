@@ -18,7 +18,9 @@ import { PERMISSION_CATALOG, type PermissionKey } from './permissions'
 // Employee adds customers, enters and delivers their own orders, and picks customers by name and the
 // phone's last 4 digits only); quotations_security for the quotations keys of M3 Step 7, by the plan's
 // Q10 table: the Manager and Sales see, prepare and record the customer's answer, the Accountant sees
-// them; "Manage documents" (Settings) is the Owner's and the Admin's.
+// them; "Manage documents" (Settings) is the Owner's and the Admin's; invoices_security for the invoices
+// keys of M3 Step 8, by the plan's Q10 table: the Manager and the Accountant see, prepare, issue and
+// credit, Sales sees and prepares (not issue).
 
 export const ROLE_TEMPLATE_KEYS = [
   OWNER_TEMPLATE_KEY,
@@ -95,6 +97,10 @@ export const ROLE_TEMPLATES: readonly RoleTemplate[] = [
       'quotations.documents.view',
       'quotations.documents.manage',
       'quotations.documents.decide',
+      'invoices.documents.view',
+      'invoices.documents.manage',
+      'invoices.documents.issue',
+      'invoices.documents.credit',
       'data.cost.view',
       'data.profit_margin.view',
       'data.supplier_price.view',
@@ -122,6 +128,10 @@ export const ROLE_TEMPLATES: readonly RoleTemplate[] = [
       'payments.customers.view',
       'payments.customers.record',
       'quotations.documents.view',
+      'invoices.documents.view',
+      'invoices.documents.manage',
+      'invoices.documents.issue',
+      'invoices.documents.credit',
       'data.cost.view',
       'data.profit_margin.view',
       'data.supplier_price.view',
@@ -148,6 +158,8 @@ export const ROLE_TEMPLATES: readonly RoleTemplate[] = [
       'quotations.documents.view',
       'quotations.documents.manage',
       'quotations.documents.decide',
+      'invoices.documents.view',
+      'invoices.documents.manage',
     ],
   },
   {

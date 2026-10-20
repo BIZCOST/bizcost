@@ -29,6 +29,7 @@ import { tenantRef, tenantTable } from './_helpers'
 import { productsServices } from './catalog'
 import { customers } from './customers'
 import { locations } from './locations'
+import { invoices } from './invoices'
 import { sales, salesChannels } from './sales'
 
 const quoted = (values: readonly string[]) => sql.raw(values.map((v) => `'${v}'`).join(', '))
@@ -221,7 +222,7 @@ export const orderLines = tenantTable(
 
 /**
  * A customer's payment (M3 Step 5; the owner's answer Q17 = A, as supplier payments: D-159, D-160):
- * on exactly one order or one sale "they'll pay later" (an invoice in Step 8), a payment towards what
+ * on exactly one order, one sale "they'll pay later" or one issued invoice (M3 Step 8), a payment towards what
  * it owes (`payment`: deposits and part payments too) or money given back (`refund`). The method is
  * required; never more than is owed (or, given back, than was paid beyond it). Append-only: a payment
  * recorded by mistake is reversed (its reversal columns), dated its own day or the first open day,
@@ -234,6 +235,8 @@ export const customerPayments = tenantTable(
     customerId: uuid('customer_id'),
     orderId: uuid('order_id'),
     saleId: uuid('sale_id'),
+    // M3 Step 8: a payment on an issued invoice.
+    invoiceId: uuid('invoice_id'),
     kind: text('kind').$type<PaymentKind>().notNull().default('payment'),
     businessDate: date('business_date', { mode: 'string' }).notNull(),
     method: text('method').$type<SettlementMethod>().notNull(),
@@ -248,10 +251,12 @@ export const customerPayments = tenantTable(
     tenantRef('customer_payments_customer_fk', [t.businessId, t.customerId], customers),
     tenantRef('customer_payments_order_fk', [t.businessId, t.orderId], orders),
     tenantRef('customer_payments_sale_fk', [t.businessId, t.saleId], sales),
+    tenantRef('customer_payments_invoice_fk', [t.businessId, t.invoiceId], invoices),
     index('customer_payments_order_idx').on(t.businessId, t.orderId),
     index('customer_payments_sale_idx').on(t.businessId, t.saleId),
+    index('customer_payments_invoice_idx').on(t.businessId, t.invoiceId),
     index('customer_payments_customer_idx').on(t.businessId, t.customerId, t.businessDate),
-    check('customer_payments_document_check', sql`num_nonnulls(order_id, sale_id) = 1`),
+    check('customer_payments_document_check', sql`num_nonnulls(order_id, sale_id, invoice_id) = 1`),
     check('customer_payments_kind_check', sql`kind in (${quoted(PAYMENT_KINDS)})`),
     check('customer_payments_method_check', sql`method in (${quoted(SETTLEMENT_METHODS)})`),
     check('customer_payments_amount_check', sql`amount > 0`),

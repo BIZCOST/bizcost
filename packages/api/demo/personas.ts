@@ -11,7 +11,20 @@ import {
   WORKSHOP_COSTING,
   type DemoCosting,
 } from './costing-data'
-import { FITOUT_DOCUMENTS, WORKSHOP_DOCUMENTS, type DemoDocuments } from './documents'
+import {
+  DESIGNER_DOCUMENTS,
+  FACTORY_DOCUMENTS,
+  FITOUT_DOCUMENTS,
+  WORKSHOP_DOCUMENTS,
+  type DemoDocuments,
+} from './documents'
+import {
+  DESIGNER_INVOICES,
+  FACTORY_INVOICES,
+  FITOUT_INVOICES,
+  WORKSHOP_INVOICES,
+  type DemoInvoices,
+} from './invoices'
 
 // Local demo businesses: one per persona of docs/PRODUCT.md §6.11, with the persona's exact Smart
 // Setup answers (the server recomputes everything from them), an Arabic legal name, a TRN when
@@ -50,8 +63,10 @@ export interface DemoPersona {
   readonly team?: readonly DemoTeamMember[]
   /** Suppliers, materials, products, recipes, purchases, running costs, expenses… (M2). */
   readonly costing?: DemoCosting
-  /** Its letterhead and quotations (M3 Step 7, D-298), for a business that quotes. */
+  /** Its letterhead and quotations (M3 Step 7, D-298), for a business that quotes or invoices. */
   readonly documents?: DemoDocuments
+  /** Its invoices, credit notes and their payments (M3 Step 8), after its documents. */
+  readonly invoices?: DemoInvoices
 }
 
 const email = (local: string) => `${local}@${DEMO_EMAIL_DOMAIN}`
@@ -149,6 +164,7 @@ export const DEMO_PERSONAS: readonly DemoPersona[] = [
     title: 'Fit-out / decor project company',
     costing: FITOUT_COSTING,
     documents: FITOUT_DOCUMENTS,
+    invoices: FITOUT_INVOICES,
     owner: { email: email('fitout'), name: 'عبدالله الكعبي', locale: 'ar' },
     legalName: 'Modern Touch Interiors',
     legalNameAr: 'لمسة عصرية للديكور',
@@ -189,6 +205,8 @@ export const DEMO_PERSONAS: readonly DemoPersona[] = [
   {
     title: 'Freelance designer (services only)',
     costing: DESIGNER_COSTING,
+    documents: DESIGNER_DOCUMENTS,
+    invoices: DESIGNER_INVOICES,
     owner: { email: email('designer'), name: 'Noura Al Ali', locale: 'en' },
     legalName: 'Noura Design Studio',
     legalNameAr: 'استوديو نورة للتصميم',
@@ -240,6 +258,8 @@ export const DEMO_PERSONAS: readonly DemoPersona[] = [
   {
     title: 'Small factory (cleaning products)',
     costing: FACTORY_COSTING,
+    documents: FACTORY_DOCUMENTS,
+    invoices: FACTORY_INVOICES,
     owner: { email: email('factory'), name: 'سلطان المزروعي', locale: 'ar' },
     legalName: 'Al Naqaa Cleaning Products Factory',
     legalNameAr: 'مصنع النقاء لمواد التنظيف',
@@ -283,6 +303,7 @@ export const DEMO_PERSONAS: readonly DemoPersona[] = [
     title: 'Workshop with many jobs (carpentry)',
     costing: WORKSHOP_COSTING,
     documents: WORKSHOP_DOCUMENTS,
+    invoices: WORKSHOP_INVOICES,
     owner: { email: email('workshop'), name: 'حمد الظاهري', locale: 'ar' },
     legalName: 'Al Itqan Carpentry',
     legalNameAr: 'نجارة الإتقان',

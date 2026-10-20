@@ -45,6 +45,7 @@ import { timestamptz } from './_app'
 import { tenantRef, tenantTable } from './_helpers'
 import { materials, productsServices } from './catalog'
 import { customers } from './customers'
+import { creditNotes, invoices } from './invoices'
 import { locations } from './locations'
 import { orders } from './orders'
 
@@ -236,6 +237,10 @@ export const sales = tenantTable(
     refundBy: text('refund_by').$type<CreditBy>(),
     // One sale "they'll pay later" (Q17): owed by its customer until paid (customer_payments).
     payLater: boolean('pay_later').notNull().default(false),
+    // M3 Step 8. The sale an issued invoice posted (source `invoice`), or the negative sale an issued
+    // credit note posted (source `credit_note`); one live sale each.
+    invoiceId: uuid('invoice_id'),
+    creditNoteId: uuid('credit_note_id'),
   },
   (t): PgTableExtraConfigValue[] => [
     tenantRef('sales_location_fk', [t.businessId, t.locationId], locations),
@@ -254,8 +259,24 @@ export const sales = tenantTable(
       columns: [t.businessId, t.refundOfId],
       foreignColumns: [t.businessId, t.id],
     }),
+    tenantRef('sales_invoice_fk', [t.businessId, t.invoiceId], invoices),
+    tenantRef('sales_credit_note_fk', [t.businessId, t.creditNoteId], creditNotes),
     index('sales_customer_idx').on(t.businessId, t.customerId),
     index('sales_order_idx').on(t.businessId, t.orderId),
+    index('sales_invoice_idx').on(t.businessId, t.invoiceId),
+    index('sales_credit_note_idx').on(t.businessId, t.creditNoteId),
+    // One live sale per invoice and per credit note (M3 Step 8).
+    uniqueIndex('sales_invoice_key')
+      .on(t.businessId, t.invoiceId)
+      .where(sql`invoice_id is not null and status <> 'reversed' and deleted_at is null`),
+    uniqueIndex('sales_credit_note_key')
+      .on(t.businessId, t.creditNoteId)
+      .where(sql`credit_note_id is not null and status <> 'reversed' and deleted_at is null`),
+    check(
+      'sales_invoice_check',
+      sql`(source = 'invoice') = (invoice_id is not null)
+        and (source = 'credit_note') = (credit_note_id is not null)`,
+    ),
     index('sales_refund_of_idx').on(t.businessId, t.refundOfId),
     // One live sale per order (H7): undoing a delivery reverses it and frees the key for the next.
     uniqueIndex('sales_order_key')
@@ -269,15 +290,17 @@ export const sales = tenantTable(
       sql`(source = 'order') = (order_id is not null and refund_of_id is null)
         and (order_id is null or source in ('order', 'refund'))`,
     ),
+    // A refund takes back its sale by quantity or amount; a credit note's sale says how it credits too
+    // (a price cut counts no quantity sold back, M3 Step 8).
     check(
       'sales_refund_check',
       sql`(source = 'refund') = (refund_of_id is not null)
-        and (refund_of_id is null) = (refund_by is null)
+        and (source in ('refund', 'credit_note')) = (refund_by is not null)
         and refund_by in (${quoted(CREDIT_BY)}) and refund_of_id <> id`,
     ),
     check(
       'sales_customer_check',
-      sql`customer_id is null or source in ('single', 'order', 'refund')`,
+      sql`customer_id is null or source in ('single', 'order', 'refund', 'invoice', 'credit_note')`,
     ),
     check(
       'sales_pay_later_check',

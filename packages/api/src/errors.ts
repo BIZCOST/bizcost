@@ -66,6 +66,10 @@ const TRPC_CODE_OF: Record<AppErrorCode, TRPC_ERROR_CODE_KEY> = {
   quotation_not_accepted: 'CONFLICT',
   quotation_has_order: 'CONFLICT',
   series_started: 'CONFLICT',
+  sale_has_invoice: 'CONFLICT',
+  details_missing: 'BAD_REQUEST',
+  exceeds_invoice: 'BAD_REQUEST',
+  quotation_invoiced: 'CONFLICT',
   internal: 'INTERNAL_SERVER_ERROR',
 }
 

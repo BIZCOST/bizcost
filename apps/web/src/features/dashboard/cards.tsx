@@ -32,6 +32,7 @@ import {
   useMoney,
   useUnitCost,
 } from '@/features/documents/amounts'
+import { useDepositsWithoutInvoice } from '@/features/invoices/deposits'
 import { OrderStatusBadge, PaymentBadge } from '@/features/orders/badges'
 import { hasModule } from '@/features/purchasing/data'
 import { can, sectionPath } from '@/features/settings/sections'
@@ -533,18 +534,51 @@ function NeedsLook({
   look,
   hrefs,
   wording,
+  deposits,
+  invoicesHref,
 }: {
-  look: NonNullable<Cards['needsLook']>
+  /** The cost facts (null: the member doesn't see costs). */
+  look: Cards['needsLook'] | null
   hrefs: Readonly<Record<LookKind, string | null>>
   /** The business's words (a recipe only for food; the button names the page as the nav does). */
   wording: NavWording
+  /** M3 Step 8 (M6): deposits recorded without their tax invoice. */
+  deposits: readonly { readonly orderNumber: string; readonly late: boolean }[]
+  invoicesHref: string
 }) {
   const { t } = useTranslation()
   const { locale } = useLocale()
-  const kinds = LOOK_KINDS.filter((kind) => look[kind].length > 0)
+  const kinds = look ? LOOK_KINDS.filter((kind) => look[kind].length > 0) : []
   return (
     <Card id="needs-look" title={t('dashboard.cards.needsLook.title')} icon={SearchCheckIcon}>
       <ul className="space-y-3">
+        {deposits.length > 0 ? (
+          <li
+            data-needs-look="depositsWithoutInvoice"
+            className="rounded-xl bg-muted/50 px-3 py-2.5 text-sm"
+          >
+            <p className="font-medium">{t('documents.invoices.deposits.needsLook')}</p>
+            <p className="mt-0.5 break-words">
+              {formatList(
+                locale,
+                [...new Set(deposits.map((deposit) => deposit.orderNumber))].map((number) =>
+                  isolate(number),
+                ),
+              )}
+            </p>
+            <p
+              className={cn(
+                'mt-0.5 text-xs leading-relaxed text-muted-foreground',
+                deposits.some((deposit) => deposit.late) && 'font-medium text-destructive',
+              )}
+            >
+              {t('documents.invoices.deposits.needsLookHint')}
+            </p>
+            <Button asChild variant="outline" size="sm" className="mt-2 h-9 bg-card">
+              <Link href={invoicesHref}>{t('documents.invoices.deposits.needsLookAction')}</Link>
+            </Button>
+          </li>
+        ) : null}
         {kinds.map((kind) => {
           const href = hrefs[kind]
           const words = lookWords(kind, wording)
@@ -558,7 +592,7 @@ function NeedsLook({
               <p className="mt-0.5 break-words">
                 {formatList(
                   locale,
-                  look[kind].map((item) => isolate(item.name)),
+                  (look?.[kind] ?? []).map((item) => isolate(item.name)),
                 )}
               </p>
               <p className="mt-0.5 text-xs leading-relaxed text-muted-foreground">
@@ -823,6 +857,7 @@ export function DecisionCards({
   const concerns = shown(cards.concerns)
   const costIncreases = shown(cards.costIncreases)
   const needsLook = shown(cards.needsLook)
+  const { items: deposits } = useDepositsWithoutInvoice()
   const moneyWent = shown(cards.moneyWent)
   const days = cards.byDay?.days ?? []
   const dayProfit = days.some((day) => shown(day.profit) !== null)
@@ -1005,9 +1040,11 @@ export function DecisionCards({
         {cards.byChannel && cards.byChannel.length > 1 ? (
           <Channels channels={cards.byChannel} />
         ) : null}
-        {needsLook ? (
+        {needsLook || deposits.length > 0 ? (
           <NeedsLook
             look={needsLook}
+            deposits={deposits}
+            invoicesHref={page('invoices')}
             hrefs={lookHrefs}
             wording={businessWording(
               {

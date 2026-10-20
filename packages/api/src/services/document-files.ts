@@ -54,10 +54,13 @@ function imagePathPattern(businessId: string, kind: DocumentImageKind): RegExp {
   return new RegExp(`^${businessId}/${kind}/${UUID_V7}\\.(png|jpg|webp)$`)
 }
 
-/** {business_id}/{logo|signature|stamp|quotation_line}/{uuidv7}.{png|jpg|webp}: the images a PDF prints. */
+/**
+ * {business_id}/{logo|signature|stamp|quotation_line|invoice_line}/{uuidv7}.{png|jpg|webp}: the images
+ * a PDF prints.
+ */
 function printablePathPattern(businessId: string): RegExp {
   return new RegExp(
-    `^${businessId}/(logo|signature|stamp|quotation_line)/${UUID_V7}\\.(png|jpg|webp)$`,
+    `^${businessId}/(logo|signature|stamp|quotation_line|invoice_line)/${UUID_V7}\\.(png|jpg|webp)$`,
   )
 }
 
@@ -91,6 +94,35 @@ export function documentsServed(ctx: BusinessCtx): boolean {
       (m.id === 'quotations' || m.id === 'invoices') &&
       isModuleActive(m, ctx.access.enabledModules),
   )
+}
+
+/**
+ * Whether an issued invoice or credit note names this image in its frozen letterhead (its logo,
+ * signature or stamp as at issue): its object is then kept when the business changes or takes it off,
+ * so the document renders again as it was issued (D-307, M3 Step 8 review).
+ */
+export async function imageKeptByDocuments(ctx: BusinessCtx, path: string): Promise<boolean> {
+  const [row] = (await ctx.tx((tx) =>
+    tx.execute(sql`
+      select exists (
+        select 1 from app.invoices i
+         where i.business_id = ${ctx.businessId} and i.status = 'issued' and i.letterhead is not null
+           and ${path} in (i.letterhead->>'logo_path', i.letterhead->>'document_signature_path',
+                           i.letterhead->>'document_stamp_path')
+      ) or exists (
+        select 1 from app.credit_notes c
+         where c.business_id = ${ctx.businessId} and c.status = 'issued' and c.letterhead is not null
+           and ${path} in (c.letterhead->>'logo_path', c.letterhead->>'document_signature_path',
+                           c.letterhead->>'document_stamp_path')
+      ) as kept
+    `),
+  )) as unknown as { kept: boolean }[]
+  return row?.kept === true
+}
+
+/** Removes an image the business no longer uses, unless an issued document's letterhead names it. */
+export async function removeImageUnlessKept(ctx: BusinessCtx, path: string): Promise<void> {
+  if (!(await imageKeptByDocuments(ctx, path))) await removeQuietly(ctx.config, [path])
 }
 
 async function removeQuietly(config: ApiConfig, paths: readonly string[]): Promise<boolean> {
@@ -176,7 +208,7 @@ export async function documentImageUploadUrl(
  * refused or removed since; the object must exist, be at most DOCUMENT_IMAGE_MAX_BYTES and be a PNG,
  * JPEG or WebP within the PDFs' image limits that the PDF compiler decodes, whose first bytes, stored
  * type and extension agree (FILE_INVALID otherwise, and the object is removed; printableImageType).
- * The previous image's object is removed.
+ * The previous image's object is removed (kept while an issued document's letterhead names it).
  */
 export async function setDocumentImage(
   ctx: BusinessCtx,
@@ -234,7 +266,7 @@ export async function setDocumentImage(
       await closeUploads(tx, ctx.businessId, [replaced], 'discarded')
     return replaced
   })
-  if (previous && previous !== path) await removeQuietly(ctx.config, [previous])
+  if (previous && previous !== path) await removeImageUnlessKept(ctx, previous)
 }
 
 /** `document.removeImage` (settings.documents.manage): takes the signature or stamp off. */
@@ -256,7 +288,7 @@ export async function removeDocumentImage(
     await closeUploads(tx, ctx.businessId, [before.path], 'discarded')
     return before.path
   })
-  if (previous) await removeQuietly(ctx.config, [previous])
+  if (previous) await removeImageUnlessKept(ctx, previous)
 }
 
 /**
@@ -289,13 +321,15 @@ export async function documentImageUrls(
 
 /**
  * Signed download URLs of the business's own attachment paths of a quotation's lines (their pictures,
- * seen by whoever sees the quotation). Storage failing leaves them out (reported).
+ * seen by whoever sees the quotation), or an invoice's (M3 Step 8). Storage failing leaves them out
+ * (reported).
  */
 export async function linePictureUrls(
   ctx: BusinessCtx,
   paths: readonly string[],
+  entity: 'quotation_line' | 'invoice_line' = 'quotation_line',
 ): Promise<Map<string, string>> {
-  const pattern = new RegExp(`^${ctx.businessId}/quotation_line/${UUID_V7}\\.(png|jpg|webp)$`)
+  const pattern = new RegExp(`^${ctx.businessId}/${entity}/${UUID_V7}\\.(png|jpg|webp)$`)
   const own = paths.filter((path) => pattern.test(path))
   if (own.length === 0) return new Map()
   try {
@@ -331,11 +365,13 @@ export interface PrintableImages {
  * limits) and all together within PDF_IMAGES_MAX_DECODED_BYTES and PDF_IMAGES_MAX_BYTES (the first
  * ones asked for are kept: the logo, signature and stamp, then the lines in order). An image that is
  * missing or fails is left out: the PDF prints without it. Storage failing leaves every image out
- * (reported), so the PDF still renders.
+ * (reported), so the PDF still renders; `strict` (an issued document's copy, made once for good):
+ * Storage failing is an error to retry instead (INTERNAL).
  */
 export async function readPrintableImages(
   ctx: BusinessCtx,
   wanted: readonly PrintableImage[],
+  strict = false,
 ): Promise<PrintableImages> {
   const pattern = printablePathPattern(ctx.businessId)
   const files: PdfImageFile[] = []
@@ -348,6 +384,9 @@ export async function readPrintableImages(
     try {
       object = await downloadObject(ctx.config, image.path)
     } catch (error) {
+      if (strict) {
+        throw new AppError('internal', { message: 'the images could not be read', cause: error })
+      }
       ctx.reportError(error)
       break
     }
@@ -381,8 +420,9 @@ export async function renderDocumentPdf(
   ctx: BusinessCtx,
   wanted: readonly PrintableImage[],
   make: (images: Readonly<Record<string, DocumentPdfImage>>) => DocumentPdfInput,
+  options: { readonly strict?: boolean } = {},
 ): Promise<Uint8Array> {
-  const read = await readPrintableImages(ctx, wanted)
+  const read = await readPrintableImages(ctx, wanted, options.strict === true)
   const render = (files: readonly PdfImageFile[], images: Record<string, DocumentPdfImage>) =>
     pdfEngine().render({
       data: JSON.stringify(make(images)),
@@ -495,14 +535,18 @@ const PDF_SIGNATURE = [0x25, 0x50, 0x44, 0x46, 0x2d] // %PDF-
  * (purpose `document`, at most 500 an hour, in the database), written once through the secret-key
  * client and closed (`used`). Refuses anything that is not a PDF. Returns the path.
  */
-export async function storeDocumentPdf(ctx: BusinessCtx, bytes: Uint8Array): Promise<string> {
+export async function storeDocumentPdf(
+  ctx: BusinessCtx,
+  bytes: Uint8Array,
+): Promise<{ id: string; path: string }> {
   if (!PDF_SIGNATURE.every((byte, i) => bytes[i] === byte)) {
     throw new AppError('internal', { message: 'not a PDF' })
   }
   const path = `${ctx.businessId}/document/${newId()}.pdf`
+  const id = newId()
   await ctx.tx((tx) =>
     tx.insert(fileUploads).values({
-      id: newId(),
+      id,
       businessId: ctx.businessId,
       path,
       purpose: 'document',
@@ -517,5 +561,31 @@ export async function storeDocumentPdf(ctx: BusinessCtx, bytes: Uint8Array): Pro
     throw error
   }
   await ctx.tx((tx) => closeUploads(tx, ctx.businessId, [path], 'used'))
-  return path
+  return { id, path }
+}
+
+/**
+ * An issued document's stored PDF, read back (only the business's own {business_id}/document/ paths);
+ * null when the object is gone (the caller renders it again). Storage failing is INTERNAL, to retry:
+ * never answered with a copy made again.
+ */
+export async function readStoredDocumentPdf(
+  ctx: BusinessCtx,
+  path: string,
+): Promise<Uint8Array | null> {
+  if (!new RegExp(`^${ctx.businessId}/document/${UUID_V7}\\.pdf$`).test(path)) return null
+  try {
+    const object = await downloadObject(ctx.config, path)
+    if (!object || !PDF_SIGNATURE.every((byte, i) => object.bytes[i] === byte)) return null
+    return object.bytes
+  } catch (error) {
+    ctx.reportError(error)
+    throw new AppError('internal', { message: 'the stored PDF could not be read', cause: error })
+  }
+}
+
+/** Removes a stored PDF nobody links (a render that lost the race to link its document). */
+export async function removeStoredDocumentPdf(ctx: BusinessCtx, path: string): Promise<void> {
+  await ctx.tx((tx) => closeUploads(tx, ctx.businessId, [path], 'discarded')).catch(() => {})
+  await removeQuietly(ctx.config, [path])
 }

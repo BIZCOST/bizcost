@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { isUuid, newId } from './id'
+import { derivedId, isUuid, newId } from './id'
 
 const UUID_V7 = /^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/
 
@@ -21,6 +21,18 @@ describe('newId', () => {
     const ms = Number.parseInt(id.replace(/-/g, '').slice(0, 12), 16)
     expect(ms).toBeGreaterThanOrEqual(before)
     expect(ms).toBeLessThanOrEqual(after)
+  })
+})
+
+describe('derivedId', () => {
+  it('is the same UUID (v5) for the same name under the same namespace, another otherwise', () => {
+    const namespace = newId()
+    const line = newId()
+    const id = derivedId(namespace, line)
+    expect(id).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-5[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/)
+    expect(derivedId(namespace, line)).toBe(id)
+    expect(derivedId(newId(), line)).not.toBe(id)
+    expect(derivedId(namespace, newId())).not.toBe(id)
   })
 })
 

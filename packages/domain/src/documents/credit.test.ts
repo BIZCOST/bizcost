@@ -5,6 +5,7 @@ import type { Money, Quantity } from '../numbers/kinds'
 import {
   creditError,
   creditLeft,
+  creditRateVat,
   creditTotals,
   fitCredit,
   planCredit,
@@ -277,6 +278,96 @@ describe('properties', () => {
         }
       }),
       { numRuns: 1000 },
+    )
+  })
+})
+
+describe('creditRateVat: VAT once per rate on every credit note (PINT-AE S-09)', () => {
+  const at5 = (before = { net: '0', gross: '0', vat: '0' }, takesAllLeft = false) => ({
+    vatRate: '5',
+    invoiceVat: '2469.14',
+    before,
+    takesAllLeft,
+  })
+  const lines = (n: number, typed: string, priceIncludesVat = false) =>
+    Array.from({ length: n }, () => ({ priceIncludesVat, typed }))
+  const sum = (values: readonly string[]) =>
+    plain(values.reduce((a, v) => a.plus(toDec(v)), toDec('0')))
+
+  it('34 whole lines of 1,234.57 of a 40-line invoice: 5% of their 41,975.38, not their shares', () => {
+    // Each line was charged 61.72 or 61.73 (the invoice's 2,469.14 shared); the 34 at 61.73 would
+    // make 2,098.82, 0.05 from 5% of 41,975.38.
+    const first = creditRateVat(at5(), lines(34, '1234.57'), 'AED')
+    expect(sum(first)).toBe('2098.77')
+    for (const vat of first) expect(['61.72', '61.73']).toContain(vat)
+    // The other 6 take all that is left: exactly the VAT left, so the two add up to the invoice's.
+    const second = creditRateVat(
+      at5({ net: '41975.38', gross: '0', vat: '2098.77' }, true),
+      lines(6, '1234.57'),
+      'AED',
+    )
+    expect(sum(second)).toBe('370.37')
+  })
+
+  it('prices with VAT: the VAT inside the running total, never more than is left', () => {
+    const basis = { vatRate: '5', invoiceVat: '15', before: { net: '0', gross: '0', vat: '0' } }
+    expect(creditRateVat({ ...basis, takesAllLeft: false }, lines(1, '105', true), 'AED')).toEqual([
+      '5',
+    ])
+    expect(
+      creditRateVat(
+        { ...basis, before: { net: '0', gross: '210', vat: '10' }, takesAllLeft: true },
+        lines(1, '105', true),
+        'AED',
+      ),
+    ).toEqual(['5'])
+    // Everything taken back already: nothing more.
+    expect(
+      creditRateVat(
+        { ...basis, before: { net: '0', gross: '315', vat: '15' }, takesAllLeft: false },
+        lines(1, '1', true),
+        'AED',
+      ),
+    ).toEqual(['0'])
+  })
+
+  it('a rate of zero takes no VAT', () => {
+    expect(creditRateVat({ ...at5(), vatRate: '0' }, lines(2, '100'), 'AED')).toEqual(['0', '0'])
+  })
+
+  it('every note is within a fils of its taxable amount × 5%, and all of them add up to the invoice', () => {
+    fc.assert(
+      fc.property(
+        fc.array(fc.integer({ min: 1, max: 999_999 }), { minLength: 1, maxLength: 30 }),
+        fc.integer({ min: 1, max: 5 }),
+        (cents, notes) => {
+          const nets = cents.map((c) => plain(toDec(String(c)).dividedBy(100)))
+          const invoiceNet = sum(nets)
+          // The invoice's VAT, once on its net.
+          const invoiceVat = plain(toDec(invoiceNet).times(5).dividedBy(100).toDecimalPlaces(2, 4))
+          let before = { net: '0', gross: '0', vat: '0' }
+          const groups = Array.from({ length: notes }, (_, k) =>
+            nets.filter((_, i) => i % notes === k),
+          )
+          groups.forEach((group, k) => {
+            if (group.length === 0) return
+            const all = k === groups.length - 1 || groups.slice(k + 1).every((g) => g.length === 0)
+            const vat = sum(
+              creditRateVat(
+                { vatRate: '5', invoiceVat, before, takesAllLeft: all },
+                group.map((typed) => ({ priceIncludesVat: false, typed })),
+                'AED',
+              ),
+            )
+            const net = sum(group)
+            const exact = toDec(net).times(5).dividedBy(100).toDecimalPlaces(2, 4)
+            expect(toDec(vat).minus(exact).abs().lte('0.01')).toBe(true)
+            before = { net: sum([before.net, net]), gross: '0', vat: sum([before.vat, vat]) }
+          })
+          expect(before.vat).toBe(plain(toDec(invoiceVat)))
+        },
+      ),
+      { numRuns: 500 },
     )
   })
 })

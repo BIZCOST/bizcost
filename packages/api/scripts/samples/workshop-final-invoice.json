@@ -5,9 +5,9 @@
   "issuedAt": {
     "year": 2026,
     "month": 10,
-    "day": 8,
-    "hour": 9,
-    "minute": 30,
+    "day": 18,
+    "hour": 12,
+    "minute": 0,
     "second": 0
   },
   "labels": {
@@ -30,6 +30,10 @@
     "title.creditNote": {
       "en": "Credit Note",
       "ar": "إشعار دائن"
+    },
+    "title.statement": {
+      "en": "Statement of Account",
+      "ar": "كشف حساب"
     },
     "draft": {
       "en": "Draft",
@@ -67,6 +71,30 @@
       "en": "Your reference",
       "ar": "مرجعكم"
     },
+    "lpo": {
+      "en": "LPO no.",
+      "ar": "رقم أمر الشراء"
+    },
+    "supplyDate": {
+      "en": "Date of supply",
+      "ar": "تاريخ التوريد"
+    },
+    "currency": {
+      "en": "Currency",
+      "ar": "العملة"
+    },
+    "period": {
+      "en": "Period",
+      "ar": "الفترة"
+    },
+    "periodValue": {
+      "en": "{{from}} – {{to}}",
+      "ar": "{{from}} – {{to}}"
+    },
+    "issuedOn": {
+      "en": "Issued on",
+      "ar": "تاريخ الإصدار"
+    },
     "references.invoiceNo": {
       "en": "Invoice no.",
       "ar": "رقم الفاتورة"
@@ -74,6 +102,18 @@
     "references.invoiceDate": {
       "en": "Invoice date",
       "ar": "تاريخ الفاتورة"
+    },
+    "references.quotation": {
+      "en": "Quotation",
+      "ar": "عرض السعر"
+    },
+    "references.order": {
+      "en": "Order",
+      "ar": "الطلب"
+    },
+    "references.invoiceSupplyDate": {
+      "en": "Invoice date of supply",
+      "ar": "تاريخ توريد الفاتورة"
     },
     "trn": {
       "en": "TRN",
@@ -90,6 +130,10 @@
     "billTo": {
       "en": "Bill to",
       "ar": "فاتورة إلى"
+    },
+    "customer": {
+      "en": "Customer",
+      "ar": "العميل"
     },
     "site": {
       "en": "Project",
@@ -354,187 +398,321 @@
     "unit.h": {
       "en": "hr",
       "ar": "ساعة"
+    },
+    "vatCategory.zeroRated": {
+      "en": "0%",
+      "ar": "0%"
+    },
+    "vatCategory.exempt": {
+      "en": "Exempt",
+      "ar": "معفى"
+    },
+    "method.cash": {
+      "en": "Cash",
+      "ar": "نقدًا"
+    },
+    "method.card": {
+      "en": "Card",
+      "ar": "بطاقة"
+    },
+    "method.bank_transfer": {
+      "en": "Bank transfer",
+      "ar": "تحويل بنكي"
+    },
+    "method.cheque": {
+      "en": "Cheque",
+      "ar": "شيك"
+    },
+    "method.paidWhenMade": {
+      "en": "Paid at the sale",
+      "ar": "دُفع عند البيع"
+    },
+    "method.paidEarlier": {
+      "en": "Paid before this invoice",
+      "ar": "مدفوع قبل هذه الفاتورة"
+    },
+    "credit.valueBefore": {
+      "en": "Value of the supply on the invoice",
+      "ar": "قيمة التوريد في الفاتورة"
+    },
+    "credit.valueAfter": {
+      "en": "Correct value of the supply",
+      "ar": "القيمة الصحيحة للتوريد"
+    },
+    "credit.difference": {
+      "en": "Difference",
+      "ar": "الفرق"
+    },
+    "credit.vatOnDifference": {
+      "en": "VAT {{rate}}% on the difference",
+      "ar": "ضريبة القيمة المضافة {{rate}}% على الفرق"
+    },
+    "credit.zeroRatedDifference": {
+      "en": "Zero-rated difference",
+      "ar": "فرق خاضع لنسبة الصفر"
+    },
+    "credit.exemptDifference": {
+      "en": "Exempt difference",
+      "ar": "فرق معفى"
+    },
+    "credit.total": {
+      "en": "Total credited",
+      "ar": "إجمالي المبلغ الدائن"
+    },
+    "credit.reason": {
+      "en": "Reason for this credit note",
+      "ar": "سبب الإشعار الدائن"
+    },
+    "reasons.cancelled": {
+      "en": "Supply cancelled",
+      "ar": "إلغاء التوريد"
+    },
+    "reasons.tax_treatment_changed": {
+      "en": "Nature of the supply changed",
+      "ar": "تغيّر طبيعة التوريد"
+    },
+    "reasons.price_changed": {
+      "en": "Price changed",
+      "ar": "تغيّر السعر"
+    },
+    "reasons.goods_returned": {
+      "en": "Goods returned",
+      "ar": "إرجاع السلع"
+    },
+    "reasons.tax_charged_in_error": {
+      "en": "Tax charged in error",
+      "ar": "احتساب الضريبة بالخطأ"
+    },
+    "statement.date": {
+      "en": "Date",
+      "ar": "التاريخ"
+    },
+    "statement.document": {
+      "en": "Document",
+      "ar": "المستند"
+    },
+    "statement.charge": {
+      "en": "Charges",
+      "ar": "الفواتير والتسليمات"
+    },
+    "statement.credit": {
+      "en": "Payments and credits",
+      "ar": "الدفعات والإشعارات الدائنة"
+    },
+    "statement.owed": {
+      "en": "Owed",
+      "ar": "المستحق"
+    },
+    "statement.opening": {
+      "en": "Owed at the start",
+      "ar": "المستحق في البداية"
+    },
+    "statement.invoiced": {
+      "en": "Invoiced and delivered",
+      "ar": "الفواتير والتسليمات"
+    },
+    "statement.credited": {
+      "en": "Credited",
+      "ar": "الإشعارات الدائنة"
+    },
+    "statement.paid": {
+      "en": "Paid",
+      "ar": "المدفوع"
+    },
+    "statement.closing": {
+      "en": "Owed at the end",
+      "ar": "المستحق في النهاية"
+    },
+    "statement.openingRow": {
+      "en": "Owed at the start of the period",
+      "ar": "المستحق في بداية الفترة"
+    },
+    "statement.empty": {
+      "en": "Nothing in this period.",
+      "ar": "لا شيء في هذه الفترة."
+    },
+    "statement.invoice": {
+      "en": "Invoice {{number}}",
+      "ar": "فاتورة ⁦{{number}}⁩"
+    },
+    "statement.credit_note": {
+      "en": "Credit note {{number}}",
+      "ar": "إشعار دائن ⁦{{number}}⁩"
+    },
+    "statement.order": {
+      "en": "Order {{number}}",
+      "ar": "طلب ⁦{{number}}⁩"
+    },
+    "statement.sale": {
+      "en": "Sale",
+      "ar": "عملية بيع"
+    },
+    "statement.refund": {
+      "en": "Refund",
+      "ar": "استرداد"
+    },
+    "statement.payment": {
+      "en": "Payment",
+      "ar": "دفعة"
+    },
+    "statement.paymentOn": {
+      "en": "Payment – {{reference}}",
+      "ar": "دفعة – ⁦{{reference}}⁩"
+    },
+    "statement.money_back": {
+      "en": "Money given back",
+      "ar": "مبلغ أُعيد للعميل"
+    },
+    "statement.money_backOn": {
+      "en": "Money given back – {{reference}}",
+      "ar": "مبلغ أُعيد للعميل – ⁦{{reference}}⁩"
+    },
+    "statement.paidWhenMade": {
+      "en": "Paid at the sale",
+      "ar": "دُفع عند البيع"
+    },
+    "statement.ahead": {
+      "en": "paid ahead",
+      "ar": "مدفوع مقدّمًا"
+    },
+    "statement.closingAhead": {
+      "en": "Paid ahead at the end",
+      "ar": "مدفوع مقدّمًا في النهاية"
     }
   },
   "title": {
     "en": "Tax Invoice",
     "ar": "فاتورة ضريبية"
   },
-  "number": "INV-0042",
+  "number": "INV-0008",
   "revision": null,
   "date": {
-    "en": "8 October 2026",
-    "ar": "8 أكتوبر 2026"
+    "en": "18 October 2026",
+    "ar": "18 أكتوبر 2026"
   },
   "validUntil": null,
-  "customerRef": "LPO-7781/B",
+  "dueDate": null,
+  "customerRef": null,
+  "references": [
+    {
+      "label": {
+        "en": "Order",
+        "ar": "الطلب"
+      },
+      "value": "#1004"
+    },
+    {
+      "label": {
+        "en": "Currency",
+        "ar": "العملة"
+      },
+      "value": "AED"
+    }
+  ],
   "currency": "AED",
   "letterhead": {
     "nameEn": {
-      "text": "Modern Touch Interiors",
+      "text": "Al Itqan Carpentry",
       "dir": "ltr"
     },
     "nameAr": {
-      "text": "لمسة عصرية للديكور",
+      "text": "نجارة الإتقان",
       "dir": "rtl"
     },
-    "accent": "#1A1A1A",
-    "logo": "logo",
-    "watermark": true,
+    "accent": "#7A4E1D",
+    "logo": null,
+    "watermark": false,
     "phones": [
-      "+971 4 555 0142",
-      "+971 50 555 0199"
+      "+971 6 555 0177"
     ],
-    "email": "hello@moderntouch.example",
+    "email": "orders@alitqan.example",
     "address": {
-      "text": "Warehouse 7, Al Quoz Industrial 3, Dubai",
+      "text": "Industrial Area 2, Sharjah",
       "dir": "ltr"
     },
-    "trn": "100345678900003",
-    "tradeLicence": "DED-884210"
+    "trn": "100678901200003",
+    "tradeLicence": "SHJ-55102"
   },
   "customer": {
     "name": {
-      "text": "Mr. Yousef Al Hammadi",
+      "text": "Faisal Al Mazrouei",
       "dir": "ltr"
     },
-    "site": {
-      "text": "Villa 18, Al Barsha South",
-      "dir": "ltr"
-    },
-    "phone": "+971 55 555 0123",
-    "trn": "100555666700003",
+    "site": null,
+    "phone": "+971 50 555 0188",
+    "trn": null,
     "address": {
-      "text": "Villa 18, Al Barsha South, Dubai",
+      "text": "Villa 3, Al Rahmaniya 1, Sharjah",
       "dir": "ltr"
     }
   },
   "opening": null,
   "table": {
     "showPictures": false,
-    "showAreas": true,
+    "showAreas": false,
     "showDiscount": false,
     "showVat": true
   },
   "lines": [
     {
       "no": 1,
-      "area": {
-        "text": "MAJLIS",
-        "dir": "ltr"
-      },
-      "picture": null,
-      "title": {
-        "text": "Wall cladding with hidden door",
-        "dir": "ltr"
-      },
-      "details": {
-        "text": "Material: MDF with oak veneer, matt lacquer\nHidden door 90 × 240 cm, soft-close hinges\nLED strip along the top",
-        "dir": "ltr"
-      },
-      "note": null,
-      "qty": "18.5",
-      "unit": "م²",
-      "unitPrice": "650.00",
-      "discount": null,
-      "vatRate": "5%",
-      "amount": "12,025.00",
-      "includesVat": false
-    },
-    {
-      "no": 2,
-      "area": {
-        "text": "MAJLIS",
-        "dir": "ltr"
-      },
-      "picture": null,
-      "title": {
-        "text": "TV unit with back panel",
-        "dir": "ltr"
-      },
-      "details": {
-        "text": "Material: plywood, white high gloss\nFittings: Blum push-to-open",
-        "dir": "ltr"
-      },
-      "note": {
-        "text": "* Marble top price to be added as per client selection + delivery",
-        "dir": "ltr"
-      },
-      "qty": "1",
-      "unit": "قطعة",
-      "unitPrice": "7,800.00",
-      "discount": null,
-      "vatRate": "5%",
-      "amount": "7,800.00",
-      "includesVat": false
-    },
-    {
-      "no": 3,
-      "area": {
-        "text": "Master BR",
-        "dir": "ltr"
-      },
-      "picture": null,
-      "title": {
-        "text": "Wardrobe with sliding doors",
-        "dir": "ltr"
-      },
-      "details": {
-        "text": "Material: MDF painted, inside melamine\nTinted mirror on the middle door\nFittings: Hettich soft-close",
-        "dir": "ltr"
-      },
-      "note": null,
-      "qty": "6.8",
-      "unit": "م²",
-      "unitPrice": "980.00",
-      "discount": null,
-      "vatRate": "5%",
-      "amount": "6,664.00",
-      "includesVat": false
-    },
-    {
-      "no": 4,
-      "area": {
-        "text": "Master BR",
-        "dir": "ltr"
-      },
-      "picture": null,
-      "title": {
-        "text": "Bed back panel with side tables",
-        "dir": "ltr"
-      },
-      "details": {
-        "text": "Material: fabric panels on MDF frame\n2 side tables, one drawer each",
-        "dir": "ltr"
-      },
-      "note": null,
-      "qty": "1",
-      "unit": "قطعة",
-      "unitPrice": "4,750.00",
-      "discount": null,
-      "vatRate": "5%",
-      "amount": "4,750.00",
-      "includesVat": false
-    },
-    {
-      "no": 5,
       "area": null,
       "picture": null,
       "title": {
-        "text": "Export packing for the client’s shipment",
+        "text": "Built-in wardrobe, master bedroom",
         "dir": "ltr"
       },
       "details": {
-        "text": "Crating and documents, goods exported",
+        "text": "Oak veneer, 4 doors, soft-close",
         "dir": "ltr"
       },
       "note": null,
       "qty": "1",
       "unit": "pcs",
-      "unitPrice": "1,200.00",
+      "unitPrice": "12,000.00",
       "discount": null,
-      "vatRate": "0%",
-      "amount": "1,200.00"
+      "vatRate": "5%",
+      "amount": "12,000.00",
+      "includesVat": false
+    },
+    {
+      "no": 2,
+      "area": null,
+      "picture": null,
+      "title": {
+        "text": "Kitchen island",
+        "dir": "ltr"
+      },
+      "details": {
+        "text": "Solid oak top, white lacquer base",
+        "dir": "ltr"
+      },
+      "note": null,
+      "qty": "1",
+      "unit": "pcs",
+      "unitPrice": "8,000.00",
+      "discount": null,
+      "vatRate": "5%",
+      "amount": "8,000.00",
+      "includesVat": false
+    },
+    {
+      "no": 3,
+      "area": null,
+      "picture": null,
+      "title": {
+        "text": "Less deposit invoice INV-0005",
+        "dir": "ltr"
+      },
+      "details": null,
+      "note": null,
+      "qty": "1",
+      "unit": null,
+      "unitPrice": "-5,000.00",
+      "discount": null,
+      "vatRate": "5%",
+      "amount": "-5,000.00",
+      "includesVat": false
     }
   ],
   "totals": [
@@ -543,23 +721,15 @@
         "en": "Total before VAT",
         "ar": "الإجمالي قبل الضريبة"
       },
-      "amount": "32,439.00",
+      "amount": "15,000.00",
       "strong": false
     },
     {
       "label": {
-        "en": "VAT 5% on 31,239.00",
-        "ar": "ضريبة القيمة المضافة 5٪ على 31,239.00"
+        "en": "VAT 5% on 15,000.00",
+        "ar": "ضريبة القيمة المضافة 5% على 15,000.00"
       },
-      "amount": "1,561.95",
-      "strong": false
-    },
-    {
-      "label": {
-        "en": "Zero-rated, on 1,200.00",
-        "ar": "خاضع لنسبة الصفر، على 1,200.00"
-      },
-      "amount": "0.00",
+      "amount": "750.00",
       "strong": false
     },
     {
@@ -567,187 +737,30 @@
         "en": "Total",
         "ar": "الإجمالي"
       },
-      "amount": "34,000.95",
-      "strong": false
-    },
-    {
-      "label": {
-        "en": "Paid",
-        "ar": "المدفوع"
-      },
-      "amount": "-17,000.48",
-      "strong": false
-    },
-    {
-      "label": {
-        "en": "Balance due",
-        "ar": "المبلغ المتبقي"
-      },
-      "amount": "17,000.47",
+      "amount": "15,750.00",
       "strong": true
     }
   ],
   "stages": [],
+  "payments": [],
   "validity": null,
-  "terms": {
-    "text": "Payment within 14 days of the invoice date.\nGoods remain our property until paid in full.",
+  "terms": null,
+  "notes": {
+    "text": "Thank you for your order.",
     "dir": "ltr"
   },
-  "notes": null,
   "paymentDetails": {
-    "text": "Bank: Emirates Sample Bank\nAccount name: Modern Touch Interiors\nIBAN: AE00 0000 0000 0000 0000 000",
+    "text": "Bank: Sharjah Sample Bank\nIBAN: AE00 0000 0000 0000 0000 111",
     "dir": "ltr"
   },
   "signature": {
     "signatory": {
-      "text": "Abdulla Al Kaabi",
+      "text": "Hamad Al Dhaheri",
       "dir": "ltr"
     },
-    "signature": "signature",
-    "stamp": "stamp",
+    "signature": null,
+    "stamp": null,
     "acceptance": false
   },
-  "images": {
-    "logo": {
-      "path": "/img/logo.png",
-      "format": "png",
-      "width": 1,
-      "height": 1
-    },
-    "signature": {
-      "path": "/img/signature.png",
-      "format": "png",
-      "width": 1,
-      "height": 1
-    },
-    "stamp": {
-      "path": "/img/stamp.png",
-      "format": "png",
-      "width": 1,
-      "height": 1
-    },
-    "line-1": {
-      "path": "/img/line-1.jpg",
-      "format": "jpg",
-      "width": 1,
-      "height": 1
-    },
-    "line-2": {
-      "path": "/img/line-2.jpg",
-      "format": "jpg",
-      "width": 1,
-      "height": 1
-    },
-    "line-3": {
-      "path": "/img/line-3.jpg",
-      "format": "jpg",
-      "width": 1,
-      "height": 1
-    },
-    "line-4": {
-      "path": "/img/line-4.jpg",
-      "format": "jpg",
-      "width": 1,
-      "height": 1
-    },
-    "line-5": {
-      "path": "/img/line-5.jpg",
-      "format": "jpg",
-      "width": 1,
-      "height": 1
-    },
-    "line-6": {
-      "path": "/img/line-6.jpg",
-      "format": "jpg",
-      "width": 1,
-      "height": 1
-    },
-    "line-7": {
-      "path": "/img/line-7.jpg",
-      "format": "jpg",
-      "width": 1,
-      "height": 1
-    },
-    "line-8": {
-      "path": "/img/line-8.jpg",
-      "format": "jpg",
-      "width": 1,
-      "height": 1
-    },
-    "line-9": {
-      "path": "/img/line-9.jpg",
-      "format": "jpg",
-      "width": 1,
-      "height": 1
-    },
-    "line-10": {
-      "path": "/img/line-10.jpg",
-      "format": "jpg",
-      "width": 1,
-      "height": 1
-    },
-    "line-11": {
-      "path": "/img/line-11.jpg",
-      "format": "jpg",
-      "width": 1,
-      "height": 1
-    },
-    "line-12": {
-      "path": "/img/line-12.jpg",
-      "format": "jpg",
-      "width": 1,
-      "height": 1
-    },
-    "line-14": {
-      "path": "/img/line-14.jpg",
-      "format": "jpg",
-      "width": 1,
-      "height": 1
-    },
-    "line-17": {
-      "path": "/img/line-17.jpg",
-      "format": "jpg",
-      "width": 1,
-      "height": 1
-    },
-    "line-15": {
-      "path": "/img/line-15.jpg",
-      "format": "jpg",
-      "width": 1,
-      "height": 1
-    },
-    "line-16": {
-      "path": "/img/line-16.jpg",
-      "format": "jpg",
-      "width": 1,
-      "height": 1
-    }
-  },
-  "dueDate": {
-    "en": "22 October 2026",
-    "ar": "22 أكتوبر 2026"
-  },
-  "references": [
-    {
-      "label": {
-        "en": "Quotation",
-        "ar": "عرض السعر"
-      },
-      "value": "Q-0007"
-    }
-  ],
-  "payments": [
-    {
-      "date": {
-        "en": "10 October 2026",
-        "ar": "10 أكتوبر 2026"
-      },
-      "method": {
-        "en": "Bank transfer",
-        "ar": "تحويل بنكي"
-      },
-      "reference": "FT-2610-8841",
-      "amount": "17,000.48"
-    }
-  ]
+  "images": {}
 }

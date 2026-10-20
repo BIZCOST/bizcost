@@ -8,6 +8,29 @@ import type { SettingsSection } from '@/features/settings/sections'
 /** Every page (root layout): the shared words and the error messages. */
 export const ROOT_MESSAGES: readonly MessageSpec[] = ['common', 'errors']
 
+/**
+ * What a page that bills its document (M3 Step 8) needs of the invoices' words: "This invoice bills"
+ * (a quotation's or an order's), "Invoice this sale", and an invoice's row and state (an order's or a
+ * customer's invoices).
+ */
+const INVOICE_LINK_WORDS: MessageSpec = {
+  namespace: 'documents',
+  paths: [
+    'invoices.bill',
+    'invoices.start',
+    'invoices.list',
+    'invoices.status',
+    'invoices.kinds',
+    'invoices.links',
+  ],
+}
+
+/**
+ * The emirates' names, for the customer form's address (M3 Step 8: asked with Invoices on), wherever
+ * the form opens (a customer's page, an order, a sale, a quotation, an invoice).
+ */
+const EMIRATE_WORDS: MessageSpec = { namespace: 'documents', paths: ['emirates'] }
+
 /** Sign in, sign up, codes, password reset and the invitation page ((auth) layout). */
 export const AUTH_MESSAGES: readonly MessageSpec[] = ['auth']
 
@@ -27,6 +50,8 @@ export const DASHBOARD_MESSAGES: readonly MessageSpec[] = [
   { namespace: 'units', paths: ['qty', 'per'] },
   // M3 Step 5: Recent orders' status and payment badges.
   { namespace: 'orders', paths: ['status', 'paymentState'] },
+  // M3 Step 8: "Needs a look" lists the deposits recorded without their tax invoice.
+  { namespace: 'documents', paths: ['invoices.deposits'] },
 ]
 
 /**
@@ -118,6 +143,9 @@ export const SALES_MESSAGES: readonly MessageSpec[] = [
   },
   // M3 Step 5: One sale's customer and "They'll pay later", its payments and refunds.
   'orders',
+  // M3 Step 8: "Invoice this sale", and a sale an invoice or a credit note posted.
+  INVOICE_LINK_WORDS,
+  EMIRATE_WORDS,
 ]
 
 /** The purchasing words the customer payment forms share (how it was paid, a payment's checks). */
@@ -149,6 +177,9 @@ export const ORDERS_MESSAGES: readonly MessageSpec[] = [
       'receipts',
     ],
   },
+  // M3 Step 8: an order's invoices, and "Invoice this order".
+  INVOICE_LINK_WORDS,
+  EMIRATE_WORDS,
 ]
 
 /**
@@ -158,7 +189,9 @@ export const ORDERS_MESSAGES: readonly MessageSpec[] = [
  * item" opens the product form), and the purchasing words of the shared document parts and files.
  */
 export const QUOTATIONS_MESSAGES: readonly MessageSpec[] = [
-  { namespace: 'documents', paths: ['quotations'] },
+  { namespace: 'documents', paths: ['quotations', 'pdfFile', 'emirates'] },
+  // M3 Step 8: "Invoice this quotation" (everything, a stage, a part or a deposit).
+  INVOICE_LINK_WORDS,
   'orders',
   { namespace: 'sales', paths: ['list', 'editor.location', 'view.inclVat'] },
   'catalog',
@@ -170,14 +203,53 @@ export const QUOTATIONS_MESSAGES: readonly MessageSpec[] = [
 ]
 
 /**
+ * Invoices (M3 Step 8; its layout): their own words and the quotation editor's (an invoice made from
+ * scratch has a quotation's lines, discount and "Round the total"), the PDF dialog's, the orders
+ * messages (the customer picker and form, payments and what is owed), a sale's list, branch and
+ * "incl. VAT" words, the catalog's words and the unit names, and the purchasing words of the shared
+ * document parts, payments and files.
+ */
+export const INVOICES_MESSAGES: readonly MessageSpec[] = [
+  {
+    namespace: 'documents',
+    paths: [
+      'invoices',
+      'pdfFile',
+      'emirates',
+      'quotations.editor',
+      'quotations.totals',
+      'quotations.view.typed',
+    ],
+  },
+  'orders',
+  { namespace: 'sales', paths: ['list', 'editor.location', 'view.inclVat'] },
+  'catalog',
+  'units',
+  {
+    namespace: 'purchasing',
+    paths: [
+      'editor',
+      'view.discountPercent',
+      'view.discountAmount',
+      'receipts',
+      'paymentMethods',
+      'payment',
+    ],
+  },
+]
+
+/**
  * Customers (M3 Step 5; its layout): the orders messages (customers, their orders, payments and what
- * they owe), the catalog's list and form words, and the sales words of a customer's sales.
+ * they owe), the catalog's list and form words, and the sales words of a customer's sales. M3 Step 8:
+ * their invoices and their statement (its own words, the entries' names and the PDF dialog's).
  */
 export const CUSTOMERS_MESSAGES: readonly MessageSpec[] = [
   'orders',
   { namespace: 'catalog', paths: ['list', 'form', 'numbers'] },
   { namespace: 'sales', paths: ['list', 'status', 'view.title'] },
   PAYMENT_WORDS,
+  INVOICE_LINK_WORDS,
+  { namespace: 'documents', paths: ['invoices.statement', 'pdf.statement', 'pdfFile', 'emirates'] },
 ]
 
 /** What customers owe (M3 Step 5; its layout): the orders messages and the payment forms' words. */

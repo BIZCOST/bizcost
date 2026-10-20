@@ -126,7 +126,9 @@ export type StockMovementKind = (typeof STOCK_MOVEMENT_KINDS)[number]
  * `attachments.entity`: what a file is attached to. M2 Step 3: purchases (their receipts); M2 Step 5:
  * expenses (their receipts); M3 Step 5: orders (the customer's LPO, a photo of the order); M3 Step 7:
  * quotations (the customer's signed copy, drawings) and a quotation's lines (a drawing or a photo of
- * one item, printed in the PDF's picture column: images only).
+ * one item, printed in the PDF's picture column: images only); M3 Step 8 (B4): invoices (the customer's
+ * signed delivery note, their LPO) and an invoice's lines (a picture printed like a quotation line's,
+ * images only, added only while the invoice is a draft).
  */
 export const ATTACHMENT_ENTITIES = [
   'purchase',
@@ -134,6 +136,8 @@ export const ATTACHMENT_ENTITIES = [
   'order',
   'quotation',
   'quotation_line',
+  'invoice',
+  'invoice_line',
 ] as const
 export type AttachmentEntity = (typeof ATTACHMENT_ENTITIES)[number]
 

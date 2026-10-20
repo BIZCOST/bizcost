@@ -7,6 +7,7 @@ import type { BusinessCtx } from '../business-context'
 import { buildQuotationPdfInput, type PdfBusiness } from '../documents/pdf/build'
 import type { DocumentPdfImage } from '../documents/pdf/input'
 import { AppError } from '../errors'
+import { seesCustomers } from './customers'
 import { renderDocumentPdf, type PrintableImage } from './document-files'
 import { linesOf, quotationHeadOf, stagesOf, type QuotationHeadRecord } from './quotations'
 
@@ -107,6 +108,7 @@ export async function quotationPdf(ctx: BusinessCtx, input: IdInput): Promise<Do
     return { head, lines, stages, business, customer }
   })
   const { head, lines, stages, business, customer } = source
+  const sees = seesCustomers(ctx)
 
   // The images it prints: only the business's own objects (document-files.ts checks each path).
   const wanted: PrintableImage[] = []
@@ -188,13 +190,15 @@ export async function quotationPdf(ctx: BusinessCtx, input: IdInput): Promise<Do
           amount: stage.amount,
         })),
       },
+      // The customer's particulars only for a member who sees customers (D-263; M3 Step 8 review):
+      // another prints their name.
       customer: {
         name: customer.name,
-        phone: customer.phone,
-        trn: customer.trn,
-        addressLine: customer.address_line,
-        city: customer.city,
-        emirate: customer.emirate,
+        phone: sees ? customer.phone : null,
+        trn: sees ? customer.trn : null,
+        addressLine: sees ? customer.address_line : null,
+        city: sees ? customer.city : null,
+        emirate: sees ? customer.emirate : null,
       },
       businessImages: {
         logo: business.logo_path ? 'logo' : null,

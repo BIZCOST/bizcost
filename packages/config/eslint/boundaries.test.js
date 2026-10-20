@@ -1,13 +1,19 @@
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { ESLint } from 'eslint'
-import { describe, expect, it } from 'vitest'
+import { beforeAll, describe, expect, it } from 'vitest'
 
 // The package-boundary rules of index.js, checked through the repo's real flat config: layer order
 // domain → contracts → modules → db → api, and the API's single database entry (ctx.tenantTx).
 
 const repoRoot = fileURLToPath(new URL('../../..', import.meta.url))
 const eslint = new ESLint({ cwd: repoRoot })
+
+// The first lint loads the repo's flat config and the TypeScript parser: 5–6 s cold, more under a
+// full parallel `pnpm check`. Load them once here, outside each test's 5 s limit.
+beforeAll(async () => {
+  await eslint.lintText('', { filePath: join(repoRoot, 'packages/domain/src/probe.ts') })
+}, 60_000)
 
 async function restrictedImports(file, code) {
   const [result] = await eslint.lintText(code, { filePath: join(repoRoot, file) })

@@ -1,5 +1,7 @@
 import { randomBytes } from 'node:crypto'
 import type {
+  CreditNoteDto,
+  InvoiceDto,
   DocumentImageUploadUrlDto,
   DocumentSettingsDto,
   QuotationDto,
@@ -510,6 +512,58 @@ async function newQuotation(state: 'draft' | 'sent' | 'accepted' = 'draft'): Pro
       id: sent.id,
       version: sent.version,
     }),
+  )
+}
+
+/** An invoice of the tenant's customer (M3 Step 8): a product line and a typed one. */
+function invoiceInput(extra: object = {}) {
+  return {
+    id: newId(),
+    customerId: tenant.customer.id,
+    locationId: tenant.branch.id,
+    channelId: tenant.channel.id,
+    countedElsewhere: false,
+    lines: [
+      { id: newId(), productId: tenant.product.id, qty: '1', unitPrice: '15.5' },
+      { id: newId(), productId: null, description: 'Fitting', qty: '2', unitPrice: '5' },
+    ],
+    ...extra,
+  }
+}
+
+async function newInvoice(state: 'draft' | 'issued' = 'draft'): Promise<InvoiceDto> {
+  const draft = await ok(
+    call<InvoiceDto>(tenant.owner, 'invoice.create', 'mutation', invoiceInput()),
+  )
+  if (state === 'draft') return draft
+  return ok(
+    call<InvoiceDto>(tenant.owner, 'invoice.issue', 'mutation', {
+      id: draft.id,
+      version: draft.version,
+    }),
+  )
+}
+
+/** A credit note of an issued invoice: 2 off its line `invoiceLineId`. */
+function creditNoteFields(invoiceLineId: string, extra: object = {}) {
+  return {
+    eventDate: tenant.sale.businessDate,
+    reason: 'price_changed',
+    reasonText: 'Price agreed again',
+    by: 'amount',
+    lines: [{ invoiceLineId, amount: '2' }],
+    ...extra,
+  }
+}
+
+function creditNoteInput(invoice: InvoiceDto) {
+  return { id: newId(), invoiceId: invoice.id, ...creditNoteFields(invoice.lines[1]!.id) }
+}
+
+async function newCreditNote(): Promise<CreditNoteDto> {
+  const invoice = await newInvoice('issued')
+  return ok(
+    call<CreditNoteDto>(tenant.owner, 'creditNote.create', 'mutation', creditNoteInput(invoice)),
   )
 }
 
@@ -1304,6 +1358,102 @@ const AUDIT: Record<string, AuditProbe> = {
   // Counted in document_renders (the rate limit): an audited row.
   'quotation.pdf': {
     run: async () => asOwner('quotation.pdf', { id: (await newQuotation()).id }),
+  },
+  // Invoices and credit notes (M3 Step 8, previewed with Quotations: D-125).
+  'invoice.create': { run: () => asOwner('invoice.create', invoiceInput()) },
+  'invoice.update': {
+    run: async () => {
+      const invoice = await newInvoice()
+      return asOwner('invoice.update', {
+        id: invoice.id,
+        version: invoice.version,
+        notes: 'Changed',
+      })
+    },
+  },
+  'invoice.discard': {
+    run: async () => {
+      const invoice = await newInvoice()
+      return asOwner('invoice.discard', { id: invoice.id, version: invoice.version })
+    },
+  },
+  // The issue's transaction (its number, sale, snapshots) and the stored PDF linked after it.
+  'invoice.issue': {
+    run: async () => {
+      const invoice = await newInvoice()
+      return asOwner('invoice.issue', { id: invoice.id, version: invoice.version })
+    },
+  },
+  'invoice.fromQuotation': {
+    run: async () =>
+      asOwner('invoice.fromQuotation', { id: (await newQuotation('accepted')).id, newId: newId() }),
+  },
+  'invoice.fromOrder': {
+    run: async () =>
+      asOwner('invoice.fromOrder', { orderId: (await newOrder()).id, newId: newId() }),
+  },
+  'invoice.fromSale': {
+    run: async () => {
+      const draft = (
+        await ok(
+          call<{ data: SaleDto }>(
+            tenant.owner,
+            'sale.create',
+            'mutation',
+            saleInput({ customerId: tenant.customer.id }),
+          ),
+        )
+      ).data
+      await ok(
+        call(tenant.owner, 'sale.post', 'mutation', { id: draft.id, version: draft.version }),
+      )
+      return asOwner('invoice.fromSale', { saleId: draft.id, newId: newId() })
+    },
+  },
+  'invoice.copyToQuotation': {
+    run: async () =>
+      asOwner('invoice.copyToQuotation', { id: (await newInvoice('issued')).id, newId: newId() }),
+  },
+  // Counted in document_renders (the rate limit): an audited row.
+  'invoice.pdf': {
+    run: async () => asOwner('invoice.pdf', { id: (await newInvoice()).id }),
+  },
+  'creditNote.create': {
+    run: async () => asOwner('creditNote.create', creditNoteInput(await newInvoice('issued'))),
+  },
+  'creditNote.update': {
+    run: async () => {
+      const draft = await newCreditNote()
+      return asOwner('creditNote.update', {
+        id: draft.id,
+        version: draft.version,
+        ...creditNoteFields(draft.lines[0]!.invoiceLineId, { reasonText: 'Changed' }),
+      })
+    },
+  },
+  'creditNote.discard': {
+    run: async () => {
+      const draft = await newCreditNote()
+      return asOwner('creditNote.discard', { id: draft.id, version: draft.version })
+    },
+  },
+  'creditNote.issue': {
+    run: async () => {
+      const draft = await newCreditNote()
+      return asOwner('creditNote.issue', { id: draft.id, version: draft.version })
+    },
+  },
+  'creditNote.pdf': {
+    run: async () => asOwner('creditNote.pdf', { id: (await newCreditNote()).id }),
+  },
+  // Counted in document_renders (the rate limit): an audited row.
+  'customer.statementPdf': {
+    run: () =>
+      asOwner('customer.statementPdf', {
+        customerId: tenant.customer.id,
+        from: tenant.sale.businessDate,
+        to: tenant.sale.businessDate,
+      }),
   },
   'document.updateSettings': {
     run: async () => {

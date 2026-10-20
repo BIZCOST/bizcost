@@ -356,6 +356,11 @@ describe('APP_ERROR_CODES', () => {
     'quotation_not_accepted',
     'quotation_has_order',
     'series_started',
+    // M3 Step 8: invoices and credit notes.
+    'sale_has_invoice',
+    'details_missing',
+    'exceeds_invoice',
+    'quotation_invoiced',
     'internal',
   ]
 

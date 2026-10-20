@@ -6,6 +6,8 @@ import { compareDecimal } from '@bizcost/domain'
 import type { I18nKey } from '@bizcost/i18n'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { HandCoinsIcon, Undo2Icon } from 'lucide-react'
+import Link from 'next/link'
+import { useParams } from 'next/navigation'
 import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
@@ -19,24 +21,37 @@ import { Panel } from '@/features/documents/panel'
 import { useRefreshOrders } from '@/features/orders/data'
 import { useBusinessContext } from '@/lib/trpc/client'
 import { cn } from '@/lib/utils'
-import { CustomerPaymentSheet, type PaidDocument } from './payment-sheet'
+import { CustomerPaymentSheet, paidDocumentInput, type PaidDocument } from './payment-sheet'
 
 // What an order or a sale "they'll pay later" is paid and owes (M3 Step 5; Q17, D-267; one figure per
 // obligation, A2): its total, its refunds, what was paid, money given back, and what is still owed or,
 // paid beyond it, "Money back to the customer" (a refund, or a cancelled order's deposit). Each
 // payment with its day, how it was paid, who recorded it (with a team only, D-278) and its note; one
-// recorded by mistake is reversed (it stays listed, marked reversed). Payments are never edited.
+// recorded by mistake is reversed (it stays listed, marked reversed). Payments are never edited. An
+// invoice lists its own payments; what the order or sale it was made from paid toward it is one line
+// (those payments are listed, and reversed, on that order or sale).
 
 const positive = (value: string) => compareDecimal(value, '0') > 0
 
 /** Its total, refunds, payments, money given back and what is still owed (or paid beyond it). */
-export function OwedSummary({ owed }: { owed: OwedDocumentDto }) {
+export function OwedSummary({
+  owed,
+  creditedLabel,
+}: {
+  owed: OwedDocumentDto
+  /** What took part of it back: refunds, or an invoice's credit notes (M3 Step 8). */
+  creditedLabel?: string
+}) {
   const { t } = useTranslation()
   const rows: { key: string; label: string; value: string; strong?: boolean }[] = [
     { key: 'total', label: t('orders.payments.total'), value: owed.total },
   ]
   if (positive(owed.credited)) {
-    rows.push({ key: 'credited', label: t('orders.payments.credited'), value: owed.credited })
+    rows.push({
+      key: 'credited',
+      label: creditedLabel ?? t('orders.payments.credited'),
+      value: owed.credited,
+    })
   }
   rows.push({ key: 'paid', label: t('orders.payments.paid'), value: owed.paid })
   if (positive(owed.refunded)) {
@@ -113,9 +128,11 @@ export function PaymentRow({
           {showDocument ? (
             <>
               {' · '}
-              {payment.documentNumber
-                ? t('orders.payments.forOrder', { number: isolate(payment.documentNumber) })
-                : t('orders.payments.forSale')}
+              {payment.documentKind === 'invoice'
+                ? t('orders.payments.forInvoice', { number: isolate(payment.documentNumber ?? '') })
+                : payment.documentNumber
+                  ? t('orders.payments.forOrder', { number: isolate(payment.documentNumber) })
+                  : t('orders.payments.forSale')}
             </>
           ) : null}
           {team ? (
@@ -183,11 +200,7 @@ export function ReversePaymentDialog({
     try {
       const result = await reverse.mutateAsync({ id: payment.id })
       queryClient.setQueryData(
-        trpc.customerPayment.list.queryKey(
-          result.document.kind === 'order'
-            ? { orderId: result.document.id }
-            : { saleId: result.document.id },
-        ),
+        trpc.customerPayment.list.queryKey(paidDocumentInput(result.document)),
         { ...result, nextCursor: null },
       )
       await refresh()
@@ -247,6 +260,7 @@ export function CustomerPaymentsPanel({
   today,
   closedThrough,
   hint,
+  creditedLabel,
 }: {
   document: PaidDocument
   canRecord: boolean
@@ -255,12 +269,14 @@ export function CustomerPaymentsPanel({
   today: string
   closedThrough: string | null
   hint?: string
+  /** What took part of it back: refunds, or an invoice's credit notes. */
+  creditedLabel?: string
 }) {
   const { t } = useTranslation()
   const trpc = useTRPC()
   const money = useMoney()
-  const input = document.kind === 'order' ? { orderId: document.id } : { saleId: document.id }
-  const list = useQuery(trpc.customerPayment.list.queryOptions(input))
+  const { businessId } = useParams<{ businessId: string }>()
+  const list = useQuery(trpc.customerPayment.list.queryOptions(paidDocumentInput(document)))
   const [sheet, setSheet] = useState<'payment' | 'refund' | null>(null)
   const [reversing, setReversing] = useState<CustomerPaymentDto | null>(null)
   if (list.isError && !list.data) {
@@ -279,6 +295,7 @@ export function CustomerPaymentsPanel({
     )
   }
   const items = list.data?.items ?? []
+  const fromSource = list.data?.fromSource ?? null
   const payable = canRecord && canPay && positive(owed.owed)
   const giveBack = canRecord && positive(owed.overpaid)
   return (
@@ -299,7 +316,7 @@ export function CustomerPaymentsPanel({
         ) : null
       }
     >
-      <OwedSummary owed={owed} />
+      <OwedSummary owed={owed} creditedLabel={creditedLabel} />
       {positive(owed.overpaid) ? (
         <p data-money-back className="mt-2 text-sm font-medium text-warning">
           {t('orders.payments.overpaidNote', { amount: money(owed.overpaid, owed.currency) })}
@@ -315,7 +332,32 @@ export function CustomerPaymentsPanel({
           </p>
         )
       ) : null}
-      {items.length === 0 ? (
+      {fromSource ? (
+        <div data-paid-from-source className="mt-4 rounded-xl bg-muted/50 px-3 py-2.5 text-sm">
+          <p className="font-medium">
+            {fromSource.kind === 'order'
+              ? t('orders.payments.paidFromOrder', {
+                  number: isolate(fromSource.number ?? ''),
+                  amount: money(fromSource.amount, owed.currency),
+                })
+              : t('orders.payments.paidFromSale', {
+                  amount: money(fromSource.amount, owed.currency),
+                })}
+          </p>
+          <p className="mt-0.5 text-muted-foreground">
+            {t('orders.payments.paidFromSourceHint')}{' '}
+            <Link
+              href={`/b/${businessId}/${fromSource.kind === 'order' ? 'orders' : 'sales'}/${fromSource.id}`}
+              className="text-primary underline-offset-4 hover:underline"
+            >
+              {fromSource.kind === 'order'
+                ? t('orders.payments.forOrder', { number: isolate(fromSource.number ?? '') })
+                : t('orders.payments.forSale')}
+            </Link>
+          </p>
+        </div>
+      ) : null}
+      {items.length === 0 && fromSource ? null : items.length === 0 ? (
         <p className="mt-4 text-sm text-muted-foreground">{t('orders.payments.none')}</p>
       ) : (
         <ul aria-label={t('orders.payments.title')} className="mt-4 divide-y border-t">

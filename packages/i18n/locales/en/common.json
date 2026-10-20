@@ -75,6 +75,7 @@
     "orders": "Orders",
     "receivables": "What customers owe",
     "quotations": "Quotations",
+    "invoices": "Invoices",
     "new_product": "New product or service",
     "new_product_projects": "New service or work item",
     "new_product_services": "New service",

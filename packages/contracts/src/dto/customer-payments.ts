@@ -24,8 +24,11 @@ import { memberNameDto, paymentKindDto, positiveMoneyInput, settlementMethodDto 
 
 const isoTimestamp = z.iso.datetime({ offset: true })
 
-/** What a customer payment pays: an order, or a sale "they'll pay later". */
-export const receivableKindDto = z.enum(['order', 'sale'])
+/**
+ * What a customer payment pays: an order, a sale "they'll pay later", or an issued invoice (M3 Step 8;
+ * once an order or a sale has one, what is owed lives on its invoices, A2).
+ */
+export const receivableKindDto = z.enum(['order', 'sale', 'invoice'])
 export type ReceivableKindDto = z.infer<typeof receivableKindDto>
 
 const noteInput = z
@@ -35,9 +38,12 @@ const noteInput = z
   .nullish()
   .transform((value) => (value ? value : null))
 
-const oneDocument = (input: { orderId?: string | undefined; saleId?: string | undefined }) =>
-  (input.orderId === undefined) !== (input.saleId === undefined)
-const oneDocumentMessage = { message: 'exactly one of orderId and saleId' }
+const oneDocument = (input: {
+  orderId?: string | undefined
+  saleId?: string | undefined
+  invoiceId?: string | undefined
+}) => [input.orderId, input.saleId, input.invoiceId].filter((id) => id !== undefined).length === 1
+const oneDocumentMessage = { message: 'exactly one of orderId, saleId and invoiceId' }
 
 export const customerPaymentDto = z.object({
   id: zUuid,
@@ -48,7 +54,7 @@ export const customerPaymentDto = z.object({
   customerName: z.string().nullable(),
   documentKind: receivableKindDto,
   documentId: zUuid,
-  /** An order's number ("#1001"); null for a sale. */
+  /** An order's number ("#1001") or an invoice's ("INV-0001"); null for a sale. */
   documentNumber: z.string().nullable(),
   businessDate: zBusinessDate,
   method: settlementMethodDto,
@@ -75,15 +81,15 @@ export type CustomerPaymentDto = z.infer<typeof customerPaymentDto>
 export const owedDocumentDto = z.object({
   kind: receivableKindDto,
   id: zUuid,
-  /** An order's number; null for a sale. */
+  /** An order's or an invoice's number; null for a sale. */
   number: z.string().nullable(),
   /** An order's status; null for a sale. */
   orderStatus: orderStatusDto.nullable(),
   customerId: zUuid.nullable(),
   customerName: z.string().nullable(),
-  /** The order's day, or the sale's. */
+  /** The order's day, the sale's, or the invoice's issue date. */
   businessDate: zBusinessDate,
-  /** An order's due day. */
+  /** An order's or an invoice's due day. */
   dueDate: zBusinessDate.nullable(),
   /** The names of its first two items. */
   itemNames: z.array(z.string()),
@@ -95,6 +101,12 @@ export const owedDocumentDto = z.object({
   owed: zDecimal,
   overpaid: zDecimal,
   state: paymentStateDto,
+  /**
+   * An order its issued invoices bill in part (M3 Step 8 review, D-313): this is what they do not bill
+   * yet, owed on the order until its last invoice bills it (its payments count toward its invoices
+   * first).
+   */
+  invoicedInPart: z.boolean(),
 })
 export type OwedDocumentDto = z.infer<typeof owedDocumentDto>
 
@@ -107,20 +119,42 @@ export const customerPaymentListInput = z
   .object({
     orderId: zUuid.optional(),
     saleId: zUuid.optional(),
+    invoiceId: zUuid.optional(),
     customerId: zUuid.optional(),
     cursor: z.string().min(1).max(500).optional(),
     limit: z.int().min(1).max(CUSTOMER_PAYMENT_PAGE_SIZE).default(CUSTOMER_PAYMENT_PAGE_SIZE),
   })
   .refine(
     (input) =>
-      [input.orderId, input.saleId, input.customerId].filter((id) => id !== undefined).length === 1,
-    { message: 'exactly one of orderId, saleId and customerId' },
+      [input.orderId, input.saleId, input.invoiceId, input.customerId].filter(
+        (id) => id !== undefined,
+      ).length === 1,
+    { message: 'exactly one of orderId, saleId, invoiceId and customerId' },
   )
 export type CustomerPaymentListInput = z.input<typeof customerPaymentListInput>
 
+/**
+ * An invoice made from an order or a sale: what that order's or sale's payments count toward it (A2: a
+ * deposit invoice first, then by number), and where they were recorded; null otherwise.
+ */
+export const paymentsFromSourceDto = z
+  .object({
+    kind: z.enum(['order', 'sale']),
+    id: zUuid,
+    /** The order's number; null for a sale. */
+    number: z.string().nullable(),
+    amount: zDecimal,
+  })
+  .nullable()
+
 export const customerPaymentListDto = z.object({
   document: owedDocumentDto.nullable(),
+  /**
+   * An invoice's own payments only; what the order or sale it was made from paid toward it is
+   * `fromSource` (those payments are listed, and reversed, on that order or sale).
+   */
   items: z.array(customerPaymentDto),
+  fromSource: paymentsFromSourceDto,
   nextCursor: z.string().nullable(),
 })
 export type CustomerPaymentListDto = z.infer<typeof customerPaymentListDto>
@@ -138,6 +172,7 @@ export const recordCustomerPaymentInput = z
     id: zUuid,
     orderId: zUuid.optional(),
     saleId: zUuid.optional(),
+    invoiceId: zUuid.optional(),
     kind: paymentKindDto.default('payment'),
     businessDate: zBusinessDate,
     method: settlementMethodDto,
@@ -159,6 +194,7 @@ export type ReverseCustomerPaymentInput = z.input<typeof reverseCustomerPaymentI
 export const documentPaymentsDto = z.object({
   document: owedDocumentDto,
   items: z.array(customerPaymentDto),
+  fromSource: paymentsFromSourceDto,
 })
 export type DocumentPaymentsDto = z.infer<typeof documentPaymentsDto>
 
@@ -178,7 +214,12 @@ export const recordManyCustomerPaymentsInput = z.object({
   documents: z
     .array(
       z
-        .object({ id: zUuid, orderId: zUuid.optional(), saleId: zUuid.optional() })
+        .object({
+          id: zUuid,
+          orderId: zUuid.optional(),
+          saleId: zUuid.optional(),
+          invoiceId: zUuid.optional(),
+        })
         .refine(oneDocument, oneDocumentMessage),
     )
     .min(1)
@@ -186,9 +227,10 @@ export const recordManyCustomerPaymentsInput = z.object({
     .refine((docs) => new Set(docs.map((d) => d.id)).size === docs.length, {
       message: 'duplicate payment id',
     })
-    .refine((docs) => new Set(docs.map((d) => d.orderId ?? d.saleId)).size === docs.length, {
-      message: 'a document twice',
-    }),
+    .refine(
+      (docs) => new Set(docs.map((d) => d.orderId ?? d.saleId ?? d.invoiceId)).size === docs.length,
+      { message: 'a document twice' },
+    ),
 })
 export type RecordManyCustomerPaymentsInput = z.input<typeof recordManyCustomerPaymentsInput>
 

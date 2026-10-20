@@ -557,6 +557,13 @@ export const saleDto = z.object({
   /** A refund: the sale it takes back, and how (by quantity or amount). */
   refundOfId: zUuid.nullable(),
   refundBy: z.enum(CREDIT_BY).nullable(),
+  /**
+   * M3 Step 8: the issued invoice this sale counts (source `invoice`), the one its credit note corrects
+   * (source `credit_note`), or the one made from it (a One sale): its id and number; null otherwise.
+   */
+  invoice: z.object({ id: zUuid, number: z.string() }).nullable(),
+  /** M3 Step 8: a credit note's sale: the credit note's number. */
+  creditNoteNumber: z.string().nullable(),
   /** The refunds of this sale, newest first (none for a draft or a refund). */
   refunds: z.array(refundSummaryDto),
   /**
@@ -596,6 +603,8 @@ export const saleListItemDto = z.object({
   /** M3 Step 5: its customer's name, its order's number, the sale a refund takes back. */
   customerName: z.string().nullable(),
   orderNumber: z.string().nullable(),
+  /** M3 Step 8: the number of the invoice (source `invoice`) or credit note (`credit_note`) it is. */
+  documentNumber: z.string().nullable(),
   refundOfId: zUuid.nullable(),
   payLater: z.boolean(),
   version: z.int().positive(),

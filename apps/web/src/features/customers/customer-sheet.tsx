@@ -2,7 +2,14 @@
 
 import { apiErrorCode, apiErrorKey, useTRPC } from '@bizcost/app-core'
 import type { CustomerDto, CustomerPickItemDto } from '@bizcost/contracts'
-import { CUSTOMER_KINDS, customerMayHaveLicence, newId, type CustomerKind } from '@bizcost/domain'
+import {
+  CUSTOMER_KINDS,
+  customerMayHaveLicence,
+  EMIRATES,
+  newId,
+  type CustomerKind,
+  type Emirate,
+} from '@bizcost/domain'
 import type { I18nKey } from '@bizcost/i18n'
 import { useMutation, useQuery } from '@tanstack/react-query'
 import { UserRoundSearchIcon } from 'lucide-react'
@@ -17,6 +24,7 @@ import { sameData } from '@/components/form/unsaved'
 import { useUnsavedChanges } from '@/components/form/unsaved-changes'
 import { isolate } from '@/components/form/use-message'
 import { Button } from '@/components/ui/button'
+import { NativeSelect } from '@/components/ui/native-select'
 import {
   Sheet,
   SheetBody,
@@ -29,6 +37,7 @@ import {
 import { Textarea } from '@/components/ui/textarea'
 import { formName } from '@/features/catalog/material-draft'
 import type { FieldError } from '@/features/catalog/numbers'
+import { hasModule } from '@/features/purchasing/data'
 import { useBusinessContext } from '@/lib/trpc/client'
 import { cn } from '@/lib/utils'
 import { checkCustomer, customerDraft, type CustomerDraft } from './customer-draft'
@@ -155,6 +164,7 @@ export function CustomerSheet({
 }) {
   const { t } = useTranslation()
   const trpc = useTRPC()
+  const { data: context } = useBusinessContext()
   const refresh = useRefreshCustomers()
   const create = useMutation(trpc.customer.create.mutationOptions())
   const update = useMutation(trpc.customer.update.mutationOptions())
@@ -166,7 +176,9 @@ export function CustomerSheet({
   const form = useRef<HTMLFormElement>(null)
   const kindId = useId()
   const busy = create.isPending || update.isPending
-  const check = checkCustomer(draft, customer)
+  // M3 Step 8: with Invoices on, the address a tax invoice prints for a registered customer.
+  const withAddress = context !== undefined && hasModule(context, 'invoices')
+  const check = checkCustomer(draft, customer, withAddress)
   const shown = (error: FieldError | undefined): string | undefined =>
     error && (submitted || !MISSING.has(error.key)) ? t(error.key, error.values) : undefined
   const set = (patch: Partial<CustomerDraft>) => setDraft((d) => ({ ...d, ...patch }))
@@ -359,6 +371,51 @@ export function CustomerSheet({
                   </p>
                 )}
               />
+            ) : null}
+            {withAddress ? (
+              <fieldset className="space-y-4" data-customer-address>
+                <legend className="text-sm font-medium">
+                  {t('orders.customers.form.address')}
+                </legend>
+                <p className="-mt-2 text-sm text-muted-foreground">
+                  {t('orders.customers.form.addressHint')}
+                </p>
+                <TextField
+                  label={t('orders.customers.form.addressLine')}
+                  autoComplete="off"
+                  className={OWN_DIRECTION}
+                  value={draft.addressLine}
+                  onChange={(event) => set({ addressLine: event.target.value })}
+                  error={shown(check.errors.addressLine)}
+                />
+                <div className="grid grid-cols-2 gap-3">
+                  <TextField
+                    label={t('orders.customers.form.city')}
+                    autoComplete="off"
+                    className={OWN_DIRECTION}
+                    value={draft.city}
+                    onChange={(event) => set({ city: event.target.value })}
+                    error={shown(check.errors.city)}
+                  />
+                  <TextField
+                    label={t('orders.customers.form.emirate')}
+                    render={(a11y) => (
+                      <NativeSelect
+                        {...a11y}
+                        value={draft.emirate}
+                        onChange={(event) => set({ emirate: event.target.value as Emirate | '' })}
+                      >
+                        <option value="">{t('orders.customers.form.emirateNone')}</option>
+                        {EMIRATES.map((emirate) => (
+                          <option key={emirate} value={emirate}>
+                            {t(`documents.emirates.${emirate}`)}
+                          </option>
+                        ))}
+                      </NativeSelect>
+                    )}
+                  />
+                </div>
+              </fieldset>
             ) : null}
             <TextField
               label={t('orders.notes')}

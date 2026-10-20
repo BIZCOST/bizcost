@@ -10,15 +10,23 @@
 // on a single line without a picture), a total rounded to 83,900.00 and payment stages 50/35/15, an area
 // across the page break (D-299). scripts/samples/workshop-quotation.json: the
 // demo carpentry workshop (Al Itqan Carpentry) in English, without a logo or pictures, a draft.
-// scripts/samples/tax-invoice-sketch.json: the same letterhead as Step 8's «فاتورة ضريبية · Tax
-// Invoice» (hand-made from the fit-out sample: due date, the buyer's TRN, VAT per line, a payment).
+// Step 8 (made by the API's own builders): tax-invoice.json, tax-credit-note.json,
+// workshop-final-invoice.json, designer-invoice.json and factory-statement.json (see below).
 // Every business, customer and figure here is fictional (the demo personas), never a real customer.
 // Amounts are worked out in fils (whole numbers), never in floating point.
 
 import { writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { buildQuotationPdfInput, type PdfQuotation } from '../src/documents/pdf/build'
+import {
+  buildCreditNotePdfInput,
+  buildInvoicePdfInput,
+  buildQuotationPdfInput,
+  buildStatementPdfInput,
+  type PdfBusiness,
+  type PdfInvoiceLine,
+  type PdfQuotation,
+} from '../src/documents/pdf/build'
 import type { DocumentPdfImage, DocumentPdfInput } from '../src/documents/pdf/input'
 
 const samples = join(fileURLToPath(new URL('.', import.meta.url)), 'samples')
@@ -461,95 +469,422 @@ const workshop = buildQuotationPdfInput({
   images: {},
 })
 
-// Step 8's tax invoice on the same letterhead (a sketch until its builder exists): no pictures, VAT
-// per line with one zero-rated, a payment beside the totals, the due date and the buyer's TRN.
-const labels = fitOut.labels
-const label = (key: string) => {
-  const found = labels[key]
-  if (!found) throw new Error(`documents.pdf.${key} is missing`)
-  return found
+// Step 8's documents, through the same builders the API uses (M3 Step 8; the plan's definition of
+// done): the fit-out company's tax invoice INV-0001 (gypsum partition 120 m² × 45.00, painting 300 m² ×
+// 18.00, labour 5 days × 650.00 less 10 %: 13,725.00 + VAT 686.25 = 14,411.25; supplied three days
+// before it was issued, with the LPO, the quotation it came from and a payment), its tax credit note
+// CN-0001 for 100 m² of painting (1,800.00 + VAT 90.00), the workshop's final invoice after its deposit
+// invoice (20,000.00 − 5,000.00 deposit = 15,000.00 + VAT 750.00 = 15,750.00), the designer's plain
+// invoice (not VAT-registered: never the word "tax") and the factory's September statement (opening 0,
+// invoiced 10,500.00, paid 8,000.00, closing 2,500.00).
+const fitOutBusiness: PdfBusiness = {
+  legalName: 'Modern Touch Interiors',
+  legalNameAr: 'لمسة عصرية للديكور',
+  locale: 'ar',
+  vatRegistered: true,
+  trn: '100345678900003',
+  phone: '+971 4 555 0142',
+  phone2: '+971 50 555 0199',
+  email: 'hello@moderntouch.example',
+  addressLine: 'Warehouse 7, Al Quoz Industrial 3',
+  city: 'Dubai',
+  emirate: 'dubai',
+  tradeLicenceNo: 'DED-884210',
+  accent: 'black',
+  watermark: true,
+  wholeAmounts: false,
+  signatory: 'عبدالله الكعبي',
+  footer:
+    'Bank: Emirates Sample Bank\nAccount name: Modern Touch Interiors\nIBAN: AE00 0000 0000 0000 0000 000',
 }
-const taxInvoice: DocumentPdfInput = {
-  ...fitOut,
-  kind: 'tax_invoice',
+const fitOutImages = {
+  logo: image('logo', 'png'),
+  signature: image('signature', 'png'),
+  stamp: image('stamp', 'png'),
+}
+const fitOutLogo = { logo: 'logo', signature: 'signature', stamp: 'stamp' }
+const fitOutCustomer = {
+  name: 'Gulf Horizon Properties LLC',
+  phone: '+971 4 555 0300',
+  trn: '100555666700003',
+  addressLine: 'Office 1402, Marina Plaza',
+  city: 'Dubai Marina',
+  emirate: 'dubai' as const,
+  showTrn: true,
+}
+const invoiceLine = (
+  title: string,
+  details: string | null,
+  qty: string,
+  unit: PdfInvoiceLine['unit'],
+  price: string,
+  discount: string,
+): PdfInvoiceLine => {
+  const subtotal = amount(times(qty, price))
+  return {
+    kind: 'item',
+    area: null,
+    title,
+    details,
+    note: null,
+    qty,
+    unit,
+    unitPrice: price,
+    subtotal,
+    lineDiscount: discount,
+    priceIncludesVat: false,
+    vatCategory: 'standard',
+    vatRate: '5',
+    picture: null,
+  }
+}
+const taxInvoice = buildInvoicePdfInput({
+  business: fitOutBusiness,
+  invoice: {
+    kind: 'tax_invoice',
+    number: 'INV-0001',
+    draft: false,
+    issueDate: '2026-10-18',
+    supplyDate: '2026-10-15',
+    dueDate: '2026-11-17',
+    lpo: 'LPO-GH-2207',
+    quotationNumber: 'Q-0001',
+    orderNumber: null,
+    currency: 'AED',
+    vatRegistered: true,
+    subtotal: '14050.00',
+    discountTotal: '325.00',
+    adjustment: '0',
+    roundingDifference: '0',
+    netTotal: '13725.00',
+    vatTotal: '686.25',
+    total: '14411.25',
+    payable: '14411.25',
+    vatRates: [{ vatCategory: 'standard', vatRate: '5', net: '13725.00', vat: '686.25' }],
+    terms: 'Payment within 30 days of the invoice date.',
+    notes: null,
+    issuedAt: new Date('2026-10-18T10:15:00Z'),
+    lines: [
+      invoiceLine(
+        'Gypsum partition',
+        'Double board, 12.5 mm, with insulation',
+        '120',
+        'm2',
+        '45',
+        '0',
+      ),
+      invoiceLine('Painting', 'Two coats, emulsion, white', '300', 'm2', '18', '0'),
+      invoiceLine('Labour', 'Site team of 4', '5', null, '650', '325.00'),
+    ],
+    payments: [
+      { date: '2026-10-18', method: 'bank_transfer', reference: 'FT-2610-0412', amount: '5000.00' },
+    ],
+  },
+  customer: fitOutCustomer,
+  businessImages: fitOutLogo,
+  images: fitOutImages,
+})
+
+const taxCreditNote = buildCreditNotePdfInput({
+  business: fitOutBusiness,
+  creditNote: {
+    kind: 'tax_credit_note',
+    number: 'CN-0001',
+    draft: false,
+    issueDate: '2026-10-25',
+    invoiceNumber: 'INV-0001',
+    invoiceDate: '2026-10-18',
+    reason: 'price_changed',
+    reasonText: '100 m² of painting were not done: the client painted the store room himself.',
+    currency: 'AED',
+    vatRegistered: true,
+    netTotal: '1800.00',
+    vatTotal: '90.00',
+    total: '1890.00',
+    vatRates: [{ vatCategory: 'standard', vatRate: '5', net: '1800.00', vat: '90.00' }],
+    valueBefore: '13725.00',
+    valueAfter: '11925.00',
+    notes: null,
+    issuedAt: new Date('2026-10-25T08:00:00Z'),
+    lines: [
+      {
+        title: 'Painting',
+        qty: '100',
+        unit: 'm2',
+        unitPrice: '18',
+        priceIncludesVat: false,
+        vatCategory: 'standard',
+        vatRate: '5',
+        net: '1800.00',
+        total: '1890.00',
+      },
+    ],
+  },
+  customer: fitOutCustomer,
+  businessImages: fitOutLogo,
+  images: fitOutImages,
+})
+
+const workshopBusiness: PdfBusiness = {
+  legalName: 'Al Itqan Carpentry',
+  legalNameAr: 'نجارة الإتقان',
   locale: 'en',
-  title: label('title.taxInvoice'),
-  number: 'INV-0042',
-  revision: null,
-  dueDate: { en: '22 October 2026', ar: '22 أكتوبر 2026' },
-  validUntil: null,
-  validity: null,
-  customerRef: 'LPO-7781/B',
-  references: [{ label: { en: 'Quotation', ar: 'عرض السعر' }, value: 'Q-0007' }],
-  opening: null,
-  customer: {
-    ...fitOut.customer,
-    name: { text: 'Mr. Yousef Al Hammadi', dir: 'ltr' },
-    trn: '100555666700003',
-    address: { text: 'Villa 18, Al Barsha South, Dubai', dir: 'ltr' },
-  },
-  lines: [
-    ...[0, 1, 6, 7].map((index, i) => ({
-      ...fitOut.lines[index]!,
-      no: i + 1,
-      picture: null,
-      vatRate: '5%',
-    })),
-    {
-      no: 5,
-      area: null,
-      picture: null,
-      title: { text: 'Export packing for the client’s shipment', dir: 'ltr' },
-      details: { text: 'Crating and documents, goods exported', dir: 'ltr' },
-      note: null,
-      qty: '1',
-      unit: 'pcs',
-      unitPrice: '1,200.00',
-      discount: null,
-      vatRate: '0%',
-      amount: '1,200.00',
-    },
-  ],
-  table: { showPictures: false, showAreas: true, showDiscount: false, showVat: true },
-  totals: [
-    { label: label('totals.net'), amount: '32,439.00', strong: false },
-    {
-      label: { en: 'VAT 5% on 31,239.00', ar: 'ضريبة القيمة المضافة 5٪ على 31,239.00' },
-      amount: '1,561.95',
-      strong: false,
-    },
-    {
-      label: { en: 'Zero-rated, on 1,200.00', ar: 'خاضع لنسبة الصفر، على 1,200.00' },
-      amount: '0.00',
-      strong: false,
-    },
-    { label: label('totals.total'), amount: '34,000.95', strong: false },
-    { label: label('totals.paid'), amount: '-17,000.48', strong: false },
-    { label: label('totals.balanceDue'), amount: '17,000.47', strong: true },
-  ],
-  stages: [],
-  payments: [
-    {
-      date: { en: '10 October 2026', ar: '10 أكتوبر 2026' },
-      method: { en: 'Bank transfer', ar: 'تحويل بنكي' },
-      reference: 'FT-2610-8841',
-      amount: '17,000.48',
-    },
-  ],
-  terms: {
-    text: 'Payment within 14 days of the invoice date.\nGoods remain our property until paid in full.',
-    dir: 'ltr',
-  },
-  signature: {
-    ...fitOut.signature,
-    signatory: { text: 'Abdulla Al Kaabi', dir: 'ltr' },
-    acceptance: false,
-  },
+  vatRegistered: true,
+  trn: '100678901200003',
+  phone: '+971 6 555 0177',
+  phone2: null,
+  email: 'orders@alitqan.example',
+  addressLine: 'Industrial Area 2',
+  city: 'Sharjah',
+  emirate: 'sharjah',
+  tradeLicenceNo: 'SHJ-55102',
+  accent: 'brown',
+  watermark: true,
+  wholeAmounts: true,
+  signatory: 'Hamad Al Dhaheri',
+  footer: 'Bank: Sharjah Sample Bank\nIBAN: AE00 0000 0000 0000 0000 111',
 }
+const workshopFinal = buildInvoicePdfInput({
+  business: workshopBusiness,
+  invoice: {
+    kind: 'tax_invoice',
+    number: 'INV-0008',
+    draft: false,
+    issueDate: '2026-10-18',
+    supplyDate: '2026-10-18',
+    dueDate: null,
+    lpo: null,
+    quotationNumber: null,
+    orderNumber: '#1004',
+    currency: 'AED',
+    vatRegistered: true,
+    subtotal: '15000.00',
+    discountTotal: '0',
+    adjustment: '0',
+    roundingDifference: '0',
+    netTotal: '15000.00',
+    vatTotal: '750.00',
+    total: '15750.00',
+    payable: '15750.00',
+    vatRates: [{ vatCategory: 'standard', vatRate: '5', net: '15000.00', vat: '750.00' }],
+    terms: null,
+    notes: 'Thank you for your order.',
+    issuedAt: new Date('2026-10-18T12:00:00Z'),
+    lines: [
+      invoiceLine(
+        'Built-in wardrobe, master bedroom',
+        'Oak veneer, 4 doors, soft-close',
+        '1',
+        'piece',
+        '12000',
+        '0',
+      ),
+      invoiceLine('Kitchen island', 'Solid oak top, white lacquer base', '1', 'piece', '8000', '0'),
+      {
+        kind: 'deduction',
+        area: null,
+        title: 'Less deposit invoice INV-0005',
+        details: null,
+        note: null,
+        qty: '-1',
+        unit: null,
+        unitPrice: '5000.00',
+        subtotal: '-5000.00',
+        lineDiscount: '0',
+        priceIncludesVat: false,
+        vatCategory: 'standard',
+        vatRate: '5',
+        picture: null,
+      },
+    ],
+    payments: [],
+  },
+  customer: {
+    name: 'Faisal Al Mazrouei',
+    phone: '+971 50 555 0188',
+    trn: null,
+    addressLine: 'Villa 3, Al Rahmaniya 1',
+    city: 'Sharjah',
+    emirate: 'sharjah',
+    showTrn: true,
+  },
+  businessImages: { logo: null, signature: null, stamp: null },
+  images: {},
+})
+
+const designerInvoice = buildInvoicePdfInput({
+  business: {
+    legalName: 'Noura Design Studio',
+    legalNameAr: 'استوديو نورة للتصميم',
+    locale: 'en',
+    vatRegistered: false,
+    trn: null,
+    phone: '+971 56 555 0144',
+    phone2: null,
+    email: 'hello@nouradesign.example',
+    addressLine: 'Al Khalidiya',
+    city: 'Abu Dhabi',
+    emirate: 'abu_dhabi',
+    tradeLicenceNo: 'ADF-30987',
+    accent: 'teal',
+    watermark: false,
+    wholeAmounts: true,
+    signatory: 'Noura Al Ali',
+    footer: 'Bank: Abu Dhabi Sample Bank\nIBAN: AE00 0000 0000 0000 0000 222',
+  },
+  invoice: {
+    kind: 'invoice',
+    number: 'INV-0003',
+    draft: false,
+    issueDate: '2026-10-18',
+    supplyDate: '2026-10-12',
+    dueDate: '2026-11-01',
+    lpo: null,
+    quotationNumber: null,
+    orderNumber: null,
+    currency: 'AED',
+    vatRegistered: false,
+    subtotal: '2000.00',
+    discountTotal: '0',
+    adjustment: '0',
+    roundingDifference: '0',
+    netTotal: '2000.00',
+    vatTotal: '0',
+    total: '2000.00',
+    payable: '2000.00',
+    vatRates: [],
+    terms: null,
+    notes: null,
+    issuedAt: new Date('2026-10-18T09:00:00Z'),
+    lines: [
+      {
+        ...invoiceLine(
+          'Logo and brand identity',
+          'Logo, colours and type, 3 rounds of changes',
+          '1',
+          null,
+          '2000',
+          '0',
+        ),
+        vatCategory: null,
+        vatRate: null,
+      },
+    ],
+    payments: [],
+  },
+  customer: {
+    name: 'Bloom Florists LLC',
+    phone: '+971 2 555 0161',
+    trn: '100999888700003',
+    addressLine: 'Shop 4, Al Khalidiya',
+    city: 'Abu Dhabi',
+    emirate: 'abu_dhabi',
+    showTrn: true,
+  },
+  businessImages: { logo: null, signature: null, stamp: null },
+  images: {},
+})
+
+const factoryStatement = buildStatementPdfInput({
+  business: {
+    legalName: 'Al Naqaa Cleaning Products Factory',
+    legalNameAr: 'مصنع النقاء لمواد التنظيف',
+    locale: 'ar',
+    vatRegistered: true,
+    trn: '100567890100003',
+    phone: '+971 6 555 0190',
+    phone2: null,
+    email: 'sales@alnaqaa.example',
+    addressLine: 'المنطقة الصناعية 15',
+    city: 'الشارقة',
+    emirate: 'sharjah',
+    tradeLicenceNo: 'SHJ-77120',
+    accent: 'slate',
+    watermark: false,
+    wholeAmounts: false,
+    signatory: null,
+    footer: 'Bank: Sharjah Sample Bank\nIBAN: AE00 0000 0000 0000 0000 333',
+  },
+  statement: {
+    from: '2026-09-01',
+    to: '2026-09-30',
+    issuedOn: '2026-10-01',
+    currency: 'AED',
+    opening: '0',
+    invoiced: '10500.00',
+    credited: '0',
+    paid: '8000.00',
+    closing: '2500.00',
+    issuedAt: new Date('2026-10-01T06:00:00Z'),
+    entries: [
+      {
+        date: '2026-09-05',
+        kind: 'invoice',
+        number: 'INV-0011',
+        reference: null,
+        charge: '5250.00',
+        credit: '0',
+        owed: '5250.00',
+      },
+      {
+        date: '2026-09-14',
+        kind: 'invoice',
+        number: 'INV-0012',
+        reference: null,
+        charge: '3150.00',
+        credit: '0',
+        owed: '8400.00',
+      },
+      {
+        date: '2026-09-22',
+        kind: 'invoice',
+        number: 'INV-0013',
+        reference: null,
+        charge: '2100.00',
+        credit: '0',
+        owed: '10500.00',
+      },
+      {
+        date: '2026-09-28',
+        kind: 'payment',
+        number: null,
+        reference: 'INV-0011',
+        method: 'bank_transfer',
+        charge: '0',
+        credit: '5250.00',
+        owed: '5250.00',
+      },
+      {
+        date: '2026-09-28',
+        kind: 'payment',
+        number: null,
+        reference: 'INV-0012',
+        method: 'cheque',
+        charge: '0',
+        credit: '2750.00',
+        owed: '2500.00',
+      },
+    ],
+  },
+  customer: {
+    name: 'فندق اللؤلؤة',
+    phone: '+971 4 555 0270',
+    trn: '100234567800003',
+    addressLine: 'شارع الشيخ زايد، مبنى 12',
+    city: 'دبي',
+    emirate: 'dubai',
+  },
+  businessImages: { logo: null, signature: null, stamp: null },
+  images: {},
+})
 
 const write = (name: string, input: DocumentPdfInput) =>
   writeFileSync(join(samples, name), `${JSON.stringify(input, null, 2)}\n`)
 write('fit-out-quotation.json', fitOut)
 write('workshop-quotation.json', workshop)
-write('tax-invoice-sketch.json', taxInvoice)
+write('tax-invoice.json', taxInvoice)
+write('tax-credit-note.json', taxCreditNote)
+write('workshop-final-invoice.json', workshopFinal)
+write('designer-invoice.json', designerInvoice)
+write('factory-statement.json', factoryStatement)
 console.log(`wrote the samples in ${samples}`)

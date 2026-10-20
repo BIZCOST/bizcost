@@ -277,7 +277,8 @@
     "moneyBackRecorded": "Money given back recorded.",
     "beforeOrder": "This day is before the order. Choose its day or a later one.",
     "beforeSale": "This day is before the sale. Choose its day or a later one.",
-    "overMoneyBack": "That's more than the customer paid beyond what it comes to."
+    "overMoneyBack": "That's more than the customer paid beyond what it comes to.",
+    "beforeInvoice": "This day is before the invoice. Choose its day or a later one."
   },
   "payments": {
     "title": "Payments",
@@ -309,7 +310,11 @@
     "reverseNote": "Use this for a payment recorded by mistake.",
     "reverseClosed": "The books are closed up to today, so nothing can be reversed today. You can reverse it from tomorrow, or once the books are open again in Settings.",
     "reversing": "Reversing…",
-    "reversed": "Payment reversed."
+    "reversed": "Payment reversed.",
+    "forInvoice": "Invoice {{number}}",
+    "paidFromOrder": "Paid on order {{number}} toward this invoice: {{amount}}",
+    "paidFromSale": "Paid on the sale toward this invoice: {{amount}}",
+    "paidFromSourceHint": "Those payments are listed on the order or the sale, and reversed there."
   },
   "payMany": {
     "title": "Record a payment",
@@ -355,7 +360,9 @@
       "title": "Nobody owes you anything",
       "body": "Orders with a deposit or not paid yet, and sales they pay later, show here until they're paid.",
       "bodySales": "Sales they pay later show here until they're paid."
-    }
+    },
+    "invoice": "Invoice {{number}}",
+    "notInvoiced": "Not invoiced yet"
   },
   "customers": {
     "intro": "The people and companies you sell to. Names may repeat: the phone tells two apart.",
@@ -392,6 +399,12 @@
       "trnInvalid": "A TRN has 15 digits.",
       "licence": "Trade licence number",
       "licenceHint": "Optional. For invoices to a business or a government body.",
+      "address": "Address",
+      "addressHint": "A tax invoice prints it for a customer registered for VAT.",
+      "addressLine": "Street or building",
+      "city": "Area or city",
+      "emirate": "Emirate",
+      "emirateNone": "Not set",
       "notesHint": "Optional. For you and your team."
     },
     "similar": {

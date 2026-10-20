@@ -1,4 +1,4 @@
-export { isUuid, newId } from './ids/id'
+export { derivedId, isUuid, newId } from './ids/id'
 export { normalizeDigits } from './numbers/digits'
 // Numbers: branded decimal strings, user input, the two rounding policies (D-032, D-033).
 export { compareDecimal } from './numbers/decimal'
@@ -87,15 +87,19 @@ export {
   type SaleVatRate,
 } from './documents/sale'
 // Refunds and credits (M3 Step 5): what is left of each line, by quantity or by amount, never more;
-// each later credit starts from the value its earlier ones left (VAT ER Art. 60).
+// each later credit starts from the value its earlier ones left (VAT ER Art. 60); a credit note's VAT
+// once per rate on the running total of its invoice's credit notes (M3 Step 8 review).
 export {
   CREDIT_BY,
   creditError,
   creditLeft,
+  creditRateVat,
   creditTotals,
   fitCredit,
   planCredit,
   type CreditAmounts,
+  type CreditRateBasis,
+  type CreditRateLine,
   type CreditBy,
   type CreditedLine,
   type CreditErrorCode,
@@ -152,12 +156,64 @@ export {
   type AreaBlock,
   type AreaLine,
 } from './documents/areas'
+// Invoices and credit notes (M3 Step 8, Q3, Q22, Q26): kinds, billing in parts and deposits, counting
+// once, credit reasons mapped to the laws, payments counted toward invoices (A2).
+export {
+  allocatePayments,
+  applyDeductions,
+  CREDIT_NOTE_KINDS,
+  CREDIT_REASON_LAW,
+  CREDIT_REASONS,
+  creditNoteAsksCountedElsewhere,
+  creditNoteCounts,
+  creditNoteKindOf,
+  creditNoteValues,
+  deductionsOf,
+  EINVOICE_CREDIT_CASES,
+  INVOICE_BILLS,
+  INVOICE_CREDIT_STATES,
+  INVOICE_KINDS,
+  INVOICE_LINE_KINDS,
+  INVOICE_STATUSES,
+  invoiceAsksCountedElsewhere,
+  invoiceCounts,
+  invoiceCreditState,
+  invoiceKindFor,
+  invoiceOverdue,
+  partOfRates,
+  plusDays,
+  rateKey,
+  restOfRates,
+  TAX_DOCUMENT_DAYS,
+  TAX_INVOICE_CURRENCY,
+  taxDocumentDueBy,
+  taxDocumentLate,
+  vatPointDateOf,
+  type CreditCountingContext,
+  type CreditNoteKind,
+  type CreditNoteValues,
+  type CreditReason,
+  type DeductedAmounts,
+  type Deduction,
+  type DeductionErrorCode,
+  type DocumentRate,
+  type EInvoiceCreditCase,
+  type InvoiceBills,
+  type InvoiceCountingContext,
+  type InvoiceCreditState,
+  type InvoiceKind,
+  type InvoiceLineKind,
+  type InvoiceStatus,
+  type OwingInvoice,
+  type RateAmount,
+} from './documents/invoice'
 // Orders (M3 Step 5): Pending → Delivered or Cancelled, Undo delivery (Q16); document numbers.
 export {
   DOCUMENT_COUNTER_DEFAULTS,
   DOCUMENT_NUMBER_PADDING_MAX,
   DOCUMENT_SERIES,
   documentNumber,
+  GAPLESS_SERIES,
   ORDER_ACTIONS,
   ORDER_STATUSES,
   orderActions,

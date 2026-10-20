@@ -30,6 +30,7 @@ export const DOCUMENT_PDF_KINDS = [
   'invoice',
   'tax_credit_note',
   'credit_note',
+  'statement',
 ] as const
 export type DocumentPdfKind = (typeof DOCUMENT_PDF_KINDS)[number]
 
@@ -113,10 +114,34 @@ export interface DocumentPdfReference {
 
 /** A payment an invoice has received (Step 8), beside its totals. */
 export interface DocumentPdfPayment {
-  readonly date: Bilingual
+  /** Null for what its order or sale paid before it (several days, said by its method). */
+  readonly date: Bilingual | null
   readonly method: TypedText | Bilingual
   readonly reference: string | null
   readonly amount: string
+}
+
+/** One entry of a customer's statement (M3 Step 8, Q27): a document or a payment on its day. */
+export interface DocumentPdfStatementEntry {
+  readonly date: Bilingual
+  /** "Invoice INV-0001", "Payment – INV-0001" (both languages). */
+  readonly document: Bilingual
+  /** What it adds to what is owed, or null. */
+  readonly charge: string | null
+  /** What it takes off, or null. */
+  readonly credit: string | null
+  /** What is owed after it (its amount when paid ahead: `ahead`). */
+  readonly owed: string
+  /** Paid ahead after it (owed below zero): `owed` is what was paid beyond. */
+  readonly ahead?: boolean
+  /** What it was, under its document: a sale's first items, how a payment was paid. */
+  readonly detail?: TypedText | Bilingual | null
+}
+
+/** A customer's statement for a period (M3 Step 8, Q27): its rows, after "owed at the start". */
+export interface DocumentPdfStatement {
+  readonly opening: string
+  readonly entries: readonly DocumentPdfStatementEntry[]
 }
 
 export interface DocumentPdfStage {
@@ -183,6 +208,13 @@ export interface DocumentPdfInput {
   readonly stages: readonly DocumentPdfStage[]
   /** The payments an invoice has received (Step 8), beside its totals. */
   readonly payments?: readonly DocumentPdfPayment[]
+  /**
+   * A credit note's reason (ER Art. 60(1)(f)): its kind in both languages and the explanation as typed
+   * (Step 8), beside its totals.
+   */
+  readonly reason?: { readonly kind: Bilingual; readonly text: TypedText } | null
+  /** A customer's statement (Step 8): its entries in place of the lines. */
+  readonly statement?: DocumentPdfStatement | null
   /** "This quotation is valid until …"; null without a validity. */
   readonly validity: Bilingual | null
   readonly terms: TypedText | null

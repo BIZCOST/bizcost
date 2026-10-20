@@ -35,7 +35,7 @@ import {
   type ProfitEnv,
   type ProfitGroupSums,
 } from './real-profit'
-import { obligationsOf } from './receivables'
+import { invoicedObligationsOf, obligationsOf } from './receivables'
 import { postedPurchaseLinesOf } from './sale-costs'
 import { uuidArray } from './stock'
 
@@ -424,6 +424,7 @@ async function recentOrdersOf(tx: Tx, ctx: BusinessCtx): Promise<Cards['recentOr
   const scope = ctx.access.locationScope
   const payments = passes(ctx, ['payments', 'payments.customers.view'])
   const rows = (await tx.execute(sql`
+    with ob as materialized (select * from ${obligationsOf(ctx.businessId)} x)
     select o.id, o.number, o.status, o.due_date::text as due_date, trim_scale(o.total + o.rounding_difference)::text as total,
            c.name as customer_name,
            (select l.description from app.order_lines l
@@ -433,11 +434,16 @@ async function recentOrdersOf(tx: Tx, ctx: BusinessCtx): Promise<Cards['recentOr
            greatest((select count(*)::int from app.order_lines l
              where l.business_id = o.business_id and l.order_id = o.id and l.kind = 'item'
                and l.deleted_at is null) - 1, 0) as more_items,
-           trim_scale(d.total_n)::text as d_total, trim_scale(d.credited_n)::text as d_credited,
-           trim_scale(d.paid_n)::text as d_paid, trim_scale(d.refunded_n)::text as d_refunded
+           trim_scale(coalesce(d.total_n, di.total_n))::text as d_total,
+           trim_scale(coalesce(d.credited_n, di.credited_n))::text as d_credited,
+           trim_scale(coalesce(d.paid_n, di.paid_n))::text as d_paid,
+           trim_scale(coalesce(d.refunded_n, di.refunded_n))::text as d_refunded
       from app.orders o
       left join app.customers c on c.business_id = o.business_id and c.id = o.customer_id
-      left join ${obligationsOf(ctx.businessId)} d on d.kind = 'order' and d.id = o.id
+      left join ob d on d.kind = 'order' and d.id = o.id and not d.invoiced
+      -- An invoiced order owes through its invoices and its rest (A2, M3 Step 8, D-313).
+      left join ${invoicedObligationsOf(ctx.businessId, 'order_id', sql`ob`)} di
+        on di.source_id = o.id
      where o.business_id = ${ctx.businessId} and o.deleted_at is null
        ${all ? sql`` : sql`and o.created_by = app.current_user_id()`}
        ${scope.all ? sql`` : sql`and o.location_id = any(${uuidArray([...scope.ids])})`}
@@ -452,7 +458,7 @@ async function recentOrdersOf(tx: Tx, ctx: BusinessCtx): Promise<Cards['recentOr
     customer_name: string | null
     item_name: string | null
     more_items: number
-    d_total: string
+    d_total: string | null
     d_credited: string
     d_paid: string
     d_refunded: string
@@ -465,9 +471,10 @@ async function recentOrdersOf(tx: Tx, ctx: BusinessCtx): Promise<Cards['recentOr
     customerName: r.customer_name,
     total: r.total,
     status: r.status,
-    paymentState: payments
-      ? paymentState(r.d_total, r.d_credited, netPaid(r.d_paid, r.d_refunded))
-      : null,
+    paymentState:
+      payments && r.d_total !== null
+        ? paymentState(r.d_total, r.d_credited, netPaid(r.d_paid, r.d_refunded))
+        : null,
     dueDate: r.due_date,
   }))
 }

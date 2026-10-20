@@ -143,7 +143,9 @@ export function carriedRounding(
  * What a quotation's amounts come from (its lines' products, quantities, prices, VAT and discounts, and
  * the discount on the whole quotation), to tell when they changed after its total was rounded (D-297).
  */
-export function amountsKey(draft: QuotationDraft): string {
+export function amountsKey<T extends Pick<LinesDraft, 'discountKind' | 'discount' | 'lines'>>(
+  draft: T,
+): string {
   return JSON.stringify([
     draft.discountKind,
     draft.discount,
@@ -376,35 +378,47 @@ function tooLong(value: string, max: number): FieldError | undefined {
 
 const orNull = (value: string) => (value.trim() === '' ? null : value.trim())
 
-/** Every problem of the quotation, its running amounts, and the fields to send when there is none. */
-export function checkQuotation(
-  draft: QuotationDraft,
-  context: QuotationFormContext,
-): CheckedQuotation {
-  const errors: QuotationErrors = { lines: {}, stageRows: {} }
-  if (!draft.customer) errors.customer = { key: 'documents.quotations.editor.errors.customer' }
-  if (!BUSINESS_DAY.test(draft.businessDate)) {
-    errors.businessDate = { key: 'documents.quotations.editor.errors.date' }
-  } else if (draft.businessDate > context.today) {
-    errors.businessDate = { key: 'errors.future_date' }
-  }
-  const validUntil = draft.validUntil.trim()
-  if (validUntil !== '') {
-    if (!BUSINESS_DAY.test(validUntil)) {
-      errors.validUntil = { key: 'documents.quotations.editor.errors.date' }
-    } else if (BUSINESS_DAY.test(draft.businessDate) && validUntil < draft.businessDate) {
-      errors.validUntil = { key: 'documents.quotations.editor.errors.validBefore' }
-    }
-  }
-  errors.customerRef = tooLong(draft.customerRef, QUOTATION_CUSTOMER_REF_MAX_LENGTH)
-  errors.site = tooLong(draft.site, QUOTATION_SITE_MAX_LENGTH)
-  errors.greeting = tooLong(draft.greeting, QUOTATION_GREETING_MAX_LENGTH)
-  errors.intro = tooLong(draft.intro, QUOTATION_INTRO_MAX_LENGTH)
-  errors.terms = tooLong(draft.terms, QUOTATION_TERMS_MAX_LENGTH)
-  errors.notes = tooLong(draft.notes, QUOTATION_NOTES_MAX_LENGTH)
+/** A document's lines, its discount and "Round the total" as an editor holds them. */
+export interface LinesDraft {
+  readonly lines: readonly QuotationLineDraft[]
+  readonly discountKind: DiscountKind
+  readonly discount: string
+  /** "Round the total": the total wanted, with VAT ('' : none). */
+  readonly roundTo: string
+}
 
+export interface LinesErrors {
+  discount?: FieldError
+  roundTo?: FieldError
+  lines: Record<string, LineErrors>
+}
+
+/** What a document's lines come to (the quotation's and the invoice's editors, M3 Steps 7–8). */
+export interface CheckedLines {
+  readonly errors: LinesErrors
+  /** The lines that read, as the API takes them (every line when nothing is wrong). */
+  readonly fieldLines: NonNullable<QuotationFields['lines']>
+  /** The discount on the whole document (null: none, or it can't be taken). */
+  readonly discount: LineDiscount | null
+  /** The total wanted, with VAT (null: none, or it can't be reached). */
+  readonly roundTo: string | null
+  readonly amounts: SaleAmounts | null
+  readonly lineAmounts: ReadonlyMap<string, SaleLineAmounts>
+  readonly rounding: Rounding | null
+}
+
+/**
+ * Every problem of a document's lines, its discount and "Round the total", and their running amounts
+ * (the domain's sale maths, as the API works them out): what a quotation and an invoice made from
+ * scratch share.
+ */
+export function checkLines(
+  draft: LinesDraft,
+  context: Pick<QuotationFormContext, 'currency' | 'vatRegistered' | 'products'>,
+): CheckedLines {
+  const errors: LinesErrors = { lines: {} }
   // Each line on its own; the ones that read count in the running amounts.
-  const fieldLines: QuotationFields['lines'] = []
+  const fieldLines: NonNullable<QuotationFields['lines']> = []
   const counted: { id: string; input: SaleLineInput }[] = []
   for (const line of draft.lines) {
     const lineErrors: LineErrors = {}
@@ -523,6 +537,45 @@ export function checkQuotation(
   const lineAmounts = new Map(
     amounts ? counted.map((line, index) => [line.id, amounts.lines[index]!] as const) : [],
   )
+  return {
+    errors,
+    fieldLines,
+    discount: errors.discount ? null : documentDiscount,
+    roundTo,
+    amounts,
+    lineAmounts,
+    rounding,
+  }
+}
+
+/** Every problem of the quotation, its running amounts, and the fields to send when there is none. */
+export function checkQuotation(
+  draft: QuotationDraft,
+  context: QuotationFormContext,
+): CheckedQuotation {
+  const checked = checkLines(draft, context)
+  const { fieldLines, amounts, lineAmounts, rounding, roundTo } = checked
+  const errors: QuotationErrors = { ...checked.errors, stageRows: {} }
+  if (!draft.customer) errors.customer = { key: 'documents.quotations.editor.errors.customer' }
+  if (!BUSINESS_DAY.test(draft.businessDate)) {
+    errors.businessDate = { key: 'documents.quotations.editor.errors.date' }
+  } else if (draft.businessDate > context.today) {
+    errors.businessDate = { key: 'errors.future_date' }
+  }
+  const validUntil = draft.validUntil.trim()
+  if (validUntil !== '') {
+    if (!BUSINESS_DAY.test(validUntil)) {
+      errors.validUntil = { key: 'documents.quotations.editor.errors.date' }
+    } else if (BUSINESS_DAY.test(draft.businessDate) && validUntil < draft.businessDate) {
+      errors.validUntil = { key: 'documents.quotations.editor.errors.validBefore' }
+    }
+  }
+  errors.customerRef = tooLong(draft.customerRef, QUOTATION_CUSTOMER_REF_MAX_LENGTH)
+  errors.site = tooLong(draft.site, QUOTATION_SITE_MAX_LENGTH)
+  errors.greeting = tooLong(draft.greeting, QUOTATION_GREETING_MAX_LENGTH)
+  errors.intro = tooLong(draft.intro, QUOTATION_INTRO_MAX_LENGTH)
+  errors.terms = tooLong(draft.terms, QUOTATION_TERMS_MAX_LENGTH)
+  errors.notes = tooLong(draft.notes, QUOTATION_NOTES_MAX_LENGTH)
 
   // Payment stages: each "when" and %, the % adding up to 100; their amounts share what is paid.
   const stages: QuotationFields['stages'] = []
@@ -582,7 +635,7 @@ export function checkQuotation(
           ...(validUntil === '' && !context.saved ? {} : { validUntil: validUntil || null }),
           customerRef: orNull(draft.customerRef),
           site: orNull(draft.site),
-          discount: errors.discount ? null : documentDiscount,
+          discount: checked.discount,
           roundTo,
           greeting: orNull(draft.greeting),
           intro: orNull(draft.intro),

@@ -104,6 +104,13 @@ export const PERMISSION_NEEDS: Readonly<Partial<Record<PermissionKey, readonly P
     // answer both need to see them.
     'quotations.documents.manage': ['quotations.documents.view'],
     'quotations.documents.decide': ['quotations.documents.view'],
+    // Invoices (M3 Step 8, the plan's Q10 table): every invoice is a sale (or bills an order or a
+    // recorded sale), so seeing every invoice is seeing every sale (H1); preparing, issuing and
+    // crediting them need to see them.
+    'invoices.documents.view': ['sales.documents.view'],
+    'invoices.documents.manage': ['invoices.documents.view'],
+    'invoices.documents.issue': ['invoices.documents.view'],
+    'invoices.documents.credit': ['invoices.documents.view'],
   }
 
 /** The keys of `keys` granted without a key they need (empty when the set is coherent). */

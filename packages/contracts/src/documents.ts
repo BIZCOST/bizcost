@@ -96,3 +96,33 @@ export type DocumentImageKind = (typeof DOCUMENT_IMAGE_KINDS)[number]
 
 /** A signed URL of a signature, stamp or line picture lasts this many seconds (as a logo's). */
 export const DOCUMENT_IMAGE_URL_TTL_SECONDS = 600
+
+// ---------------------------------------------------------------------------------------------------
+// Invoices, credit notes and statements (M3 Step 8)
+// ---------------------------------------------------------------------------------------------------
+
+/** Most lines on one invoice (as a quotation's), and on one credit note. */
+export const INVOICE_LINES_MAX = 300
+
+/** Longest LPO reference on an invoice (as an order's customer reference). */
+export const INVOICE_LPO_MAX_LENGTH = 100
+
+/** Longest terms and notes printed on an invoice, and notes on a credit note. */
+export const INVOICE_TERMS_MAX_LENGTH = 4000
+export const INVOICE_NOTES_MAX_LENGTH = 1000
+
+/** Longest text of a credit note's reason ("2 doors returned, scratched on delivery"). */
+export const CREDIT_REASON_TEXT_MAX_LENGTH = 500
+
+/** Invoices and credit notes per page of their lists, and the most a client may ask for. */
+export const INVOICE_PAGE_SIZE = 50
+export const INVOICE_PAGE_SIZE_MAX = 100
+
+/** Events `invoice.history` and `creditNote.history` list at most (the newest first). */
+export const INVOICE_HISTORY_MAX = 200
+
+/** The longest period one customer statement covers (about two years of days). */
+export const STATEMENT_DAYS_MAX = 731
+
+/** Entries one statement lists at most (a statement is a period of one customer). */
+export const STATEMENT_ENTRIES_MAX = 2000

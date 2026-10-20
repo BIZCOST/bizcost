@@ -1,6 +1,8 @@
 import { randomBytes } from 'node:crypto'
 import type {
+  CreditNoteDto,
   DocumentSettingsDto,
+  InvoiceDto,
   QuotationDto,
   CustomerDto,
   OrderDto,
@@ -62,8 +64,8 @@ class InputsApi extends ProductCostsApi {
   override readonly handler = handlerFor(
     this.db,
     undefined,
-    // Quotations is previewed (M3 Step 7, planned until Release B, D-125).
-    { supabaseSecretKey: SECRET_KEY, previewModules: ['quotations'] },
+    // Quotations and Invoices are previewed (M3 Steps 7 and 8, planned until Release B, D-125).
+    { supabaseSecretKey: SECRET_KEY, previewModules: ['quotations', 'invoices'] },
     { emailSender: this.emails },
   )
 }
@@ -442,6 +444,114 @@ function quotationFields(customerId: string, extra: object = {}): Record<string,
   return fields
 }
 
+async function acceptedQuotation(): Promise<QuotationDto> {
+  const sent = await newQuotation(true)
+  return ok(
+    await shop.run<QuotationDto>('quotation.accept', { id: sent.id, version: sent.version }),
+  )
+}
+
+/** An invoice with every decimal field (M3 Step 8): discounts and "Round the total". */
+function invoiceInput(customerId: string, extra: object = {}) {
+  return {
+    id: newId(),
+    customerId,
+    channelId,
+    countedElsewhere: false,
+    discount: { amount: '1.25' },
+    roundTo: '50.5',
+    lines: [
+      {
+        id: newId(),
+        productId: latte.id,
+        qty: '2.5',
+        unitPrice: '12.25',
+        discount: { percent: '10' },
+      },
+      { id: newId(), productId: null, description: 'Fitting', qty: '1.5', unitPrice: '9.75' },
+    ],
+    ...extra,
+  }
+}
+
+/** The fields of an invoice's update (no id). */
+function invoiceFields(customerId: string, extra: object = {}): Record<string, unknown> {
+  const fields: Record<string, unknown> = invoiceInput(customerId, extra)
+  delete fields.id
+  return fields
+}
+
+/**
+ * What a tax invoice needs (B16, C5): the shop's TRN and address (given again when another case saved
+ * the profile without them), and a customer with an address.
+ */
+async function taxReady(): Promise<void> {
+  const profile = ok(await shop.run<BusinessProfileDto>('business.profile'))
+  if (profile.letterhead.addressLine && (!profile.vatRegistered || profile.trn)) return
+  ok(
+    await shop.run('business.updateProfile', {
+      version: profile.version,
+      legalName: profile.legalName,
+      legalNameAr: profile.legalNameAr,
+      vatRegistered: profile.vatRegistered,
+      trn: profile.vatRegistered ? (profile.trn ?? '100123456700003') : null,
+      letterhead: {
+        ...profile.letterhead,
+        addressLine: 'Unit 4, Industrial Area 2',
+        city: 'Sharjah',
+        emirate: 'sharjah',
+      },
+    }),
+  )
+}
+
+let invoiceCustomerId: string | undefined
+
+async function invoiceCustomer(): Promise<string> {
+  if (invoiceCustomerId) return invoiceCustomerId
+  invoiceCustomerId = ok(
+    await shop.run<CustomerDto>('customer.create', {
+      id: newId(),
+      name: `Inputs buyer ${tag()}`,
+      addressLine: 'Shop 3, Al Majaz',
+      city: 'Sharjah',
+      emirate: 'sharjah',
+    }),
+  ).id
+  return invoiceCustomerId
+}
+
+async function newInvoice(issued = false): Promise<InvoiceDto> {
+  const draft = ok(
+    await shop.run<InvoiceDto>('invoice.create', invoiceInput(await invoiceCustomer())),
+  )
+  if (!issued) return draft
+  await taxReady()
+  return ok(await shop.run<InvoiceDto>('invoice.issue', { id: draft.id, version: draft.version }))
+}
+
+/** A credit note's fields (no id): 0.5 of the latte line back, 1.25 off the typed line. */
+function creditNoteFields(invoice: InvoiceDto, extra: object = {}) {
+  return {
+    invoiceId: invoice.id,
+    eventDate: today,
+    reason: 'goods_returned',
+    reasonText: `Returned ${tag()}`,
+    by: 'quantity',
+    lines: [{ invoiceLineId: invoice.lines[0]!.id, qty: '0.5' }],
+    ...extra,
+  }
+}
+
+async function newCreditNote(): Promise<CreditNoteDto> {
+  return ok(
+    await shop.run<CreditNoteDto>('creditNote.create', {
+      id: newId(),
+      ...creditNoteFields(await newInvoice(true)),
+    }),
+  )
+}
+
 /** The import the last digits case made (its rows are read back through it). */
 let lastImportId = ''
 
@@ -649,6 +759,66 @@ const DIGITS: Record<string, Variant[]> = {
           trn: profile.vatRegistered ? (profile.trn ?? '100123456700003') : null,
           letterhead: { phone: '0501234567', phone2: '04 555 0142' },
         }
+      },
+    },
+  ],
+  // Invoices and credit notes (M3 Step 8): a part of a quotation or an order (a % or an amount).
+  'invoice.create': [{ input: async () => invoiceInput(await invoiceCustomer()) }],
+  'invoice.update': [
+    {
+      input: async () => {
+        const invoice = await newInvoice()
+        return { ...invoiceFields(invoice.customerId), id: invoice.id, version: invoice.version }
+      },
+    },
+  ],
+  'invoice.fromQuotation': [
+    {
+      input: async () => ({
+        id: (await acceptedQuotation()).id,
+        newId: newId(),
+        bills: 'part',
+        part: { percent: '12.5' },
+      }),
+    },
+  ],
+  'invoice.fromOrder': [
+    {
+      input: async () => ({
+        orderId: (await newOrder()).id,
+        newId: newId(),
+        bills: 'part',
+        part: { amount: '3.25' },
+        isDeposit: true,
+      }),
+    },
+  ],
+  'creditNote.create': [
+    { input: async () => ({ id: newId(), ...creditNoteFields(await newInvoice(true)) }) },
+    {
+      input: async () => {
+        const invoice = await newInvoice(true)
+        return {
+          id: newId(),
+          ...creditNoteFields(invoice, {
+            reason: 'price_changed',
+            by: 'amount',
+            lines: [{ invoiceLineId: invoice.lines[1]!.id, amount: '1.25' }],
+          }),
+        }
+      },
+    },
+  ],
+  'creditNote.update': [
+    {
+      input: async () => {
+        const draft = await newCreditNote()
+        const invoice = ok(await shop.run<InvoiceDto>('invoice.get', { id: draft.invoiceId }))
+        const fields: Record<string, unknown> = creditNoteFields(invoice, {
+          lines: [{ invoiceLineId: invoice.lines[0]!.id, qty: '0.75' }],
+        })
+        delete fields.invoiceId
+        return { ...fields, id: draft.id, version: draft.version }
       },
     },
   ],
@@ -959,6 +1129,38 @@ const CREATES: Record<string, Create> = {
   'quotation.copy': {
     input: async () => ({ id: (await newQuotation()).id, newId: newId() }),
     other: async (input) => ({ ...input, customerId: (await newCustomer()).id }),
+  },
+  // Invoices (M3 Step 8): a draft from scratch or from a quotation, an order, a sale; a quotation from
+  // an invoice; a credit note.
+  'invoice.create': {
+    input: async () => invoiceInput(await invoiceCustomer()),
+    other: async (input) => ({ ...input, notes: `Other ${tag()}` }),
+  },
+  'invoice.fromQuotation': {
+    input: async () => ({ id: (await acceptedQuotation()).id, newId: newId() }),
+    other: async (input) => ({ ...input, id: (await acceptedQuotation()).id }),
+  },
+  'invoice.fromOrder': {
+    input: async () => ({ orderId: (await newOrder()).id, newId: newId() }),
+    other: async (input) => ({ ...input, orderId: (await newOrder()).id }),
+  },
+  'invoice.fromSale': {
+    input: async () => ({
+      saleId: (await postedSale({ customerId: (await newCustomer()).id })).id,
+      newId: newId(),
+    }),
+    other: async (input) => ({
+      ...input,
+      saleId: (await postedSale({ customerId: (await newCustomer()).id })).id,
+    }),
+  },
+  'invoice.copyToQuotation': {
+    input: async () => ({ id: (await newInvoice(true)).id, newId: newId() }),
+    other: async (input) => ({ ...input, id: (await newInvoice(true)).id }),
+  },
+  'creditNote.create': {
+    input: async () => ({ id: newId(), ...creditNoteFields(await newInvoice(true)) }),
+    other: async (input) => ({ ...input, reasonText: `Other ${tag()}` }),
   },
   'saleImport.create': {
     input: async () => importInput(),
@@ -1298,6 +1500,39 @@ const VERSIONED: Record<string, Versioned> = {
   'order.deliver': async () => {
     const order = await newOrder()
     return { id: order.id, version: order.version }
+  },
+  // Invoices and credit notes (M3 Step 8): an issue with another version takes no number.
+  'invoice.update': async () => {
+    const invoice = await newInvoice()
+    return {
+      ...invoiceFields(invoice.customerId, { notes: 'Changed' }),
+      id: invoice.id,
+      version: invoice.version,
+    }
+  },
+  'invoice.discard': async () => {
+    const invoice = await newInvoice()
+    return { id: invoice.id, version: invoice.version }
+  },
+  'invoice.issue': async () => {
+    const invoice = await newInvoice()
+    await taxReady()
+    return { id: invoice.id, version: invoice.version }
+  },
+  'creditNote.update': async () => {
+    const draft = await newCreditNote()
+    const invoice = ok(await shop.run<InvoiceDto>('invoice.get', { id: draft.invoiceId }))
+    const fields: Record<string, unknown> = creditNoteFields(invoice, { reasonText: 'Changed' })
+    delete fields.invoiceId
+    return { ...fields, id: draft.id, version: draft.version }
+  },
+  'creditNote.discard': async () => {
+    const draft = await newCreditNote()
+    return { id: draft.id, version: draft.version }
+  },
+  'creditNote.issue': async () => {
+    const draft = await newCreditNote()
+    return { id: draft.id, version: draft.version }
   },
   // Quotations and Settings → Documents (M3 Step 7).
   'quotation.update': async () => {

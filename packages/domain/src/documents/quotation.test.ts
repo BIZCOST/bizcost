@@ -85,6 +85,13 @@ describe('quotationTransition', () => {
       ok: false,
       refusal: 'quotation_not_accepted',
     })
+    // A quotation an issued invoice bills (a deposit, a stage) is invoiced to the end (M3 Step 8):
+    // an order from it would bill and count the work twice.
+    expect(quotationTransition('to_order', ctx('accepted', { invoiced: true }))).toEqual({
+      ok: false,
+      refusal: 'quotation_invoiced',
+    })
+    expect(quotationActions(ctx('accepted', { invoiced: true }))).toEqual(['revise', 'copy'])
     expect(quotationTransition('revise', ctx('accepted', { hasOrder: true }))).toEqual({
       ok: true,
       to: 'draft',

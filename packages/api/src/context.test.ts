@@ -53,7 +53,7 @@ describe('moduleRegistry', () => {
 
   it('ignores modules that cannot be previewed (not being built, released, unknown)', () => {
     const registry = moduleRegistry(
-      { previewModules: ['invoices', 'settings', 'materials', 'sales', 'nope'] },
+      { previewModules: ['inventory', 'settings', 'materials', 'sales', 'nope'] },
       'test',
       building,
     )

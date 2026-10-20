@@ -2,17 +2,10 @@
 
 import { apiErrorCode, apiErrorKey, useTRPC } from '@bizcost/app-core'
 import type { ProductDto, QuotationDto } from '@bizcost/contracts'
-import {
-  areaBlocks,
-  areaKey,
-  areaNames,
-  compareDecimal,
-  newId,
-  type CurrencyCode,
-} from '@bizcost/domain'
+import { newId, type CurrencyCode } from '@bizcost/domain'
 import type { I18nKey } from '@bizcost/i18n'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
-import { ArrowLeftIcon, LayersIcon, PlusIcon } from 'lucide-react'
+import { ArrowLeftIcon } from 'lucide-react'
 import Link from 'next/link'
 import { useParams, useRouter } from 'next/navigation'
 import { useMemo, useRef, useState, type FormEvent } from 'react'
@@ -23,16 +16,14 @@ import { Required } from '@/components/form/required'
 import { TextField } from '@/components/form/text-field'
 import { sameData } from '@/components/form/unsaved'
 import { useBeforeNavigate, useUnsavedChanges } from '@/components/form/unsaved-changes'
-import { isolate, ltrIsolate } from '@/components/form/use-message'
+import { isolate } from '@/components/form/use-message'
 import { PageContainer } from '@/components/shell/page-container'
 import { Button } from '@/components/ui/button'
 import { Textarea } from '@/components/ui/textarea'
 import type { FieldError } from '@/features/catalog/numbers'
-import { ProductSheet } from '@/features/catalog/product-sheet'
 import { CustomerPicker } from '@/features/customers/customer-picker'
 import { mayAddCustomers } from '@/features/customers/data'
 import { useMoney } from '@/features/documents/amounts'
-import { Caption, DiscountRow, MoneyInput } from '@/features/documents/line-editor'
 import { Panel } from '@/features/documents/panel'
 import { hasModule } from '@/features/purchasing/data'
 import { Receipts } from '@/features/purchasing/receipts'
@@ -40,34 +31,20 @@ import { useAllProducts } from '@/features/sales/data'
 import { can } from '@/features/settings/sections'
 import { useTerminology } from '@/lib/i18n/client'
 import { useBusinessContext } from '@/lib/trpc/client'
-import {
-  addLineTo,
-  areaTaken,
-  canMoveArea,
-  canMoveLine,
-  moveArea,
-  moveLine,
-  renameArea,
-  setLineArea,
-} from './areas'
 import { useRefreshQuotations } from './data'
+import { DocumentLines } from './document-lines'
 import { PictureError, useSaveLinePictures } from './line-pictures'
 import {
   checkQuotation,
-  isBlankLine,
-  newQuotationLine,
   QUOTATION_MISSING,
   quotationDraft,
-  type LinePicture,
   type QuotationDraft,
   type QuotationLineDraft,
   amountsKey,
   carriedRounding,
 } from './quotation-draft'
-import { AreaNameDialog, AreaSection } from './quotation-areas'
-import { QuotationLineRow } from './quotation-lines'
 import { QuotationStages } from './quotation-stages'
-import { QuotationTotals } from './quotation-totals'
+import { TotalsEditor } from './totals-editor'
 import { totalsOf } from './totals'
 
 // A new quotation, or a draft changed (M3 Step 7; Q21–Q25; the owner's document requests of
@@ -130,7 +107,6 @@ export function QuotationEditor({
     carried ? null : amountsKey(initial),
   )
   const [added, setAdded] = useState<ProductDto[]>([])
-  const [saveAsItem, setSaveAsItem] = useState<QuotationLineDraft | null>(null)
   const [submitted, setSubmitted] = useState(false)
   const [serverError, setServerError] = useState<I18nKey | null>(null)
   const [busy, setBusy] = useState(false)
@@ -152,22 +128,6 @@ export function QuotationEditor({
     () => checkQuotation(draft, { currency, vatRegistered, today, products, saved }),
     [draft, currency, vatRegistered, today, products, saved],
   )
-  const pickable = useMemo(() => {
-    const named = new Set(draft.lines.map((line) => line.productId))
-    return [...products.values()].filter((p) => p.archivedAt === null || named.has(p.id))
-  }, [products, draft.lines])
-  const areas = useMemo(() => areaNames(draft.lines), [draft.lines])
-  const blocks = useMemo(() => areaBlocks(draft.lines), [draft.lines])
-  const numbers = useMemo(
-    () => new Map(draft.lines.map((line, index) => [line.id, index] as const)),
-    [draft.lines],
-  )
-  // The name asked for a new area (from "Add an area", or for a line), or for one renamed.
-  const [naming, setNaming] = useState<
-    { kind: 'add' } | { kind: 'line'; lineId: string } | { kind: 'rename'; area: string } | null
-  >(null)
-  // What a move did, said to a screen reader (the buttons keep the focus).
-  const [announcement, setAnnouncement] = useState('')
   const profile = context?.terminologyProfile ?? 'general'
   const shown = (error: FieldError | undefined): string | undefined =>
     error && (submitted || !QUOTATION_MISSING.has(error.key))
@@ -177,118 +137,12 @@ export function QuotationEditor({
   const formatMoney = (amount: string) => money(amount, currency)
 
   const set = (patch: Partial<QuotationDraft>) => setDraft((d) => ({ ...d, ...patch }))
-  const setLine = (next: QuotationLineDraft) =>
-    setDraft((d) => ({ ...d, lines: d.lines.map((line) => (line.id === next.id ? next : line)) }))
-  /**
-   * Changes only line `id`'s picture, from the picture it has now: a picture framed while the line
-   * changed (its title typed, its area changed) never brings back the line as it was.
-   */
-  const setLinePicture = (id: string, change: (picture: LinePicture) => LinePicture) =>
-    setDraft((d) => ({
-      ...d,
-      lines: d.lines.map((line) =>
-        line.id === id ? { ...line, picture: change(line.picture) } : line,
-      ),
-    }))
-  const removeLine = (id: string) =>
-    setDraft((d) => ({ ...d, lines: d.lines.filter((line) => line.id !== id) }))
   const setLines = (change: (lines: readonly QuotationLineDraft[]) => QuotationLineDraft[]) =>
     setDraft((d) => ({ ...d, lines: change(d.lines) }))
-  /**
-   * Focuses the first of `selectors` that is on the page and can take it, once React has drawn, and
-   * scrolls it into view clear of the bars: the top bar and a phone's tab bar (the page's scroll
-   * padding), and a phone's save bar above the tab bar (WCAG 2.4.11), where a line moved down lands.
-   */
-  const focusSoon = (...selectors: string[]) =>
-    setTimeout(() => {
-      for (const selector of selectors) {
-        const target = form.current?.querySelector<HTMLElement>(selector)
-        if (target && !(target as HTMLButtonElement).disabled) {
-          target.focus({ preventScroll: true })
-          target.scrollIntoView({ block: 'nearest' })
-          const bar = phoneBar.current
-          if (bar && bar.offsetParent !== null) {
-            const under = target.getBoundingClientRect().bottom - bar.getBoundingClientRect().top
-            if (under > -8) target.scrollIntoView({ block: 'center' })
-          }
-          return
-        }
-      }
-    })
-  /** A new line at the end of `area` (null: at the end, in no area), its title focused. */
-  const addLine = (area: string | null = null) => {
-    const line = newQuotationLine()
-    setLines((lines) => addLineTo(lines, line, area))
-    focusSoon(`[data-line-id="${line.id}"] [role="combobox"][aria-autocomplete]`)
-  }
-  const lineAt = (id: string) => numbers.get(id) ?? -1
-  function moveLineBy(id: string, step: -1 | 1) {
-    const next = moveLine(draft.lines, id, step)
-    set({ lines: next })
-    const to = next.findIndex((line) => line.id === id) + 1
-    setAnnouncement(t('documents.quotations.editor.areas.lineMoved', { number: to }))
-    const there = `[data-line-id="${id}"] [data-line-move="${step < 0 ? 'up' : 'down'}"]`
-    const back = `[data-line-id="${id}"] [data-line-move="${step < 0 ? 'down' : 'up'}"]`
-    focusSoon(there, back)
-  }
-  function moveAreaBy(name: string, step: -1 | 1) {
-    set({ lines: moveArea(draft.lines, name, step) })
-    setAnnouncement(t('documents.quotations.editor.areas.areaMoved', { area: isolate(name) }))
-    const section = `[data-area-key="${CSS.escape(areaKey(name))}"]`
-    focusSoon(
-      `${section} [data-area-move="${step < 0 ? 'up' : 'down'}"]`,
-      `${section} [data-area-move="${step < 0 ? 'down' : 'up'}"]`,
-    )
-  }
-  function putLineIn(id: string, area: string | null) {
-    const number = lineAt(id) + 1
-    // An area started with an empty line (nothing entered in it) takes the line in its place.
-    set({ lines: setLineArea(draft.lines, id, area, isBlankLine) })
-    setAnnouncement(
-      area === null
-        ? t('documents.quotations.editor.areas.lineToNone', { number })
-        : t('documents.quotations.editor.areas.lineToArea', { number, area: isolate(area) }),
-    )
-    focusSoon(`[data-line-id="${id}"] [data-line-area]`)
-  }
-  function named(name: string) {
-    if (!naming) return
-    if (naming.kind === 'add') {
-      // A line nothing was entered in yet, without an area, goes into the new area (a new
-      // quotation's first line); else the area starts with a new line.
-      const blank = draft.lines.findLast((line) => line.area === null && isBlankLine(line))
-      if (blank) {
-        set({ lines: setLineArea(draft.lines, blank.id, name) })
-        focusSoon(`[data-line-id="${blank.id}"] [role="combobox"][aria-autocomplete]`)
-      } else addLine(name)
-    } else if (naming.kind === 'line') putLineIn(naming.lineId, name)
-    else {
-      set({ lines: renameArea(draft.lines, naming.area, name) })
-      // The area's section is drawn again under its new name: the focus goes back to its button.
-      focusSoon(`[data-area-key="${CSS.escape(areaKey(name))}"] [data-area-rename]`)
-    }
-    setNaming(null)
-  }
-
-  function savedAsItem(lineId: string, product: ProductDto) {
+  const productSaved = (product: ProductDto) => {
     if (!loaded.has(product.id)) {
       setAdded((current) => [...current.filter((p) => p.id !== product.id), product])
     }
-    setDraft((d) => ({
-      ...d,
-      lines: d.lines.map((line) =>
-        line.id === lineId
-          ? {
-              ...line,
-              productId: product.id,
-              title: product.name,
-              unit: product.unit,
-              vatCategory: product.vatCategory,
-              price: line.price.trim() !== '' ? line.price : (product.defaultPrice ?? ''),
-            }
-          : line,
-      ),
-    }))
   }
 
   function errorKey(error: unknown): I18nKey {
@@ -385,108 +239,25 @@ export function QuotationEditor({
 
   const totalsPanel = (
     <Panel title={t('documents.quotations.editor.totalsTitle')}>
-      <div className="space-y-4">
-        <div data-quotation-discount>
-          <DiscountRow
-            kind={draft.discountKind}
-            value={draft.discount}
-            invalid={Boolean(shown(check.errors.discount))}
-            addLabel={t('documents.quotations.editor.addDiscount')}
-            label={t('documents.quotations.editor.discount')}
-            onChange={(next) => set({ discountKind: next.kind, discount: next.value })}
-          />
-          {shown(check.errors.discount) ? (
-            <p role="alert" className="mt-1.5 text-sm text-destructive">
-              {shown(check.errors.discount)}
-            </p>
-          ) : null}
-        </div>
-        <div data-round-total>
-          <Caption>{t('documents.quotations.editor.roundTo')}</Caption>
-          <MoneyInput
-            label={t('documents.quotations.editor.roundTo')}
-            value={draft.roundTo}
-            invalid={Boolean(shown(check.errors.roundTo))}
-            onChange={(roundTo) => {
-              set({ roundTo })
-              setRoundedOn(amountsKey(draft))
-            }}
-          />
-          {roundingStale && check.rounding ? (
-            <div
-              data-rounding-stale
-              role="status"
-              className="mt-2 rounded-xl bg-amber-50 p-3 text-sm text-amber-950 ring-1 ring-amber-200 dark:bg-amber-950/40 dark:text-amber-100 dark:ring-amber-800"
-            >
-              <p className="font-medium">
-                {t('documents.quotations.editor.roundStaleTitle', {
-                  total: ltrIsolate(formatMoney(check.rounding.wanted)),
-                })}
-              </p>
-              <p className="mt-1">
-                {t(
-                  roundedOn === null
-                    ? carried === 'copy'
-                      ? 'documents.quotations.editor.roundCarriedCopy'
-                      : 'documents.quotations.editor.roundCarried'
-                    : 'documents.quotations.editor.roundStale',
-                  { amount: ltrIsolate(formatMoney(check.rounding.adjustment)) },
-                )}
-              </p>
-              <div className="mt-2 flex flex-wrap gap-2">
-                <Button
-                  type="button"
-                  size="sm"
-                  variant="outline"
-                  onClick={() => setRoundedOn(amountsKey(draft))}
-                >
-                  {t('documents.quotations.editor.roundKeep', {
-                    total: ltrIsolate(formatMoney(check.rounding.wanted)),
-                  })}
-                </Button>
-                <Button
-                  type="button"
-                  size="sm"
-                  variant="ghost"
-                  onClick={() => set({ roundTo: '' })}
-                >
-                  {t('documents.quotations.editor.roundRemove')}
-                </Button>
-              </div>
-            </div>
-          ) : null}
-          {shown(check.errors.roundTo) ? (
-            <p role="alert" className="mt-1.5 text-sm text-destructive">
-              {shown(check.errors.roundTo)}
-            </p>
-          ) : check.rounding ? (
-            <div data-rounding className="mt-1.5 space-y-0.5 text-sm text-muted-foreground">
-              <p>
-                {t(
-                  vatRegistered
-                    ? 'documents.quotations.editor.roundAdjustment'
-                    : 'documents.quotations.editor.roundAdjustmentNoVat',
-                  { amount: ltrIsolate(formatMoney(check.rounding.adjustment)) },
-                )}
-              </p>
-              {compareDecimal(check.rounding.difference, '0') !== 0 ? (
-                <p>
-                  {t('documents.quotations.editor.roundDifference', {
-                    amount: ltrIsolate(formatMoney(check.rounding.difference)),
-                  })}
-                </p>
-              ) : null}
-            </div>
-          ) : (
-            <p className="mt-1.5 text-sm text-muted-foreground">
-              {t('documents.quotations.editor.roundHint')}
-            </p>
-          )}
-        </div>
-        <div className="border-t pt-3">
-          <QuotationTotals values={totals} vatRegistered={vatRegistered} money={formatMoney} />
-        </div>
-      </div>
+      <TotalsEditor
+        discountKind={draft.discountKind}
+        discount={draft.discount}
+        roundTo={draft.roundTo}
+        discountError={shown(check.errors.discount)}
+        roundToError={shown(check.errors.roundTo)}
+        rounding={check.rounding}
+        stale={roundingStale}
+        carried={roundedOn === null ? carried : null}
+        vatRegistered={vatRegistered}
+        totals={totals}
+        money={formatMoney}
+        onDiscount={(next) => set({ discountKind: next.kind, discount: next.value })}
+        onRoundTo={(roundTo) => {
+          set({ roundTo })
+          setRoundedOn(amountsKey(draft))
+        }}
+        onKeep={() => setRoundedOn(amountsKey(draft))}
+      />
     </Panel>
   )
 
@@ -650,78 +421,21 @@ export function QuotationEditor({
             title={term('documents.quotations.editor.lines', profile)}
             hint={term('documents.quotations.editor.linesHint', profile)}
           >
-            {!canSeeProducts ? (
-              <FormAlert tone="info" className="mb-3">
-                {t('documents.quotations.editor.typedOnly')}
-              </FormAlert>
-            ) : null}
-            <div className="space-y-3">
-              {blocks.map((block, b) => {
-                const rows = block.lines.map((line) => (
-                  <div key={line.id} data-line-id={line.id}>
-                    <QuotationLineRow
-                      index={lineAt(line.id)}
-                      line={line}
-                      products={products}
-                      pickable={pickable}
-                      areas={areas}
-                      errors={check.errors.lines[line.id]}
-                      shown={shown}
-                      amounts={check.lineAmounts.get(line.id)}
-                      vatRegistered={vatRegistered}
-                      profile={profile}
-                      onChange={setLine}
-                      onPicture={(change) => setLinePicture(line.id, change)}
-                      onRemove={draft.lines.length > 1 ? () => removeLine(line.id) : undefined}
-                      onSaveAsItem={
-                        canAddProducts && canSeeProducts ? () => setSaveAsItem(line) : undefined
-                      }
-                      onArea={(area) => putLineIn(line.id, area)}
-                      onNewArea={() => setNaming({ kind: 'line', lineId: line.id })}
-                      canMove={(step) => canMoveLine(draft.lines, line.id, step)}
-                      onMove={(step) => moveLineBy(line.id, step)}
-                    />
-                  </div>
-                ))
-                if (block.area === null) return rows
-                const name = block.area
-                return (
-                  <div key={`area:${areaKey(name)}`} data-area-key={areaKey(name)}>
-                    <AreaSection
-                      name={name}
-                      count={block.lines.length}
-                      canUp={b > 0 && canMoveArea(draft.lines, name, -1)}
-                      canDown={canMoveArea(draft.lines, name, 1)}
-                      onRename={() => setNaming({ kind: 'rename', area: name })}
-                      onMove={(step) => moveAreaBy(name, step)}
-                      onAddLine={() => addLine(name)}
-                    >
-                      {rows}
-                    </AreaSection>
-                  </div>
-                )
-              })}
-              <p className="sr-only" role="status" aria-live="polite">
-                {announcement}
-              </p>
-              <div className="flex flex-wrap gap-2">
-                <Button type="button" variant="outline" onClick={() => addLine(null)}>
-                  <PlusIcon aria-hidden />
-                  {areas.length > 0
-                    ? t('documents.quotations.editor.areas.addLineNoArea')
-                    : t('documents.quotations.editor.addLine')}
-                </Button>
-                <Button
-                  type="button"
-                  variant="outline"
-                  data-area-add
-                  onClick={() => setNaming({ kind: 'add' })}
-                >
-                  <LayersIcon aria-hidden />
-                  {t('documents.quotations.editor.areas.add')}
-                </Button>
-              </div>
-            </div>
+            <DocumentLines
+              lines={draft.lines}
+              setLines={setLines}
+              products={products}
+              onProductSaved={productSaved}
+              errors={check.errors.lines}
+              shown={shown}
+              lineAmounts={check.lineAmounts}
+              vatRegistered={vatRegistered}
+              profile={profile}
+              canSeeProducts={canSeeProducts}
+              canAddProducts={canAddProducts}
+              form={form}
+              phoneBar={phoneBar}
+            />
           </Panel>
         </div>
 
@@ -802,34 +516,6 @@ export function QuotationEditor({
           {saveBar}
         </div>
       </form>
-
-      {naming ? (
-        <AreaNameDialog
-          mode={naming.kind === 'rename' ? 'rename' : 'add'}
-          initial={naming.kind === 'rename' ? naming.area : ''}
-          profile={profile}
-          taken={(name) =>
-            areaTaken(draft.lines, name, naming.kind === 'rename' ? naming.area : null)
-          }
-          onCancel={() => setNaming(null)}
-          onSubmit={named}
-        />
-      ) : null}
-
-      {saveAsItem ? (
-        <ProductSheet
-          name={saveAsItem.title.trim()}
-          start={{
-            unit: saveAsItem.unit === '' ? undefined : saveAsItem.unit,
-            price: saveAsItem.price.trim() || undefined,
-            vatCategory: saveAsItem.vatCategory,
-          }}
-          profile={profile}
-          resale="none"
-          onSaved={(product) => savedAsItem(saveAsItem.id, product)}
-          onClose={() => setSaveAsItem(null)}
-        />
-      ) : null}
     </PageContainer>
   )
 }

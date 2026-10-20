@@ -41,15 +41,16 @@ select tables_are(
     'sales_channels', 'sales', 'sale_lines', 'sale_line_materials',
     'sale_imports', 'sale_import_rows', 'import_profiles', 'product_aliases', 'channel_statements',
     'customers', 'document_counters', 'orders', 'order_lines', 'customer_payments',
-    'quotations', 'quotation_lines', 'quotation_stages', 'document_renders'
+    'quotations', 'quotation_lines', 'quotation_stages', 'document_renders',
+    'invoices', 'invoice_lines', 'credit_notes', 'credit_note_lines'
   ],
   'app contains exactly the Milestone 1 and M2 tables and those of M3 so far'
 );
 
 select is(
   (select count(*)::int from business_tables),
-  50,
-  'sanity: 50 app tables carry business_id (the checks below are not vacuous)'
+  54,
+  'sanity: 54 app tables carry business_id (the checks below are not vacuous)'
 );
 
 -- 2. Row level security ---------------------------------------------------------
@@ -295,7 +296,27 @@ select is_empty(
          ('quotations', 'order_id', 'orders'),
          ('quotation_lines', 'quotation_id', 'quotations'),
          ('quotation_lines', 'product_id', 'products_services'),
-         ('quotation_stages', 'quotation_id', 'quotations')
+         ('quotation_stages', 'quotation_id', 'quotations'),
+         ('quotations', 'invoice_id', 'invoices'),
+         ('invoices', 'customer_id', 'customers'),
+         ('invoices', 'location_id', 'locations'),
+         ('invoices', 'channel_id', 'sales_channels'),
+         ('invoices', 'quotation_id', 'quotations'),
+         ('invoices', 'order_id', 'orders'),
+         ('invoices', 'sale_id', 'sales'),
+         ('invoices', 'pdf_upload_id', 'file_uploads'),
+         ('invoice_lines', 'invoice_id', 'invoices'),
+         ('invoice_lines', 'product_id', 'products_services'),
+         ('invoice_lines', 'deposit_invoice_id', 'invoices'),
+         ('invoice_lines', 'sale_line_id', 'sale_lines'),
+         ('credit_notes', 'invoice_id', 'invoices'),
+         ('credit_notes', 'customer_id', 'customers'),
+         ('credit_notes', 'location_id', 'locations'),
+         ('credit_note_lines', 'credit_note_id', 'credit_notes'),
+         ('credit_note_lines', 'invoice_line_id', 'invoice_lines'),
+         ('customer_payments', 'invoice_id', 'invoices'),
+         ('sales', 'invoice_id', 'invoices'),
+         ('sales', 'credit_note_id', 'credit_notes')
        ) as v(child, col, parent)
       where not exists (
         select 1

@@ -8,7 +8,8 @@ import type { QuotationLineDraft } from './quotation-draft'
 import { pictureProblem } from './quotation-lines'
 
 // A quotation line's picture (M3 Step 7; the attachment entity `quotation_line`: one image per line,
-// PNG, JPEG or WebP, changed only while the quotation is a draft), saved after the quotation: a
+// PNG, JPEG or WebP, changed only while the quotation is a draft; an invoice made from scratch has its
+// lines' pictures the same way, `invoice_line`, M3 Step 8), saved after the document: a
 // picture picked in the editor is uploaded straight to the private bucket with a signed URL the API
 // issues (attachment.uploadUrl), then checked and attached by the API (attachment.add); a picture
 // taken off is removed (attachment.remove).
@@ -20,7 +21,7 @@ export class PictureError extends Error {
 }
 
 /** Saves the lines' picture changes; throws a PictureError with the first problem. */
-export function useSaveLinePictures() {
+export function useSaveLinePictures(entity: 'quotation_line' | 'invoice_line' = 'quotation_line') {
   const trpc = useTRPC()
   const uploadUrl = useMutation(trpc.attachment.uploadUrl.mutationOptions())
   const add = useMutation(trpc.attachment.add.mutationOptions())
@@ -37,7 +38,7 @@ export function useSaveLinePictures() {
         if (!pending) continue
         const problem = pictureProblem(pending)
         if (problem) throw new PictureError(problem)
-        const record = { entity: 'quotation_line' as const, entityId: line.id }
+        const record = { entity, entityId: line.id }
         const target = await uploadUrl.mutateAsync({
           ...record,
           contentType: pending.type as AttachmentContentType,

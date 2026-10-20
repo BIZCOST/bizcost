@@ -72,7 +72,21 @@ describe('module manifests', () => {
       quickActions: [],
       sensitiveFields: [],
     })
-    for (const m of MODULES.filter((x) => x.availability === 'planned' && x.id !== 'quotations')) {
+    // Invoices' build started in M3 Step 8 (released with Release B too).
+    expect(byId.get('invoices')).toMatchObject({
+      availability: 'planned',
+      permissionKeys: [
+        'invoices.documents.view',
+        'invoices.documents.manage',
+        'invoices.documents.issue',
+        'invoices.documents.credit',
+      ],
+      quickActions: [],
+      sensitiveFields: [],
+    })
+    for (const m of MODULES.filter(
+      (x) => x.availability === 'planned' && x.id !== 'quotations' && x.id !== 'invoices',
+    )) {
       expect(m.permissionKeys, m.id).toEqual([])
       expect(m.nav, m.id).toEqual([])
       expect(m.quickActions, m.id).toEqual([])
@@ -289,8 +303,10 @@ describe('module manifests', () => {
       ['customers', 'sales'],
       ['receivables', 'sales'],
       ['real_profit', 'reports'],
-      // M3 Step 7: Quotations joins the "Sales" group (shown once released, Release B).
+      // M3 Step 7: Quotations joins the "Sales" group (shown once released, Release B); Step 8
+      // Invoices.
       ['quotations', 'sales'],
+      ['invoices', 'sales'],
     ])
   })
 
@@ -358,11 +374,15 @@ describe('permission catalog', () => {
         'orders.documents.manage',
         'orders.documents.deliver',
         'orders.documents.reverse',
-        // M3 Step 7: Quotations, and Settings → Documents.
+        // M3 Step 7: Quotations, and Settings → Documents; Step 8: Invoices.
         'quotations.documents.view',
         'quotations.documents.manage',
         'quotations.documents.decide',
         'settings.documents.manage',
+        'invoices.documents.view',
+        'invoices.documents.manage',
+        'invoices.documents.issue',
+        'invoices.documents.credit',
         'data.cost.view',
         'data.profit_margin.view',
         'data.supplier_price.view',
@@ -492,10 +512,15 @@ describe('role templates', () => {
         'orders.documents.reverse',
         'payments.customers.view',
         'payments.customers.record',
-        // M3 Step 7 (Q10): see, prepare and record the answer of quotations.
+        // M3 Step 7 (Q10): see, prepare and record the answer of quotations; Step 8: see,
+        // prepare, issue and credit invoices.
         'quotations.documents.view',
         'quotations.documents.manage',
         'quotations.documents.decide',
+        'invoices.documents.view',
+        'invoices.documents.manage',
+        'invoices.documents.issue',
+        'invoices.documents.credit',
         'data.cost.view',
         'data.profit_margin.view',
         'data.supplier_price.view',
@@ -521,8 +546,12 @@ describe('role templates', () => {
         'orders.documents.view',
         'payments.customers.view',
         'payments.customers.record',
-        // M3 Step 7 (Q10): sees quotations.
+        // M3 Step 7 (Q10): sees quotations; Step 8: sees, prepares, issues and credits invoices.
         'quotations.documents.view',
+        'invoices.documents.view',
+        'invoices.documents.manage',
+        'invoices.documents.issue',
+        'invoices.documents.credit',
         'data.cost.view',
         'data.profit_margin.view',
         'data.supplier_price.view',
@@ -547,10 +576,13 @@ describe('role templates', () => {
         'orders.documents.deliver',
         'payments.customers.view',
         'payments.customers.record',
-        // M3 Step 7 (Q10): see, prepare and record the answer of quotations.
+        // M3 Step 7 (Q10): see, prepare and record the answer of quotations; Step 8: see and prepare
+        // invoices (not issue).
         'quotations.documents.view',
         'quotations.documents.manage',
         'quotations.documents.decide',
+        'invoices.documents.view',
+        'invoices.documents.manage',
       ].sort(),
     )
     expect(keysOf('supervisor')).toEqual(

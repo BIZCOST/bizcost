@@ -9,6 +9,7 @@ import {
   ArchiveIcon,
   ArchiveRestoreIcon,
   ArrowLeftIcon,
+  FileSpreadsheetIcon,
   HandCoinsIcon,
   PencilIcon,
   SearchXIcon,
@@ -27,6 +28,8 @@ import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { ArchiveDialog } from '@/features/catalog/catalog-list'
 import { useBusinessDate, useMoney } from '@/features/documents/amounts'
+import { maySeeStatements, mayViewInvoices } from '@/features/invoices/data'
+import { InvoiceRow } from '@/features/invoices/invoice-row'
 import { Panel } from '@/features/documents/panel'
 import { StatusBadge } from '@/features/documents/status-badge'
 import { maySeePayments, mayRecordPayments } from '@/features/orders/data'
@@ -46,7 +49,8 @@ import { mayChangeCustomers, useRefreshCustomers } from './data'
 // A customer's page (M3 Step 5; Q2, Q17, D-263, D-267): who they are (their phone, email, TRN and,
 // for a business or a government body, its trade licence), what they still owe with "Record a payment"
 // (one amount over several of their orders and sales at once, oldest first), and their orders, sales
-// and payments. Each part shows only with its module on and the member's keys for it.
+// and payments. M3 Step 8: their invoices, and their statement for a period (Q27). Each part shows only
+// with its module on and the member's keys for it.
 
 function Detail({ label, children }: { label: string; children: ReactNode }) {
   return (
@@ -127,6 +131,11 @@ function CustomerView({ customer }: { customer: CustomerDto }) {
   const sales = useQuery({
     ...trpc.sale.list.queryOptions({ customerId: customer.id, limit: 20 }),
     enabled: salesShown,
+  })
+  const invoicesShown = context !== undefined && mayViewInvoices(context)
+  const invoices = useQuery({
+    ...trpc.invoice.list.queryOptions({ customerId: customer.id, limit: 20 }),
+    enabled: invoicesShown,
   })
   const payments = useInfiniteQuery({
     ...trpc.customerPayment.list.infiniteQueryOptions(
@@ -209,29 +218,41 @@ function CustomerView({ customer }: { customer: CustomerDto }) {
             </p>
           </div>
         </div>
-        {canChange ? (
+        {canChange || maySeeStatements(context) ? (
           <div className="flex flex-wrap gap-2">
-            <Button variant="outline" onClick={() => setEditing(true)}>
-              <PencilIcon aria-hidden />
-              {t('catalog.list.edit')}
-            </Button>
-            {archived ? (
-              <Button variant="ghost" onClick={() => void bringBack()}>
-                <ArchiveRestoreIcon aria-hidden />
-                {t('catalog.list.unarchive')}
+            {maySeeStatements(context) ? (
+              <Button asChild variant="outline">
+                <Link href={`/b/${businessId}/customers/${customer.id}/statement`}>
+                  <FileSpreadsheetIcon aria-hidden />
+                  {t('documents.invoices.statement.button')}
+                </Link>
               </Button>
-            ) : (
-              <Button
-                variant="ghost"
-                onClick={() => {
-                  setArchiveError(null)
-                  setArchiving(true)
-                }}
-              >
-                <ArchiveIcon aria-hidden />
-                {t('catalog.list.archive')}
-              </Button>
-            )}
+            ) : null}
+            {canChange ? (
+              <>
+                <Button variant="outline" onClick={() => setEditing(true)}>
+                  <PencilIcon aria-hidden />
+                  {t('catalog.list.edit')}
+                </Button>
+                {archived ? (
+                  <Button variant="ghost" onClick={() => void bringBack()}>
+                    <ArchiveRestoreIcon aria-hidden />
+                    {t('catalog.list.unarchive')}
+                  </Button>
+                ) : (
+                  <Button
+                    variant="ghost"
+                    onClick={() => {
+                      setArchiveError(null)
+                      setArchiving(true)
+                    }}
+                  >
+                    <ArchiveIcon aria-hidden />
+                    {t('catalog.list.archive')}
+                  </Button>
+                )}
+              </>
+            ) : null}
           </div>
         ) : null}
       </header>
@@ -336,6 +357,32 @@ function CustomerView({ customer }: { customer: CustomerDto }) {
                       order={order}
                       href={`/b/${businessId}/orders/${order.id}`}
                       today={today}
+                    />
+                  </li>
+                ))}
+              </ul>
+            )}
+          </Panel>
+        ) : null}
+
+        {invoicesShown ? (
+          <Panel title={t('common.nav.invoices')}>
+            {invoices.isError && !invoices.data ? (
+              <LoadError error={invoices.error} onRetry={() => void invoices.refetch()} />
+            ) : !invoices.data ? (
+              <p className="text-sm text-muted-foreground">{t('status.loading')}</p>
+            ) : invoices.data.items.length === 0 ? (
+              <p className="text-sm text-muted-foreground">
+                {t('documents.invoices.links.noneForCustomer')}
+              </p>
+            ) : (
+              <ul className="-mx-4 -my-1 divide-y sm:-mx-5">
+                {invoices.data.items.map((invoice) => (
+                  <li key={invoice.id}>
+                    <InvoiceRow
+                      invoice={invoice}
+                      href={`/b/${businessId}/invoices/${invoice.id}`}
+                      showCustomer={false}
                     />
                   </li>
                 ))}

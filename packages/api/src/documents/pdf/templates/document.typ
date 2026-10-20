@@ -13,8 +13,10 @@
 // is never markup), in its own direction; numbers, TRNs and references sit in left-to-right isolates.
 //
 // Step 8 reads what a quotation never has, when present: `dueDate` (the details box), `references`
-// ({ label, value }: the invoice a credit note corrects, its date…), `payments` (beside the totals) and
-// `opening: none` (no "Dear …" line: the date goes into the details box).
+// ({ label, value }: the date of supply, the invoice a credit note corrects, its date…), `payments`
+// (beside the totals), `reason` (a credit note's, beside its totals), `statement` (a customer's
+// statement: its entries in place of the lines, no signatures) and `opening: none` (no "Dear …" line:
+// the date goes into the details box).
 
 #let data = json("/data.json")
 #let lh = data.letterhead
@@ -32,6 +34,7 @@
 #let de = if rtl-doc { left } else { right }
 #let is-quotation = data.kind == "quotation"
 #let is-credit = data.kind.ends-with("credit_note")
+#let is-statement = data.kind == "statement"
 #let open = data.at("opening", default: none)
 
 // Page geometry (A4): the letterhead's bands and the margins they leave for the content.
@@ -453,7 +456,10 @@
   if c.phone != none { rows += field("phone", ltr-iso(c.phone)) }
   if c.trn != none { rows += field("trn", ltr-iso(c.trn, weight: "bold")) }
   if c.address != none { rows += field("address", typed(c.address, gap: 0pt)) }
-  let to = if is-quotation { L("to") } else { L("billTo", en: "Bill to", ar: "فاتورة إلى") }
+  // "Bill to" on an invoice; a credit note and a statement name their customer.
+  let to = if is-quotation { L("to") } else if is-credit or is-statement {
+    L("customer", en: "Customer", ar: "العميل")
+  } else { L("billTo", en: "Bill to", ar: "فاتورة إلى") }
   align(ds, stack(dir: ttb, spacing: 2mm,
     align(ds, bi(to, fill: accent, weight: "bold", size: 7.4pt)),
     typed(c.name, size: 11.5pt, weight: "bold", gap: 0pt),
@@ -464,14 +470,18 @@
 #let details-block = {
   let rows = ()
   let number-label = if is-quotation { "number.quotation" } else if is-credit { "number.creditNote" } else { "number.invoice" }
-  rows += field(number-label, ltr-iso(data.number, weight: "bold", size: 9.6pt))
+  // A statement has no number of its own (its period and date say which it is).
+  if data.number != "" { rows += field(number-label, ltr-iso(data.number, weight: "bold", size: 9.6pt)) }
   if data.revision != none { rows += field("revision", ltr-iso(str(data.revision))) }
   // A quotation dates its "Dear …" line (as the owner's letterhead); an invoice dates its details.
   if open == none { rows += field("date", first(data.date, weight: "bold")) }
   let due = data.at("dueDate", default: none)
   if due != none { rows += field("dueDate", first(due, weight: "bold")) }
   if data.validUntil != none { rows += field("validUntil", first(data.validUntil)) }
-  if data.customerRef != none { rows += field("customerRef", ltr-wrap(data.customerRef)) }
+  // An invoice's reference is the customer's LPO number; a quotation's, their enquiry or LPO.
+  if data.customerRef != none {
+    rows += field(if is-quotation { "customerRef" } else { "lpo" }, ltr-wrap(data.customerRef))
+  }
   // Step 8's own references (the supply date, the invoice a credit note corrects…), when given.
   for r in data.at("references", default: ()) {
     rows.push(align(ds + horizon, text(fill: muted, size: 7.2pt)[#bi(r.label)]))
@@ -914,6 +924,56 @@
 }
 
 // ------------------------------------------------------------------------------------------------
+// A customer's statement (Step 8, Q27): Date | Document | Charges | Payments and credits | Balance,
+// "owed at the start" first, its head on every page
+// ------------------------------------------------------------------------------------------------
+
+#let statement = data.at("statement", default: none)
+#if statement != none {
+  let head(key) = bi2(L(key), size: 7.3pt, fill: white, weight: "bold", fill2: white.transparentize(22%), at: ds, gap: 2.2pt)
+  let num-head(key) = bi2(L(key), size: 7.3pt, fill: white, weight: "bold", fill2: white.transparentize(22%), at: right, gap: 2.2pt)
+  let rows = ()
+  rows += (
+    table.cell(colspan: 4, align(ds + horizon, text(fill: muted, weight: "bold")[#bi(L("statement.openingRow"))])),
+    align(right + horizon, ltr-iso(statement.opening, weight: "bold")),
+  )
+  for e in statement.entries {
+    // What it was (a sale's first items, how a payment was paid): typed text, or both languages.
+    let detail = e.at("detail", default: none)
+    let what = if detail == none { () } else if "dir" in detail {
+      (align(ds, typed(detail, gap: 0pt, fill: muted, size: 7.2pt)),)
+    } else { (align(ds, text(fill: muted, size: 7.2pt)[#bi(detail)]),) }
+    // Paid ahead (owed below zero): what was paid beyond, said so.
+    let owed = if e.at("ahead", default: false) {
+      stack(dir: ttb, spacing: 1mm, align(right, ltr-iso(e.owed, weight: "bold")),
+        align(right, text(fill: muted, size: 6.6pt)[#bi(L("statement.ahead", en: "paid ahead", ar: "مدفوع مقدّمًا"))]))
+    } else { ltr-iso(e.owed, weight: "bold") }
+    rows += (
+      align(ds + horizon, first(e.date)),
+      align(ds + horizon, stack(dir: ttb, spacing: 1.2mm, align(ds, first(e.document, weight: "bold")), align(ds, second(e.document, fill: muted, size: 7.2pt)), ..what)),
+      align(right + horizon, if e.charge == none { [] } else { ltr-iso(e.charge) }),
+      align(right + horizon, if e.credit == none { [] } else { ltr-iso(e.credit) }),
+      align(right + horizon, owed),
+    )
+  }
+  if statement.entries.len() == 0 {
+    rows += (table.cell(colspan: 5, align(center + horizon, text(fill: muted)[#bi(L("statement.empty"))])),)
+  }
+  block(below: 3.6mm, table(
+    columns: (auto, 1fr, auto, auto, auto),
+    inset: (x: 2.2mm, y: 1.7mm),
+    align: horizon,
+    stroke: (x, y) => if y == 0 { none } else { (bottom: 0.4pt + rule) },
+    fill: (x, y) => if y == 0 { accent } else if calc.odd(y) { none } else { tint },
+    table.header(
+      head("statement.date"), head("statement.document"), num-head("statement.charge"),
+      num-head("statement.credit"), num-head("statement.owed"),
+    ),
+    ..rows,
+  ))
+}
+
+// ------------------------------------------------------------------------------------------------
 // After the table: the payment terms (a quotation) or the payments received (an invoice) with the
 // validity on the start side, the totals on the end side
 // ------------------------------------------------------------------------------------------------
@@ -980,13 +1040,21 @@
     ((L("payments.date", en: "Date", ar: "التاريخ"), auto), (L("payments.method", en: "Method", ar: "الطريقة"), 1fr),
      (L("payments.reference", en: "Reference", ar: "المرجع"), auto), (L("payments.amount", en: "Amount", ar: "المبلغ"), auto)),
     payments.map(p => (
-      first(p.date),
+      if p.date == none { [] } else { first(p.date) },
       if "text" in p.method { iso(p.method) } else { first(p.method) },
       if p.reference == none { [] } else { ltr-iso(p.reference, fill: body-ink) },
       ltr-iso(p.amount, weight: "bold"),
     )),
     nums: (3,),
   )
+}
+
+// Step 8: a credit note's reason (ER Art. 60(1)(f)): its kind, then the explanation as typed.
+#let reason = data.at("reason", default: none)
+#let reason-block = if reason != none {
+  caption(L("credit.reason", en: "Reason for this credit note", ar: "سبب الإشعار الدائن"))
+  block(below: 1.4mm, bi(reason.kind, weight: "bold"))
+  typed(reason.text, fill: body-ink, gap: 0.4em)
 }
 
 #let validity-block = if data.validity != none {
@@ -1070,7 +1138,7 @@
   align(ds, text(fill: muted, size: 7.2pt)[#bi(foot)])
 })
 // The two signing lines on one level, however many lines the business's names take above them.
-#let signatures = block(breakable: false, grid(
+#let signatures = if is-statement { none } else { block(breakable: false, grid(
   columns: (1fr, 1fr),
   column-gutter: 16mm,
   align: bottom,
@@ -1080,9 +1148,9 @@
     sign-box(align(ds, bi(L("signature.acceptance"), weight: "bold")), [],
       typed(data.customer.name, weight: "bold", gap: 0pt), L("signature.line"))
   },
-))
+)) }
 
-#let side = (stages-block, payments-block, validity-block).filter(x => x != none)
+#let side = (stages-block, payments-block, reason-block, validity-block).filter(x => x != none)
 #let totals-w = 90mm
 #let side-w = content-w - totals-w - 7mm
 
@@ -1098,7 +1166,7 @@
   // payment stages): then it may break, never run off the page.
   let frame = page-frame()
   let fits = calc.max(side-h, totals-h) <= frame.body - 8mm
-  block(breakable: not fits, below: 3.6mm, if beside.len() == 0 {
+  block(width: 100%, breakable: not fits, below: 3.6mm, if beside.len() == 0 {
     align(de, block(width: totals-w, totals-block))
   } else {
     grid(columns: (1fr, totals-w), column-gutter: 7mm,

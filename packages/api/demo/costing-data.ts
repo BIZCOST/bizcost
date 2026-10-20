@@ -2244,6 +2244,18 @@ export const WORKSHOP_COSTING: DemoCosting = {
       lines: [['table', '1', '2400']],
       deposit: { method: 'cheque', amount: '1260' },
     },
+    // M3 Step 8: the clinic's kitchen unit against its LPO, half paid by transfer when ordered and
+    // delivered yesterday: its deposit tax invoice, then its final invoice (demo/invoices.ts).
+    {
+      key: 'clinic-kitchen',
+      daysAgo: 9,
+      dueIn: 8,
+      customer: 'clinic',
+      customerRef: 'LPO-CLN-131',
+      lines: [['cabinet', '1']],
+      deposit: { method: 'bank_transfer', amount: '2205' },
+      deliveredDaysAgo: 1,
+    },
   ],
 }
 

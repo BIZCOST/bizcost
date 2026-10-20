@@ -10,6 +10,7 @@ import {
   CircleAlertIcon,
   PackageCheckIcon,
   PencilIcon,
+  ReceiptTextIcon,
   RotateCcwIcon,
   Undo2Icon,
   XCircleIcon,
@@ -39,6 +40,9 @@ import { firstOpenDay } from '@/features/documents/books'
 import { ConfirmDialog } from '@/features/documents/confirm-dialog'
 import { Panel } from '@/features/documents/panel'
 import { Totals } from '@/features/documents/totals'
+import { BillDialog } from '@/features/invoices/bill-dialog'
+import { mayManageInvoices, mayViewInvoices } from '@/features/invoices/data'
+import { SourceInvoices, useInvoicedInFull } from '@/features/invoices/source-invoices'
 import { hasModule } from '@/features/purchasing/data'
 import { Receipts } from '@/features/purchasing/receipts'
 import { CustomerPaymentsPanel } from '@/features/receivables/payments-panel'
@@ -236,7 +240,17 @@ export function OrderView({
   const deliver = useMutation(trpc.order.deliver.mutationOptions())
   const cancel = useMutation(trpc.order.cancel.mutationOptions())
   const undo = useMutation(trpc.order.undoDelivery.mutationOptions())
-  const [confirm, setConfirm] = useState<'deliver' | 'cancel' | 'undo' | 'refund' | null>(null)
+  const [confirm, setConfirm] = useState<
+    'deliver' | 'cancel' | 'undo' | 'refund' | 'invoice' | null
+  >(null)
+  // M3 Step 8: once an order has an issued invoice, what is owed lives on its invoices (A2).
+  const invoicesSeen = context !== undefined && mayViewInvoices(context)
+  const issuedInvoices = useQuery({
+    ...trpc.invoice.list.queryOptions({ orderId: order.id, status: 'issued', limit: 1 }),
+    enabled: invoicesSeen,
+  })
+  const invoiced = (issuedInvoices.data?.items.length ?? 0) > 0
+  const invoicedInFull = useInvoicedInFull({ orderId: order.id }, order.total, invoicesSeen)
   const [confirmError, setConfirmError] = useState<I18nKey | null>(null)
   const [busy, setBusy] = useState(false)
   // The delivery day (never after today, never before the order's day or in closed books).
@@ -272,6 +286,8 @@ export function OrderView({
   const vatChanged =
     pending && (context.capabilities.vat_registered === true) !== order.vatRegistered
   const canSeeSale = salesOn && can(context, 'sales.documents.view')
+  const canInvoice =
+    !cancelled && order.customerId !== null && !invoicedInFull && mayManageInvoices(context)
 
   function errorKey(error: unknown): I18nKey {
     const code = apiErrorCode(error)
@@ -379,6 +395,16 @@ export function OrderView({
             <Button onClick={() => open('deliver')}>
               <PackageCheckIcon aria-hidden />
               {t('orders.view.deliver')}
+            </Button>
+          ) : null}
+          {canInvoice ? (
+            <Button
+              variant={canDeliver ? 'outline' : 'default'}
+              data-order-invoice
+              onClick={() => open('invoice')}
+            >
+              <ReceiptTextIcon aria-hidden />
+              {t('documents.invoices.links.invoiceOrder')}
             </Button>
           ) : null}
           {canEdit ? (
@@ -641,16 +667,26 @@ export function OrderView({
               label: t('orders.view.title', { number: isolate(order.number) }),
             }}
             canRecord={mayRecordPayments(context)}
-            canPay={!cancelled}
+            // Invoiced in part, the order still takes payments for what is not invoiced yet (they
+            // count toward its invoices first, D-313); invoiced in full, its invoices take them.
+            canPay={!cancelled && !order.paidThroughInvoices}
             cancelled={cancelled}
             today={today}
             closedThrough={closedThrough}
             hint={
-              cancelled && compareDecimal(order.payment.overpaid, '0') > 0
-                ? t('orders.view.cancelledPayments')
-                : undefined
+              order.paidThroughInvoices
+                ? t('documents.invoices.links.paidOnInvoices')
+                : invoiced
+                  ? t('documents.invoices.links.paidOnOrderToo')
+                  : cancelled && compareDecimal(order.payment.overpaid, '0') > 0
+                    ? t('orders.view.cancelledPayments')
+                    : undefined
             }
           />
+        ) : null}
+
+        {invoicesSeen ? (
+          <SourceInvoices filter={{ orderId: order.id }} currency={order.currency} />
         ) : null}
 
         {order.refunds.length > 0 ? (
@@ -713,6 +749,19 @@ export function OrderView({
         ) : null}
       </div>
 
+      {confirm === 'invoice' ? (
+        <BillDialog
+          source={{
+            kind: 'order',
+            id: order.id,
+            number: order.number,
+            payable: order.total,
+            currency: order.currency,
+            stages: [],
+          }}
+          onClose={() => setConfirm(null)}
+        />
+      ) : null}
       <ConfirmDialog
         open={confirm === 'deliver'}
         icon={PackageCheckIcon}

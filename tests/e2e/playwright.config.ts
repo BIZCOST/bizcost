@@ -18,16 +18,16 @@ import {
 // The released screens run on the production build: the Costing Core since M2 Step 7 (D-188), and
 // Sales, Orders, Customers, Payments and Reports since Release A (M3 Step 6). The module being built is
 // still `planned`, and a production build never shows a planned module (D-125): its spec (`preview`
-// project; M3 Step 7: Quotations) runs on a `next dev` server with the dev-only preview of it, in its
-// own folder (.next/e2e-preview) on E2E_PREVIEW_PORT (default E2E_PORT + 1), as in M2 (D-127) and
-// before Release A. When Release B (M3 Step 9) releases it, its spec moves to the production project
-// and this server goes again.
+// project; M3 Step 7: Quotations, M3 Step 8: Invoices) runs on a `next dev` server with the dev-only
+// preview of it, in its own folder (.next/e2e-preview) on E2E_PREVIEW_PORT (default E2E_PORT + 1), as
+// in M2 (D-127) and before Release A. When Release B (M3 Step 9) releases them, their specs move to
+// the production project and this server goes again.
 
 const { apiUrl, publishableKey, secretKey } = stack()
 const web = 'pnpm --filter @bizcost/web exec next'
 
 /** Specs of the modules shown only by the dev-only preview. */
-const PREVIEW_SPECS = /quotations.spec.ts$/
+const PREVIEW_SPECS = /(quotations|invoices).spec.ts$/
 
 /** The web app's environment on the local stack, for a server at `origin`. */
 function webEnv(origin: string): Record<string, string> {

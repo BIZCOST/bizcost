@@ -35,9 +35,11 @@ import { CustomerPaymentSheet, type PaidDocument } from './payment-sheet'
 
 const positive = (value: string) => compareDecimal(value, '0') > 0
 
-/** Where an order or a sale opens. */
+/** Where an order, a sale or an invoice (M3 Step 8) opens. */
 export function owedHref(businessId: string, document: Pick<OwedDocumentDto, 'kind' | 'id'>) {
-  return `/b/${businessId}/${document.kind === 'order' ? 'orders' : 'sales'}/${document.id}`
+  const section =
+    document.kind === 'order' ? 'orders' : document.kind === 'invoice' ? 'invoices' : 'sales'
+  return `/b/${businessId}/${section}/${document.id}`
 }
 
 /** One order or sale: what it is, its days, its state and what it owes (or is owed back). */
@@ -87,6 +89,10 @@ export function OwedRow({
           ) : null}
           {document.orderStatus === 'cancelled' ? (
             <Badge tone="neutral">{t('orders.status.cancelled')}</Badge>
+          ) : null}
+          {/* An order its invoices bill in part: this is what they don't bill yet (D-313). */}
+          {document.invoicedInPart ? (
+            <Badge tone="neutral">{t('orders.receivables.notInvoiced')}</Badge>
           ) : null}
           <PaymentBadge
             state={document.state}

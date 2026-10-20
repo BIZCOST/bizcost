@@ -51,6 +51,8 @@ export type QuotationRefusal =
   | 'quotation_not_accepted'
   /** Another revision of this quotation became an order already. */
   | 'quotation_has_order'
+  /** An issued invoice bills a revision of this quotation: it is invoiced from here on (M3 Step 8). */
+  | 'quotation_invoiced'
 
 export interface QuotationActionContext {
   readonly status: QuotationStatus
@@ -60,6 +62,11 @@ export interface QuotationActionContext {
   readonly hasOrder: boolean
   /** Another revision of the same quotation became an order. */
   readonly otherHasOrder: boolean
+  /**
+   * An issued invoice bills a revision of this quotation (a deposit or a stage): it is invoiced from
+   * the quotation to the end, never made an order (the work would be billed and counted twice, Q3).
+   */
+  readonly invoiced?: boolean
 }
 
 export type QuotationTransition =
@@ -114,6 +121,7 @@ export function quotationTransition(
       if (ctx.hasOrder) return to(status, false)
       if (status !== 'accepted') return refuse('quotation_not_accepted')
       if (ctx.otherHasOrder) return refuse('quotation_has_order')
+      if (ctx.invoiced) return refuse('quotation_invoiced')
       return to('accepted')
   }
 }

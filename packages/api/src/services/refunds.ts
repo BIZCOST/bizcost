@@ -31,7 +31,7 @@ import { assertModuleActive, assertPermission } from '../trpc'
 import { requestHashOf } from './catalog'
 import { lockReceivable, recordCustomerPaymentInTx } from './payments'
 import { insertMaterialRows, shareCostRows } from './sale-costs'
-import { lockSale, readSale, result } from './sales'
+import { assertNotInvoiced, lockSale, readSale, result } from './sales'
 import { assertPostable, lockPostingBusiness } from './stock'
 
 // Refunds (ROADMAP.md M3 Step 5; the plan's credit maths; the owner's answer Q16 = A of D-218):
@@ -220,6 +220,11 @@ export function refundSale(ctx: BusinessCtx, input: RefundInput): Promise<SaleRe
     if (head.status !== 'posted') throw new AppError('document_posted')
     if (head.source === 'import') throw invalid('an imported sale’s refunds come in its file')
     if (head.source === 'refund') throw invalid('a refund is reversed, never refunded')
+    // An invoiced sale (or an invoice's own) is corrected by a credit note (M3 Step 8).
+    if (head.source === 'invoice' || head.source === 'credit_note') {
+      throw new AppError('sale_has_invoice')
+    }
+    await assertNotInvoiced(tx, ctx.businessId, { saleId, orderId })
     if (head.source === 'order' && !can(ctx.access.effective, 'orders.documents.reverse')) {
       throw new AppError('forbidden')
     }

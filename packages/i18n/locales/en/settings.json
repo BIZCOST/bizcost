@@ -324,7 +324,9 @@
       "description": "How each document is numbered. Change the start number only before the first document, to continue from your old system.",
       "series": {
         "quotation": "Quotations",
-        "order": "Orders"
+        "order": "Orders",
+        "invoice": "Invoices",
+        "credit_note": "Credit notes"
       },
       "prefix": "Starts with",
       "padding": "Digits",
@@ -522,6 +524,10 @@
     "quotations_documents_view": "See quotations",
     "quotations_documents_manage": "Prepare quotations",
     "quotations_documents_decide": "Record the customer's answer",
+    "invoices_documents_view": "See invoices",
+    "invoices_documents_manage": "Prepare invoices",
+    "invoices_documents_issue": "Issue invoices",
+    "invoices_documents_credit": "Issue credit notes",
     "data_cost_view": "See costs",
     "data_profit_margin_view": "See profit and margins",
     "data_supplier_price_view": "See supplier prices",
@@ -597,6 +603,10 @@
     "quotations_documents_view": "Every quotation, its revisions and its PDF.",
     "quotations_documents_manage": "Prepare, send, revise and copy quotations, and turn an accepted one into an order.",
     "quotations_documents_decide": "Mark a sent quotation as accepted or declined, and attach the signed copy.",
+    "invoices_documents_view": "Every invoice and credit note, and their PDFs.",
+    "invoices_documents_manage": "Prepare invoices from scratch, a quotation, an order or a sale, and copy an invoice to a quotation.",
+    "invoices_documents_issue": "Issue an invoice: it takes its number and can no longer be changed.",
+    "invoices_documents_credit": "Prepare and issue credit notes, which correct an issued invoice.",
     "data_cost_view": "What products, materials and work really cost.",
     "data_cost_view_food": "What products, ingredients, supplies and work really cost.",
     "data_cost_view_factory": "What products, raw materials and work really cost.",

@@ -27,7 +27,7 @@ import type { ApiConfig } from '../deps'
 import { AppError } from '../errors'
 import { assertAnyAccess } from '../trpc'
 import { applySwitch, readBusinessState } from './customize'
-import { documentsServed, printableImageType } from './document-files'
+import { documentsServed, printableImageType, removeImageUnlessKept } from './document-files'
 
 // Settings → Business profile and Business language (ROADMAP.md Step 6): legal names, VAT and TRN,
 // the business's default language, and the logo in the private bucket (docs/ARCHITECTURE.md §Storage):
@@ -443,7 +443,8 @@ export async function setLogo(ctx: BusinessCtx, input: SetLogoInput): Promise<Bu
     }
     return { row: await readProfile(tx, ctx.businessId), previous: replaced }
   })
-  if (previous && previous !== input.path) await removeQuietly(ctx.config, [previous])
+  // The previous logo's object stays while an issued document's letterhead names it (D-307).
+  if (previous && previous !== input.path) await removeImageUnlessKept(ctx, previous)
   return toProfileDto(ctx.config, row)
 }
 
@@ -461,6 +462,6 @@ export async function removeLogo(ctx: BusinessCtx): Promise<BusinessProfileDto> 
     }
     return { row: await readProfile(tx, ctx.businessId), previous: before?.logoPath ?? null }
   })
-  if (previous) await removeQuietly(ctx.config, [previous])
+  if (previous) await removeImageUnlessKept(ctx, previous)
   return toProfileDto(ctx.config, row)
 }

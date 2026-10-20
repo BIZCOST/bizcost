@@ -63,7 +63,13 @@ const RECORD_TABLES: Readonly<Record<AttachmentEntity, ReturnType<typeof sql.raw
   // M3 Step 7: a quotation's files (the customer's signed copy, drawings), and a line's picture.
   quotation: sql.raw('app.quotations'),
   quotation_line: sql.raw('app.quotation_lines'),
+  // M3 Step 8: an invoice's files (the signed delivery note, the LPO), and a line's picture.
+  invoice: sql.raw('app.invoices'),
+  invoice_line: sql.raw('app.invoice_lines'),
 }
+
+/** The lines whose one picture prints in their document's picture column (images only). */
+const LINE_ENTITIES: ReadonlySet<AttachmentEntity> = new Set(['quotation_line', 'invoice_line'])
 
 /** Only images print in a quotation's picture column (the database holds the same). */
 const IMAGE_TYPES: ReadonlySet<AttachmentContentType> = new Set([
@@ -73,11 +79,16 @@ const IMAGE_TYPES: ReadonlySet<AttachmentContentType> = new Set([
 ])
 
 /** Entities whose files are seen by whoever sees the record (prices are not sensitive, D-187). */
-const OPEN_ENTITIES: ReadonlySet<AttachmentEntity> = new Set(['quotation', 'quotation_line'])
+const OPEN_ENTITIES: ReadonlySet<AttachmentEntity> = new Set([
+  'quotation',
+  'quotation_line',
+  'invoice',
+  'invoice_line',
+])
 
 /** The most files one record of `entity` may have. */
 const maxFilesOf = (entity: AttachmentEntity) =>
-  entity === 'quotation_line' ? QUOTATION_LINE_PICTURES_MAX : ATTACHMENTS_PER_RECORD_MAX
+  LINE_ENTITIES.has(entity) ? QUOTATION_LINE_PICTURES_MAX : ATTACHMENTS_PER_RECORD_MAX
 
 /** Storage's signed upload URLs work for 2 hours; the registry closes the path at the same time. */
 const UPLOAD_URL_TTL_MS = 2 * 60 * 60 * 1000
@@ -130,6 +141,10 @@ async function assertRecord(
   if (!table) throw new AppError('not_found')
   if (entity === 'quotation' || entity === 'quotation_line') {
     await assertQuotationRecord(tx, businessId, entity, id, { lock, change, orders })
+    return
+  }
+  if (entity === 'invoice' || entity === 'invoice_line') {
+    await assertInvoiceRecord(tx, businessId, entity, id, { lock, change, orders })
     return
   }
   // An order of another branch, for a member limited to some branches (Q12): as if it did not exist.
@@ -198,6 +213,42 @@ async function assertQuotationRecord(
   }
 }
 
+/**
+ * An invoice, or an invoice's line (M3 Step 8): as a quotation's. A line's picture changes only while
+ * its invoice is a draft (DOCUMENT_POSTED: an issued invoice prints as it was issued); an invoice's own
+ * files (a signed delivery note) may be added once it is issued too.
+ */
+async function assertInvoiceRecord(
+  tx: Tx,
+  businessId: string,
+  entity: 'invoice' | 'invoice_line',
+  id: string,
+  { lock, change, orders }: { lock: boolean; change: boolean; orders: OrderAccess | undefined },
+) {
+  const branches =
+    orders && !orders.scope.all
+      ? sql`and i.location_id = any(${uuidArray([...orders.scope.ids])})`
+      : sql``
+  const forLock = lock ? sql`for no key update of i` : sql``
+  const [row] = (await tx.execute(
+    entity === 'invoice'
+      ? sql`
+        select i.status from app.invoices i
+         where i.business_id = ${businessId} and i.id = ${id} and i.deleted_at is null ${branches}
+         ${forLock}`
+      : sql`
+        select i.status from app.invoice_lines l
+          join app.invoices i on i.business_id = l.business_id and i.id = l.invoice_id
+         where l.business_id = ${businessId} and l.id = ${id} and l.deleted_at is null
+           and i.deleted_at is null ${branches}
+         ${forLock}`,
+  )) as unknown as { status: string }[]
+  if (!row) throw new AppError('not_found')
+  if (change && entity === 'invoice_line' && row.status !== 'draft') {
+    throw new AppError('document_posted')
+  }
+}
+
 /** Whether the caller changes only the files of their own expenses and purchases (D-184). */
 const ownOnly = (ctx: BusinessCtx) => !ctx.access.visibleCategories.has('supplier_price')
 
@@ -262,7 +313,7 @@ export async function attachmentUploadUrl(
   ctx: BusinessCtx,
   input: UploadInput,
 ): Promise<AttachmentUploadUrlDto> {
-  if (input.entity === 'quotation_line' && !IMAGE_TYPES.has(input.contentType)) {
+  if (LINE_ENTITIES.has(input.entity) && !IMAGE_TYPES.has(input.contentType)) {
     throw new AppError('validation', { message: 'contentType: a line picture is an image' })
   }
   const path = `${ctx.businessId}/${input.entity}/${newId()}.${EXTENSION_OF[input.contentType]}`
@@ -435,14 +486,14 @@ export async function addAttachment(
     !sniffed ||
     EXTENSION_OF[sniffed] !== match[1] ||
     storedType !== sniffed ||
-    (input.entity === 'quotation_line' && !IMAGE_TYPES.has(sniffed))
+    (LINE_ENTITIES.has(input.entity) && !IMAGE_TYPES.has(sniffed))
   ) {
     await discard(ctx, input.path)
     throw new AppError('attachment_invalid', { message: 'not an allowed file' })
   }
   // A line's picture prints on the quotation's PDF: it must be an image the PDF compiler decodes,
   // within the PDFs' image limits (D-295).
-  if (input.entity === 'quotation_line' && (await printableImageType(object.bytes)) !== sniffed) {
+  if (LINE_ENTITIES.has(input.entity) && (await printableImageType(object.bytes)) !== sniffed) {
     await discard(ctx, input.path)
     throw new AppError('attachment_invalid', { message: 'not an image a document can print' })
   }

@@ -35,7 +35,14 @@ import { takeNumber } from './numbering'
 import { lockReceivable, recordCustomerPaymentInTx } from './payments'
 import { resolveLocation } from './purchases'
 import { profitEnvOf, profitGroups } from './real-profit'
-import { obligationsOf, paymentStateOf, readObligation, type ObligationRecord } from './receivables'
+import {
+  invoicedObligationsOf,
+  invoicedPaymentState,
+  obligationsOf,
+  paymentStateOf,
+  readObligation,
+  type ObligationRecord,
+} from './receivables'
 import { partsOf } from './reports'
 import {
   amountsWithRounding,
@@ -46,6 +53,8 @@ import {
   lineValues,
   productsOf,
   resolveChannel,
+  assertInvoicesCredited,
+  assertNotInvoiced,
   reverseInTx,
   roundedAmountsOf,
   saleContextOf,
@@ -131,6 +140,7 @@ interface OrderRecord extends Record<string, unknown> {
   id: string
   number: string
   seq: number
+  paid_through_invoices: boolean
   status: OrderStatus
   customer_id: string | null
   customer_name: string | null
@@ -228,6 +238,13 @@ export async function readOrder(tx: Tx, ctx: BusinessCtx, id: string): Promise<O
              as delivery_cost,
            o.notes, o.delivered_on::text as delivered_on, o.sale_id, o.delivered_at,
            o.cancelled_at, o.cancel_reason, ${orderEnteredByName} as entered_by_name,
+           -- Paid through its issued invoices: they bill all of it (D-313; payments.ts's rule).
+           (exists (select 1 from app.invoices i
+                     where i.business_id = o.business_id and i.order_id = o.id
+                       and i.status = 'issued' and i.deleted_at is null)
+             and (o.status = 'cancelled'
+               or o.total + o.rounding_difference <= app.order_billed(o.business_id, o.id)))
+             as paid_through_invoices,
            o.created_by = app.current_user_id() as mine, o.created_at, o.version
       from app.orders o
       join app.locations l on l.business_id = o.business_id and l.id = o.location_id
@@ -257,9 +274,15 @@ export async function readOrder(tx: Tx, ctx: BusinessCtx, id: string): Promise<O
     total: string
     status: 'posted' | 'reversed'
   }[]
-  const obligation = seesPayments(ctx)
-    ? await readObligation(tx, ctx.businessId, 'order', id)
+  // An invoiced order: what its invoices and its rest not invoiced yet are paid and owe together
+  // (A2, M3 Step 8, D-313).
+  const invoiced = seesPayments(ctx)
+    ? await invoicedPaymentState(tx, ctx.businessId, 'order', id)
     : null
+  const obligation =
+    seesPayments(ctx) && invoiced === null
+      ? await readObligation(tx, ctx.businessId, 'order', id)
+      : null
   return {
     id: head.id,
     number: head.number,
@@ -314,10 +337,11 @@ export async function readOrder(tx: Tx, ctx: BusinessCtx, id: string): Promise<O
     })),
     deliveredOn: head.delivered_on,
     saleId: head.sale_id,
+    paidThroughInvoices: head.paid_through_invoices,
     deliveredAt: isoOf(head.delivered_at),
     cancelledAt: isoOf(head.cancelled_at),
     cancelReason: head.cancel_reason,
-    payment: obligation ? paymentStateOf(obligation) : null,
+    payment: invoiced ?? (obligation ? paymentStateOf(obligation) : null),
     refunds: refunds.map((r) => ({
       id: r.id,
       businessDate: r.business_date,
@@ -415,7 +439,9 @@ export function listOrders(ctx: BusinessCtx, input: ListInput): Promise<OrderLis
       `)) as unknown as { id: string }[]
       if (!customer) throw new AppError('not_found')
     }
+    // An invoiced order owes through its invoices (A2): it shows what they are paid and owe.
     const rows = (await tx.execute(sql`
+      with ob as materialized (select * from ${obligationsOf(ctx.businessId)} x)
       select ${SORT_KEY} as sort_key, o.id, o.number, o.status, o.customer_id,
              cu.name as customer_name, o.customer_ref, o.business_date::text as business_date,
              o.due_date::text as due_date, o.delivered_on::text as delivered_on,
@@ -430,13 +456,19 @@ export function listOrders(ctx: BusinessCtx, input: ListInput): Promise<OrderLis
                     order by l.position, l.id limit 2) as item_names,
              ${orderEnteredByName} as entered_by_name,
              o.created_by = app.current_user_id() as mine, o.version,
-             trim_scale(d.total_n)::text as total, trim_scale(d.credited_n)::text as credited,
-             trim_scale(d.paid_n)::text as paid, trim_scale(d.refunded_n)::text as refunded,
-             trim_scale(greatest(d.left_n, 0))::text as owed,
-             trim_scale(greatest(-d.left_n, 0))::text as overpaid
+             trim_scale(coalesce(d.total_n, di.total_n))::text as total,
+             trim_scale(coalesce(d.credited_n, di.credited_n))::text as credited,
+             trim_scale(coalesce(d.paid_n, di.paid_n))::text as paid,
+             trim_scale(coalesce(d.refunded_n, di.refunded_n))::text as refunded,
+             trim_scale(case when d.id is null then di.owed_n else greatest(d.left_n, 0) end)::text
+               as owed,
+             trim_scale(case when d.id is null then di.overpaid_n else greatest(-d.left_n, 0) end)::text
+               as overpaid
         from app.orders o
         left join app.customers cu on cu.business_id = o.business_id and cu.id = o.customer_id
-        left join ${obligationsOf(ctx.businessId)} d on d.kind = 'order' and d.id = o.id
+        left join ob d on d.kind = 'order' and d.id = o.id and not d.invoiced
+        left join ${invoicedObligationsOf(ctx.businessId, 'order_id', sql`ob`)} di
+          on di.source_id = o.id
        where ${where(filters)}
        order by ${SORT_KEY}, o.id
        limit ${input.limit + 1}
@@ -459,10 +491,11 @@ export function listOrders(ctx: BusinessCtx, input: ListInput): Promise<OrderLis
         total: r.order_total,
         lineCount: r.line_count,
         itemNames: r.item_names,
-        paymentState: payments
-          ? paymentState(r.total, r.credited, netPaid(r.paid, r.refunded))
-          : null,
-        owed: payments ? r.owed : null,
+        paymentState:
+          payments && r.total !== null
+            ? paymentState(r.total, r.credited, netPaid(r.paid, r.refunded))
+            : null,
+        owed: payments && r.total !== null ? r.owed : null,
         enteredByName: team ? r.entered_by_name : null,
         mine: r.mine,
         version: r.version,
@@ -822,6 +855,26 @@ export function updateOrder(ctx: BusinessCtx, input: UpdateInput): Promise<Order
       deliveryCost: head.delivery_cost,
       roundTo: head.round_to,
     })
+    // An order its invoices billed never comes to less than they still bill (M3 Step 8: their
+    // payable less the credit notes that only billed less, D-305), and keeps its branch (Q12: its
+    // invoices, payments and credit notes are of one branch).
+    const [billed] = (await tx.execute(sql`
+      select trim_scale(app.order_billed(${ctx.businessId}, ${id}))::text as billed,
+             exists (select 1 from app.invoices i
+                      where i.business_id = ${ctx.businessId} and i.order_id = ${id}
+                        and i.status = 'issued' and i.deleted_at is null) as invoiced
+    `)) as unknown as { billed: string; invoiced: boolean }[]
+    if (
+      compareDecimal(
+        sumDecimals([header.total, header.roundingDifference]),
+        billed?.billed ?? '0',
+      ) < 0
+    ) {
+      throw invalid('lines: the order comes to less than its invoices billed')
+    }
+    if (billed?.invoiced && header.locationId !== head.location_id) {
+      throw invalid('locationId: an order its invoices refer to keeps its branch')
+    }
     const paid = await paidOn(tx, ctx.businessId, id)
     if (paid.standing > 0) {
       if (!seesPayments(ctx)) throw new AppError('forbidden', { message: 'the order has payments' })
@@ -878,7 +931,8 @@ export function updateOrder(ctx: BusinessCtx, input: UpdateInput): Promise<Order
  * `order.cancel` (a pending order, `version` as read): nothing in the books changes; a deposit paid
  * on it shows as money back to the customer until it is given back (a refund payment). Idempotent: a
  * cancelled order is returned as it is. A delivered order's delivery is undone first
- * (DOCUMENT_POSTED).
+ * (DOCUMENT_POSTED). An order with issued invoices is cancelled once each is fully credited
+ * (SALE_HAS_INVOICE before, M3 Step 8, D-305): what was paid then lives on its invoices.
  */
 export function cancelOrder(ctx: BusinessCtx, input: CancelInput): Promise<OrderResultDto> {
   return ctx.tx(async (tx) => {
@@ -887,6 +941,8 @@ export function cancelOrder(ctx: BusinessCtx, input: CancelInput): Promise<Order
     const next = transition('cancel', head)
     if (!next.changes) return result(await readOrder(tx, ctx, input.id))
     if (head.version !== input.version) throw new AppError('conflict')
+    // Its issued invoices are credited first (D-305).
+    await assertInvoicesCredited(tx, ctx.businessId, input.id)
     await tx
       .update(orders)
       .set({
@@ -1109,8 +1165,8 @@ export function deliverOrder(ctx: BusinessCtx, input: DeliverInput): Promise<Ord
 /**
  * `order.undoDelivery` (orders.documents.reverse): the order's sale is reversed as if it was never
  * finalized and the order is pending again (it may be delivered again). Refused while refunds of its
- * sale stand (SALE_HAS_REFUNDS) or when its delivery day is closed (BOOKS_CLOSED); an issued invoice
- * will refuse it too (Step 8). Its payments stay on the order, and a delivery cost filled on its sale
+ * sale stand (SALE_HAS_REFUNDS), when its delivery day is closed (BOOKS_CLOSED) or while an issued
+ * invoice refers to the order (SALE_HAS_INVOICE, M3 Step 8). Its payments stay on the order, and a delivery cost filled on its sale
  * since comes back to it. Idempotent: a pending order is returned as it is.
  */
 export function undoDelivery(ctx: BusinessCtx, input: IdInput): Promise<OrderResultDto> {
@@ -1118,6 +1174,7 @@ export function undoDelivery(ctx: BusinessCtx, input: IdInput): Promise<OrderRes
     const head = await lockOrder(tx, ctx, input.id)
     const next = transition('undo_delivery', head)
     if (!next.changes) return result(await readOrder(tx, ctx, input.id))
+    await assertNotInvoiced(tx, ctx.businessId, { orderId: input.id })
     const business = await lockPostingBusiness(tx, ctx.businessId)
     if (
       head.delivered_on !== null &&

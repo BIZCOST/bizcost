@@ -1,6 +1,9 @@
 import { randomBytes } from 'node:crypto'
 import {
+  type BusinessProfileDto,
+  type CreditNoteDto,
   type CustomerDto,
+  type InvoiceDto,
   type OrderDto,
   isWithMeta,
   withMeta,
@@ -1593,6 +1596,47 @@ beforeAll(async () => {
     businessDate: today,
     lines: [{ id: newId(), productId: costed.id, qty: '1', unitPrice: PRODUCT_PRICE }],
   })
+  // M3 Step 8: an issued invoice of the oracle's customer and its credit note, both already in the
+  // recorded sales (no sale of their own: the oracle's figures stay), found by the customer's name.
+  const profile = await asOwner<BusinessProfileDto>('business.profile', 'query')
+  await asOwner('business.updateProfile', 'mutation', {
+    version: profile.version,
+    legalName: profile.legalName,
+    legalNameAr: profile.legalNameAr,
+    vatRegistered: profile.vatRegistered,
+    trn: profile.vatRegistered ? (profile.trn ?? '100123456700003') : null,
+    letterhead: {
+      ...profile.letterhead,
+      addressLine: 'Oracle Street 1',
+      city: 'Dubai',
+      emirate: 'dubai',
+    },
+  })
+  const invoiceDraft = await asOwner<InvoiceDto>('invoice.create', 'mutation', {
+    id: newId(),
+    customerId: customer.id,
+    channelId: channel.id,
+    countedElsewhere: true,
+    lines: [{ id: newId(), productId: costed.id, qty: '1', unitPrice: PRODUCT_PRICE }],
+  })
+  const invoice = await asOwner<InvoiceDto>('invoice.issue', 'mutation', {
+    id: invoiceDraft.id,
+    version: invoiceDraft.version,
+  })
+  const creditDraft = await asOwner<CreditNoteDto>('creditNote.create', 'mutation', {
+    id: newId(),
+    invoiceId: invoice.id,
+    eventDate: today,
+    reason: 'price_changed',
+    reasonText: 'Oracle price agreed again',
+    by: 'amount',
+    countedElsewhere: true,
+    lines: [{ invoiceLineId: invoice.lines[0]!.id, amount: '1' }],
+  })
+  await asOwner('creditNote.issue', 'mutation', {
+    id: creditDraft.id,
+    version: creditDraft.version,
+  })
   running = (
     await asOwner<{ data: RunningCostDto }>('runningCost.create', 'mutation', runningInput())
   ).data
@@ -2117,6 +2161,9 @@ const PLAIN_QUERY_FIELDS: Record<string, string> = {
   orderId: 'names a record',
   saleId: 'names a record',
   customerId: 'names a record (a filter on the customer)',
+  // M3 Step 8.
+  quotationId: 'names a record (a filter on the quotation)',
+  invoiceId: 'names a record (a filter on the invoice)',
 }
 
 /** Each option of a field that sorts or filters by value: the category it orders on, or none. */

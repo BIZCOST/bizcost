@@ -11,6 +11,7 @@ import {
   PackageIcon,
   PlusIcon,
   ReceiptIcon,
+  ReceiptTextIcon,
   RepeatIcon,
   SettingsIcon,
   ShoppingCartIcon,
@@ -54,8 +55,9 @@ const NAV_ICONS: Readonly<Record<string, LucideIcon>> = {
   'user-round-plus': UserRoundPlusIcon,
   'clipboard-list': ClipboardListIcon,
   wallet: WalletIcon,
-  // Quotations (M3 Step 7; the dev-only preview until Release B, Step 9).
+  // Quotations (M3 Step 7) and Invoices (M3 Step 8; the dev-only preview until Release B, Step 9).
   'file-text': FileTextIcon,
+  'receipt-text': ReceiptTextIcon,
 }
 
 export const FALLBACK_NAV_ICON: LucideIcon = LayoutGridIcon

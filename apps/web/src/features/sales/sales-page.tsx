@@ -82,6 +82,8 @@ function FilterBar({
   const { channels } = useChannels('all')
   const locationOptions = useLocationOptions(context)
   const ordersOn = context !== undefined && hasModule(context, 'orders')
+  // M3 Step 8: the sales of issued invoices and credit notes.
+  const invoicesOn = context !== undefined && hasModule(context, 'invoices')
   const narrowing = [
     filters.source,
     filters.channelId,
@@ -165,6 +167,14 @@ function FilterBar({
             <option value="import">{t('sales.list.filters.import')}</option>
             {ordersOn ? <option value="order">{t('orders.sale.filterOrder')}</option> : null}
             <option value="refund">{t('orders.sale.filterRefund')}</option>
+            {invoicesOn ? (
+              <>
+                <option value="invoice">{t('documents.invoices.links.filterInvoice')}</option>
+                <option value="credit_note">
+                  {t('documents.invoices.links.filterCreditNote')}
+                </option>
+              </>
+            ) : null}
           </NativeSelect>
         </div>
         {channels.length > 1 ? (
@@ -301,25 +311,32 @@ function SaleRow({
           number: isolate(sale.orderNumber ?? ''),
           date: businessDate(sale.businessDate),
         })
-      : sale.source === 'refund'
-        ? t('orders.sale.refundTitle', { date: businessDate(sale.businessDate) })
-        : sale.source === 'import'
-          ? sale.periodFrom
-            ? t(refund ? 'sales.list.importedRefundPeriod' : 'sales.list.importedPeriod', {
-                from: businessDate(sale.periodFrom),
-                to: businessDate(sale.businessDate),
-              })
-            : t(refund ? 'sales.list.importedRefund' : 'sales.list.imported', {
-                date: businessDate(sale.businessDate),
-              })
-          : sale.source === 'day_sheet'
+      : sale.source === 'invoice' || sale.source === 'credit_note'
+        ? t(
+            sale.source === 'invoice'
+              ? 'documents.invoices.links.saleOfInvoice'
+              : 'documents.invoices.links.saleOfCreditNote',
+            { number: isolate(sale.documentNumber ?? ''), date: businessDate(sale.businessDate) },
+          )
+        : sale.source === 'refund'
+          ? t('orders.sale.refundTitle', { date: businessDate(sale.businessDate) })
+          : sale.source === 'import'
             ? sale.periodFrom
-              ? t('sales.list.sheetPeriod', {
+              ? t(refund ? 'sales.list.importedRefundPeriod' : 'sales.list.importedPeriod', {
                   from: businessDate(sale.periodFrom),
                   to: businessDate(sale.businessDate),
                 })
-              : t('sales.list.sheet', { date: businessDate(sale.businessDate) })
-            : items
+              : t(refund ? 'sales.list.importedRefund' : 'sales.list.imported', {
+                  date: businessDate(sale.businessDate),
+                })
+            : sale.source === 'day_sheet'
+              ? sale.periodFrom
+                ? t('sales.list.sheetPeriod', {
+                    from: businessDate(sale.periodFrom),
+                    to: businessDate(sale.businessDate),
+                  })
+                : t('sales.list.sheet', { date: businessDate(sale.businessDate) })
+              : items
   const Icon =
     sale.source === 'day_sheet'
       ? CalendarCheckIcon
@@ -327,7 +344,7 @@ function SaleRow({
         ? FileSpreadsheetIcon
         : sale.source === 'order'
           ? ClipboardListIcon
-          : sale.source === 'refund'
+          : sale.source === 'refund' || sale.source === 'credit_note'
             ? RotateCcwIcon
             : ReceiptTextIcon
   return (
@@ -371,7 +388,10 @@ function SaleRow({
               <bdi>{sale.customerName}</bdi>
             </>
           ) : null}
-          {sale.source === 'order' || sale.source === 'refund' ? (
+          {sale.source === 'order' ||
+          sale.source === 'refund' ||
+          sale.source === 'invoice' ||
+          sale.source === 'credit_note' ? (
             <>
               {' · '}
               <bdi>{items}</bdi>

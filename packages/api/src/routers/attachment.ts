@@ -71,6 +71,19 @@ const ACCESS: Readonly<
     view: [['quotations', 'quotations.documents.view']],
     manage: [['quotations', 'quotations.documents.manage']],
   },
+  // M3 Step 8: an invoice's files (a signed delivery note, the customer's LPO, also once issued) and
+  // a line's picture (only while the invoice is a draft).
+  invoice: {
+    view: [['invoices', 'invoices.documents.view']],
+    manage: [
+      ['invoices', 'invoices.documents.manage'],
+      ['invoices', 'invoices.documents.issue'],
+    ],
+  },
+  invoice_line: {
+    view: [['invoices', 'invoices.documents.view']],
+    manage: [['invoices', 'invoices.documents.manage']],
+  },
 }
 
 const ALL = Object.values(ACCESS)

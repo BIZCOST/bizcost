@@ -626,6 +626,35 @@ describe('properties of sales documents', () => {
     )
   })
 
+  it('a price in 4 decimals maps exactly: its subtotal rounded to the fils is the whole quantity’s price', () => {
+    // The property's counterexample of 2026-10-20: 10 × 0.0005 = 0.005, kept as 0.01.
+    const line = {
+      kind: 'item',
+      vatCategory: 'standard',
+      qty: '10',
+      unitPrice: '0.0005',
+      priceIncludesVat: false,
+      discount: { percent: '50.00' },
+    } as SaleInput['lines'][number]
+    const amounts = computeSale({ lines: [line], vatRegistered: false, discount: null }, 'AED')
+    const pint = pintLineOf(line, amounts.lines[0]!, 'AED')
+    expect(pint).toMatchObject({ quantity: '10', baseQuantity: '10' })
+    expect(pint.netPrice).toBe(toDec(amounts.lines[0]!.subtotal).toString())
+    const computed = toDec(pint.quantity)
+      .times(toDec(pint.netPrice).dividedBy(toDec(pint.baseQuantity)))
+      .plus(toDec(pint.charges))
+      .minus(toDec(pint.allowances))
+    expect(roundHalfUp(computed, 2).eq(toDec(pint.lineNet))).toBe(true)
+    // A price that multiplies out exactly keeps its unit price for one unit.
+    const whole = { ...line, unitPrice: '12.5', discount: null } as SaleInput['lines'][number]
+    const plain = computeSale({ lines: [whole], vatRegistered: false, discount: null }, 'AED')
+    expect(pintLineOf(whole, plain.lines[0]!, 'AED')).toMatchObject({
+      netPrice: '12.5',
+      baseQuantity: '1',
+      lineNet: '125.00',
+    })
+  })
+
   it('a typed total is reached within the rounding difference; no line goes below zero', () => {
     fc.assert(
       fc.property(
