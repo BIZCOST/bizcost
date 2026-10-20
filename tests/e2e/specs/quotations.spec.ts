@@ -14,10 +14,10 @@ import {
   WORKSHOP_ANSWERS,
   type TestUser,
 } from '../helpers'
-import { previewBaseURL } from '../stack'
+import { baseURL } from '../stack'
 
 // Quotations, Settings → Documents and the business's letterhead (ROADMAP.md M3 Step 7; Q21–Q25; the
-// owner's document requests of 2026-10-16), on the dev-only preview until Release B (D-125):
+// owner's document requests of 2026-10-16), on the production build since Release B (M3 Step 9):
 //
 //   - The fit-out company in Arabic on a phone (the plan's definition of done): a customer added on
 //     the spot; two areas added as sections (D-299) and three lines in them (a wall cladding typed
@@ -63,7 +63,7 @@ async function open(
   const user = await createUser(`quotes-${locale}`, { locale: 'en' })
   users.push(user)
   const context = await browser.newContext({
-    baseURL: previewBaseURL,
+    baseURL,
     locale: locale === 'ar' ? 'ar-AE' : 'en-US',
     viewport,
     acceptDownloads: true,

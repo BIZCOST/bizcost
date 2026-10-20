@@ -7,8 +7,8 @@ import { getT } from '@/lib/i18n/server'
 import { isModuleServed } from '@/lib/trpc/server'
 
 // Settings → Documents (M3 Step 7): numbers, the letterhead, the footer, the signature and the stamp.
-// The page exists while Quotations or Invoices is served on this server (until Release B, M3 Step 9,
-// only the dev-only preview, D-125).
+// The page exists while Quotations or Invoices is served on this server (since Release B, M3 Step 9;
+// before it only the dev-only preview, D-125).
 
 const served = () => isModuleServed('quotations') || isModuleServed('invoices')
 

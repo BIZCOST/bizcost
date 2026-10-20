@@ -2276,7 +2276,7 @@ const PROBES: Record<string, Probe> = {
     reason: 'looked up (and locked) in the x-business-id business',
     variants: (victim) => [{ input: { id: victim.statement.id }, own: ['not_found'] }],
   },
-  // Quotations and Settings → Documents (M3 Step 7, served under the dev-only preview, D-125).
+  // Quotations and Settings → Documents (M3 Step 7; released with Release B, M3 Step 9).
   'document.settings': { base: 'business', reason: NO_ROWS },
   'document.updateSettings': {
     base: 'business',

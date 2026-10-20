@@ -470,6 +470,20 @@
       "when": 1792457309699,
       "tag": "20261020004829_invoices_review_guards",
       "breakpoints": true
+    },
+    {
+      "idx": 67,
+      "version": "7",
+      "when": 1792474866396,
+      "tag": "20261020054106_documents_release",
+      "breakpoints": true
+    },
+    {
+      "idx": 68,
+      "version": "7",
+      "when": 1792489464056,
+      "tag": "20261020094424_invoices_need_sales",
+      "breakpoints": true
     }
   ]
 }

@@ -281,7 +281,7 @@ describe('business.createFromSetup', () => {
       vat_registered: true,
     })
     // Released modules show (the Costing Core since M2 Step 7, Sales & Profit since Release A, M3
-    // Step 6); planned ones are saved but stay hidden.
+    // Step 6, Quotations and Invoices since Release B, Step 9); planned ones are saved but stay hidden.
     const ids = context.data?.modules.map((m) => m.id)
     expect(ids?.slice(0, 2)).toEqual(['dashboard', 'settings'])
     expect(ids).toEqual(
@@ -297,13 +297,16 @@ describe('business.createFromSetup', () => {
         'customers',
         'payments',
         'reports',
+        'quotations',
+        'invoices',
       ]),
     )
-    for (const planned of ['quotations', 'vat_center', 'equipment']) {
+    for (const planned of ['inventory', 'vat_center', 'equipment']) {
       expect(ids).not.toContain(planned)
     }
     expect(await moduleRows(id)).toMatchObject({
       quotations: true,
+      inventory: true,
       vat_center: true,
       equipment: true,
     })

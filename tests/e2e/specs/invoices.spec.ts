@@ -12,10 +12,10 @@ import {
   useLanguage,
   type TestUser,
 } from '../helpers'
-import { previewBaseURL } from '../stack'
+import { baseURL } from '../stack'
 
 // Invoices, credit notes, payments on invoices and customer statements (ROADMAP.md M3 Step 8; Q3, Q17,
-// Q22, Q25–Q27), on the dev-only preview until Release B (D-125):
+// Q22, Q25–Q27), on the production build since Release B (M3 Step 9):
 //
 //   - The fit-out company in Arabic on a desktop: before its TRN, a draft says «أضف رقمك الضريبي
 //     وعنوانك» and its issue waits; a full «فاتورة ضريبية» made from scratch (a typed line, the
@@ -53,7 +53,7 @@ async function open(
   const user = await createUser(`invoices-${locale}`, { locale: 'en' })
   users.push(user)
   const context = await browser.newContext({
-    baseURL: previewBaseURL,
+    baseURL,
     locale: locale === 'ar' ? 'ar-AE' : 'en-US',
     viewport,
     acceptDownloads: true,

@@ -20,7 +20,6 @@ import {
   type ModuleId,
   type ModuleManifest,
   type RoleTemplateKey,
-  withPreviewModules,
 } from '@bizcost/modules'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { appRouter } from '../../src'
@@ -59,10 +58,10 @@ import { inputLeaves, inputSchemaOf } from './schema'
 //     (nothing written), accepted where it does.
 
 /**
- * The registry the suites' API serves: the manifests as released code has them, with Quotations and
- * Invoices previewed (M3 Steps 7 and 8: planned until Release B, D-125).
+ * The registry the suites' API serves: the manifests as released code has them (Quotations and
+ * Invoices released with Release B, M3 Step 9; nothing is previewed).
  */
-const MODULES: readonly ModuleManifest[] = withPreviewModules(['quotations', 'invoices'], MANIFESTS)
+const MODULES: readonly ModuleManifest[] = MANIFESTS
 
 /** Any of the groups, each with every module on; [] = no module gate. */
 type Gate = readonly (readonly ModuleId[])[]
@@ -89,12 +88,15 @@ const RECEIPTS: Gate = [
   ['files', 'invoices'],
 ]
 const QUOTATIONS: Gate = [['quotations']]
-/** Settings → Documents (M3 Step 7): with Quotations or Invoices served. */
-const DOCUMENTS: Gate = [['quotations'], ['invoices']]
-/** Invoices and credit notes (M3 Step 8). */
+/** Settings → Documents (M3 Step 7): wherever documents print (statements too, Release B). */
+const DOCUMENTS: Gate = [['quotations'], ['invoices'], ['customers', 'payments']]
+/**
+ * Invoices and credit notes (M3 Step 8). Invoices needs Sales (Release B review): Customize turns it
+ * off with Sales, so Sales off closes these too (the 'sales' scenarios below).
+ */
 const INVOICES: Gate = [['invoices']]
-/** A customer's statement (M3 Step 8, Q27): with Invoices until Release B (B10). */
-const STATEMENTS: Gate = [['customers', 'payments', 'invoices']]
+/** A customer's statement (M3 Step 8, Q27): Customers and Payments, Invoices or not (Release B, B10). */
+const STATEMENTS: Gate = [['customers', 'payments']]
 const CUSTOMERS: Gate = [['customers']]
 const ORDERS: Gate = [['orders']]
 const PAYMENTS: Gate = [['payments']]
@@ -281,7 +283,7 @@ const MODULE_GATES: Record<string, Gate> = {
   'purchaseReturn.post': PURCHASES,
   'purchaseReturn.reverse': PURCHASES,
   'purchaseReturn.update': PURCHASES,
-  // Quotations (M3 Step 7, previewed): making an order of one also needs Orders (in the handler).
+  // Quotations (M3 Step 7, Release B): making an order of one also needs Orders (in the handler).
   'quotation.accept': QUOTATIONS,
   'quotation.copy': QUOTATIONS,
   'quotation.create': QUOTATIONS,
@@ -538,8 +540,8 @@ describe('a module switched off is refused by every procedure that needs it (MOD
     ['purchases', 'expenses'],
     ['expenses', 'running_costs'],
     ['products', 'materials'],
-    // Orders goes with Sales (a delivery is a sale): nothing then obeys the books-closed date but
-    // what customers pay, so only reading it stays open.
+    // Orders and Invoices go with Sales (a delivery and an issued invoice are sales): nothing then
+    // obeys the books-closed date but what customers pay, so only reading it stays open.
     ['purchases', 'expenses', 'sales'],
     SWITCHABLE,
   ]
@@ -615,7 +617,7 @@ describe('a module switched off is refused by every procedure that needs it (MOD
   it('a planned module is never listed, even with a row that turns it on', async () => {
     const planned = MODULES.find((m) => m.availability === 'planned')
     if (!planned) return
-    // Smart Setup may have written its row already (Quotations for a workshop): kept as it was.
+    // Smart Setup may have written its row already (Inventory for a workshop): kept as it was.
     const [before] = await api.admin<{ enabled: boolean }[]>`
       select enabled from app.business_modules
        where business_id = ${tenant.id} and module_key = ${planned.id}`
@@ -1120,7 +1122,7 @@ const quotationTyped = (extra: object) => ({
   ],
 })
 
-/** Each business's customer, with `module` turned on (previewed; the baker has them off). */
+/** Each business's customer, with `module` turned on (the baker has them off). */
 const documentCustomers = new Map<string, string>()
 
 async function documentCustomer(b: Business, module: 'quotations' | 'invoices') {

@@ -85,16 +85,19 @@ const KEY_CAPABILITY: Readonly<Partial<Record<PermissionKey, string>>> = {
 }
 
 /**
- * Settings keys that only mean something with one of these modules on: hidden (and kept as they are)
- * without any. Closing the books: purchases, expenses, sales and orders (their deliveries and
- * refunds, and what customers pay on them) obey the date (D-176, D-201, D-236; Release A). Managing
- * documents goes with Quotations or Invoices (M3 Step 7).
+ * Settings keys that only mean something with one of these modules (or groups of modules, all on
+ * together) on: hidden (and kept as they are) without any. Closing the books: purchases, expenses,
+ * sales and orders (their deliveries and refunds, and what customers pay on them) obey the date
+ * (D-176, D-201, D-236; Release A). Managing documents goes with Quotations or Invoices (M3 Step 7),
+ * and since Release B with Customers and Payments too (the customers' statements, B10).
  */
-const KEY_MODULES: Readonly<Partial<Record<PermissionKey, readonly string[]>>> = {
+const KEY_MODULES: Readonly<
+  Partial<Record<PermissionKey, readonly (string | readonly string[])[]>>
+> = {
   'settings.books.close': ['purchases', 'expenses', 'sales', 'orders'],
-  // Settings → Documents (M3 Step 7): numbers, the letterhead and the signature of quotations and
-  // invoices.
-  'settings.documents.manage': ['quotations', 'invoices'],
+  // Settings → Documents (M3 Step 7): numbers, the letterhead and the signature of quotations,
+  // invoices and statements.
+  'settings.documents.manage': ['quotations', 'invoices', ['customers', 'payments']],
 }
 
 /** Groups that belong to Dashboard and Settings, which every business has. */
@@ -122,7 +125,12 @@ export function visiblePermissionGroups(
         const modulesNeeded = KEY_MODULES[key]
         return (
           (capability === undefined || capabilities[capability] === true) &&
-          (modulesNeeded === undefined || modulesNeeded.some((id) => active.has(id)))
+          (modulesNeeded === undefined ||
+            modulesNeeded.some((needed) =>
+              typeof needed === 'string'
+                ? active.has(needed)
+                : needed.every((id) => active.has(id)),
+            ))
         )
       }),
     }))

@@ -1263,11 +1263,10 @@ test('DoD: capabilities hide VAT fields, branch pickers, approval and stock quan
   ).toBe('capability_disabled')
 })
 
-// Release A (M3 Step 6) released Sales, Orders, Customers, Payments and Reports: their addresses are
-// pages now (release-sales.spec.ts), so only the modules still planned are listed.
+// Release A (M3 Step 6) released Sales, Orders, Customers, Payments and Reports, and Release B (M3
+// Step 9) Quotations and Invoices: their addresses are pages now (release-sales.spec.ts,
+// release-documents.spec.ts), so only the modules still planned are listed.
 const PLANNED_ADDRESSES = [
-  'quotations',
-  'invoices',
   'inventory',
   'stock',
   'usage-waste',
@@ -1297,6 +1296,8 @@ const RELEASED_MODULES = [
   'customers',
   'payments',
   'reports',
+  'quotations',
+  'invoices',
 ]
 
 test('DoD: only the released modules appear, in English and Arabic', async ({ browser }) => {

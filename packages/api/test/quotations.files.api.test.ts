@@ -15,6 +15,7 @@ import { PNG, uploadTo } from './hardening/fixture'
 import { SECRET_KEY, testConfig } from './helpers'
 import { codeOf, ok } from './purchasing'
 import { QuotationScope, QuotationsApi, quoteTyped } from './quotations'
+import { CAFE } from './sales'
 import { BAKER } from './settings'
 
 // A quotation's files and its PDF's images (ROADMAP.md M3 Step 7; the owner's document requests of
@@ -256,30 +257,74 @@ describe('the signature, the stamp and the contact lines', () => {
     expect(ok(await scope.run<DocumentSettingsDto>('document.settings')).stampUrl).toBeNull()
   })
 
-  it('the contact lines and Settings → Documents wait for Quotations or Invoices', async () => {
-    const baker = await QuotationScope.open(api, BAKER)
-    const profile = ok(await baker.run<BusinessProfileDto>('business.profile'))
-    const refused = await baker.run('business.updateProfile', {
+  it('the contact lines and Settings → Documents wait for a document the business prints', async () => {
+    // A café selling through its POS (Customers and Payments off): it prints no document.
+    const cafe = await QuotationScope.open(api, { ...CAFE, vat: 'no' })
+    const profile = ok(await cafe.run<BusinessProfileDto>('business.profile'))
+    const refused = await cafe.run('business.updateProfile', {
       version: profile.version,
       legalName: profile.legalName,
       legalNameAr: profile.legalNameAr,
       vatRegistered: profile.vatRegistered,
-      trn: null,
+      trn: profile.trn,
       letterhead: { phone: '050 000 0000' },
     })
     expect(codeOf(refused)).toBe('module_disabled')
-    expect(codeOf(await baker.run('document.settings'))).toBe('module_disabled')
-    expect(codeOf(await baker.run('quotation.list'))).toBe('module_disabled')
+    expect(codeOf(await cafe.run('document.settings'))).toBe('module_disabled')
+    expect(codeOf(await cafe.run('quotation.list'))).toBe('module_disabled')
     // Without the letterhead, the profile saves as it always did.
     ok(
-      await baker.run('business.updateProfile', {
+      await cafe.run('business.updateProfile', {
+        version: profile.version,
+        legalName: profile.legalName,
+        legalNameAr: profile.legalNameAr,
+        vatRegistered: profile.vatRegistered,
+        trn: profile.trn,
+      }),
+    )
+  })
+
+  it('Release B: an orders-only business prints its customers’ statements, so its letterhead is served (B10)', async () => {
+    // The home baker: Orders, Customers and Payments on, no Quotations or Invoices.
+    const baker = await QuotationScope.open(api, BAKER)
+    expect(codeOf(await baker.run('quotation.list'))).toBe('module_disabled')
+    expect(codeOf(await baker.run('invoice.list'))).toBe('module_disabled')
+    const profile = ok(await baker.run<BusinessProfileDto>('business.profile'))
+    const saved = ok(
+      await baker.run<{ profile: BusinessProfileDto }>('business.updateProfile', {
         version: profile.version,
         legalName: profile.legalName,
         legalNameAr: profile.legalNameAr,
         vatRegistered: profile.vatRegistered,
         trn: null,
+        letterhead: { phone: '050 000 0000', email: 'hello@sweets.example' },
       }),
     )
+    expect(saved.profile.letterhead).toMatchObject({
+      phone: '050 000 0000',
+      email: 'hello@sweets.example',
+    })
+    const settings = ok(await baker.run<DocumentSettingsDto>('document.settings'))
+    ok(
+      await baker.run('document.updateSettings', {
+        version: settings.version,
+        footer: 'IBAN AE00 0000 0000 0000 0000 111',
+        quotationTerms: settings.quotationTerms,
+        quotationValidDays: settings.quotationValidDays,
+        accent: 'maroon',
+        watermark: true,
+        wholeAmounts: false,
+        signatory: null,
+      }),
+    )
+    // Its logo prints on the statements: checked as a PDF decodes it (D-295).
+    const upload = ok(
+      await baker.run<{ path: string; uploadUrl: string }>('business.logoUploadUrl', {
+        contentType: 'image/png',
+      }),
+    )
+    expect((await uploadTo(upload.uploadUrl, brokenPng(), 'image/png')).ok).toBe(true)
+    expect(codeOf(await baker.run('business.setLogo', { path: upload.path }))).toBe('file_invalid')
   })
 })
 

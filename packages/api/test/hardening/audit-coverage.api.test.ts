@@ -1302,7 +1302,7 @@ const AUDIT: Record<string, AuditProbe> = {
   'order.undoDelivery': {
     run: async () => asOwner('order.undoDelivery', { id: (await newOrder(true)).id }),
   },
-  // Quotations and Settings → Documents (M3 Step 7, previewed: D-125).
+  // Quotations and Settings → Documents (M3 Step 7; released with Release B, M3 Step 9).
   'quotation.create': { run: () => asOwner('quotation.create', quotationInput()) },
   'quotation.update': {
     run: async () => {
@@ -1359,7 +1359,7 @@ const AUDIT: Record<string, AuditProbe> = {
   'quotation.pdf': {
     run: async () => asOwner('quotation.pdf', { id: (await newQuotation()).id }),
   },
-  // Invoices and credit notes (M3 Step 8, previewed with Quotations: D-125).
+  // Invoices and credit notes (M3 Step 8; released with Release B, M3 Step 9).
   'invoice.create': { run: () => asOwner('invoice.create', invoiceInput()) },
   'invoice.update': {
     run: async () => {

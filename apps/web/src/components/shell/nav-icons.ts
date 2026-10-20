@@ -55,7 +55,7 @@ const NAV_ICONS: Readonly<Record<string, LucideIcon>> = {
   'user-round-plus': UserRoundPlusIcon,
   'clipboard-list': ClipboardListIcon,
   wallet: WalletIcon,
-  // Quotations (M3 Step 7) and Invoices (M3 Step 8; the dev-only preview until Release B, Step 9).
+  // Quotations (M3 Step 7) and Invoices (M3 Step 8), released with Release B (Step 9), and "+".
   'file-text': FileTextIcon,
   'receipt-text': ReceiptTextIcon,
 }

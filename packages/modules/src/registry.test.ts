@@ -37,7 +37,7 @@ describe('module manifests', () => {
     }
   })
 
-  it('release Dashboard and Settings (M1), the Costing Core (M2 Step 7) and Release A (M3 Step 6)', () => {
+  it('release Dashboard and Settings (M1), the Costing Core (M2 Step 7), Release A (M3 Step 6) and Release B (M3 Step 9)', () => {
     const released = MODULES.filter((m) => m.availability === 'released').map((m) => m.id)
     expect(released).toEqual([
       'dashboard',
@@ -50,43 +50,42 @@ describe('module manifests', () => {
       'running_costs',
       'files',
       'cost_engine',
-      // Release A: Sales & Profit, half-way through M3 (Q1); Quotations and Invoices wait for Release B.
+      // Release A: Sales & Profit, half-way through M3 (Q1).
       'sales',
       'orders',
       'customers',
       'payments',
       'reports',
+      // Release B: Quotations & Invoices, last (Q1).
+      'quotations',
+      'invoices',
     ])
   })
 
   it('give planned modules no permission keys, nav or quick actions until their build starts (no stubs)', () => {
     // A module gets its keys and nav when its build starts and stays planned (hidden) until it is
-    // released (D-124, D-125). Quotations' build started in M3 Step 7 (released with Release B).
+    // released (D-124, D-125). None is being built since Release B (M3 Step 9) released Quotations
+    // and Invoices, whose keys came with their builds (Steps 7 and 8).
     expect(byId.get('quotations')).toMatchObject({
-      availability: 'planned',
+      availability: 'released',
       permissionKeys: [
         'quotations.documents.view',
         'quotations.documents.manage',
         'quotations.documents.decide',
       ],
-      quickActions: [],
       sensitiveFields: [],
     })
-    // Invoices' build started in M3 Step 8 (released with Release B too).
     expect(byId.get('invoices')).toMatchObject({
-      availability: 'planned',
+      availability: 'released',
       permissionKeys: [
         'invoices.documents.view',
         'invoices.documents.manage',
         'invoices.documents.issue',
         'invoices.documents.credit',
       ],
-      quickActions: [],
       sensitiveFields: [],
     })
-    for (const m of MODULES.filter(
-      (x) => x.availability === 'planned' && x.id !== 'quotations' && x.id !== 'invoices',
-    )) {
+    for (const m of MODULES.filter((x) => x.availability === 'planned')) {
       expect(m.permissionKeys, m.id).toEqual([])
       expect(m.nav, m.id).toEqual([])
       expect(m.quickActions, m.id).toEqual([])
@@ -128,9 +127,10 @@ describe('module manifests', () => {
       ).values(),
     ]
     // Release A (M3 Step 6, Q14): Home, then the Sales place (Orders for a business with Orders on,
-    // else Sales), Product costs ("Costs"), Expenses, Products, Purchases, Materials: an owner's phone
-    // gets Home | Sales | + | Costs | More (Products under "More"), an employee's Home | Sales | + |
-    // Expenses | More (D-184 kept).
+    // Invoices for one that invoices without orders since Release B, else Sales), Product costs
+    // ("Costs"), Expenses, Products, Purchases, Materials: an owner's phone gets Home | Sales | + |
+    // Costs | More (Products under "More"), an employee's Home | Sales | + | Expenses | More (D-184
+    // kept).
     expect(claims).toEqual([
       ['dashboard', 1, 0],
       ['products', 5, 0],
@@ -138,8 +138,9 @@ describe('module manifests', () => {
       ['purchases', 6, 0],
       ['expenses', 4, 0],
       ['product_costs', 3, 0],
-      ['sales', 2, 1],
+      ['sales', 2, 2],
       ['orders', 2, 0],
+      ['invoices', 2, 1],
     ])
     for (const m of MODULES) {
       const claimed = new Set(
@@ -162,7 +163,7 @@ describe('module manifests', () => {
     }
   })
 
-  it('offer "+" for a new product or service, purchase, expense, sale, order and customer, and Today\'s sales, each with the keys to enter it', () => {
+  it('offer "+" for a new product or service, purchase, expense, sale, order, customer, quotation and invoice, and Today\'s sales, each with the keys to enter it', () => {
     const actions = MODULES.flatMap((m) =>
       m.quickActions.map((a) => [
         m.id,
@@ -188,6 +189,9 @@ describe('module manifests', () => {
         'customers.items.manage',
         'customers.items.view',
       ],
+      // Release B (M3 Step 9).
+      ['quotations', 'new_quotation', 'quotations/new', 'quotations.documents.manage'],
+      ['invoices', 'new_invoice', 'invoices/new', 'invoices.documents.manage'],
     ])
   })
 

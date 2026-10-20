@@ -43,11 +43,11 @@ export function mayCreditInvoices(context: BusinessContextDto): boolean {
 }
 
 /**
- * A customer's statement (Q27): with Invoices served until Release B (B10), payments seen, and the
- * customer's particulars seen (it prints them, D-263).
+ * A customer's statement (Q27): for every business with Customers on, orders-only ones included
+ * (Release B, B10), with payments seen and the customer's particulars seen (it prints them, D-263).
  */
 export function maySeeStatements(context: BusinessContextDto): boolean {
-  return hasModule(context, 'invoices') && maySeePayments(context) && maySeeCustomers(context)
+  return maySeePayments(context) && maySeeCustomers(context)
 }
 
 /**

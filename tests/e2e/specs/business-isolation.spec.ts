@@ -109,12 +109,14 @@ test('two businesses in two tabs: each tab shows, asks for and changes only its 
   await settingsLink(tabA).click()
   await settingsLink(tabB).click()
   // The workshop has a team and branches; the home bakery has neither (its Costing Core sections,
-  // released in M2 Step 7, and Sales channels, released with Sales in Release A, are there for both).
+  // released in M2 Step 7, and Sales channels, released with Sales in Release A, are there for both;
+  // Documents since Release B: its customers' statements print on its letterhead, D-319).
   await expect(sectionLinks(tabA).filter({ hasText: /^Team/ })).toHaveCount(1)
   await expect(sectionLinks(tabA).filter({ hasText: /^Branches/ })).toHaveCount(1)
   await expect(sectionLinks(tabB)).toHaveText([
     /^Business profile/,
     /^Sales channels/,
+    /^Documents/,
     /^Customize BizCost/,
     /^Closing the books/,
     /^How costs are worked out/,

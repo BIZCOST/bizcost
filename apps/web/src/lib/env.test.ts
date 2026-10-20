@@ -160,10 +160,11 @@ describe('parseServerEnv', () => {
       expect(() =>
         parseServerEnv({ ...dev, BIZCOST_PREVIEW_MODULES: 'materials,inventory' }),
       ).toThrow(/BIZCOST_PREVIEW_MODULES: inventory/)
-      // Quotations is being built (M3 Step 7): previewed on a local server.
+      // Quotations and Invoices are released (Release B, M3 Step 9): a local server started with the
+      // list of their build (M3 Steps 7 and 8) keeps starting, and previews nothing.
       expect(
-        parseServerEnv({ ...dev, BIZCOST_PREVIEW_MODULES: 'materials,quotations' }).previewModules,
-      ).toEqual(['quotations'])
+        parseServerEnv({ ...dev, BIZCOST_PREVIEW_MODULES: 'quotations,invoices' }).previewModules,
+      ).toEqual([])
       expect(() => parseServerEnv({ ...dev, BIZCOST_PREVIEW_MODULES: 'nope' })).toThrow(
         /BIZCOST_PREVIEW_MODULES/,
       )

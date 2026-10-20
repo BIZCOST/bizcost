@@ -13,9 +13,11 @@ import {
   type CustomerKind,
   type Emirate,
 } from '@bizcost/domain'
+import { isModuleActive } from '@bizcost/modules'
 import { sql } from 'drizzle-orm'
 import type { z } from 'zod'
 import type { BusinessCtx } from '../business-context'
+import { fileNamePart } from '../documents/file-name'
 import { buildStatementPdfInput, type PdfBusiness } from '../documents/pdf/build'
 import type { DocumentPdfImage } from '../documents/pdf/input'
 import { AppError } from '../errors'
@@ -42,10 +44,10 @@ import { uuidArray } from './stock'
 // owed already through them (`owedThrough`): the work is charged once, a past period never changes
 // and each period starts where the one before ended. A pending order is not yet a charge (its deposit
 // shows as a payment, paid ahead). A reversed payment is not listed (it never counted). A sale says its
-// first items, a payment how it was paid. Served with Invoices until Release B, which serves statements
-// with Customers and Payments for every business (B10); who sees them: `payments.customers.view` and
-// `customers.items.view` (the router: a statement names the customer's particulars). Within one's
-// branches when limited (Q12).
+// first items, a payment how it was paid. Since Release B (M3 Step 9) served with Customers and
+// Payments for every business, orders-only ones included (B10); who sees them:
+// `payments.customers.view` and `customers.items.view` (the router: a statement names the customer's
+// particulars). Within one's branches when limited (Q12).
 
 type StatementInput = z.output<typeof customerStatementInput>
 
@@ -263,11 +265,17 @@ async function statementOf(
     credited: sumDecimals(credited),
     paid,
     closing: owed,
+    // It speaks of invoices and credit notes with Invoices on, or when the period lists one (Invoices
+    // switched off since): an orders-only business's says "Orders and sales" and "Payments and refunds".
+    invoicing:
+      ctx.modules.some(
+        (m) => m.id === 'invoices' && isModuleActive(m, ctx.access.enabledModules),
+      ) || entries.some((e) => e.kind === 'invoice' || e.kind === 'credit_note'),
   }
   return { dto, customer, today: business.today }
 }
 
-/** `customer.statement` (payments.customers.view and customers.items.view; Invoices served until Release B). */
+/** `customer.statement` (payments.customers.view and customers.items.view; every business, B10). */
 export function customerStatement(
   ctx: BusinessCtx,
   input: StatementInput,
@@ -342,6 +350,7 @@ export async function customerStatementPdf(
         credited: dto.credited,
         paid: dto.paid,
         closing: dto.closing,
+        invoicing: dto.invoicing,
         issuedAt: new Date(`${today}T00:00:00Z`),
         entries: dto.entries.map((e) => ({
           date: e.date,
@@ -369,9 +378,9 @@ export async function customerStatementPdf(
       images,
     })
   const pdf = await renderDocumentPdf(ctx, wanted, make)
-  const safe = customer.name.replace(/[^A-Za-z0-9_-]+/g, '-').replace(/^-+|-+$/g, '') || 'customer'
+  // The customer's name in its own script: two Arabic names never download as one (Release B review).
   return {
-    fileName: `statement-${safe}-${dto.from}-${dto.to}.pdf`,
+    fileName: `statement-${fileNamePart(customer.name, 'customer')}-${dto.from}-${dto.to}.pdf`,
     contentType: 'application/pdf',
     base64: Buffer.from(pdf).toString('base64'),
     pages: pdfPageCount(pdf),

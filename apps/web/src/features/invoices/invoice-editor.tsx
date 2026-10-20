@@ -33,6 +33,7 @@ import type { FieldError } from '@/features/catalog/numbers'
 import { CustomerPicker } from '@/features/customers/customer-picker'
 import { mayAddCustomers } from '@/features/customers/data'
 import { useBusinessDate, useMoney } from '@/features/documents/amounts'
+import { BranchField } from '@/features/quotations/branch-field'
 import { Panel } from '@/features/documents/panel'
 import { hasModule } from '@/features/purchasing/data'
 import { DocumentLineList } from '@/features/quotations/document-line-list'
@@ -427,6 +428,14 @@ export function InvoiceEditor({
                   </p>
                 )}
               />
+              {scratch ? (
+                <BranchField
+                  context={context}
+                  today={today}
+                  value={draft.locationId}
+                  onChange={(locationId) => set({ locationId })}
+                />
+              ) : null}
               {needsChannel ? (
                 <TextField
                   label={<Required>{term('orders.editor.channel', profile)}</Required>}

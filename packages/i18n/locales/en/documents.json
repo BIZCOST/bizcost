@@ -171,7 +171,11 @@
       "owedThroughSale": "Already owed for the sale: {{amount}}",
       "stillOwedOrder": "Still owed for order {{order}}: {{amount}}",
       "ahead": "paid ahead",
-      "closingAhead": "Paid ahead at the end"
+      "closingAhead": "Paid ahead at the end",
+      "invoiced_plain": "Orders and sales",
+      "credited_plain": "Refunded",
+      "charge_plain": "Orders and sales",
+      "credit_plain": "Payments and refunds"
     }
   },
   "pdfFile": {
@@ -915,7 +919,12 @@
       "pdfTitle": "Statement PDF",
       "pdfNote": "Download the statement, or share it with WhatsApp or a mail app.",
       "ahead": "Paid ahead",
-      "closingAhead": "Paid ahead at the end"
+      "closingAhead": "Paid ahead at the end",
+      "intro_plain": "What was delivered or sold, refunded and paid over a period, and what is owed.",
+      "invoiced_plain": "Orders and sales",
+      "credited_plain": "Refunded",
+      "charge_plain": "Orders and sales",
+      "credit_plain": "Payments and refunds"
     },
     "links": {
       "invoiceQuotation": "Make an invoice",

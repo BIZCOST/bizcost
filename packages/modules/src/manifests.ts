@@ -9,7 +9,8 @@ import type { CapabilityKey } from './capabilities'
 // gates count only released modules (the dev-only preview of registry.ts aside, D-125). Modules not
 // being built carry no permission keys, nav or actions. M2 Step 7 released the Costing Core
 // (Products & Services, Materials, Suppliers, Purchases, Expenses, Running Costs, Files and the Cost
-// Engine) together, and Release A (M3 Step 6) Sales, Orders, Customers, Payments and Reports.
+// Engine) together, Release A (M3 Step 6) Sales, Orders, Customers, Payments and Reports, and Release
+// B (M3 Step 9) Quotations and Invoices.
 
 export const MODULE_IDS = [
   'dashboard',
@@ -62,8 +63,9 @@ export interface NavEntry extends Omit<NavEntryDto, 'tab'> {
   readonly tab?: number
   /**
    * Entries that claim the same place share it: the one with the lowest rank (0 without one) among
-   * those the member may use takes it, and the others are as if they claimed nothing. Orders takes the
-   * Sales place for a business with Orders on (Q14).
+   * those the member may use takes it, and the others are as if they claimed nothing. Orders (rank 0)
+   * takes the Sales place for a business with Orders on, and Invoices (rank 1) for one that invoices
+   * without orders, before Sales (rank 2) (Q14).
    */
   readonly tabRank?: number
   readonly permission?: string
@@ -443,8 +445,9 @@ const FILES = {
 // cost snapshot, a delivery's cost and a channel's commission are `cost`. Its page is reached with
 // either "see every sale" or "enter sales" (two entries of one page, listed once by buildModuleNav),
 // first in the sidebar's "Sales" group. The phone's tab bar of Q14 (Home | Sales | + | Costs | More):
-// claim 2, which it yields to Orders when the business has Orders on (Orders takes the Sales place).
-// "+": Today's sales and a new sale, for those who enter sales.
+// claim 2, which it yields to Orders when the business has Orders on (Orders takes the Sales place),
+// and to Invoices for a business that invoices without orders (Release B, Q14): rank 2. "+": Today's
+// sales and a new sale, for those who enter sales.
 const SALES = {
   id: 'sales',
   kind: 'core',
@@ -467,7 +470,7 @@ const SALES = {
       icon: 'banknote',
       group: 'sales',
       tab: 2,
-      tabRank: 1,
+      tabRank: 2,
       permission: 'sales.documents.view',
     },
     {
@@ -477,7 +480,7 @@ const SALES = {
       icon: 'banknote',
       group: 'sales',
       tab: 2,
-      tabRank: 1,
+      tabRank: 2,
       permission: 'sales.documents.manage',
     },
   ],
@@ -651,18 +654,17 @@ const REPORTS = {
   requiresCapabilities: [],
 } as const satisfies ModuleManifest
 
-// Quotations (M3 Step 7; planned until Release B, M3 Step 9: served only under the dev-only preview,
-// D-125): a customer's quotation with revisions frozen once sent, numbered Q-0001…, as a PDF on the
-// business's own letterhead (Q21–Q25; the owner's document requests of 2026-10-16). Its keys and nav
-// come with its build (D-124). `quotations.documents.view` sees the business's quotations (in one's
-// branches, Q12); `.manage` prepares, sends, revises, copies, discards and turns an accepted one into
-// an order; `.decide` records the customer's answer (accepted or declined). Prices are not sensitive
-// (D-187). "+ New quotation" comes with Release B. It needs Products & Services (its lines) and
-// Customers ("Dear …").
+// Quotations (M3 Step 7; released with Release B, M3 Step 9): a customer's quotation with revisions
+// frozen once sent, numbered Q-0001…, as a PDF on the business's own letterhead (Q21–Q25; the owner's
+// document requests of 2026-10-16). Its keys and nav came with its build (D-124).
+// `quotations.documents.view` sees the business's quotations (in one's branches, Q12); `.manage`
+// prepares, sends, revises, copies, discards and turns an accepted one into an order; `.decide` records
+// the customer's answer (accepted or declined). Prices are not sensitive (D-187). "+": a new quotation,
+// for those who prepare them. It needs Products & Services (its lines) and Customers ("Dear …").
 const QUOTATIONS = {
   id: 'quotations',
   kind: 'optional',
-  availability: 'planned',
+  availability: 'released',
   phase: 3,
   deps: ['products', 'customers'],
   permissionKeys: [
@@ -680,26 +682,39 @@ const QUOTATIONS = {
       permission: 'quotations.documents.view',
     },
   ],
-  quickActions: [],
+  quickActions: [
+    {
+      id: 'new_quotation',
+      labelKey: 'nav.new_quotation',
+      path: 'quotations/new',
+      icon: 'file-text',
+      permission: 'quotations.documents.manage',
+    },
+  ],
   sensitiveFields: [],
   requiresCapabilities: [],
 } as const satisfies ModuleManifest
 
-// Invoices (M3 Step 8; planned until Release B, M3 Step 9: served only under the dev-only preview,
-// D-125): invoices and credit notes numbered gaplessly at issue (INV-0001…, CN-0001…), a full «فاتورة
-// ضريبية · Tax Invoice» with VAT registration and a plain «فاتورة · Invoice» without it (Q26), made from
-// scratch, an accepted quotation (in stages or with deposits, Q22), an order or a recorded sale, paid
-// through Payments, and the customers' statements (Q27). `invoices.documents.view` sees them (in one's
-// branches, Q12); `.manage` prepares drafts and copies an invoice to a quotation; `.issue` issues them
-// (the number is taken, it is frozen); `.credit` prepares and issues credit notes. Prices are not
-// sensitive (D-187). It needs Products & Services, Customers and Payments. No requiresCapabilities: a
-// business that is not VAT-registered sends plain invoices (§6.6).
+// Invoices (M3 Step 8; released with Release B, M3 Step 9): invoices and credit notes numbered
+// gaplessly at issue (INV-0001…, CN-0001…), a full «فاتورة ضريبية · Tax Invoice» with VAT registration
+// and a plain «فاتورة · Invoice» without it (Q26), made from scratch, an accepted quotation (in stages
+// or with deposits, Q22), an order or a recorded sale, paid through Payments. `invoices.documents.view`
+// sees them (in one's branches, Q12; it needs every sale seen, H1); `.manage` prepares drafts and
+// copies an invoice to a quotation; `.issue` issues them (the number is taken, it is frozen); `.credit`
+// prepares and issues credit notes. Prices are not sensitive (D-187). On a phone it takes the Sales
+// place of a business that invoices without orders (claim 2, rank 1: after Orders, before Sales, Q14).
+// "+": a new invoice, for those who prepare them. It needs Products & Services, Customers and Payments,
+// and Sales (Release B review, as Orders at Release A): an issued invoice posts a sale and a credit note
+// a negative one, Sales lists them, an invoice names a sales channel and bills a recorded One sale, so
+// Customize turns Invoices off with Sales and Sales on with Invoices. No requiresCapabilities: a
+// business that is not VAT-registered sends plain invoices (§6.6). The customers' statements (Q27) are
+// Customers' and Payments' (B10), not this module's.
 const INVOICES = {
   id: 'invoices',
   kind: 'optional',
-  availability: 'planned',
+  availability: 'released',
   phase: 3,
-  deps: ['products', 'customers', 'payments'],
+  deps: ['products', 'sales', 'customers', 'payments'],
   permissionKeys: [
     'invoices.documents.view',
     'invoices.documents.manage',
@@ -713,10 +728,20 @@ const INVOICES = {
       path: 'invoices',
       icon: 'receipt-text',
       group: 'sales',
+      tab: 2,
+      tabRank: 1,
       permission: 'invoices.documents.view',
     },
   ],
-  quickActions: [],
+  quickActions: [
+    {
+      id: 'new_invoice',
+      labelKey: 'nav.new_invoice',
+      path: 'invoices/new',
+      icon: 'receipt-text',
+      permission: 'invoices.documents.manage',
+    },
+  ],
   sensitiveFields: [],
   requiresCapabilities: [],
 } as const satisfies ModuleManifest

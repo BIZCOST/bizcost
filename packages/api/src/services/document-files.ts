@@ -7,7 +7,6 @@ import {
 } from '@bizcost/contracts'
 import { attachments, businesses, fileUploads, type Tx } from '@bizcost/db'
 import { newId } from '@bizcost/domain'
-import { isModuleActive } from '@bizcost/modules'
 import { and, eq, inArray, isNull, lt, sql } from 'drizzle-orm'
 import {
   copyObject,
@@ -27,6 +26,7 @@ import {
 } from '../documents/pdf/images'
 import type { DocumentPdfImage, DocumentPdfInput } from '../documents/pdf/input'
 import { AppError } from '../errors'
+import { anyModulesActive, type ModuleGroup } from '../trpc'
 
 // The documents' files in the private bucket `business-files` (M3 Step 7; D-085, D-224): the
 // signature and the stamp printed on the business's documents (uploaded and checked like the logo),
@@ -87,13 +87,21 @@ export async function printableImageType(
   return probed.ok ? CONTENT_TYPE[info.format] : null
 }
 
-/** Whether the business's documents are served (Quotations or Invoices on): its logo then prints. */
+/**
+ * The modules with which the business prints documents on its letterhead: quotations, invoices and
+ * their credit notes, and since Release B (M3 Step 9, B10) the customers' statements of every business
+ * with Customers and Payments on, orders-only ones included. With any of them, Settings → Documents
+ * and the letterhead's contact lines are served, and the logo is checked as a PDF prints it.
+ */
+export const DOCUMENT_MODULES: readonly ModuleGroup[] = [
+  ['quotations'],
+  ['invoices'],
+  ['customers', 'payments'],
+]
+
+/** Whether the business's documents are served (DOCUMENT_MODULES): its logo then prints. */
 export function documentsServed(ctx: BusinessCtx): boolean {
-  return ctx.modules.some(
-    (m) =>
-      (m.id === 'quotations' || m.id === 'invoices') &&
-      isModuleActive(m, ctx.access.enabledModules),
-  )
+  return anyModulesActive(ctx, DOCUMENT_MODULES)
 }
 
 /**

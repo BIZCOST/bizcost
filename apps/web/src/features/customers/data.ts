@@ -9,8 +9,8 @@ import { hasModule } from '@/features/purchasing/data'
 import { can } from '@/features/settings/sections'
 
 // Who may do what with customers (M3 Step 5; Q2, Q10, D-263, D-269): seeing customers (their list,
-// their page, the whole phone number) needs customers.items.view; naming one on an order, a sale or a
-// payment needs a key that names customers, and gives a member without .view the name and the phone's
+// their page, the whole phone number) needs customers.items.view; naming one on an order, a sale, a
+// payment, a quotation or an invoice needs a key that names customers, and gives a member without .view the name and the phone's
 // last 4 digits only (customer.pick); adding one needs .manage; changing or archiving one needs both.
 
 /** Customers is on and the member sees them (list, page, details). */
@@ -26,7 +26,9 @@ export function mayPickCustomers(context: BusinessContextDto): boolean {
     can(context, 'customers.items.manage') ||
     (hasModule(context, 'orders') && can(context, 'orders.documents.manage')) ||
     (hasModule(context, 'sales') && can(context, 'sales.documents.manage')) ||
-    (hasModule(context, 'payments') && can(context, 'payments.customers.record'))
+    (hasModule(context, 'payments') && can(context, 'payments.customers.record')) ||
+    (hasModule(context, 'quotations') && can(context, 'quotations.documents.manage')) ||
+    (hasModule(context, 'invoices') && can(context, 'invoices.documents.manage'))
   )
 }
 

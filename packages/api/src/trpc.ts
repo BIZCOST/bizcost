@@ -271,6 +271,44 @@ export function assertAnyAccess(
   throw new AppError(anyActive ? 'forbidden' : 'module_disabled')
 }
 
+/** Some modules that must all be active together (e.g. Customers with Payments). */
+export type ModuleGroup = readonly [ModuleId, ...ModuleId[]]
+
+/** Whether every module of one of the groups is active for the business. */
+export function anyModulesActive(
+  ctx: { readonly modules: Context['modules']; readonly access: BusinessAccess },
+  groups: readonly ModuleGroup[],
+): boolean {
+  return groups.some((group) =>
+    group.every((id) => {
+      const manifest = ctx.modules.find((m) => m.id === id)
+      return manifest !== undefined && isModuleActive(manifest, ctx.access.enabledModules)
+    }),
+  )
+}
+
+/**
+ * For what is served with any of several groups of modules (Settings → Documents and the letterhead's
+ * contact lines: Quotations, Invoices, or Customers with Payments for the statements, Release B):
+ * MODULE_DISABLED unless every module of one group is active. Permissions are checked after it.
+ */
+export function requireAnyModules(...groups: readonly ModuleGroup[]) {
+  return t.middleware(({ ctx, next }) => {
+    const access = accessOf(ctx)
+    if (!access) throw new AppError('internal', { message: 'requireAnyModules outside a business' })
+    assertAnyModules({ modules: ctx.modules, access }, groups)
+    return next()
+  })
+}
+
+/** Inside a handler: as requireAnyModules. */
+export function assertAnyModules(
+  ctx: { readonly modules: Context['modules']; readonly access: BusinessAccess },
+  groups: readonly ModuleGroup[],
+): void {
+  if (!anyModulesActive(ctx, groups)) throw new AppError('module_disabled')
+}
+
 /**
  * The business must have the capability on (CAPABILITY_DISABLED otherwise): a solo business has no
  * team or role screens, a single-location business no location screens (docs/PRODUCT.md §5). The UI

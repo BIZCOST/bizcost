@@ -498,6 +498,11 @@ export interface PrintedSubtotal {
  * no taxed line's price includes VAT, the lines' amounts as typed and the document discount; when one
  * does, both before VAT: each rate's lines priced with VAT less their VAT taken out once on their sum
  * (as computeSale does), and the discount whatever then separates it from the total before VAT.
+ * Without a document discount or an adjustment there is nothing to separate: the lines come to the
+ * total before VAT itself. An invoice's part of a quotation or an order (a stage, a deposit, the rest
+ * after deposits; D-302) is priced with VAT but carries its share of the source's VAT, not the VAT in
+ * its own price, so working its subtotal out of that price would print a "discount" of a fils (Release
+ * B: the villa's third stage of 11,850.00 read "Discount 0.01" over a total before VAT a fils higher).
  */
 export function printedSubtotal(
   lines: readonly PrintedTotalsLine[],
@@ -511,6 +516,9 @@ export function printedSubtotal(
   const asTyped = lines.reduce((acc, l) => acc.plus(toDec(l.amount)), toDec('0'))
   if (!lines.some(taxedGross)) {
     return { beforeVat: false, subtotal: print(asTyped), discount: totals.documentDiscount }
+  }
+  if (toDec(totals.documentDiscount).isZero() && toDec(totals.adjustment).isZero()) {
+    return { beforeVat: true, subtotal: print(toDec(totals.net)), discount: print(toDec('0')) }
   }
   const rates = new Map<string, { gross: Decimal; before: Decimal }>()
   for (const line of lines) {

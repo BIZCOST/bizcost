@@ -30,9 +30,10 @@ import {
 // M3 Step 6): sales channels, Today's sales and One sale, sales files imported and app statements,
 // customers, orders with deposits, deliveries, payments and refunds, over the month before last, last
 // month and this month so far, so each business shows a whole month of real profit. A business that
-// quotes gets its letterhead and a quotation or two (demo/documents.ts; Quotations previewed, D-125),
-// and a business that invoices its invoices, credit notes and their payments (demo/invoices.ts, M3
-// Step 8; Invoices previewed).
+// prints documents (quotes, invoices or its customers' statements) gets its letterhead and its
+// quotations (demo/documents.ts), and a business that invoices its invoices, credit notes and their
+// payments (demo/invoices.ts, M3 Step 8; all released with Release B, M3 Step 9). The café turns
+// Invoices on in Customize BizCost first (Release B).
 
 interface Row {
   business: string
@@ -209,14 +210,35 @@ async function seedPersona(
   }
   const rows = [owner, ...(await ensureTeam(api, persona, token, businessId))]
   const costing = await ensureCosting(api, persona, token, businessId)
-  // Its letterhead and quotations (M3 Step 7, D-298): after its customers (the costing seed adds them).
-  // Then its invoices (M3 Step 8): after its orders, sales and quotations.
-  const served = new Set(
-    (await api.query<BusinessContextDto>('business.context', token, businessId)).modules.map(
-      (m) => m.id,
-    ),
-  )
-  if (persona.documents && (served.has('quotations') || served.has('invoices'))) {
+  // Modules the owner turns on in Customize BizCost (Release B: the café's Invoices).
+  const servedNow = async () =>
+    new Set(
+      (await api.query<BusinessContextDto>('business.context', token, businessId)).modules.map(
+        (m) => m.id,
+      ),
+    )
+  for (const id of persona.turnOn ?? []) {
+    if ((await servedNow()).has(id)) continue
+    await api.mutate('business.customize', token, businessId, {
+      item: { kind: 'module', id },
+      enabled: true,
+    })
+    rows.push({
+      business: persona.legalNameAr,
+      email: user.email,
+      role: 'modules',
+      state: `${id} turned on`,
+    })
+  }
+  // Its letterhead and quotations (M3 Step 7, D-298): after its customers (the costing seed adds them),
+  // wherever it prints documents (Release B: its customers' statements too). Then its invoices (M3
+  // Step 8): after its orders, sales and quotations.
+  const served = await servedNow()
+  const printsDocuments =
+    served.has('quotations') ||
+    served.has('invoices') ||
+    (served.has('customers') && served.has('payments'))
+  if (persona.documents && printsDocuments) {
     const documents = await seedDocuments(api, token, businessId, persona.documents)
     rows.push({
       business: persona.legalNameAr,

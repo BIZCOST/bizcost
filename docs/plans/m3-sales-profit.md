@@ -319,7 +319,7 @@ Release rule:
       - "Sold at a loss", completeness notes and "sells without a recipe" are cost facts, withheld from members who see only sales.
       - A member limited to branches sees only their branches, without the business-level line.
     - **Refresh (D-212):** `sale.post` / `.reverse`, fills, statements, marked expenses and hourly-rate changes make stale Product costs, the Dashboard cards and `profit.summary`. Tests cover each.
-    - **Sales switched off in Customize (M9):** the Sales page and its entry screens go. Sales already posted still count, because they are what was sold, and Orders and Invoices keep posting sales. With no sale at all, the cards stay hidden.
+    - **Sales switched off in Customize (M9):** the Sales page and its entry screens go. Sales already posted still count, because they are what was sold, and Orders and Invoices keep posting sales. With no sale at all, the cards stay hidden. (As built: Orders needs Sales since Release A, D-275, and Invoices since Release B's review, D-323, so Customize turns them off with Sales; posted sales still count.)
     - The Reports manifest stays planned and is previewed.
   - **Screens:**
     - **Dashboard decision cards** (PRODUCT §9): stacked on a phone, a grid on a desktop. There is no card for data the business doesn't have, and none at all while Sales is not served. The checklists stay.
@@ -766,7 +766,7 @@ Release rule:
     - `invoices.spec.ts` on the preview: fit-out in Arabic on a desktop, the designer in English on a phone, the factory's statement.
   - Depends on: Step 7.
 
-- [ ] **Step 9: Release B: Quotations & Invoices** (APPROVED; the owner reviews it).
+- [x] **Step 9: Release B: Quotations & Invoices** (DONE 2026-10-20; decisions Q1, Q14, Q26, Q27 and B10; built as D-317 (the release, keys final, the preview with nothing to preview), D-318 (Invoices in the phone's Sales place without orders, "+" for both, Smart Setup's reason), D-319 (statements for every business with Customers on, in its own words; documents served wherever a document prints), D-320 (the capability audit: the branch of a quotation and of an invoice from scratch), D-321 (a part invoice's totals without a fils of "discount") and D-322 (the demo data); the review's fixes D-323 (Invoices needs Sales, as Orders does: M9's "Invoices keep posting sales" with Sales off no longer arises), D-324 (who prepares quotations or invoices names their customer), D-325 (the branch list with several channels, Settings → Documents in each business's words, statements named after their customer) and D-326 (the demo's pictures, the clinic's kitchen unit, the revision's validity, a seed that ends); the second review's D-327 (the customer picker's keys need their modules on the server too, the workshop's documents typed in Arabic); checks in ROADMAP.md; the owner reviews it on the demo data).
   - `quotations` and `invoices` become `released`.
     - Their keys are backfilled, and they get their nav.
     - "+" gains New quotation and New invoice.

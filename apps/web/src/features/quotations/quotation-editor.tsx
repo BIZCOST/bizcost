@@ -24,6 +24,7 @@ import type { FieldError } from '@/features/catalog/numbers'
 import { CustomerPicker } from '@/features/customers/customer-picker'
 import { mayAddCustomers } from '@/features/customers/data'
 import { useMoney } from '@/features/documents/amounts'
+import { BranchField } from './branch-field'
 import { Panel } from '@/features/documents/panel'
 import { hasModule } from '@/features/purchasing/data'
 import { Receipts } from '@/features/purchasing/receipts'
@@ -390,6 +391,12 @@ export function QuotationEditor({
                     {t('documents.quotations.editor.customerRefHint')}
                   </p>
                 )}
+              />
+              <BranchField
+                context={context}
+                today={today}
+                value={draft.locationId}
+                onChange={(locationId) => set({ locationId })}
               />
               <div className="grid grid-cols-2 gap-4">
                 <TextField

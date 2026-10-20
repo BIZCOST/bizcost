@@ -1903,8 +1903,8 @@ describe('each role template, and each changed by overrides, receives exactly th
 
 // Customers' personal data (M3 Step 5; Q2, Q10): not a redaction category but a permission. A member
 // without customers.items.view never lists or reads customers; when they may name one (adding
-// customers, entering orders or sales, recording payments) the pickers give them the name and the
-// phone's last 4 digits only. Every persona is held to it.
+// customers, entering orders or sales, recording payments, preparing quotations or invoices) the
+// pickers give them the name and the phone's last 4 digits only. Every persona is held to it.
 describe('masked pickers: without customers.items.view, the name and the phoneâ€™s last 4 digits only', () => {
   const PICKS: PermissionKey[] = [
     'customers.items.view',
@@ -1912,6 +1912,8 @@ describe('masked pickers: without customers.items.view, the name and the phoneâ€
     'orders.documents.manage',
     'sales.documents.manage',
     'payments.customers.record',
+    'quotations.documents.manage',
+    'invoices.documents.manage',
   ]
   /** A UUID or an ISO time in an answer. */
   const UUID_OR_TIME =

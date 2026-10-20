@@ -85,7 +85,7 @@
     },
     "letterhead": {
       "title": "Phone, email and address",
-      "description": "Printed at the foot of your quotations and invoices, with your trade licence under your name.",
+      "description": "Printed at the foot of the documents you send, with your trade licence under your name.",
       "phone": "Phone",
       "phone2": "Second phone",
       "email": "Email",
@@ -257,7 +257,11 @@
   },
   "documents": {
     "title": "Documents",
-    "description": "Your letterhead on quotations, document numbers, the signature and stamp, and the bank details printed at the foot.",
+    "descriptions": {
+      "documents": "Your letterhead on the documents you send, their numbers, the signature and stamp, and the bank details printed at the foot.",
+      "statements": "Your letterhead on the statements you send, and the bank details printed at the foot.",
+      "statementsOrders": "Your letterhead on the statements you send, your order numbers, and the bank details printed at the foot."
+    },
     "saved": "Document settings saved.",
     "save": "Save",
     "conflict": "Someone else changed these settings. Load them again to see the latest.",
@@ -266,7 +270,12 @@
       "description": "Made from your business name, logo and details, like your own letterhead. Pick its colour; the logo can show faintly behind the page."
     },
     "preview": {
-      "title": "Quotation",
+      "titles": {
+        "quotation": "Quotation",
+        "taxInvoice": "Tax Invoice",
+        "invoice": "Invoice",
+        "statement": "Statement of account"
+      },
       "trn": "TRN",
       "tradeLicence": "Trade licence",
       "page": "Page 1 of 1",
@@ -295,11 +304,16 @@
     "contacts": {
       "title": "Phone, email and address",
       "hint": "The footer prints them from your business profile, with your TRN and trade licence under your name.",
+      "hintNoTrn": "The footer prints them from your business profile, with your trade licence under your name.",
       "action": "Change them in the business profile"
     },
     "signature": {
       "title": "Signature and stamp",
-      "description": "Printed at the end of every quotation, with the name of the person who signs. Upload them once.",
+      "descriptions": {
+        "quotations": "Printed at the end of every quotation, with the name of the person who signs. Upload them once.",
+        "invoices": "Printed at the end of every invoice and credit note, with the name of the person who signs. Upload them once.",
+        "quotationsInvoices": "Printed at the end of every quotation, invoice and credit note, with the name of the person who signs. Upload them once."
+      },
       "signatory": "Who signs"
     },
     "images": {
@@ -337,7 +351,9 @@
     },
     "footer": {
       "title": "Footer and terms",
+      "titleNoTerms": "Footer",
       "description": "Your bank details are printed under the totals; new quotations start with your usual terms.",
+      "descriptionNoTerms": "Your bank details are printed under the totals.",
       "bank": "Bank details",
       "bankPlaceholder": "Bank: …\nAccount name: …\nIBAN: AE…",
       "terms": "Usual terms for new quotations",

@@ -766,5 +766,10 @@ export const customerStatementDto = z.object({
   paid: zDecimal,
   /** Owed at the end of `to`. */
   closing: zDecimal,
+  /**
+   * Whether it speaks of invoices and credit notes: Invoices is on, or the period lists one. An
+   * orders-only business (Release B, B10) gets "Orders and sales" and "Payments and refunds" instead.
+   */
+  invoicing: z.boolean(),
 })
 export type CustomerStatementDto = z.infer<typeof customerStatementDto>

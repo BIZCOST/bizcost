@@ -28,7 +28,6 @@ import { useMessage } from '@/components/form/use-message'
 import { Button } from '@/components/ui/button'
 import { NativeSelect } from '@/components/ui/native-select'
 import { Switch } from '@/components/ui/switch'
-import { hasModule } from '@/features/purchasing/data'
 import { Section } from '@/features/account/section'
 import { useLocale } from '@/lib/i18n/client'
 import { useBusinessContext } from '@/lib/trpc/client'
@@ -36,7 +35,7 @@ import { LogoSection } from './logo-section'
 import { useModuleNames } from './module-names'
 import { useProfile, useProfileSaved } from './profile-data'
 import { LoadError, SectionSkeleton } from '@/components/states/query-state'
-import { can, isSectionVisible } from './sections'
+import { can, isSectionVisible, printsDocuments } from './sections'
 import { SectionPage } from './settings-shell'
 
 // Settings → Business profile (ROADMAP.md Step 6): logo, legal names, VAT and TRN, and the region
@@ -554,10 +553,7 @@ export function BusinessProfileSettings({ businessId }: { businessId: string }) 
             key={profile.data.version}
             profile={profile.data}
             canEdit={canEdit}
-            letterheadShown={
-              context !== undefined &&
-              (hasModule(context, 'quotations') || hasModule(context, 'invoices'))
-            }
+            letterheadShown={context !== undefined && printsDocuments(context)}
             onReload={() => void profile.refetch()}
           />
           <RegionSection profile={profile.data} />

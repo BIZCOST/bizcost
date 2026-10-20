@@ -400,7 +400,7 @@ test('an accountant: four tabs and no "+" (they enter nothing), in Arabic', asyn
   await setLanguage(accountant, 'en')
 })
 
-test('a salesperson of an orders business: Home | Orders | + | Products | More, "+" with orders and customers', async () => {
+test('a salesperson of an orders business: Home | Orders | + | Products | More, "+" with orders, customers, quotations and invoices', async () => {
   // On a phone, in Arabic: Orders in the Sales place, Products after it (D-276).
   await setLanguage(seller, 'ar')
   await seller.setViewportSize(PHONE)
@@ -412,11 +412,14 @@ test('a salesperson of an orders business: Home | Orders | + | Products | More, 
     'إضافة جديد',
   )
   await bar.getByRole('button', { name: 'إضافة جديد' }).click()
+  // Release B (M3 Step 9): the workshop quotes and invoices too.
   await expect(seller.getByRole('menuitem')).toHaveText([
     'مبيعات اليوم',
     'عملية بيع جديدة',
     'طلب جديد',
     'عميل جديد',
+    'عرض سعر جديد',
+    'فاتورة جديدة',
   ])
   await expectSound(seller, 'ar')
   await shot(seller, 'ar-390-seller-add-new')
@@ -428,6 +431,8 @@ test('a salesperson of an orders business: Home | Orders | + | Products | More, 
     'المبيعات',
     'العملاء',
     'مستحقات العملاء',
+    'عروض الأسعار',
+    'الفواتير',
     'الربح الحقيقي',
     'الإعدادات',
   ])
@@ -444,6 +449,8 @@ test('a salesperson of an orders business: Home | Orders | + | Products | More, 
     'Orders',
     'Customers',
     'What customers owe',
+    'Quotations',
+    'Invoices',
   ])
   await expect(nav.getByRole('list', { name: 'Reports' }).getByRole('link')).toHaveText([
     'Real profit',
@@ -454,6 +461,8 @@ test('a salesperson of an orders business: Home | Orders | + | Products | More, 
     'New sale',
     'New order',
     'New customer',
+    'New quotation',
+    'New invoice',
   ])
   await expectSound(seller, 'en')
   await shot(seller, 'en-1440-seller-add-new')

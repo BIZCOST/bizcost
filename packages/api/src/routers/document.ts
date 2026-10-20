@@ -11,22 +11,21 @@ import {
   removeDocumentImage,
   setDocumentImage,
 } from '../services/document-files'
+import { DOCUMENT_MODULES } from '../services/document-files'
 import { documentSettings, updateDocumentSettings } from '../services/document-settings'
-import { businessProcedure, requireAnyAccess, router } from '../trpc'
+import { businessProcedure, requireAnyModules, requirePermission, router } from '../trpc'
 
 /**
  * Settings → Documents (services/document-settings.ts, document-files.ts; M3 Step 7): served only
- * while Quotations or Invoices is (MODULE_DISABLED otherwise), for `settings.documents.manage` (the
- * Owner and the Admin; FORBIDDEN otherwise): the series' prefixes, padding and first numbers, the
- * footer, a new quotation's terms and validity, the letterhead's accent and watermark, whole amounts,
- * the signatory and the signature and stamp images.
+ * while the business prints documents (DOCUMENT_MODULES: Quotations, Invoices, or since Release B
+ * Customers with Payments for the customers' statements; MODULE_DISABLED otherwise), for
+ * `settings.documents.manage` (the Owner and the Admin; FORBIDDEN otherwise): the series' prefixes,
+ * padding and first numbers, the footer, a new quotation's terms and validity, the letterhead's accent
+ * and watermark, whole amounts, the signatory and the signature and stamp images.
  */
-const manage = businessProcedure.use(
-  requireAnyAccess(
-    ['quotations', 'settings.documents.manage'],
-    ['invoices', 'settings.documents.manage'],
-  ),
-)
+const manage = businessProcedure
+  .use(requireAnyModules(...DOCUMENT_MODULES))
+  .use(requirePermission('settings.documents.manage'))
 
 export const documentRouter = router({
   /** `document.settings`. */

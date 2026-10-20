@@ -171,7 +171,11 @@
       "owedThroughSale": "مستحق سابقًا عن عملية البيع: {{amount}}",
       "stillOwedOrder": "ما زال مستحقًا عن الطلب ⁦{{order}}⁩: {{amount}}",
       "ahead": "مدفوع مقدّمًا",
-      "closingAhead": "مدفوع مقدّمًا في النهاية"
+      "closingAhead": "مدفوع مقدّمًا في النهاية",
+      "invoiced_plain": "الطلبات والمبيعات",
+      "credited_plain": "المسترد",
+      "charge_plain": "الطلبات والمبيعات",
+      "credit_plain": "الدفعات والاستردادات"
     }
   },
   "pdfFile": {
@@ -927,7 +931,12 @@
       "pdfTitle": "ملف PDF لكشف الحساب",
       "pdfNote": "نزّل كشف الحساب، أو شاركه عبر واتساب أو تطبيق البريد.",
       "ahead": "مدفوع مقدّمًا",
-      "closingAhead": "مدفوع مقدّمًا في النهاية"
+      "closingAhead": "مدفوع مقدّمًا في النهاية",
+      "intro_plain": "ما سُلّم أو بِيع، وما استُرد، وما دُفع خلال فترة، وما بقي مستحقًا.",
+      "invoiced_plain": "الطلبات والمبيعات",
+      "credited_plain": "المسترد",
+      "charge_plain": "الطلبات والمبيعات",
+      "credit_plain": "الدفعات والاستردادات"
     },
     "links": {
       "invoiceQuotation": "إنشاء فاتورة",

@@ -1,13 +1,5 @@
 import { defineConfig, devices } from '@playwright/test'
-import {
-  baseURL,
-  PREVIEW_MODULES,
-  port,
-  previewBaseURL,
-  previewPort,
-  repoRoot,
-  stack,
-} from './stack'
+import { baseURL, port, repoRoot, stack } from './stack'
 
 // End-to-end tests of the web app against a production build (`next build` + `next start`) and the
 // local Supabase stack (Auth + Mailpit): `pnpm e2e` (docs/ARCHITECTURE.md §Testing & CI). The build
@@ -15,19 +7,15 @@ import {
 // developer's `next dev`. One worker: the local Auth server limits sign-ins per IP, and every test
 // reads its codes from the shared Mailpit.
 //
-// The released screens run on the production build: the Costing Core since M2 Step 7 (D-188), and
-// Sales, Orders, Customers, Payments and Reports since Release A (M3 Step 6). The module being built is
-// still `planned`, and a production build never shows a planned module (D-125): its spec (`preview`
-// project; M3 Step 7: Quotations, M3 Step 8: Invoices) runs on a `next dev` server with the dev-only
-// preview of it, in its own folder (.next/e2e-preview) on E2E_PREVIEW_PORT (default E2E_PORT + 1), as
-// in M2 (D-127) and before Release A. When Release B (M3 Step 9) releases them, their specs move to
-// the production project and this server goes again.
+// Every spec runs on the production build: the Costing Core is released since M2 Step 7 (D-188),
+// Sales, Orders, Customers, Payments and Reports since Release A (M3 Step 6), and Quotations and
+// Invoices since Release B (M3 Step 9), so the development server with the dev-only preview that their
+// specs used while they were built (D-125, D-127, D-294) is gone again, as after M2 (D-199) and Release
+// A (D-275). A module built next brings it back the same way: a `preview` project on a `next dev`
+// server with BIZCOST_PREVIEW_MODULES naming it.
 
 const { apiUrl, publishableKey, secretKey } = stack()
 const web = 'pnpm --filter @bizcost/web exec next'
-
-/** Specs of the modules shown only by the dev-only preview. */
-const PREVIEW_SPECS = /(quotations|invoices).spec.ts$/
 
 /** The web app's environment on the local stack, for a server at `origin`. */
 function webEnv(origin: string): Record<string, string> {
@@ -66,15 +54,6 @@ export default defineConfig({
     {
       name: 'chromium',
       use: { ...devices['Desktop Chrome'] },
-      testIgnore: PREVIEW_SPECS,
-    },
-    {
-      name: 'preview',
-      use: { ...devices['Desktop Chrome'], baseURL: previewBaseURL },
-      testMatch: PREVIEW_SPECS,
-      // A development server compiles each page the first time it is opened.
-      timeout: 240_000,
-      expect: { timeout: 30_000 },
     },
   ],
   webServer: [
@@ -86,18 +65,6 @@ export default defineConfig({
       reuseExistingServer: false,
       timeout: 300_000,
       env: { NEXT_DIST_DIR: '.next/e2e', ...webEnv(baseURL) },
-    },
-    {
-      command: `${web} dev --port ${previewPort}`,
-      cwd: repoRoot,
-      url: `${previewBaseURL}/login`,
-      reuseExistingServer: false,
-      timeout: 300_000,
-      env: {
-        NEXT_DIST_DIR: '.next/e2e-preview',
-        BIZCOST_PREVIEW_MODULES: PREVIEW_MODULES,
-        ...webEnv(previewBaseURL),
-      },
     },
   ],
 })

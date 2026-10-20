@@ -15,18 +15,21 @@ import {
 } from '@bizcost/domain'
 import { appCodeOf, type DemoApi } from './client'
 import { demoId } from './costing'
-import { addDays } from './days'
+import type { DemoCustomer } from './costing-data'
+import { addDays, monthStart } from './days'
+import type { DemoQuotationLine } from './documents'
 
-// The invoices of the demo businesses (M3 Step 8; Invoices is previewed by the demo's API, D-125):
-// each one's own way of billing, through the same API as the screens: the fit-out company's stage
-// invoices of an accepted quotation and a full tax invoice with a credit note; the factory's tax
-// invoices of its delivered orders, each with the customer's LPO, one paid (its customers' statements
-// come from them); the designer's plain invoice of a sale she recorded; the workshop's deposit tax
-// invoice and final invoice of an order, an order's full invoice and a waiting order's deposit
-// invoice. A registered customer gets the address a tax invoice prints for it (VAT ER Art. 59(1)(c)).
-// Each invoice, credit note and payment has an id derived from its key (demoId), so it is written
-// once: `pnpm demo:seed` stays idempotent and keeps what the owner did since. Every name and figure
-// is fictional.
+// The invoices of the demo businesses (M3 Step 8; released with Release B, M3 Step 9): each one's own
+// way of billing, through the same API as the screens: the fit-out company's three stage invoices
+// (30 / 40 / 30) of its villa's accepted quotation and a full tax invoice of an office's revised
+// quotation with a tax credit note; the factory's tax invoices of its delivered orders, each with the
+// customer's LPO, one paid (its customers' statements come from them); the designer's plain invoices
+// of sales she recorded; the workshop's deposit tax invoice and final invoice of an order, an order's
+// full invoice and a waiting order's deposit invoice; the café's catering tax invoice to a company,
+// whose sale its POS already recorded. A registered customer gets the address a tax invoice prints for
+// it (VAT ER Art. 59(1)(c)). Each invoice, credit note and payment has an id derived from its key
+// (demoId), so it is written once: `pnpm demo:seed` stays idempotent and keeps what the owner did
+// since. Every name and figure is fictional.
 
 /** Where an invoice comes from, as the demo names it. */
 export type DemoInvoiceSource =
@@ -47,6 +50,15 @@ export type DemoInvoiceSource =
   | {
       /** A One sale of the costing seed, by its key. */
       readonly sale: string
+    }
+  | {
+      /** From scratch: a customer (a key of the costing seed or of `customers`) and typed lines. */
+      readonly scratch: {
+        readonly customer: string
+        readonly lpo?: string
+        readonly site?: string
+        readonly lines: readonly DemoQuotationLine[]
+      }
     }
 
 export interface DemoCredit {
@@ -82,6 +94,11 @@ export interface DemoInvoice {
 }
 
 export interface DemoInvoices {
+  /** Customers added when missing (a business whose costing seed adds none), with their address. */
+  readonly customers?: readonly (DemoCustomer & {
+    readonly addressLine: string
+    readonly city: string
+  })[]
   /** Customers (costing keys) given an address when they have none. */
   readonly addresses?: readonly {
     readonly customer: string
@@ -153,9 +170,49 @@ async function ensureAddress(
   })
 }
 
+/** Adds a customer of `customers` when missing (its id derived from its key). */
+async function ensureCustomer(
+  c: Calls,
+  spec: NonNullable<DemoInvoices['customers']>[number],
+): Promise<void> {
+  const id = demoId(c.businessId, `customer:${spec.key}`)
+  if (await find<CustomerDto>(c, 'customer.get', { id })) return
+  await mutate(c, 'customer.create', {
+    id,
+    name: spec.name,
+    kind: spec.kind ?? 'business',
+    phone: spec.phone ?? null,
+    email: spec.email ?? null,
+    trn: spec.trn ?? null,
+    tradeLicenceNo: spec.tradeLicenceNo ?? null,
+    addressLine: spec.addressLine,
+    city: spec.city,
+    emirate: spec.emirate ?? null,
+  })
+}
+
 /** The draft of `spec` (made once from its source; its id is derived from its key). */
 async function draftOf(c: Calls, spec: DemoInvoice, id: string): Promise<InvoiceDto> {
   const from = spec.from
+  if ('scratch' in from) {
+    return mutate<InvoiceDto>(c, 'invoice.create', {
+      id,
+      customerId: demoId(c.businessId, `customer:${from.scratch.customer}`),
+      lpoReference: from.scratch.lpo ?? null,
+      site: from.scratch.site ?? null,
+      lines: from.scratch.lines.map((line, i) => ({
+        id: demoId(c.businessId, `invoice-line:${spec.key}:${i}`),
+        productId: null,
+        area: line.area ?? null,
+        description: line.description,
+        details: line.details ?? null,
+        note: line.note ?? null,
+        qty: line.qty,
+        unit: line.unit ?? null,
+        unitPrice: line.unitPrice,
+      })),
+    })
+  }
   if ('quotation' in from) {
     const quote = await quotationOf(c, from.quotation)
     if (!quote) throw new Error(`no demo quotation ${from.quotation}`)
@@ -214,8 +271,7 @@ async function seedInvoice(
       locationId: invoice.locationId,
       channelId: invoice.channelId,
       // Its date of supply as typed, else as its source gives it (D-313).
-      supplyDate:
-        spec.supplyDaysAgo === undefined ? invoice.supplyDate : addDays(today, -spec.supplyDaysAgo),
+      supplyDate: spec.supplyDaysAgo === undefined ? invoice.supplyDate : supplyDayOf(spec, today),
       dueDate: spec.dueIn === undefined ? null : addDays(today, spec.dueIn),
       lpoReference: invoice.lpoReference,
       site: invoice.site,
@@ -280,6 +336,19 @@ async function seedInvoice(
   return { invoice: written, credit, payments }
 }
 
+/**
+ * The date of supply `supplyDaysAgo` stands for. An invoice made from a quotation or from scratch
+ * counts its own sale on that day (unless its sale is already recorded), so it stays in this month:
+ * last month is a finished month whose real profit the demo keeps as Release A seeded it (D-280).
+ * An order's or a sale's invoice keeps the day it is given (its sale counted on its own day).
+ */
+function supplyDayOf(spec: DemoInvoice, today: string): string {
+  const day = addDays(today, -(spec.supplyDaysAgo ?? 0))
+  const countsOwnSale = 'quotation' in spec.from || 'scratch' in spec.from
+  const first = monthStart(today, 0)
+  return countsOwnSale && day < first ? first : day
+}
+
 export async function seedInvoices(
   api: DemoApi,
   token: string,
@@ -288,6 +357,7 @@ export async function seedInvoices(
 ): Promise<InvoicesResult> {
   const c: Calls = { api, token, businessId }
   const { today } = await query<BooksDto>(c, 'books.get')
+  for (const customer of spec.customers ?? []) await ensureCustomer(c, customer)
   for (const address of spec.addresses ?? []) await ensureAddress(c, address)
   for (const ref of spec.accept ?? []) {
     const quote = await quotationOf(c, ref)
@@ -312,21 +382,34 @@ export async function seedInvoices(
 // ---------------------------------------------------------------------------------------------------
 
 /**
- * The fit-out company: the first two of the villa's three stages (50 / 35 / 15; the last waits for the
- * handover), the second paid; the office's partitions billed in full, then a credit note for the glass
- * not fitted.
+ * The fit-out company: the villa's three stages (30 / 40 / 30: on signing, on delivery of the materials,
+ * after the handover yesterday), the first two paid; the office's partitions (its revised quotation)
+ * billed in full, then a tax credit note for the 4 m² of glass not fitted.
  */
 export const FITOUT_INVOICES: DemoInvoices = {
   addresses: [
     { customer: 'office', addressLine: 'مكتب 1204، برج الأعمال، الخليج التجاري', city: 'دبي' },
   ],
   invoices: [
-    { key: 'villa-stage-1', from: { quotation: 'DEMO-FO-118', stage: 0 }, dueIn: 7 },
+    {
+      key: 'villa-stage-1',
+      from: { quotation: 'DEMO-FO-118', stage: 0 },
+      supplyDaysAgo: 12,
+      dueIn: 7,
+      payments: [{ key: 'transfer', method: 'bank_transfer', amount: 'owed' }],
+    },
     {
       key: 'villa-stage-2',
       from: { quotation: 'DEMO-FO-118', stage: 1 },
+      supplyDaysAgo: 6,
       dueIn: 7,
       payments: [{ key: 'transfer', method: 'bank_transfer', amount: 'owed' }],
+    },
+    {
+      key: 'villa-stage-3',
+      from: { quotation: 'DEMO-FO-118', stage: 2 },
+      supplyDaysAgo: 1,
+      dueIn: 14,
     },
     {
       key: 'office-partitions',
@@ -367,9 +450,70 @@ export const FACTORY_INVOICES: DemoInvoices = {
   ],
 }
 
-/** The designer: a plain invoice of the brand identity she sold five days ago, to be paid later. */
+/**
+ * The designer: plain invoices of sales she recorded "they'll pay later": the brand identity she sold
+ * five days ago, last month's nursery logo (still owed) and the realty firm's social media posts (half
+ * paid by transfer before its invoice).
+ */
 export const DESIGNER_INVOICES: DemoInvoices = {
-  invoices: [{ key: 'identity-brew', from: { sale: 'identity' }, supplyDaysAgo: 5, dueIn: 14 }],
+  invoices: [
+    { key: 'identity-brew', from: { sale: 'identity' }, supplyDaysAgo: 5, dueIn: 14 },
+    { key: 'logo-nursery', from: { sale: 'sep-logo-nursery' }, dueIn: 7 },
+    { key: 'social-realty', from: { sale: 'sep-social-realty' }, dueIn: 7 },
+  ],
+}
+
+/**
+ * The café: a coffee break and lunch boxes for a company's training day, catered three days ago and
+ * already in that day's POS file (Q3: "already in your recorded sales", so it is not counted again),
+ * billed to the company against its purchase order. Customize BizCost turned Invoices on for it
+ * (Smart Setup leaves it off for a POS café, its note says to turn it on for companies).
+ */
+export const CAFE_INVOICES: DemoInvoices = {
+  customers: [
+    {
+      key: 'training',
+      name: 'مركز النخبة للتدريب',
+      kind: 'business',
+      phone: '04 555 0187',
+      email: 'accounts@elite-training.example',
+      trn: '100357913500003',
+      tradeLicenceNo: 'DED-551873',
+      emirate: 'dubai',
+      addressLine: 'الطابق 6، مبنى الريف، شارع الشيخ زايد',
+      city: 'دبي',
+    },
+  ],
+  invoices: [
+    {
+      key: 'catering-training',
+      from: {
+        scratch: {
+          customer: 'training',
+          lpo: 'PO-ETC-2291',
+          site: 'قاعة التدريب، مركز النخبة',
+          lines: [
+            {
+              description: 'استراحة قهوة لكل ضيف',
+              details: 'قهوة عربية وكرك ومعجنات وحلويات',
+              qty: '40',
+              unitPrice: '32',
+            },
+            {
+              description: 'علبة غداء خفيف',
+              details: 'ساندويتش وسلطة وعصير',
+              qty: '40',
+              unitPrice: '28',
+            },
+            { description: 'توصيل وتجهيز الطاولات', qty: '1', unitPrice: '150' },
+          ],
+        },
+      },
+      supplyDaysAgo: 3,
+      dueIn: 30,
+      countedElsewhere: true,
+    },
+  ],
 }
 
 /**

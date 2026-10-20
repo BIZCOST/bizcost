@@ -388,10 +388,12 @@ describe('business.context', () => {
   })
 
   it('shows released modules only, even when planned modules are on', async () => {
-    // Materials (core) is on without a row; Orders (optional, released with Release A) and
-    // Quotations (optional, planned until Release B) are switched on by their rows.
+    // Materials (core) is on without a row; Orders (optional, released with Release A),
+    // Quotations (optional, released with Release B) and Inventory (optional, planned until Phase 4)
+    // are switched on by their rows.
     await setModule('orders', true)
     await setModule('quotations', true)
+    await setModule('inventory', true)
     const result = await query<ContextResult>(handler, 'business.context', as('owner'))
     expect(result.data?.modules.map((m) => m.id)).toEqual([
       'dashboard',
@@ -409,6 +411,7 @@ describe('business.context', () => {
       'customers',
       'payments',
       'reports',
+      'quotations',
     ])
   })
 

@@ -98,10 +98,11 @@ export function useSaleLocations(
   context: BusinessContextDto | undefined,
   today: string,
   channelId: string | null,
+  ready = true,
 ) {
   const trpc = useTRPC()
   const scope = context?.locationScope
-  const enabled = context?.capabilities.multi_location === true && mayEnterSales(context)
+  const enabled = ready && context?.capabilities.multi_location === true && mayEnterSales(context)
   const query = useQuery({
     ...trpc.sale.daySheet.queryOptions({
       businessDate: today,
@@ -112,6 +113,28 @@ export function useSaleLocations(
     enabled,
   })
   return enabled ? (query.data?.data.locations ?? null) : null
+}
+
+/**
+ * The branches the member may make a quotation or an invoice for (BranchField), from the same list as
+ * a sale's: the day sheet names a channel when the business has several (a café's shop, its delivery
+ * app and its website), and every channel lists the same branches, so it is read on the business's
+ * own way of selling (defaultChannelId) once the channels are known. Sales on and a member who enters
+ * sales only, as useSaleLocations; null otherwise or while it is read.
+ */
+export function useDocumentLocations(context: BusinessContextDto | undefined, today: string) {
+  const trpc = useTRPC()
+  const wanted =
+    context?.capabilities.multi_location === true &&
+    context.modules.some((module) => module.id === 'sales') &&
+    mayEnterSales(context)
+  const channels = useQuery({
+    ...trpc.channel.list.queryOptions({ status: 'active' }),
+    enabled: wanted,
+  })
+  const items = channels.data?.data.items ?? []
+  const channelId = items.length > 1 ? (defaultChannelId(items) ?? items[0]!.id) : null
+  return useSaleLocations(context, today, channelId, wanted && channels.isSuccess)
 }
 
 /**

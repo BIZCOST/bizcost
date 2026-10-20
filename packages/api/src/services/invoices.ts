@@ -1690,6 +1690,9 @@ export async function lockSource(
       site: null,
     }
   }
+  // A recorded sale is Sales' record: read and billed only with Sales on, as an order with Orders and a
+  // quotation with Quotations (Invoices needs Sales too; Release B review).
+  assertModuleActive(ctx, 'sales')
   const [head] = (await tx.execute(sql`
     select s.id, s.status, s.source, s.customer_id, s.location_id, s.channel_id,
            s.business_date::text as business_date, null::text as discount_percent, null::text as discount_amount, null::text as round_to,

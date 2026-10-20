@@ -64,8 +64,7 @@ class InputsApi extends ProductCostsApi {
   override readonly handler = handlerFor(
     this.db,
     undefined,
-    // Quotations and Invoices are previewed (M3 Steps 7 and 8, planned until Release B, D-125).
-    { supabaseSecretKey: SECRET_KEY, previewModules: ['quotations', 'invoices'] },
+    { supabaseSecretKey: SECRET_KEY },
     { emailSender: this.emails },
   )
 }

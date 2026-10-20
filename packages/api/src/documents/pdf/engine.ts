@@ -192,7 +192,6 @@ export class PdfEngine {
   private start(): Running {
     const worker = new Worker(this.options.workerPath)
     this.workersStarted += 1
-    worker.unref()
     let markReady: () => void = () => undefined
     let failStart: (error: Error) => void = () => undefined
     const ready = new Promise<void>((resolve, reject) => {
@@ -239,6 +238,9 @@ export class PdfEngine {
       await this.retire(current)
     }
     const running = this.running ?? (this.running = this.start())
+    // Held while it works, let go when idle (below): a script (the demo seed) ends once its last
+    // document is rendered, and never before (a 'message' listener alone would keep it forever).
+    running.worker.ref()
     await running.ready
     const id = this.nextId++
     try {
@@ -265,6 +267,7 @@ export class PdfEngine {
       ) {
         await this.retire(running)
       }
+      if (this.running === running && this.pending.size === 0) running.worker.unref()
     }
   }
 

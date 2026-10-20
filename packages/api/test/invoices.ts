@@ -9,21 +9,15 @@ import type {
 } from '@bizcost/contracts'
 import { newId } from '@bizcost/domain'
 import type { SetupAnswers } from '@bizcost/modules'
-import { handlerFor, SECRET_KEY } from './helpers'
 import { FIT_OUT, QuotationScope, QuotationsApi } from './quotations'
 import { ok, type PurchasingApi, type Person } from './purchasing'
 
-// Helpers of the invoices suites (ROADMAP.md M3 Step 8): Invoices (and Quotations) stay planned until
-// Release B (Step 9), so the API runs with both previewed (D-125), with the secret key for Storage (the
-// issued PDFs). Every business, customer and figure is fictional.
+// Helpers of the invoices suites (ROADMAP.md M3 Step 8): the API as deployed (Invoices and Quotations
+// are released since Release B, M3 Step 9), with the secret key for Storage (the issued PDFs). Every
+// business, customer and figure is fictional.
 
-/** The API of the invoices suites: as deployed, with Quotations and Invoices previewed. */
-export class InvoicesApi extends QuotationsApi {
-  override readonly handler = handlerFor(this.db, undefined, {
-    supabaseSecretKey: SECRET_KEY,
-    previewModules: ['quotations', 'invoices'],
-  })
-}
+/** The API of the invoices suites: the quotations suites' (as deployed). */
+export class InvoicesApi extends QuotationsApi {}
 
 /** The fictional seller's TRN, and a registered customer's. */
 export const SELLER_TRN = '100345678900003'

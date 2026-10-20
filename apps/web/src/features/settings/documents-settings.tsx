@@ -384,6 +384,26 @@ function DocumentsForm({
         ? hasModule(context, 'orders')
         : hasModule(context, 'invoices'),
   )
+  // A business that prints only statements (Customers with Payments, Release B) signs nothing and
+  // quotes nothing: its letterhead, numbers and bank details only.
+  const quoting = hasModule(context, 'quotations')
+  const invoicing = hasModule(context, 'invoices')
+  const issuing = quoting || invoicing
+  // Each line in the words of what the business prints (Release B review): the signature on its
+  // quotations, invoices and credit notes, the preview titled by its main document, no TRN without
+  // VAT registration.
+  const signatureDescription = quoting
+    ? invoicing
+      ? 'settings.documents.signature.descriptions.quotationsInvoices'
+      : 'settings.documents.signature.descriptions.quotations'
+    : 'settings.documents.signature.descriptions.invoices'
+  const previewTitle = quoting
+    ? 'settings.documents.preview.titles.quotation'
+    : invoicing
+      ? profile.vatRegistered
+        ? 'settings.documents.preview.titles.taxInvoice'
+        : 'settings.documents.preview.titles.invoice'
+      : 'settings.documents.preview.titles.statement'
 
   return (
     <form method="post" noValidate onSubmit={submit} className="space-y-6">
@@ -400,6 +420,7 @@ function DocumentsForm({
         </p>
         <div className="mt-5 grid items-start gap-6 lg:grid-cols-[minmax(0,26rem)_minmax(0,1fr)]">
           <LetterheadPreview
+            title={t(previewTitle)}
             data={{
               locale: profile.defaultLocale,
               accent: DOCUMENT_ACCENTS[draft.accent],
@@ -412,9 +433,10 @@ function DocumentsForm({
               phones: [letterhead.phone, letterhead.phone2].filter((p): p is string => Boolean(p)),
               email: letterhead.email,
               address: settings.letterheadAddress,
-              signatory: draft.signatory.trim() || null,
-              signatureUrl: settings.signatureUrl,
-              stampUrl: settings.stampUrl,
+              // A statement is not signed: no signature on the letterhead of one that prints only those.
+              signatory: issuing ? draft.signatory.trim() || null : null,
+              signatureUrl: issuing ? settings.signatureUrl : null,
+              stampUrl: issuing ? settings.stampUrl : null,
             }}
           />
           <div className="min-w-0 space-y-5">
@@ -479,7 +501,9 @@ function DocumentsForm({
             <div className="rounded-xl border bg-background/60 p-4 text-sm">
               <p className="font-medium">{t('settings.documents.contacts.title')}</p>
               <p className="mt-0.5 text-muted-foreground">
-                {t('settings.documents.contacts.hint')}
+                {profile.vatRegistered
+                  ? t('settings.documents.contacts.hint')
+                  : t('settings.documents.contacts.hintNoTrn')}
               </p>
               <Link
                 href={sectionPath(businessId, 'business')}
@@ -492,27 +516,29 @@ function DocumentsForm({
         </div>
       </section>
 
-      <Section
-        title={t('settings.documents.signature.title')}
-        description={t('settings.documents.signature.description')}
-      >
-        <div className="space-y-5">
-          <TextField
-            label={t('settings.documents.signature.signatory')}
-            autoComplete="name"
-            dir="auto"
-            className="[unicode-bidi:plaintext]"
-            value={draft.signatory}
-            onChange={(event) => set({ signatory: event.target.value })}
-            error={shown(errors.signatory, { count: DOCUMENT_SIGNATORY_MAX_LENGTH })}
-          />
-          <div className="grid gap-5 sm:grid-cols-2">
-            <ImageField kind="signature" url={settings.signatureUrl} onSaved={saved} />
-            <ImageField kind="stamp" url={settings.stampUrl} onSaved={saved} />
+      {issuing ? (
+        <Section
+          title={t('settings.documents.signature.title')}
+          description={t(signatureDescription)}
+        >
+          <div className="space-y-5">
+            <TextField
+              label={t('settings.documents.signature.signatory')}
+              autoComplete="name"
+              dir="auto"
+              className="[unicode-bidi:plaintext]"
+              value={draft.signatory}
+              onChange={(event) => set({ signatory: event.target.value })}
+              error={shown(errors.signatory, { count: DOCUMENT_SIGNATORY_MAX_LENGTH })}
+            />
+            <div className="grid gap-5 sm:grid-cols-2">
+              <ImageField kind="signature" url={settings.signatureUrl} onSaved={saved} />
+              <ImageField kind="stamp" url={settings.stampUrl} onSaved={saved} />
+            </div>
+            <p className="text-sm text-muted-foreground">{t('settings.documents.images.hint')}</p>
           </div>
-          <p className="text-sm text-muted-foreground">{t('settings.documents.images.hint')}</p>
-        </div>
-      </Section>
+        </Section>
+      ) : null}
 
       {seriesShown.length > 0 ? (
         <Section
@@ -610,8 +636,16 @@ function DocumentsForm({
       ) : null}
 
       <Section
-        title={t('settings.documents.footer.title')}
-        description={t('settings.documents.footer.description')}
+        title={
+          quoting
+            ? t('settings.documents.footer.title')
+            : t('settings.documents.footer.titleNoTerms')
+        }
+        description={
+          quoting
+            ? t('settings.documents.footer.description')
+            : t('settings.documents.footer.descriptionNoTerms')
+        }
       >
         <div className="space-y-5">
           {(
@@ -631,62 +665,68 @@ function DocumentsForm({
                 5,
               ],
             ] as const
-          ).map(([field, label, placeholder, max, rows]) => (
-            <div key={field} className="space-y-1.5">
-              <p className="text-sm font-medium">{t(label)}</p>
-              <Textarea
-                aria-label={t(label)}
-                aria-invalid={Boolean(shown(errors[field]))}
-                dir="auto"
-                rows={rows}
-                className="[unicode-bidi:plaintext]"
-                placeholder={t(placeholder)}
-                value={draft[field]}
-                onChange={(event) =>
-                  set({ [field]: event.target.value } as Partial<DocumentsDraft>)
-                }
+          )
+            .filter(([field]) => quoting || field !== 'quotationTerms')
+            .map(([field, label, placeholder, max, rows]) => (
+              <div key={field} className="space-y-1.5">
+                <p className="text-sm font-medium">{t(label)}</p>
+                <Textarea
+                  aria-label={t(label)}
+                  aria-invalid={Boolean(shown(errors[field]))}
+                  dir="auto"
+                  rows={rows}
+                  className="[unicode-bidi:plaintext]"
+                  placeholder={t(placeholder)}
+                  value={draft[field]}
+                  onChange={(event) =>
+                    set({ [field]: event.target.value } as Partial<DocumentsDraft>)
+                  }
+                />
+                {shown(errors[field], { count: max }) ? (
+                  <p role="alert" className="text-sm text-destructive">
+                    {shown(errors[field], { count: max })}
+                  </p>
+                ) : null}
+              </div>
+            ))}
+          {quoting ? (
+            <div className="grid gap-4 sm:grid-cols-2">
+              <TextField
+                label={t('settings.documents.footer.validDays')}
+                inputMode="numeric"
+                dir="ltr"
+                autoComplete="off"
+                className="tabular-nums rtl:text-end"
+                value={draft.quotationValidDays}
+                onChange={(event) => set({ quotationValidDays: event.target.value })}
+                error={shown(errors.quotationValidDays, { max: QUOTATION_VALID_DAYS_MAX })}
+                hint={(id) => (
+                  <p id={id} className="text-sm text-muted-foreground">
+                    {t('settings.documents.footer.validDaysHint')}
+                  </p>
+                )}
               />
-              {shown(errors[field], { count: max }) ? (
-                <p role="alert" className="text-sm text-destructive">
-                  {shown(errors[field], { count: max })}
-                </p>
-              ) : null}
             </div>
-          ))}
-          <div className="grid gap-4 sm:grid-cols-2">
-            <TextField
-              label={t('settings.documents.footer.validDays')}
-              inputMode="numeric"
-              dir="ltr"
-              autoComplete="off"
-              className="tabular-nums rtl:text-end"
-              value={draft.quotationValidDays}
-              onChange={(event) => set({ quotationValidDays: event.target.value })}
-              error={shown(errors.quotationValidDays, { max: QUOTATION_VALID_DAYS_MAX })}
-              hint={(id) => (
-                <p id={id} className="text-sm text-muted-foreground">
-                  {t('settings.documents.footer.validDaysHint')}
+          ) : null}
+          {issuing ? (
+            <div className="flex items-start justify-between gap-4 rounded-xl border bg-background/60 p-4">
+              <div className="min-w-0">
+                <p id={`${wholeId}-label`} className="font-medium">
+                  {t('settings.documents.whole.label')}
                 </p>
-              )}
-            />
-          </div>
-          <div className="flex items-start justify-between gap-4 rounded-xl border bg-background/60 p-4">
-            <div className="min-w-0">
-              <p id={`${wholeId}-label`} className="font-medium">
-                {t('settings.documents.whole.label')}
-              </p>
-              <p id={`${wholeId}-hint`} className="mt-0.5 text-sm text-muted-foreground">
-                {t('settings.documents.whole.hint')}
-              </p>
+                <p id={`${wholeId}-hint`} className="mt-0.5 text-sm text-muted-foreground">
+                  {t('settings.documents.whole.hint')}
+                </p>
+              </div>
+              <Switch
+                checked={draft.wholeAmounts}
+                onCheckedChange={(wholeAmounts) => set({ wholeAmounts })}
+                aria-labelledby={`${wholeId}-label`}
+                aria-describedby={`${wholeId}-hint`}
+                className="mt-1"
+              />
             </div>
-            <Switch
-              checked={draft.wholeAmounts}
-              onCheckedChange={(wholeAmounts) => set({ wholeAmounts })}
-              aria-labelledby={`${wholeId}-label`}
-              aria-describedby={`${wholeId}-hint`}
-              className="mt-1"
-            />
-          </div>
+          ) : null}
         </div>
       </Section>
 

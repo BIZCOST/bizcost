@@ -1,5 +1,5 @@
 import type { Locale } from '@bizcost/domain'
-import type { RoleTemplateKey, SetupAdjustments, SetupAnswers } from '@bizcost/modules'
+import type { ModuleId, RoleTemplateKey, SetupAdjustments, SetupAnswers } from '@bizcost/modules'
 import {
   BAKER_COSTING,
   CAFE_COSTING,
@@ -12,6 +12,8 @@ import {
   type DemoCosting,
 } from './costing-data'
 import {
+  BAKER_DOCUMENTS,
+  CAFE_DOCUMENTS,
   DESIGNER_DOCUMENTS,
   FACTORY_DOCUMENTS,
   FITOUT_DOCUMENTS,
@@ -19,6 +21,7 @@ import {
   type DemoDocuments,
 } from './documents'
 import {
+  CAFE_INVOICES,
   DESIGNER_INVOICES,
   FACTORY_INVOICES,
   FITOUT_INVOICES,
@@ -63,7 +66,15 @@ export interface DemoPersona {
   readonly team?: readonly DemoTeamMember[]
   /** Suppliers, materials, products, recipes, purchases, running costs, expenses… (M2). */
   readonly costing?: DemoCosting
-  /** Its letterhead and quotations (M3 Step 7, D-298), for a business that quotes or invoices. */
+  /**
+   * Modules the owner turns on in Customize BizCost after the costing seed (and what they need with
+   * them): the café's Invoices, which Smart Setup leaves off for a POS café (Release B).
+   */
+  readonly turnOn?: readonly ModuleId[]
+  /**
+   * Its letterhead and quotations (M3 Step 7, D-298), for a business that prints documents: quotes,
+   * invoices, or its customers' statements (Release B).
+   */
   readonly documents?: DemoDocuments
   /** Its invoices, credit notes and their payments (M3 Step 8), after its documents. */
   readonly invoices?: DemoInvoices
@@ -75,6 +86,7 @@ export const DEMO_PERSONAS: readonly DemoPersona[] = [
   {
     title: 'Home baker, alone',
     costing: BAKER_COSTING,
+    documents: BAKER_DOCUMENTS,
     owner: { email: email('baker'), name: 'سارة الحمادي', locale: 'ar' },
     legalName: "Sara's Home Sweets",
     legalNameAr: 'حلويات سارة المنزلية',
@@ -91,6 +103,9 @@ export const DEMO_PERSONAS: readonly DemoPersona[] = [
   {
     title: 'Coffee shop, POS + staff (two branches)',
     costing: CAFE_COSTING,
+    turnOn: ['invoices'],
+    documents: CAFE_DOCUMENTS,
+    invoices: CAFE_INVOICES,
     owner: { email: email('cafe'), name: 'خالد المنصوري', locale: 'ar' },
     legalName: 'Bean Corner Cafe',
     legalNameAr: 'مقهى ركن البن',

@@ -56,9 +56,9 @@ const PREVIEW_ENVIRONMENTS: ReadonlySet<string> = new Set(['development', 'test'
  * NODE_ENV is development or test (`next dev`, Vitest). `next build`/`next start` and Vercel run with
  * NODE_ENV=production, so a production server never shows an unreleased module, whatever its
  * environment says (the web app also refuses to read BIZCOST_PREVIEW_MODULES there). No module is
- * being built between Release A (M3 Step 6) and Quotations (M3 Step 7), so today it previews nothing,
- * as after the Costing Core's release (M2 Step 7); the tests start a build in a registry of their own
- * (`manifests`).
+ * being built between Release B (M3 Step 9) and Phase 4, so today it previews nothing, as after the
+ * Costing Core's release (M2 Step 7) and Release A (M3 Step 6); the tests start a build in a registry
+ * of their own (`manifests`).
  */
 export function moduleRegistry(
   config: Pick<ApiConfig, 'previewModules'>,

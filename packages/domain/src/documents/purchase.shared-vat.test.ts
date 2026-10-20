@@ -190,7 +190,10 @@ describe('purchases after VAT moved to its shared helper (D-220)', () => {
       }),
       { numRuns: 2000 },
     )
-  })
+    // About 2 s alone; `pnpm check` runs every package's tasks at once, which stretched it past the
+    // 5 s default on a loaded laptop again and again (M3 Steps 7–9; the same 2,000 runs, the same
+    // checks), as sale.test.ts's property.
+  }, 30_000)
 
   it('the owner’s examples are unchanged: 105 including 5 % is 100 + 5; 31.50 and 10.00 with VAT', () => {
     const m = (value: string) => value as Money

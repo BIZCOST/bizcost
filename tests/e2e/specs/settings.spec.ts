@@ -51,10 +51,12 @@ test('a solo home business sees only its own settings; team screens are refused'
   await expect(page).toHaveURL(settings())
   await expect(page.getByRole('heading', { level: 1, name: 'Settings' })).toBeVisible()
   // With the Costing Core (released in M2 Step 7): closing the books and how costs are worked out;
-  // with Sales (Release A, M3 Step 6): its sales channels.
+  // with Sales (Release A, M3 Step 6): its sales channels; with its customers' statements (Release B,
+  // M3 Step 9, D-319): Documents, for its letterhead.
   await expect(sectionLinks(page)).toHaveText([
     /^Business profile/,
     /^Sales channels/,
+    /^Documents/,
     /^Customize BizCost/,
     /^Closing the books/,
     /^How costs are worked out/,
@@ -242,9 +244,12 @@ test('Customize BizCost: dependency warnings, Team and Branches appear, guards',
   await branches.click()
   await expect(branches).toBeChecked()
   await page.goto(settings())
+  // Documents: its customers' statements print on its letterhead (Customers and Payments stay on
+  // with Products off; Release B, D-319).
   await expect(sectionLinks(page)).toHaveText([
     /^Business profile/,
     /^Branches/,
+    /^Documents/,
     /^Team/,
     /^Roles/,
     /^Customize BizCost/,
@@ -289,6 +294,7 @@ test('Customize BizCost: dependency warnings, Team and Branches appear, guards',
   // Expense approval goes with the team; Products & Services is off (above), so Product costs too.
   await expect(sectionLinks(page)).toHaveText([
     /^Business profile/,
+    /^Documents/,
     /^Customize BizCost/,
     /^Closing the books/,
     /^Language/,
@@ -316,7 +322,13 @@ test('in Arabic, right to left', async () => {
   await expect(page.getByRole('heading', { level: 1, name: 'الإعدادات' })).toBeVisible()
   await expect(
     page.getByRole('list', { name: 'إعدادات العمل التجاري' }).getByRole('link'),
-  ).toHaveText([/^بيانات العمل التجاري/, /^تخصيص BizCost/, /^إغلاق الدفاتر/, /^اللغة/])
+  ).toHaveText([
+    /^بيانات العمل التجاري/,
+    /^المستندات/,
+    /^تخصيص BizCost/,
+    /^إغلاق الدفاتر/,
+    /^اللغة/,
+  ])
   await page.goto(settings('/business'))
   const trn = page.getByRole('textbox', { name: 'رقم التسجيل الضريبي (TRN)' })
   await expect(trn).toHaveValue('100123456700003')

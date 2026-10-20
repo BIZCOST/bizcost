@@ -9,6 +9,7 @@ import { computePurchase } from './purchase'
 import {
   computeSale,
   pintLineOf,
+  printedSubtotal,
   roundTheTotalError,
   saleError,
   solveRoundAmount,
@@ -705,4 +706,44 @@ describe('properties of sales documents', () => {
     // About 1 s alone; `pnpm check` runs every package's tasks at once, which can stretch it past
     // the 5 s default on a loaded laptop (the same 300 runs, the same checks).
   }, 30_000)
+})
+
+describe('printedSubtotal: the totals block adds up as printed', () => {
+  const line = (amount: string) => ({
+    amount: amount as Money,
+    priceIncludesVat: true,
+    vatRate: '5' as Percent,
+  })
+  const totals = (documentDiscount: string, net: string, adjustment = '0') => ({
+    documentDiscount: documentDiscount as Money,
+    net: net as Money,
+    adjustment: adjustment as Money,
+  })
+
+  it("a stage priced with VAT that carries its quotation's VAT share prints no fils of discount (Release B)", () => {
+    // 30 % of 39,500.00: 11,850.00, its VAT 564.28 (its share of the quotation's), so 11,285.72 before
+    // VAT, where the VAT in its price alone would be 564.29.
+    expect(printedSubtotal([line('11850.00')], totals('0', '11285.72'), 'AED')).toEqual({
+      beforeVat: true,
+      subtotal: '11285.72',
+      discount: '0.00',
+    })
+  })
+
+  it('a price with VAT and nothing off: the lines come to the total before VAT', () => {
+    const three = sale([item('3', '35', { priceIncludesVat: true })])
+    expect(printedSubtotal([line('105.00')], totals('0', three.net), 'AED')).toEqual({
+      beforeVat: true,
+      subtotal: three.net,
+      discount: '0.00',
+    })
+  })
+
+  it('a discount on the whole document still prints apart: 1,050.00 with VAT less 10 %', () => {
+    expect(printedSubtotal([line('1050.00')], totals('105.00', '900.00'), 'AED')).toEqual({
+      beforeVat: true,
+      subtotal: '1000.00',
+      discount: '100.00',
+    })
+  })
 })

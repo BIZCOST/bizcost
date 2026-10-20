@@ -25,9 +25,14 @@ import {
 import type { BusinessCtx } from '../business-context'
 import type { ApiConfig } from '../deps'
 import { AppError } from '../errors'
-import { assertAnyAccess } from '../trpc'
+import { assertAnyModules } from '../trpc'
 import { applySwitch, readBusinessState } from './customize'
-import { documentsServed, printableImageType, removeImageUnlessKept } from './document-files'
+import {
+  DOCUMENT_MODULES,
+  documentsServed,
+  printableImageType,
+  removeImageUnlessKept,
+} from './document-files'
 
 // Settings → Business profile and Business language (ROADMAP.md Step 6): legal names, VAT and TRN,
 // the business's default language, and the logo in the private bucket (docs/ARCHITECTURE.md §Storage):
@@ -145,8 +150,9 @@ function trnFor(input: UpdateBusinessProfileInput): string | null {
 /**
  * `business.updateProfile` (settings.business.edit): names, VAT and TRN, and (M3 Step 7) the contact
  * lines, address and trade licence the documents' letterhead prints (`letterhead`, whole; left out,
- * kept; only while Quotations or Invoices is served, MODULE_DISABLED otherwise; an emirate only for a
- * business in the UAE). `version` must be the version read (CONFLICT otherwise). Switching VAT follows
+ * kept; only while the business prints documents: Quotations, Invoices, or since Release B Customers
+ * with Payments for the statements, MODULE_DISABLED otherwise; an emirate only for a business in the
+ * UAE). `version` must be the version read (CONFLICT otherwise). Switching VAT follows
  * the Customize BizCost rules and reports the modules it turned on or off.
  */
 export async function updateProfile(
@@ -156,7 +162,7 @@ export async function updateProfile(
   const trn = trnFor(input)
   const legalNameAr = input.legalNameAr?.trim() ? input.legalNameAr.trim() : null
   const letterhead = letterheadOf(input.letterhead)
-  if (letterhead) assertAnyAccess(ctx, [['quotations'], ['invoices']])
+  if (letterhead) assertAnyModules(ctx, DOCUMENT_MODULES)
   const { row, turnedOn, turnedOff } = await ctx.tx(async (tx) => {
     const before = await readBusinessState(tx, ctx.businessId, { lock: true })
     const current = await readProfile(tx, ctx.businessId)
@@ -418,8 +424,8 @@ export async function setLogo(ctx: BusinessCtx, input: SetLogoInput): Promise<Bu
     !sniffed ||
     sniffed !== expected ||
     storedType !== sniffed ||
-    // With Quotations or Invoices the logo prints on every document: an image their compiler decodes
-    // within the PDFs' image limits (D-295).
+    // With Quotations, Invoices or the statements the logo prints on every document: an image their
+    // compiler decodes within the PDFs' image limits (D-295).
     (documentsServed(ctx) && (await printableImageType(object.bytes)) !== sniffed)
   ) {
     await discard(ctx, input.path)

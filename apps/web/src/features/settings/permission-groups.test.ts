@@ -147,6 +147,20 @@ describe('visiblePermissionGroups', () => {
         ?.keys.some((key) => key.includes('books')),
     ).toBe(false)
   })
+
+  it('offers "Manage documents" wherever the business prints documents: quotations, invoices or statements (Release B)', () => {
+    const capabilities = { has_team: true, multi_location: false }
+    const business = (modules: string[]) =>
+      visiblePermissionGroups(capabilities, [...M1, ...modules]).find((g) => g.id === 'business')
+        ?.keys
+    expect(business([])).not.toContain('settings.documents.manage')
+    expect(business(['quotations'])).toContain('settings.documents.manage')
+    expect(business(['invoices'])).toContain('settings.documents.manage')
+    // An orders-only business prints its customers' statements (B10): Customers with Payments.
+    expect(business(['customers', 'payments'])).toContain('settings.documents.manage')
+    expect(business(['customers'])).not.toContain('settings.documents.manage')
+    expect(business(['payments'])).not.toContain('settings.documents.manage')
+  })
 })
 
 describe('switchPermission', () => {

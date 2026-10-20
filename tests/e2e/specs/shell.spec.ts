@@ -67,6 +67,9 @@ const SECTIONS = [
   'Orders',
   'Customers',
   'What customers owe',
+  // Release B (M3 Step 9): the workshop quotes and invoices.
+  'Quotations',
+  'Invoices',
   'Real profit',
   'Settings',
 ]
@@ -156,6 +159,8 @@ test('desktop in Arabic: the same sections on the right, in Arabic', async () =>
     'الطلبات',
     'العملاء',
     'مستحقات العملاء',
+    'عروض الأسعار',
+    'الفواتير',
     'الربح الحقيقي',
     'الإعدادات',
   ])
@@ -293,10 +298,12 @@ test('checklist: each step is done as the owner does it, then "You’re all set"
   expect(html).toContain('data-step="trn"')
   await page.goto(home())
   const list = checklist(page)
-  await expect(list).toContainText('0 of 4 done')
+  // The workshop quotes and invoices (Release B): "Add your business address" too (D-293).
+  await expect(list).toContainText('0 of 5 done')
   await expect(list.getByRole('link')).toHaveText([
     'Complete your business profile',
     'Add your TRN',
+    'Add your business address',
     'Invite your first team member',
     'Add your second branch',
   ])
@@ -315,10 +322,21 @@ test('checklist: each step is done as the owner does it, then "You’re all set"
   await page.getByRole('button', { name: 'Save changes' }).click()
   await expect(page.getByText('Business details saved.')).toBeVisible()
   await mainNav(page).getByRole('link', { name: 'Dashboard' }).click()
-  await expect(list).toContainText('1 of 4 done')
+  await expect(list).toContainText('1 of 5 done')
   await expect(step(page, 'trn')).toHaveAttribute('data-done', 'true')
   await expect(step(page, 'trn')).toContainText('Your TRN is saved.')
   await expect(list.getByRole('link', { name: 'Add your TRN' })).toHaveCount(0)
+
+  // The address its quotations and invoices print on the letterhead.
+  await list.getByRole('link', { name: 'Add your business address' }).click()
+  await expect(page).toHaveURL(`${home()}/settings/business`)
+  await page.getByRole('textbox', { name: 'Address', exact: true }).fill('Warehouse 12, Mussafah 4')
+  await page.getByRole('button', { name: 'Save changes' }).click()
+  // The TRN's "saved" may still show above it.
+  await expect(page.getByText('Business details saved.').last()).toBeVisible()
+  await mainNav(page).getByRole('link', { name: 'Dashboard' }).click()
+  await expect(list).toContainText('2 of 5 done')
+  await expect(step(page, 'address')).toHaveAttribute('data-done', 'true')
 
   // An invitation waiting counts as the first team member.
   await list.getByRole('link', { name: 'Invite your first team member' }).click()
@@ -329,7 +347,7 @@ test('checklist: each step is done as the owner does it, then "You’re all set"
   await invite.getByRole('button', { name: 'Send invitation' }).click()
   await expect(page.getByText(/^Invitation sent to /)).toBeVisible()
   await mainNav(page).getByRole('link', { name: 'Dashboard' }).click()
-  await expect(list).toContainText('2 of 4 done')
+  await expect(list).toContainText('3 of 5 done')
   await expect(step(page, 'invite')).toHaveAttribute('data-done', 'true')
 
   await list.getByRole('link', { name: 'Add your second branch' }).click()
@@ -340,7 +358,7 @@ test('checklist: each step is done as the owner does it, then "You’re all set"
   await branch.getByRole('button', { name: 'Add branch' }).click()
   await expect(page.locator('[data-location]')).toHaveCount(2)
   await mainNav(page).getByRole('link', { name: 'Dashboard' }).click()
-  await expect(list).toContainText('3 of 4 done')
+  await expect(list).toContainText('4 of 5 done')
 
   // The profile: what is missing is said, and it is done with the name in Arabic and a logo.
   await expect(step(page, 'profile')).toContainText(
@@ -364,7 +382,7 @@ test('checklist: each step is done as the owner does it, then "You’re all set"
   await page.getByRole('link', { name: /^Business profile/ }).click()
   await page.getByRole('textbox', { name: 'Business name in Arabic' }).fill('ورشة النور')
   await page.getByRole('button', { name: 'Save changes' }).click()
-  await expect(page.getByText('Business details saved.')).toBeVisible()
+  await expect(page.getByText('Business details saved.').last()).toBeVisible()
   // Saved (the TRN's "saved" may still show): nothing is left to save, so leaving does not ask.
   await expect(page.getByRole('button', { name: 'Save changes' })).toBeDisabled()
 
@@ -520,8 +538,9 @@ test('an employee sees no checklist, and settings sections are not open (403)', 
 
 test('an address that does not exist inside the business: "Page not found" inside the shell', async () => {
   await page.setViewportSize({ width: 1440, height: 900 })
-  // A module not released yet (Quotations) has no pages: its address is not found, title included.
-  for (const path of ['quotations', 'settings/nothing-here']) {
+  // A module not released yet (Inventory, Phase 4) has no pages: its address is not found, title
+  // included (Quotations is released since Release B).
+  for (const path of ['inventory', 'settings/nothing-here']) {
     await page.goto(`${home()}/${path}`)
     await expect(page.getByRole('heading', { level: 1, name: 'Page not found' })).toBeVisible()
     await expect(page).toHaveTitle('Page not found · BizCost')

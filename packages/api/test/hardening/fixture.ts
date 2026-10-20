@@ -81,14 +81,14 @@ import { CapturedEmails, join, setupBusiness, WORKSHOP } from '../settings'
 // order refunded by amount (with the money given back), and a One sale "they'll pay later" partly paid
 // (Step 5).
 //
-// M3 Step 7: Quotations is planned until Release B, so the suites run with the dev-only preview of
-// Quotations (D-125) and attack its procedures like the others. Each business also has the letterhead's
-// contact lines, a signature image (Settings → Documents), a draft quotation (a product line and a
-// typed line with its area, details, note and picture) and a sent one.
+// M3 Step 7: Quotations (released with Release B, M3 Step 9: the suites run the API as deployed and
+// attack its procedures like the others). Each business also has the letterhead's contact lines, a
+// signature image (Settings → Documents), a draft quotation (a product line and a typed line with its
+// area, details, note and picture) and a sent one.
 //
-// M3 Step 8: Invoices is planned until Release B too, so it is previewed with Quotations. Each business
-// also has an issued (plain) invoice of the customer (a product line and a typed one, its LPO and a
-// payment on it), a draft invoice, an issued credit note of the invoice and a draft credit note.
+// M3 Step 8: Invoices (released with Quotations). Each business also has an issued (plain) invoice of
+// the customer (a product line and a typed one, its LPO and a payment on it), a draft invoice, an
+// issued credit note of the invoice and a draft credit note.
 
 export type Handler = ReturnType<typeof handlerFor>
 
@@ -111,12 +111,7 @@ export function openApi(router?: AnyRouter): Api {
   const db = connectApi()
   const admin = connectAdmin()
   const emails = new CapturedEmails()
-  const handler = handlerFor(
-    db,
-    router,
-    { supabaseSecretKey: SECRET_KEY, previewModules: ['quotations', 'invoices'] },
-    { emailSender: emails },
-  )
+  const handler = handlerFor(db, router, { supabaseSecretKey: SECRET_KEY }, { emailSender: emails })
   const users: TestUser[] = []
   return {
     db,

@@ -50,7 +50,7 @@ function canFor(templateKey: string) {
 const dashboard = moduleById('dashboard')!
 const settings = moduleById('settings')!
 const orders = moduleById('orders')!
-const quotations = moduleById('quotations')!
+const inventory = moduleById('inventory')!
 
 describe('lookups', () => {
   it('moduleById finds manifests and returns undefined for unknown ids', () => {
@@ -76,6 +76,8 @@ describe('lookups', () => {
       'customers',
       'payments',
       'reports',
+      'quotations',
+      'invoices',
     ])
     expect(releasedModules().every(isModuleReleased)).toBe(true)
   })
@@ -199,9 +201,10 @@ describe('module gates', () => {
 
   it('never activates a planned module, even when the business enabled it', () => {
     const enabled = new Set(MODULES.map((m) => m.id))
-    expect(isModuleActive(quotations, enabled)).toBe(false)
-    expect(isModuleVisible(quotations, enabled, everybody)).toBe(false)
+    expect(isModuleActive(inventory, enabled)).toBe(false)
+    expect(isModuleVisible(inventory, enabled, everybody)).toBe(false)
     expect(isModuleActive(orders, enabled)).toBe(true)
+    expect(isModuleActive(moduleById('invoices')!, enabled)).toBe(true)
     expect(isModuleActive(dashboard, NONE)).toBe(true)
   })
 
@@ -221,40 +224,40 @@ describe('module gates', () => {
 })
 
 describe('the dev-only preview (D-125)', () => {
-  // A test registry with a Quotations of its own keys and nav (the real one's build started in M3 Step
-  // 7, and it stays planned until Release B).
+  // No module is being built between Release B (M3 Step 9) and Phase 4: a test registry starts the
+  // build of Inventory (its keys and nav) while it stays planned.
   const building: ModuleManifest = {
-    ...quotations,
-    permissionKeys: ['quotations.view'],
+    ...inventory,
+    permissionKeys: ['inventory.view'],
     nav: [
       {
-        id: 'quotations',
-        labelKey: 'nav.quotations',
-        path: 'quotations',
-        icon: 'file-text',
-        group: 'sales',
-        permission: 'quotations.view',
+        id: 'inventory',
+        labelKey: 'nav.inventory',
+        path: 'inventory',
+        icon: 'package',
+        group: 'main',
+        permission: 'inventory.view',
       },
     ],
   }
-  const registry = MODULES.map((m) => (m.id === 'quotations' ? building : m))
-  const quotationsOn = resolveEnabledModules([{ key: 'quotations', enabled: true }])
+  const registry = MODULES.map((m) => (m.id === 'inventory' ? building : m))
+  const inventoryOn = resolveEnabledModules([{ key: 'inventory', enabled: true }])
 
-  it('may show only planned modules whose build started: Quotations (M3 Step 7), Invoices (Step 8)', () => {
-    expect(PREVIEWABLE_MODULE_IDS).toEqual(['quotations', 'invoices'])
+  it('may show only planned modules whose build started: none since Release B (M3 Step 9)', () => {
+    expect(PREVIEWABLE_MODULE_IDS).toEqual([])
   })
 
   it('parses a comma or space separated list, ignores released modules, and names what it cannot preview', () => {
     expect(parsePreviewModules(undefined, registry)).toEqual({ ids: [], released: [], invalid: [] })
     expect(parsePreviewModules('  ', registry)).toEqual({ ids: [], released: [], invalid: [] })
-    expect(parsePreviewModules(' quotations , quotations', registry)).toEqual({
-      ids: ['quotations'],
+    expect(parsePreviewModules(' inventory , inventory', registry)).toEqual({
+      ids: ['inventory'],
       released: [],
       invalid: [],
     })
-    // A list written before a release (a local server's environment: the Costing Core's, M2 Step 7, or
-    // Release A's, M3 Step 6): its modules are released now, so there is nothing to preview and the
-    // server keeps starting.
+    // A list written before a release (a local server's environment: the Costing Core's, M2 Step 7,
+    // Release A's, M3 Step 6, or Release B's, M3 Step 9): its modules are released now, so there is
+    // nothing to preview and the server keeps starting.
     expect(parsePreviewModules('materials,products', registry)).toEqual({
       ids: [],
       released: ['products', 'materials'],
@@ -265,57 +268,69 @@ describe('the dev-only preview (D-125)', () => {
       released: ['sales', 'orders', 'customers', 'payments', 'reports'],
       invalid: [],
     })
-    // Unknown, or planned without a build: refused by name.
-    expect(parsePreviewModules('quotations,inventory,Quotations,nope', registry)).toEqual({
-      ids: ['quotations'],
-      released: [],
-      invalid: ['inventory', 'Quotations', 'nope'],
+    expect(parsePreviewModules('quotations,invoices')).toEqual({
+      ids: [],
+      released: ['quotations', 'invoices'],
+      invalid: [],
     })
-    // The real registry previews only the modules being built (Quotations since M3 Step 7, Invoices
-    // since Step 8).
+    // Unknown, or planned without a build: refused by name.
+    expect(parsePreviewModules('inventory,usage_waste,Inventory,nope', registry)).toEqual({
+      ids: ['inventory'],
+      released: [],
+      invalid: ['usage_waste', 'Inventory', 'nope'],
+    })
+    // The real registry previews nothing: no module is being built.
     expect(parsePreviewModules('quotations,invoices,inventory,materials,sales')).toEqual({
-      ids: ['quotations', 'invoices'],
-      released: ['materials', 'sales'],
+      ids: [],
+      released: ['materials', 'sales', 'quotations', 'invoices'],
       invalid: ['inventory'],
     })
   })
 
   it('counts the named modules as released, and nothing else', () => {
-    const previewed = withPreviewModules(['quotations', 'inventory'], registry)
+    const previewed = withPreviewModules(['inventory', 'usage_waste'], registry)
     expect(
       isModuleActive(
-        previewed.find((m) => m.id === 'quotations')!,
-        quotationsOn,
+        previewed.find((m) => m.id === 'inventory')!,
+        inventoryOn,
       ),
     ).toBe(true)
-    expect(previewed.find((m) => m.id === 'inventory')?.availability).toBe('planned')
+    expect(previewed.find((m) => m.id === 'usage_waste')?.availability).toBe('planned')
     // The registry passed in is untouched.
     expect(building.availability).toBe('planned')
-    expect(isModuleActive(building, quotationsOn)).toBe(false)
+    expect(isModuleActive(building, inventoryOn)).toBe(false)
     expect(withPreviewModules([], registry)).toBe(registry)
     // With the real registry nothing changes for a module not being built, or released.
-    expect(withPreviewModules(['inventory', 'materials', 'sales'])).toBe(MODULES)
-    expect(
-      withPreviewModules(['quotations']).find((m) => m.id === 'quotations')?.availability,
-    ).toBe('released')
+    expect(withPreviewModules(['inventory', 'materials', 'sales', 'quotations'])).toBe(MODULES)
   })
 
   it('still needs the business to have the module on and the member its permission', () => {
-    const previewed = withPreviewModules(['quotations'], registry)
+    const previewed = withPreviewModules(['inventory'], registry)
     const entries = (enabled: ReadonlySet<string>, can: (key: string) => boolean) =>
       buildModuleNav(enabled, can, previewed)
-        .find((m) => m.id === 'quotations')
+        .find((m) => m.id === 'inventory')
         ?.nav.map((e) => e.id)
-    expect(entries(quotationsOn, everybody)).toEqual(['quotations'])
-    expect(entries(quotationsOn, (key) => key !== 'quotations.view')).toEqual([])
+    expect(entries(inventoryOn, everybody)).toEqual(['inventory'])
+    expect(entries(inventoryOn, (key) => key !== 'inventory.view')).toEqual([])
     // An optional module is off until the business turns it on.
     expect(entries(resolveEnabledModules([]), everybody)).toBeUndefined()
   })
 })
 
-describe('the Costing Core (M2 Step 7) and Release A (M3 Step 6), released', () => {
+describe('the Costing Core (M2 Step 7), Release A (M3 Step 6) and Release B (M3 Step 9), released', () => {
   const core = resolveEnabledModules([])
   const withOrders = resolveEnabledModules([{ key: 'orders', enabled: true }])
+  // A fit-out company or a designer: quotes and invoices, no orders.
+  const withDocuments = resolveEnabledModules([
+    { key: 'quotations', enabled: true },
+    { key: 'invoices', enabled: true },
+  ])
+  // A workshop or a factory: orders, quotes and invoices.
+  const withEverything = resolveEnabledModules([
+    { key: 'orders', enabled: true },
+    { key: 'quotations', enabled: true },
+    { key: 'invoices', enabled: true },
+  ])
   const entries = (enabled: ReadonlySet<string>, can: (key: string) => boolean) =>
     buildModuleNav(enabled, can).map((m): [string, string[]] => [m.id, m.nav.map((e) => e.id)])
   const plus = (enabled: ReadonlySet<string>, can: (key: string) => boolean) =>
@@ -357,6 +372,63 @@ describe('the Costing Core (M2 Step 7) and Release A (M3 Step 6), released', () 
       'new_order',
       'new_customer',
     ])
+    // Quotations and Invoices (Release B): their sections in the Sales group, and "+" for each.
+    expect(entries(withEverything, canFor(OWNER_TEMPLATE_KEY)).slice(-7)).toEqual([
+      ['sales', ['sales']],
+      ['orders', ['orders']],
+      ['customers', ['customers']],
+      ['payments', ['receivables']],
+      ['reports', ['real_profit']],
+      ['quotations', ['quotations']],
+      ['invoices', ['invoices']],
+    ])
+    expect(plus(withEverything, canFor(OWNER_TEMPLATE_KEY))).toEqual([
+      'new_product',
+      'new_purchase',
+      'new_expense',
+      'today_sales',
+      'new_sale',
+      'new_order',
+      'new_customer',
+      'new_quotation',
+      'new_invoice',
+    ])
+  })
+
+  it('offers "+ New quotation" and "+ New invoice" only to who prepares them (Q10)', () => {
+    const documents = (template: string) =>
+      plus(withEverything, canFor(template)).filter(
+        (id) => id === 'new_quotation' || id === 'new_invoice',
+      )
+    expect(documents('admin')).toEqual(['new_quotation', 'new_invoice'])
+    expect(documents('manager')).toEqual(['new_quotation', 'new_invoice'])
+    expect(documents('sales')).toEqual(['new_quotation', 'new_invoice'])
+    // The Accountant sees quotations, and prepares, issues and credits invoices.
+    expect(plus(withEverything, canFor('accountant'))).toEqual(['new_invoice'])
+    expect(documents('supervisor')).toEqual([])
+    expect(documents('employee')).toEqual([])
+    // Sections: the Accountant sees both; the Supervisor and the Employee neither.
+    const sections = (template: string) =>
+      entries(withEverything, canFor(template))
+        .filter(([id]) => id === 'quotations' || id === 'invoices')
+        .map(([id, ids]) => [id, ids.length])
+    expect(sections('accountant')).toEqual([
+      ['quotations', 1],
+      ['invoices', 1],
+    ])
+    expect(sections('supervisor')).toEqual([
+      ['quotations', 0],
+      ['invoices', 0],
+    ])
+    expect(sections('employee')).toEqual([
+      ['quotations', 0],
+      ['invoices', 0],
+    ])
+    // Off for the business: gone, whoever the member is.
+    expect(plus(withOrders, canFor(OWNER_TEMPLATE_KEY))).not.toContain('new_invoice')
+    expect(entries(withOrders, canFor(OWNER_TEMPLATE_KEY)).map(([id]) => id)).not.toContain(
+      'quotations',
+    )
   })
 
   it('is still gated by the module being on and the permission of the member', () => {
@@ -433,6 +505,20 @@ describe('the Costing Core (M2 Step 7) and Release A (M3 Step 6), released', () 
     // A member who does not use Orders keeps Sales in its place.
     const noOrders = (key: string) => canFor('manager')(key) && !key.startsWith('orders.')
     expect(new Map(tabs(withOrders, noOrders)).get('sales')).toBe(2)
+    // A business that invoices without orders (designer, fit-out, garage): Invoices takes it (Q14).
+    const invoicing = new Map(tabs(withDocuments, canFor(OWNER_TEMPLATE_KEY)))
+    expect(invoicing.get('invoices')).toBe(2)
+    expect(invoicing.get('sales')).toBeNull()
+    expect(invoicing.get('quotations')).toBeNull()
+    // With Orders on too, Orders keeps it.
+    const both = new Map(tabs(withEverything, canFor(OWNER_TEMPLATE_KEY)))
+    expect(both.get('orders')).toBe(2)
+    expect(both.get('invoices')).toBeNull()
+    expect(both.get('sales')).toBeNull()
+    // A member who does not see invoices (the Supervisor, the Employee) keeps Sales there.
+    expect(new Map(tabs(withDocuments, canFor('supervisor'))).get('sales')).toBe(2)
+    expect(new Map(tabs(withDocuments, canFor('employee'))).get('sales')).toBe(2)
+    expect(new Map(tabs(withDocuments, canFor('accountant'))).get('invoices')).toBe(2)
   })
 })
 
@@ -471,7 +557,7 @@ describe('resolveEnabledModules', () => {
 
 describe('buildModuleNav', () => {
   it('lists released + enabled modules with the entries the member may use', () => {
-    const nav = buildModuleNav(new Set(['quotations', 'inventory']), canFor('employee'))
+    const nav = buildModuleNav(new Set(['inventory', 'usage_waste']), canFor('employee'))
     expect(nav).toEqual([
       {
         id: 'dashboard',
@@ -519,37 +605,37 @@ describe('buildModuleNav', () => {
 
   it('adds a module once it is released, only for businesses that turned it on', () => {
     const released: ModuleManifest = {
-      ...quotations,
+      ...inventory,
       availability: 'released',
       nav: [
         {
-          id: 'quotations',
-          labelKey: 'nav.quotations',
-          path: 'quotations',
-          icon: 'shopping-bag',
+          id: 'inventory',
+          labelKey: 'nav.inventory',
+          path: 'inventory',
+          icon: 'package',
           group: 'main',
-          permission: 'quotations.view',
+          permission: 'inventory.view',
         },
       ],
       quickActions: [
-        { id: 'quotations.new', labelKey: 'nav.newQuote', path: 'quotations/new', icon: 'plus' },
+        { id: 'inventory.count', labelKey: 'nav.newCount', path: 'inventory/count', icon: 'plus' },
       ],
     }
-    const registry = MODULES.map((m) => (m.id === 'quotations' ? released : m))
+    const registry = MODULES.map((m) => (m.id === 'inventory' ? released : m))
     const ids = (enabled: Set<string>, can: (key: string) => boolean) =>
       buildModuleNav(enabled, can, registry).map((m) => [m.id, m.nav.length, m.quickActions.length])
-    expect(ids(new Set(['quotations']), everybody)).toEqual([
+    expect(ids(new Set(['inventory']), everybody)).toEqual([
       ['dashboard', 1, 0],
       ['settings', 1, 0],
-      ['quotations', 1, 1],
+      ['inventory', 1, 1],
     ])
     expect(ids(NONE, everybody)).toEqual([
       ['dashboard', 1, 0],
       ['settings', 1, 0],
     ])
     // Without the permission the module stays listed, with no entries (the shell hides it).
-    expect(ids(new Set(['quotations']), (key) => key !== 'quotations.view')).toContainEqual([
-      'quotations',
+    expect(ids(new Set(['inventory']), (key) => key !== 'inventory.view')).toContainEqual([
+      'inventory',
       0,
       1,
     ])

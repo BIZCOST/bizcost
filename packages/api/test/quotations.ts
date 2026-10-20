@@ -8,23 +8,17 @@ import type {
 } from '@bizcost/contracts'
 import { newId } from '@bizcost/domain'
 import type { SetupAnswers } from '@bizcost/modules'
-import { handlerFor, SECRET_KEY } from './helpers'
 import { WORKSHOP } from './settings'
 import { OrderScope, OrdersApi } from './orders'
 import { ok, type PurchasingApi, type Person } from './purchasing'
 
-// Helpers of the quotations suites (ROADMAP.md M3 Step 7): Quotations stays planned until Release B
-// (Step 9), so the API runs with the dev-only preview of Quotations (D-125), with the secret key for
-// Storage (line pictures, signatures, stamps). Quotations, orders and customers are made through the
-// API. Every business and customer is fictional.
+// Helpers of the quotations suites (ROADMAP.md M3 Step 7): the API as deployed (Quotations is
+// released since Release B, M3 Step 9), with the secret key for Storage (line pictures, signatures,
+// stamps). Quotations, orders and customers are made through the API. Every business and customer is
+// fictional.
 
-/** The API of the quotations suites: as deployed, with Quotations previewed. */
-export class QuotationsApi extends OrdersApi {
-  override readonly handler = handlerFor(this.db, undefined, {
-    supabaseSecretKey: SECRET_KEY,
-    previewModules: ['quotations'],
-  })
-}
+/** The API of the quotations suites: the orders suites' (as deployed). */
+export class QuotationsApi extends OrdersApi {}
 
 /**
  * A workshop that quotes custom work: VAT, a team, branches, quotes and orders (Smart Setup turns

@@ -218,12 +218,7 @@ describe("4. a deposit invoice's credit note issued while its final invoice is i
   let handlers: Handler[]
   beforeAll(() => {
     dbs = [connectApi(), connectApi()]
-    handlers = dbs.map((db) =>
-      handlerFor(db, undefined, {
-        supabaseSecretKey: SECRET_KEY,
-        previewModules: ['quotations', 'invoices'],
-      }),
-    )
+    handlers = dbs.map((db) => handlerFor(db, undefined, { supabaseSecretKey: SECRET_KEY }))
   })
   afterAll(async () => {
     for (const db of dbs) await db.$client.end()

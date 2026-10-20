@@ -85,9 +85,10 @@ describe('dashboard.checklist: who sees which step', () => {
     const businessId = await setupBusiness(handler, owner.token, WORKSHOP)
     // The team had started when the others joined: only the owner gets "Invite your first team
     // member". The business still has one branch, so the second one is open to those who manage them.
+    // It quotes and invoices (released with Release B): "Add your business address" (D-293).
     const expected: Record<RoleTemplateKey, string[]> = {
-      owner: ['profile', 'trn', 'invite', 'location'],
-      admin: ['profile', 'trn', 'location'],
+      owner: ['profile', 'trn', 'address', 'invite', 'location'],
+      admin: ['profile', 'trn', 'address', 'location'],
       manager: ['location'],
       accountant: [],
       sales: [],
@@ -128,15 +129,17 @@ describe('dashboard.checklist: who sees which step', () => {
       trn: '100123456700003',
     })
     expect(saved.error).toBeUndefined()
+    // VAT with Orders turns Invoices on (released with Release B): its letterhead's address too.
     expect(state(await checklist(owner.token, businessId))).toEqual({
       profile: false,
       trn: true,
+      address: false,
       invite: false,
       location: false,
     })
     expect((await customize('has_team', false)).error).toBeUndefined()
     expect((await customize('multi_location', false)).error).toBeUndefined()
-    expect(ids(await checklist(owner.token, businessId))).toEqual(['profile', 'trn'])
+    expect(ids(await checklist(owner.token, businessId))).toEqual(['profile', 'trn', 'address'])
   })
 
   it('follows a role that was edited, and needs dashboard.home.view', async () => {
@@ -187,7 +190,7 @@ describe('dashboard.checklist: milestones reached before a member joined', () =>
     expect(await checklist(late.token, businessId)).toEqual([])
     const admin = await newUser()
     await join(db, owner.user, businessId, admin.user, 'admin')
-    expect(ids(await checklist(admin.token, businessId))).toEqual(['profile', 'trn'])
+    expect(ids(await checklist(admin.token, businessId))).toEqual(['profile', 'trn', 'address'])
     // The owner keeps every step, done.
     expect(state(await checklist(owner.token, businessId))).toMatchObject({
       invite: true,

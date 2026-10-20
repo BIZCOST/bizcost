@@ -102,7 +102,11 @@ function Contact({
   )
 }
 
-export function LetterheadPreview({ data }: { data: LetterheadPreviewData }) {
+/**
+ * `title`: the business's main document, as its PDFs title it (a quotation, a tax invoice or a plain
+ * one, or a customer's statement for a business that prints only those).
+ */
+export function LetterheadPreview({ data, title }: { data: LetterheadPreviewData; title: string }) {
   const { t } = useTranslation()
   const rtl = data.locale === 'ar'
   const names = [
@@ -221,7 +225,7 @@ export function LetterheadPreview({ data }: { data: LetterheadPreviewData }) {
               style={{ height: mm(0.25), background: data.accent, opacity: 0.5 }}
             />
             <span className="font-bold" style={{ color: data.accent, fontSize: mm(5.4) }}>
-              {t('settings.documents.preview.title')}
+              {title}
             </span>
             <div
               className="flex-1"

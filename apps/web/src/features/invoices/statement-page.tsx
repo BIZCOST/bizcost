@@ -19,6 +19,7 @@ import { Button } from '@/components/ui/button'
 import { useBusinessDate, useMoney } from '@/features/documents/amounts'
 import { Panel } from '@/features/documents/panel'
 import { PdfDialog } from '@/features/quotations/pdf-dialog'
+import { hasModule } from '@/features/purchasing/data'
 import { useBooks } from '@/features/sales/data'
 import { useBusinessContext } from '@/lib/trpc/client'
 import { cn } from '@/lib/utils'
@@ -32,7 +33,20 @@ import { DAY, periodOf, PRESETS } from './period'
 // the business's letterhead as a PDF («كشف حساب · Statement of Account») to download or share. A
 // sale says its first items and a payment how it was paid; an invoice of work its order or sale
 // charged on an earlier day says it was "Already owed" (it adds nothing again, D-313); owed below zero
-// is "Paid ahead". The period lives in the address.
+// is "Paid ahead". The period lives in the address. Since Release B every business with Customers on
+// has it (B10): an orders-only one's (`invoicing` false) says "Orders and sales" and "Payments and
+// refunds", never invoices or credit notes.
+
+type StatementWord = 'invoiced' | 'credited' | 'charge' | 'credit'
+
+/** A sum's or a column's name: the invoices' words, or an orders-only business's (`_plain`). */
+function useStatementWord(invoicing: boolean) {
+  const { t } = useTranslation()
+  return (word: StatementWord): string =>
+    invoicing
+      ? t(`documents.invoices.statement.${word}`)
+      : t(`documents.invoices.statement.${word}_plain`)
+}
 
 /**
  * What an entry was, under its name: a sale's first items, how a payment was paid, what of an invoice
@@ -105,6 +119,7 @@ function useEntryName() {
 function Sums({ statement }: { statement: CustomerStatementDto }) {
   const { t } = useTranslation()
   const money = useMoney()
+  const word = useStatementWord(statement.invoicing)
   const closing = owedOf(statement.closing)
   const rows = [
     ['opening', statement.opening],
@@ -125,7 +140,9 @@ function Sums({ statement }: { statement: CustomerStatementDto }) {
           )}
         >
           <dt className="text-xs text-muted-foreground">
-            {t(`documents.invoices.statement.${key}`)}
+            {key === 'invoiced' || key === 'credited'
+              ? word(key)
+              : t(`documents.invoices.statement.${key}`)}
           </dt>
           <dd
             className={cn(
@@ -147,6 +164,7 @@ function Entries({ statement }: { statement: CustomerStatementDto }) {
   const businessDate = useBusinessDate()
   const nameOf = useEntryName()
   const detailOf = useEntryDetail(statement.currency)
+  const word = useStatementWord(statement.invoicing)
   const { businessId } = useParams<{ businessId: string }>()
   const hrefOf = (entry: StatementEntryDto): string | null =>
     entry.kind === 'invoice'
@@ -270,10 +288,10 @@ function Entries({ statement }: { statement: CustomerStatementDto }) {
                 {t('documents.invoices.statement.document')}
               </th>
               <th scope="col" className="px-2 py-2 text-end font-medium">
-                {t('documents.invoices.statement.charge')}
+                {word('charge')}
               </th>
               <th scope="col" className="px-2 py-2 text-end font-medium">
-                {t('documents.invoices.statement.credit')}
+                {word('credit')}
               </th>
               <th scope="col" className="px-4 py-2 text-end font-medium sm:pe-5">
                 {t('documents.invoices.statement.owed')}
@@ -314,7 +332,16 @@ function Entries({ statement }: { statement: CustomerStatementDto }) {
   )
 }
 
-function Statement({ customerId, today }: { customerId: string; today: string }) {
+function Statement({
+  customerId,
+  today,
+  invoicesOn,
+}: {
+  customerId: string
+  today: string
+  /** Invoices is on: the intro's words until the statement says (`invoicing`). */
+  invoicesOn: boolean
+}) {
   const { t } = useTranslation()
   const trpc = useTRPC()
   const router = useRouter()
@@ -383,7 +410,9 @@ function Statement({ customerId, today }: { customerId: string; today: string })
             {t('documents.invoices.statement.title', { name: isolate(name) })}
           </h1>
           <p className="mt-1.5 max-w-2xl text-muted-foreground">
-            {t('documents.invoices.statement.intro')}
+            {(statement.data?.invoicing ?? invoicesOn)
+              ? t('documents.invoices.statement.intro')
+              : t('documents.invoices.statement.intro_plain')}
           </p>
         </div>
         <Button data-statement-pdf disabled={!statement.data} onClick={() => setPdfOpen(true)}>
@@ -510,7 +539,13 @@ function StatementGate({ customerId }: { customerId: string }) {
       </PageContainer>
     )
   }
-  return <Statement customerId={customerId} today={books.data.today} />
+  return (
+    <Statement
+      customerId={customerId}
+      today={books.data.today}
+      invoicesOn={hasModule(context, 'invoices')}
+    />
+  )
 }
 
 /** A customer's statement, inside the Customers module's gate. */

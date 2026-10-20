@@ -16,7 +16,16 @@ import {
   type Admin,
   type TestUser,
 } from './helpers'
+import { CAFE } from './sales'
 import { appCode, join, setupBusiness, WORKSHOP } from './settings'
+
+/**
+ * A business that prints no document (a POS café: no Quotations, Invoices or Customers): its logo is
+ * checked by its first bytes only. Where documents print, the logo must also decode as a PDF decodes
+ * it (D-295; Release B serves them for every business with Quotations, Invoices or Customers with
+ * Payments, D-319), which these header-only samples do not.
+ */
+const NO_DOCUMENTS = CAFE
 
 // The business logo in the private bucket `business-files` (ROADMAP.md Step 6, docs/ARCHITECTURE.md
 // §Storage): signed upload URL → upload → setLogo checks the object → short-lived signed download URL.
@@ -105,7 +114,7 @@ async function uploaded(token: string, businessId: string, bytes: Buffer, type: 
 describe('business logo', () => {
   it('uploads through a signed URL, saves it and serves it through a short-lived signed URL', async () => {
     const owner = await newUser()
-    const businessId = await setupBusiness(handler, owner.token, WORKSHOP)
+    const businessId = await setupBusiness(handler, owner.token, NO_DOCUMENTS)
     const { path, maxBytes } = await uploaded(owner.token, businessId, PNG, 'image/png')
     expect(path).toMatch(new RegExp(`^${businessId}/logo/[0-9a-f-]{36}\\.png$`))
     expect(maxBytes).toBe(2 * 1024 * 1024)
@@ -143,7 +152,7 @@ describe('business logo', () => {
 
   it('accepts JPEG and WebP', async () => {
     const owner = await newUser()
-    const businessId = await setupBusiness(handler, owner.token, WORKSHOP)
+    const businessId = await setupBusiness(handler, owner.token, NO_DOCUMENTS)
     for (const [bytes, type] of [
       [JPEG, 'image/jpeg'],
       [WEBP, 'image/webp'],

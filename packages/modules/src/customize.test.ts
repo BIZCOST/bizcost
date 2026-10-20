@@ -126,6 +126,20 @@ describe('toggleBusinessItem', () => {
     expect(isValidSetupState(on.state)).toBe(true)
   })
 
+  it('turns Invoices off with Sales, and Sales on with Invoices: an issued invoice is a sale (Release B review)', () => {
+    expect(workshop.modules.has('invoices')).toBe(true)
+    const off = ok(toggleBusinessItem(workshop, mod('sales'), false))
+    expect(off.turnedOff).toEqual(expect.arrayContaining([mod('orders'), mod('invoices')]))
+    // Quotations keeps no tie to Sales: a quotation posts nothing.
+    expect(off.state.modules.has('quotations')).toBe(true)
+    expect(off.state.modules.has('customers')).toBe(true)
+    expect(off.state.modules.has('payments')).toBe(true)
+    const on = ok(toggleBusinessItem(off.state, mod('invoices'), true))
+    expect(on.turnedOn).toEqual([mod('sales')])
+    expect(on.state.modules.has('orders')).toBe(false)
+    expect(isValidSetupState(on.state)).toBe(true)
+  })
+
   it('VAT follows the same rules when the business profile switches it', () => {
     const off = ok(toggleBusinessItem(workshop, cap('vat_registered'), false))
     expect(off.state.vatRegistered).toBe(false)

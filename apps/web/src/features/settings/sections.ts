@@ -40,6 +40,16 @@ function hasModule(access: Access, id: string): boolean {
   return (access.modules ?? []).some((module) => module.id === id)
 }
 
+/**
+ * Whether the business prints documents on its letterhead: quotations, invoices, or since Release B
+ * (M3 Step 9, B10) the customers' statements of every business with Customers and Payments on
+ * (DOCUMENT_MODULES in the API). Settings → Documents and the profile's contact lines follow it.
+ */
+export function printsDocuments(access: Pick<Access, 'modules'>): boolean {
+  const on = (id: string) => (access.modules ?? []).some((module) => module.id === id)
+  return on('quotations') || on('invoices') || (on('customers') && on('payments'))
+}
+
 /** The modules whose records obey the books-closed date (books.close needs one of them on). */
 const BOOKS_MODULES = ['purchases', 'expenses', 'sales', 'orders'] as const
 
@@ -57,11 +67,9 @@ export function isSectionVisible(access: Access, section: SettingsSection): bool
       return hasModule(access, 'sales') && can(access, 'sales.channels.manage')
     case 'documents':
       // Settings → Documents (M3 Step 7): numbers, the letterhead, the footer, the signature and
-      // stamp; with Quotations or Invoices on, for the key to set them (Owner, Admin).
-      return (
-        (hasModule(access, 'quotations') || hasModule(access, 'invoices')) &&
-        can(access, 'settings.documents.manage')
-      )
+      // stamp; while the business prints documents (printsDocuments), for the key to set them (Owner,
+      // Admin).
+      return printsDocuments(access) && can(access, 'settings.documents.manage')
     case 'members':
       return capability(access, 'has_team') && can(access, 'settings.members.view')
     case 'roles':
@@ -137,9 +145,20 @@ const BOOKS_PARTS = [
 /**
  * What a section is about, as its card and its page say it: "Closing the books" names only what the
  * business keeps of purchases, expenses and sales (D-236; an order's delivery is a sale; M3 Step 6
- * review: a designer without Purchases is never told it stops changes to purchases).
+ * review: a designer without Purchases is never told it stops changes to purchases); "Documents" names
+ * the signature and stamp only to a business that quotes or invoices, and to one that prints only
+ * statements its order numbers only with Orders on (Release B review).
  */
 export function sectionDescription(access: Access, section: SettingsSection): I18nKey {
+  if (
+    section === 'documents' &&
+    !hasModule(access, 'quotations') &&
+    !hasModule(access, 'invoices')
+  ) {
+    return hasModule(access, 'orders')
+      ? 'settings.documents.descriptions.statementsOrders'
+      : 'settings.documents.descriptions.statements'
+  }
   if (section === 'books') {
     const parts = BOOKS_PARTS.filter(([, ids]) => ids.some((id) => hasModule(access, id))).map(
       ([part]) => part,
@@ -153,7 +172,7 @@ export const SECTION_DESCRIPTIONS: Readonly<Record<SettingsSection, I18nKey>> = 
   business: 'settings.business.description',
   locations: 'settings.locations.description',
   channels: 'settings.channels.description',
-  documents: 'settings.documents.description',
+  documents: 'settings.documents.descriptions.documents',
   members: 'settings.members.description',
   roles: 'settings.roles.description',
   modules: 'settings.modules.description',

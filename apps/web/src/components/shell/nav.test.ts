@@ -45,22 +45,22 @@ function canFor(templateKey: string) {
 const owner = canFor(OWNER_TEMPLATE_KEY)
 const nothing = new Set<string>()
 
-/** Quotations (planned until Release B), released: a nav entry that needs its permission, and "+". */
-const QUOTATIONS: ModuleManifest = {
-  ...moduleById('quotations')!,
+/** Inventory (planned until Phase 4), released: a nav entry that needs its permission, and "+". */
+const INVENTORY: ModuleManifest = {
+  ...moduleById('inventory')!,
   availability: 'released',
   nav: [
     {
-      id: 'quotations',
-      labelKey: 'nav.quotations',
-      path: 'quotations',
+      id: 'inventory',
+      labelKey: 'nav.inventory',
+      path: 'inventory',
       icon: 'file-signature',
       group: 'main',
-      permission: 'quotations.view',
+      permission: 'inventory.view',
     },
   ],
   quickActions: [
-    { id: 'quotations.new', labelKey: 'nav.newQuote', path: 'quotations/new', icon: 'plus' },
+    { id: 'inventory.count', labelKey: 'nav.newCount', path: 'inventory/count', icon: 'plus' },
   ],
 }
 
@@ -126,20 +126,20 @@ describe('shellNav with the M1 registry', () => {
 })
 
 describe('a module released later shows with no change to the shell', () => {
-  const registry = released(QUOTATIONS)
+  const registry = released(INVENTORY)
 
   it('in the sidebar, the rail and the tabs, before Settings, once the business turns it on', () => {
-    const on = buildModuleNav(new Set(['quotations']), owner, registry)
-    const items = shellNav(on, ID, `${ROOT}/quotations/123`)
+    const on = buildModuleNav(new Set(['inventory']), owner, registry)
+    const items = shellNav(on, ID, `${ROOT}/inventory/123`)
     expect(items.map((item) => [item.id, item.href])).toEqual([
       ['dashboard', ROOT],
-      ['quotations', `${ROOT}/quotations`],
+      ['inventory', `${ROOT}/inventory`],
       ['settings', `${ROOT}/settings`],
     ])
-    expect(active(items)).toBe('quotations')
+    expect(active(items)).toBe('inventory')
     expect(labels(bottomTabs(items, shellQuickActions(on, ID)).tabs)).toEqual([
       'dashboard',
-      'quotations',
+      'inventory',
       'settings',
     ])
     // Not turned on for this business: not there.
@@ -150,16 +150,16 @@ describe('a module released later shows with no change to the shell', () => {
   })
 
   it('only for members with its permission; its "+" action brings the "+" tab', () => {
-    const on = new Set(['quotations'])
+    const on = new Set(['inventory'])
     const employee = buildModuleNav(on, canFor('employee'), registry)
     expect(labels(shellNav(employee, ID, ROOT))).toEqual(['dashboard', 'settings'])
     const ownerModules = buildModuleNav(on, owner, registry)
     const actions = shellQuickActions(ownerModules, ID)
     expect(actions).toEqual([
       {
-        id: 'quotations.new',
-        labelKey: 'common.nav.newQuote',
-        href: `${ROOT}/quotations/new`,
+        id: 'inventory.count',
+        labelKey: 'common.nav.newCount',
+        href: `${ROOT}/inventory/count`,
         icon: 'plus',
       },
     ])
@@ -171,31 +171,36 @@ describe('a module released later shows with no change to the shell', () => {
     expect(navIcon('settings')).not.toBe(FALLBACK_NAV_ICON)
   })
 
-  it('has its own icon for every entry of the modules built so far, Quotations too (D-297)', () => {
-    for (const manifest of MODULES.filter(
-      (m) => m.availability !== 'planned' || m.id === 'quotations',
-    )) {
-      for (const entry of manifest.nav) expect(hasNavIcon(entry.icon), entry.id).toBe(true)
+  it('has its own icon for every entry and "+" of the released modules, Quotations and Invoices too (D-297)', () => {
+    for (const manifest of MODULES.filter((m) => m.availability === 'released')) {
+      for (const entry of [...manifest.nav, ...manifest.quickActions]) {
+        expect(hasNavIcon(entry.icon), entry.id).toBe(true)
+      }
     }
   })
 
   it('and the page states follow: off for a business without it, not open without permission', () => {
-    const on = new Set(['quotations'])
-    expect(moduleAccess(buildModuleNav(on, owner, registry), 'quotations', 'quotations')).toBe(
-      'open',
-    )
-    expect(moduleAccess(buildModuleNav(nothing, owner, registry), 'quotations', 'quotations')).toBe(
+    const on = new Set(['inventory'])
+    expect(moduleAccess(buildModuleNav(on, owner, registry), 'inventory', 'inventory')).toBe('open')
+    expect(moduleAccess(buildModuleNav(nothing, owner, registry), 'inventory', 'inventory')).toBe(
       'off',
     )
     expect(
-      moduleAccess(buildModuleNav(on, canFor('employee'), registry), 'quotations', 'quotations'),
+      moduleAccess(buildModuleNav(on, canFor('employee'), registry), 'inventory', 'inventory'),
     ).toBe('forbidden')
     // Still planned in the real registry: off, whatever the business chose.
-    expect(moduleAccess(buildModuleNav(on, owner), 'quotations', 'quotations')).toBe('off')
-    // Released with Release A (M3 Step 6): Orders is open in the real registry once turned on.
+    expect(moduleAccess(buildModuleNav(on, owner), 'inventory', 'inventory')).toBe('off')
+    // Released with Release A (M3 Step 6): Orders is open in the real registry once turned on, and
+    // with Release B (M3 Step 9) Quotations and Invoices.
     expect(moduleAccess(buildModuleNav(new Set(['orders']), owner), 'orders', 'orders')).toBe(
       'open',
     )
+    const documents = new Set(['quotations', 'invoices'])
+    expect(moduleAccess(buildModuleNav(documents, owner), 'quotations', 'quotations')).toBe('open')
+    expect(moduleAccess(buildModuleNav(documents, owner), 'invoices', 'invoices')).toBe('open')
+    expect(
+      moduleAccess(buildModuleNav(documents, canFor('employee')), 'invoices', 'invoices'),
+    ).toBe('forbidden')
   })
 })
 
@@ -343,10 +348,10 @@ describe('a page two modules share: Amounts owed (Purchases and Expenses, D-166)
 
 describe('wayBack', () => {
   it("leads from a module's state to another section: the first in the nav, else Settings", () => {
-    const registry = released(QUOTATIONS)
-    const items = shellNav(buildModuleNav(new Set(['quotations']), owner, registry), ID, ROOT)
-    expect(wayBack(items, 'quotations')?.id).toBe('dashboard')
-    expect(wayBack(items, 'dashboard')?.id).toBe('quotations')
+    const registry = released(INVENTORY)
+    const items = shellNav(buildModuleNav(new Set(['inventory']), owner, registry), ID, ROOT)
+    expect(wayBack(items, 'inventory')?.id).toBe('dashboard')
+    expect(wayBack(items, 'dashboard')?.id).toBe('inventory')
     // Without the Dashboard: the business root sends the member to Settings.
     const noDashboard = shellNav(
       buildModuleNav(nothing, (key) => key !== 'dashboard.home.view'),
@@ -361,11 +366,12 @@ describe('wayBack', () => {
 describe('navSlots: the placeholder while a business loads', () => {
   it('has a place for each released entry, by group', () => {
     // Home and the Costing Core's eight sections (Amounts owed once); Release A's "Sales" group
-    // (Sales, Orders, Customers, What customers owe) and "Reports" (Real profit); Settings.
-    expect(navSlots(releasedModules())).toEqual({ main: 9, sales: 4, reports: 1, system: 1 })
-    expect(navSlots(released(QUOTATIONS).filter((m) => m.availability === 'released'))).toEqual({
+    // (Sales, Orders, Customers, What customers owe) with Release B's Quotations and Invoices, and
+    // "Reports" (Real profit); Settings.
+    expect(navSlots(releasedModules())).toEqual({ main: 9, sales: 6, reports: 1, system: 1 })
+    expect(navSlots(released(INVENTORY).filter((m) => m.availability === 'released'))).toEqual({
       main: 10,
-      sales: 4,
+      sales: 6,
       reports: 1,
       system: 1,
     })
@@ -601,6 +607,60 @@ describe('the phone tab bar and "+" since Release A (M3 Step 6; D-189, Q14)', ()
       expect(navIcon(action.icon)).not.toBe(FALLBACK_NAV_ICON)
       expect(hasMessage('en', action.labelKey)).toBe(true)
       expect(hasMessage('ar', action.labelKey)).toBe(true)
+    }
+  })
+
+  it('Release B (M3 Step 9): Invoices takes the Sales place of a business that invoices without orders (Q14)', () => {
+    const fitOut = resolveEnabledModules([
+      { key: 'quotations', enabled: true },
+      { key: 'invoices', enabled: true },
+    ])
+    const workshop = resolveEnabledModules([
+      { key: 'orders', enabled: true },
+      { key: 'quotations', enabled: true },
+      { key: 'invoices', enabled: true },
+    ])
+    // The owner of a fit-out company or a designer: Home | Invoices | + | Costs | More.
+    const owners = bar(OWNER_TEMPLATE_KEY, fitOut)
+    expect(owners.tabs).toEqual(['dashboard', 'invoices', 'product_costs'])
+    expect(owners.items.slice(-8)).toEqual([
+      'product_costs',
+      'sales',
+      'customers',
+      'receivables',
+      'quotations',
+      'invoices',
+      'real_profit',
+      'settings',
+    ])
+    expect(owners.more).toContain('sales')
+    expect(owners.more).toContain('quotations')
+    expect(owners.actions.slice(-3)).toEqual(['new_customer', 'new_quotation', 'new_invoice'])
+    // A workshop with Orders: Orders keeps it.
+    expect(bar(OWNER_TEMPLATE_KEY, workshop).tabs).toEqual(['dashboard', 'orders', 'product_costs'])
+    // The Accountant prepares, issues and credits invoices: "+" with New invoice only, and Invoices
+    // in the Sales place.
+    const accountant = bar('accountant', fitOut)
+    expect(accountant.quickAdd).toBe(true)
+    expect(accountant.actions).toEqual(['new_invoice'])
+    expect(accountant.tabs).toEqual(['dashboard', 'invoices', 'product_costs'])
+    // Sales: both documents, Invoices in the Sales place without Orders, Orders with them.
+    const seller = bar('sales', fitOut)
+    expect(seller.tabs).toEqual(['dashboard', 'invoices', 'products'])
+    expect(seller.actions).toEqual([
+      'today_sales',
+      'new_sale',
+      'new_customer',
+      'new_quotation',
+      'new_invoice',
+    ])
+    expect(bar('sales', workshop).tabs).toEqual(['dashboard', 'orders', 'products'])
+    // The Supervisor and the Employee see no invoices: Sales keeps its place, no document in "+".
+    expect(bar('supervisor', fitOut).tabs).toEqual(['dashboard', 'sales', 'products'])
+    expect(bar('employee', fitOut).tabs).toEqual(['dashboard', 'sales', 'expenses'])
+    for (const template of ['supervisor', 'employee']) {
+      expect(bar(template, workshop).actions, template).not.toContain('new_invoice')
+      expect(bar(template, workshop).actions, template).not.toContain('new_quotation')
     }
   })
 

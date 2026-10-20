@@ -190,6 +190,45 @@ describe('settings sections', () => {
     expect(sectionOfPath(`/b/${id}/settings/channels`)).toBe('channels')
   })
 
+  it('offers Settings → Documents wherever the business prints documents, to who manages them (Release B)', () => {
+    const on = (...ids: string[]) => ({ modules: ids.map((id) => ({ id })) })
+    const documents = (modules: { modules: { id: string }[] }, keys: string[] | 'all' = 'all') =>
+      isSectionVisible({ ...access(keys), ...modules }, 'documents')
+    expect(documents(on('quotations'))).toBe(true)
+    expect(documents(on('invoices'))).toBe(true)
+    // An orders-only business (the home baker) prints its customers' statements (B10).
+    expect(documents(on('orders', 'customers', 'payments'))).toBe(true)
+    // A café without customers prints nothing.
+    expect(documents(on('sales', 'reports'))).toBe(false)
+    expect(documents(on('customers'))).toBe(false)
+    // The key: the Owner and the Admin.
+    expect(documents(on('customers', 'payments'), ['settings.business.view'])).toBe(false)
+    expect(documents(on('customers', 'payments'), ['settings.documents.manage'])).toBe(true)
+  })
+
+  it('describes Settings → Documents by what the business prints (Release B review)', () => {
+    const described = (...ids: string[]) =>
+      sectionDescription({ ...access('all'), modules: ids.map((id) => ({ id })) }, 'documents')
+    const DOCUMENTS = 'settings.documents.descriptions.documents'
+    // Quotations or invoices (the café's catering invoice): the signature and stamp are named.
+    expect(described('quotations', 'customers', 'payments')).toBe(DOCUMENTS)
+    expect(described('sales', 'invoices', 'customers', 'payments')).toBe(DOCUMENTS)
+    // Statements only: no signature, and order numbers only with Orders (the home baker).
+    expect(described('sales', 'orders', 'customers', 'payments')).toBe(
+      'settings.documents.descriptions.statementsOrders',
+    )
+    expect(described('sales', 'customers', 'payments')).toBe(
+      'settings.documents.descriptions.statements',
+    )
+    for (const key of [
+      DOCUMENTS,
+      'settings.documents.descriptions.statementsOrders',
+      'settings.documents.descriptions.statements',
+    ]) {
+      for (const locale of LOCALES) expect(hasMessage(locale, key), `${locale} ${key}`).toBe(true)
+    }
+  })
+
   it('reads the section from a settings path', () => {
     const id = '0190a4f2-7b5c-7c3e-9b1a-2f3c4d5e6f70'
     expect(sectionOfPath(`/b/${id}/settings`)).toBeNull()

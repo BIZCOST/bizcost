@@ -26,44 +26,53 @@ import {
 import { customerStatement, customerStatementPdf } from '../services/statements'
 import {
   businessProcedure,
-  requireAnyPermission,
+  requireAnyAccess,
   requireModule,
   requirePermission,
   router,
+  type ModuleAccessPair,
 } from '../trpc'
 
 /**
  * Customers (services/customers.ts; M3 Step 5; released with Release A, Step 6): module
  * `customers`. customers.items.view lists and reads them with their
  * details; .manage adds them, and with .view changes, archives and brings them back. A member who may
- * name a customer (adding customers, entering orders or sales, recording customer payments) picks them
- * through `pick` and `similar`: with customers.items.view the whole phone, without it the name and the
- * phone's last 4 digits only (Q2, Q10). Nothing here is a redaction category.
+ * name a customer (adding customers, entering orders or sales, recording customer payments, preparing
+ * quotations or invoices: each needs its customer, Release B review) picks them through `pick` and
+ * `similar`: with customers.items.view the whole phone, without it the name and the phone's last 4
+ * digits only (Q2, Q10). Nothing here is a redaction category.
  */
 const customersModule = businessProcedure.use(requireModule('customers'))
 const viewCustomers = customersModule.use(requirePermission('customers.items.view'))
 const addCustomers = customersModule.use(requirePermission('customers.items.manage'))
 const changeCustomers = viewCustomers.use(requirePermission('customers.items.manage'))
-const pickers = customersModule.use(
-  requireAnyPermission(
-    'customers.items.view',
-    'customers.items.manage',
-    'orders.documents.manage',
-    'sales.documents.manage',
-    'payments.customers.record',
-  ),
-)
+
+/**
+ * Who picks customers: each key only while its own module is on as well, as the web's
+ * mayPickCustomers (Release B second review, D-327). A member left with "Prepare quotations" alone no
+ * longer picks customers once Quotations is switched off; FORBIDDEN then (Customers is still on).
+ */
+const PICKER_ACCESS: readonly ModuleAccessPair[] = [
+  ['customers', 'customers.items.view'],
+  ['customers', 'customers.items.manage'],
+  ['orders', 'orders.documents.manage'],
+  ['sales', 'sales.documents.manage'],
+  ['payments', 'payments.customers.record'],
+  ['quotations', 'quotations.documents.manage'],
+  ['invoices', 'invoices.documents.manage'],
+]
+const pickers = customersModule.use(requireAnyAccess(...PICKER_ACCESS))
 
 /**
  * A customer's statement (M3 Step 8, Q27): what was invoiced or delivered, credited, paid and still
- * owed over a period, with Payments on and payments.customers.view; served with Invoices until Release
- * B, which serves it with Customers and Payments for every business (B10: the Invoices gate goes). It
- * names the customer's particulars (TRN, licence, address, phone), so it needs customers.items.view too
- * (D-263; the customer's page that opens it already does; M3 Step 8 review, D-313).
+ * owed over a period, with Customers and Payments on and payments.customers.view, for every business
+ * since Release B (M3 Step 9; B10): an orders-only one gets its delivered orders and sales "they'll
+ * pay later" as the charges, without Invoices. It names the customer's particulars (TRN, licence,
+ * address, phone), so it needs customers.items.view too (D-263; the customer's page that opens it
+ * already does; M3 Step 8 review, D-314).
  */
 const statements = viewCustomers
   .use(requireModule('payments'))
-  .use(requireModule('invoices'))
   .use(requirePermission('payments.customers.view'))
 
 export const customerRouter = router({

@@ -23,8 +23,9 @@ import { AppError } from '../errors'
 import { documentImageUrls } from './document-files'
 
 // Settings → Documents (ROADMAP.md M3 Step 7; the owner's answer Q25 and his document requests of
-// 2026-10-16), `settings.documents.manage` with Quotations or Invoices served (the router checks
-// them): each series' prefix and zero padding (editing them renumbers nothing: a document keeps the
+// 2026-10-16), `settings.documents.manage` while the business prints documents (Quotations, Invoices,
+// or since Release B Customers with Payments for the statements; the router checks them): each
+// series' prefix and zero padding (editing them renumbers nothing: a document keeps the
 // number it was given, D-264) and its first number, settable only until the series' first document
 // (SERIES_STARTED after); the footer printed under the totals; a new quotation's default terms and
 // validity; the letterhead's accent colour, the logo's watermark, whole amounts without ".00"; and the

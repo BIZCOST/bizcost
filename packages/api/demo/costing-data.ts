@@ -2000,6 +2000,8 @@ export const WORKSHOP_COSTING: DemoCosting = {
     { key: 'table', name: 'طاولة طعام حسب الطلب', unit: 'piece', price: '2400' },
     { key: 'cabinet', name: 'خزانة ملابس بابين', unit: 'piece', price: '4200' },
     { key: 'bookcase', name: 'مكتبة حائط', unit: 'piece', price: '3200' },
+    // Release B review: the clinic's kitchen order bills a kitchen unit, not a wardrobe.
+    { key: 'kitchen', name: 'وحدة مطبخ حسب الطلب', unit: 'piece', price: '4200' },
   ],
   recipes: [
     {
@@ -2029,6 +2031,16 @@ export const WORKSHOP_COSTING: DemoCosting = {
         ['screws', '80', 'piece'],
         ['varnish', '1.5', 'l'],
         ['hinges', '4', 'piece'],
+      ],
+    },
+    {
+      product: 'kitchen',
+      lines: [
+        ['mdf', '10', 'm2'],
+        ['beech', '5', 'm'],
+        ['screws', '140', 'piece'],
+        ['varnish', '1.5', 'l'],
+        ['hinges', '10', 'piece'],
       ],
     },
   ],
@@ -2129,7 +2141,7 @@ export const WORKSHOP_COSTING: DemoCosting = {
       kind: 'business',
       phone: '02 555 0101',
       email: 'procurement@alreem.example',
-      trn: '100456789000003',
+      trn: '100468024600003',
       tradeLicenceNo: 'CN-2234567',
       emirate: 'abu_dhabi',
     },
@@ -2252,7 +2264,7 @@ export const WORKSHOP_COSTING: DemoCosting = {
       dueIn: 8,
       customer: 'clinic',
       customerRef: 'LPO-CLN-131',
-      lines: [['cabinet', '1']],
+      lines: [['kitchen', '1']],
       deposit: { method: 'bank_transfer', amount: '2205' },
       deliveredDaysAgo: 1,
     },
@@ -2570,7 +2582,7 @@ export const FACTORY_COSTING: DemoCosting = {
       kind: 'business',
       phone: '04 222 9090',
       email: 'purchasing@lulu-hotel.example',
-      trn: '100234567800003',
+      trn: '100246813500003',
       tradeLicenceNo: '778899',
       emirate: 'dubai',
     },

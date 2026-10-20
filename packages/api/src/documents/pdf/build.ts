@@ -1100,7 +1100,16 @@ export interface PdfStatement {
   readonly entries: readonly PdfStatementEntry[]
   /** When it was made (the PDF's own date). */
   readonly issuedAt: Date
+  /**
+   * Whether it speaks of invoices and credit notes (the DTO's `invoicing`); without, an orders-only
+   * business's columns and sums say "Orders and sales" and "Payments and refunds" (Release B, B10).
+   * Default: true.
+   */
+  readonly invoicing?: boolean
 }
+
+/** The statement words an orders-only business gets in place of the invoices' ones (Release B). */
+const PLAIN_STATEMENT_LABELS = ['charge', 'credit', 'invoiced', 'credited'] as const
 
 /** A statement entry's document in both languages: "Invoice INV-0001", "Payment – INV-0001". */
 function entryDocument(entry: PdfStatementEntry): Bilingual {
@@ -1161,6 +1170,9 @@ export function buildStatementPdfInput(source: {
   const money = (value: string) => formatAmount(value, digits, false)
   const zero = (value: string) => compareDecimal(value, '0') === 0
   labels ??= labelsOf()
+  const plain = st.invoicing === false
+  const word = (key: (typeof PLAIN_STATEMENT_LABELS)[number]) =>
+    both(`pdf.statement.${key}${plain ? '_plain' : ''}`)
   const from = formatDate(st.from)
   const to = formatDate(st.to)
   return {
@@ -1168,7 +1180,12 @@ export function buildStatementPdfInput(source: {
     draft: false,
     locale,
     issuedAt: issuedAtOf(st.issuedAt),
-    labels,
+    labels: plain
+      ? {
+          ...labels,
+          ...Object.fromEntries(PLAIN_STATEMENT_LABELS.map((k) => [`statement.${k}`, word(k)])),
+        }
+      : labels,
     title: both('pdf.title.statement'),
     number: '',
     revision: null,
@@ -1194,9 +1211,9 @@ export function buildStatementPdfInput(source: {
     lines: [],
     totals: [
       { label: both('pdf.statement.opening'), amount: money(st.opening), strong: false },
-      { label: both('pdf.statement.invoiced'), amount: money(st.invoiced), strong: false },
+      { label: word('invoiced'), amount: money(st.invoiced), strong: false },
       {
-        label: both('pdf.statement.credited'),
+        label: word('credited'),
         amount: money(zero(st.credited) ? '0' : subtractDecimals('0', st.credited)),
         strong: false,
       },
