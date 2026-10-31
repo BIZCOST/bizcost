@@ -476,7 +476,9 @@ describe('properties', () => {
               ? m.receiptId
               : m.type === 'return_reversal'
                 ? m.returnId
-                : m.creditId
+                : m.type === 'credit_reversal'
+                  ? m.creditId
+                  : undefined
           const index = standing.findIndex(
             (s) => s.type !== 'issue' && 'id' in s && s.id === target,
           )

@@ -271,19 +271,59 @@ export { costPerBaseUnit, fromBase, recipeLineCost, toBase, unitFactor } from '.
 export {
   EMPTY_WAC_STATE,
   replayWac,
+  wacCount,
   wacIssue,
+  wacOpen,
   wacReceive,
+  wacRestock,
   wacReverseReceipt,
+  type WacCountResult,
   type WacIssueResult,
+  type WacOpening,
+  type WacOpeningResult,
   type WacMovement,
   type WacReceipt,
   type WacReceiptResult,
   type WacReceiptStanding,
+  type WacRestock,
+  type WacRestockResult,
   type WacReplay,
   type WacReversalResult,
   type WacState,
   type WacStep,
 } from './costing/wac'
+// Stock and Usage & Waste (M4; D-339): counts, usage between counts, late entries, low stock,
+// preparation loss, production and prepared items.
+export {
+  COUNT_REASONS,
+  DEFAULT_USAGE_TOLERANCE,
+  MAX_PREPARED_DEPTH,
+  WASTE_REASONS,
+  type CountReason,
+  type WasteReason,
+} from './stock/keys'
+export {
+  countDifference,
+  countedBaseQty,
+  openingOf,
+  splitLoss,
+  type CountedPart,
+  type ExplainedPart,
+  type LossSplit,
+  type ReasonPart,
+} from './stock/count'
+export { absorbingCount, lateOffset, type FinalCount, type LateOffset } from './stock/late'
+export { stockLevel, type StockLevelState } from './stock/levels'
+export { usagePeriod, type Impact, type UsagePeriod, type UsagePeriodInput } from './stock/usage'
+export {
+  madeValue,
+  preparedBases,
+  productionUsage,
+  withPreparationLoss,
+  type BatchRecipe,
+  type PreparedItem,
+  type PreparedProblem,
+} from './stock/production'
 export { costRatio } from './costing/cost-ratio'
 // Product cost from its recipe: Σ base quantity × the material's average (D-115), never rounded;
 // one unit sold is the total ÷ the recipe's yield (D-178).

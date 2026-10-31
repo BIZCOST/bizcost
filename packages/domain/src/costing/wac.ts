@@ -49,6 +49,21 @@ import {
 //   restores the previous state, at any stock level. A receipt is reversed only after its returns and
 //   credits are, and a return or credit only while no later return of its receipt stands (that
 //   return's value came from what the goods carried after it, D-142).
+// Stock counts (Phase 4, M4 Step 1; the owner's answers Q2–Q5 of D-339):
+// - opening (a material's first count, counted in every branch on one day): the stock BECOMES the
+//   counted quantity at the average it is given (that day's 90-day purchase average, D-115, so costs
+//   don't jump), whatever the book said before; without a price yet, at no value until the first
+//   receipt prices it (a receipt at unpriced stock values what is on hand at its own cost, as at zero
+//   stock). What came before it no longer shows in the state: reversing a receipt posted before the
+//   opening changes nothing after it (the count is the truth for its day);
+// - count (a later count's difference, signed): a loss leaves at the average like an issue, a gain
+//   comes in at the average. A count difference never changes the average, as an issue does not;
+// - restock: goods back in stock at exactly the value they went out at, the average unchanged: a
+//   refund by quantity that came back (Q8), and the offset that puts back an issue posted late for a
+//   day a count already covers (stock/late.ts). An issue then its restock leave the state exactly as
+//   it was. Zero stock is left at zero value and positive stock never below it (the adjustment);
+// - issues may carry an id, and an issue, a count, a restock and an opening can be reversed (the
+//   ledger replayed without them), with no other condition.
 // Values keep 12 decimals (numeric(28,12)), rounded half away from zero; never to the currency.
 // Conservation is exact: value = start + Σ in − Σ out − Σ adjustments. Inputs are checked against
 // their columns at run time (a RangeError, never a silent rounding by Postgres).
@@ -64,6 +79,8 @@ import {
 
 const ZERO = toDec('0')
 const ONE = toDec('1')
+/** Half the last decimal a cost keeps: what rounding once to 12 decimals can move a value by. */
+const HALF_COST_UNIT = toDec('0.0000000000005')
 
 export interface WacState {
   /** Stock on hand in base units; negative when more was used than received. */
@@ -115,10 +132,57 @@ export interface WacReversalResult {
   readonly adjustment: CostAmount
 }
 
+/** A material's first count: the whole business's counted quantity and what it is worth. */
+export interface WacOpening {
+  /** The counted base quantity in every branch together; zero or more. */
+  readonly qty: Quantity
+  /** What it is worth: qty × the average it starts at (0 without a price, or at zero stock). */
+  readonly value: Money | CostAmount
+  /** The average it starts at; null: no price yet. */
+  readonly avgCost: UnitCost | null
+}
+
+export interface WacOpeningResult {
+  readonly state: WacState
+  /** value after − value before (signed). */
+  readonly change: CostAmount
+}
+
+export interface WacCountResult {
+  readonly state: WacState
+  /** The value the difference moved, signed as its quantity (a loss is negative). */
+  readonly value: CostAmount
+  /** What the rules on value kept apart (zero stock has zero value; positive stock is never negative). */
+  readonly adjustment: CostAmount
+  /** The average it was valued at; null without a price. */
+  readonly unitCost: UnitCost | null
+  /** The part of a loss beyond the stock on hand (0 otherwise). */
+  readonly shortfall: Quantity
+}
+
+/** Goods back in stock at exactly the value they went out at. */
+export interface WacRestock {
+  /** More than zero. */
+  readonly qty: Quantity
+  /** Zero or more: what they cost when they went out. */
+  readonly value: CostAmount
+}
+
+export interface WacRestockResult {
+  readonly state: WacState
+  /** What the rules on value kept apart (zero stock has zero value; positive stock is never negative). */
+  readonly adjustment: CostAmount
+}
+
 /** One stock movement of a material, in posting order. Ids are unique across the ledger. */
 export type WacMovement =
   | ({ readonly type: 'receipt'; readonly id: string } & WacReceipt)
-  | { readonly type: 'issue'; readonly qty: Quantity }
+  /** An issue with an id can be reversed. */
+  | { readonly type: 'issue'; readonly id?: string; readonly qty: Quantity }
+  | ({ readonly type: 'opening'; readonly id: string } & WacOpening)
+  /** A count's difference (signed, not zero), valued at the average (a loss as an issue). */
+  | { readonly type: 'count'; readonly id: string; readonly qty: Quantity }
+  | ({ readonly type: 'restock'; readonly id: string } & WacRestock)
   /**
    * Goods of `receiptId` sent back. `value` is what the ledger stored when it was posted; without
    * it, the engine works it out (D-120 rule 2) and reports it as the step's `valueOut`.
@@ -143,6 +207,13 @@ export type WacMovement =
   | { readonly type: 'receipt_reversal'; readonly receiptId: string }
   | { readonly type: 'return_reversal'; readonly returnId: string }
   | { readonly type: 'credit_reversal'; readonly creditId: string }
+  | { readonly type: 'issue_reversal'; readonly issueId: string }
+  | { readonly type: 'count_reversal'; readonly countId: string }
+  | { readonly type: 'restock_reversal'; readonly restockId: string }
+  | { readonly type: 'opening_reversal'; readonly openingId: string }
+
+type Reversal = Extract<WacMovement, { type: `${string}_reversal` }>
+type MovementKind = 'receipt' | 'return' | 'credit' | 'issue' | 'count' | 'restock' | 'opening'
 
 /** What one movement did to the value: value after = value before + in − out − adjustment. */
 export interface WacStep {
@@ -183,8 +254,9 @@ export function wacReceive(state: WacState, receipt: WacReceipt): WacReceiptResu
   const value0 = toDec(state.value)
   const qty1 = qty0.plus(q)
 
-  // Stock was empty or negative: what is now on hand (or still missing) is valued at this cost.
-  if (!qty0.gt(0)) {
+  // Stock was empty or negative, or counted without a price yet: what is now on hand (or still
+  // missing) is valued at this cost.
+  if (!qty0.gt(0) || state.avgCost === null) {
     const value1 = round(qty1.times(paid).dividedBy(q))
     return {
       state: stateOf(qty1, value1, round(paid.dividedBy(q))),
@@ -226,6 +298,83 @@ export function wacIssue(state: WacState, qty: Quantity): WacIssueResult {
 }
 
 /**
+ * A material's first count: the stock becomes the counted quantity at the average given, whatever
+ * the book said (see the rules at the top). Throws RangeError for a negative quantity, value or
+ * average, a value without an average or at zero stock, or a value that is not the quantity × the
+ * average (within the rounding of openingOf: each of the two rounded once to 12 decimals).
+ */
+export function wacOpen(state: WacState, opening: WacOpening): WacOpeningResult {
+  const qty = checked(opening.qty, 'quantity')
+  const value = notNegative(opening.value, 'costAmount')
+  if (qty.lt(0)) throw new RangeError(`A counted quantity must not be negative: "${opening.qty}"`)
+  if (opening.avgCost === null) {
+    if (!value.isZero()) throw new RangeError('Counted stock without a price has no value')
+  } else {
+    const avg = notNegative(opening.avgCost, 'unitCost')
+    const off = value.minus(exactProduct([qty, avg])).abs()
+    if (off.gt(qty.plus(ONE).times(HALF_COST_UNIT))) {
+      throw new RangeError(`Counted stock is worth its quantity × its average: "${opening.value}"`)
+    }
+  }
+  return {
+    state: { qty: plain(qty) as Quantity, value: amount(value), avgCost: opening.avgCost },
+    change: amount(value.minus(toDec(state.value))),
+  }
+}
+
+/**
+ * A count's difference (signed, not zero): a loss leaves as an issue does (at the average, the last
+ * unit taking the value left, `shortfall` beyond the stock); a gain comes in at quantity × the
+ * average (0 without one), zero stock left at zero value and positive stock never below it (the
+ * `adjustment`). The average never changes.
+ */
+export function wacCount(state: WacState, qty: Quantity): WacCountResult {
+  const q = checked(qty, 'quantity')
+  if (q.isZero()) throw new RangeError('A count difference must not be zero')
+  if (q.lt(0)) {
+    const issue = wacIssue(state, plain(q.negated()) as Quantity)
+    return {
+      state: issue.state,
+      value: amount(toDec(issue.cost).negated()),
+      adjustment: amount(ZERO),
+      unitCost: issue.unitCost,
+      shortfall: issue.shortfall,
+    }
+  }
+  const moved = state.avgCost === null ? ZERO : round(q.times(toDec(state.avgCost)))
+  const { state: after, adjustment } = moveValue(state, q, moved)
+  return {
+    state: after,
+    value: amount(moved),
+    adjustment,
+    unitCost: state.avgCost,
+    shortfall: '0' as Quantity,
+  }
+}
+
+/**
+ * Goods back in stock at exactly `restock.value`, the average unchanged: an issue then its restock
+ * leave the state as it was. Zero stock is left at zero value and positive stock never below it (the
+ * `adjustment`). Throws RangeError for a quantity not more than zero or a negative value.
+ */
+export function wacRestock(state: WacState, restock: WacRestock): WacRestockResult {
+  const q = positive(restock.qty, 'quantity')
+  return moveValue(state, q, notNegative(restock.value, 'costAmount'))
+}
+
+/** qty + `q`, value + `moved`, the average kept; zero stock at zero value, positive never below. */
+function moveValue(state: WacState, q: Decimal, moved: Decimal): WacRestockResult {
+  const value0 = toDec(state.value)
+  const qty1 = toDec(state.qty).plus(q)
+  let value1 = value0.plus(moved)
+  if (qty1.isZero() || (qty1.gt(0) && value1.lt(0))) value1 = ZERO
+  return {
+    state: { qty: plain(qty1) as Quantity, value: amount(value1), avgCost: state.avgCost },
+    adjustment: amount(value0.plus(moved).minus(value1)),
+  }
+}
+
+/**
  * Reverses the receipt `receiptId` of `ledger` (every movement of the material posted so far, from
  * `initial`): the state becomes the ledger replayed without that receipt. Throws RangeError when the
  * receipt is not in the ledger, is already reversed, or still has returns or credits, so a ledger
@@ -258,37 +407,28 @@ export function replayWac(
   // undoes each of them (the same index).
   const standing: Applied[] = []
   const undos: Undo[] = []
-  const kinds = new Map<string, 'receipt' | 'return' | 'credit'>()
+  const kinds = new Map<string, MovementKind>()
   const reversed = new Set<string>()
   const steps: WacStep[] = []
 
   for (const movement of movements) {
-    if (movement.type === 'receipt' || movement.type === 'return' || movement.type === 'credit') {
-      const id = movement.id
-      if (kinds.has(id)) throw new RangeError(`Duplicate movement "${id}"`)
-      kinds.set(id, movement.type)
-      const { step, applied, undo } = book.apply(movement)
-      standing.push(applied)
-      undos.push(undo)
-      steps.push(step)
-      continue
-    }
-    if (movement.type === 'issue') {
-      const { step, applied, undo } = book.apply(movement)
+    if (!movement.type.endsWith('_reversal')) {
+      const applicable = movement as Applied['movement']
+      const id = 'id' in applicable ? applicable.id : undefined
+      if (id !== undefined) {
+        if (kinds.has(id)) throw new RangeError(`Duplicate movement "${id}"`)
+        kinds.set(id, applicable.type)
+      }
+      const { step, applied, undo } = book.apply(applicable)
       standing.push(applied)
       undos.push(undo)
       steps.push(step)
       continue
     }
 
-    const [kind, targetId] =
-      movement.type === 'receipt_reversal'
-        ? (['receipt', movement.receiptId] as const)
-        : movement.type === 'return_reversal'
-          ? (['return', movement.returnId] as const)
-          : (['credit', movement.creditId] as const)
+    const [kind, targetId] = reversalTarget(movement as Reversal)
     if (kinds.get(targetId) !== kind) {
-      const what = kind === 'receipt' ? 'Receipt' : kind === 'return' ? 'Return' : 'Credit'
+      const what = kind.charAt(0).toUpperCase() + kind.slice(1)
       throw new RangeError(`${what} "${targetId}" is not in this ledger`)
     }
     if (reversed.has(targetId)) throw new RangeError(`"${targetId}" is already reversed`)
@@ -299,7 +439,7 @@ export function replayWac(
     let index = standing.length - 1
     while (index >= 0) {
       const m = standing[index]!.movement
-      if (m.type !== 'issue' && m.id === targetId) break
+      if ('id' in m && m.id === targetId) break
       index -= 1
     }
     const target = standing[index]!
@@ -325,9 +465,21 @@ export function replayWac(
       undos.push(book.apply(standing[i]!.movement).undo)
     }
     const after = book.state
-    // The target's own effect, taken back: a receipt's value goes out, a return's or credit's in.
-    const valueIn = kind === 'receipt' ? ZERO : toDec(target.value)
-    const valueOut = kind === 'receipt' ? toDec(target.value) : ZERO
+    // The target's own effect, taken back: a receipt's value goes out, a return's, credit's or
+    // issue's comes in, and a count's or an opening's change goes back the other way.
+    const moved = toDec(target.value)
+    const valueIn =
+      kind === 'receipt' || kind === 'restock'
+        ? ZERO
+        : kind === 'count' || kind === 'opening'
+          ? max(ZERO, moved.negated())
+          : moved
+    const valueOut =
+      kind === 'receipt' || kind === 'restock'
+        ? moved
+        : kind === 'count' || kind === 'opening'
+          ? max(ZERO, moved)
+          : ZERO
     steps.push({
       state: after,
       valueIn: amount(valueIn),
@@ -340,13 +492,33 @@ export function replayWac(
   return { state: book.state, steps, receipts: book.standings() }
 }
 
+/** What a reversal undoes: the kind of movement and its id. */
+function reversalTarget(movement: Reversal): readonly [MovementKind, string] {
+  switch (movement.type) {
+    case 'receipt_reversal':
+      return ['receipt', movement.receiptId]
+    case 'return_reversal':
+      return ['return', movement.returnId]
+    case 'credit_reversal':
+      return ['credit', movement.creditId]
+    case 'issue_reversal':
+      return ['issue', movement.issueId]
+    case 'count_reversal':
+      return ['count', movement.countId]
+    case 'restock_reversal':
+      return ['restock', movement.restockId]
+    case 'opening_reversal':
+      return ['opening', movement.openingId]
+  }
+}
+
 /** A movement as the book applied it (a return with its value), and the value it moved. */
 interface Applied {
-  readonly movement: Exclude<
-    WacMovement,
-    { type: 'receipt_reversal' } | { type: 'return_reversal' } | { type: 'credit_reversal' }
-  >
-  /** Receipt: its value; return: the value taken out; credit: its amount; issue: its cost. */
+  readonly movement: Exclude<WacMovement, Reversal>
+  /**
+   * Receipt: its value; return: the value taken out; credit: its amount; issue: its cost; count: the
+   * value it moved (signed); restock: its value; opening: value after − value before (signed).
+   */
   readonly value: string
 }
 
@@ -435,6 +607,12 @@ class Book {
         return this.sendBack(movement)
       case 'credit':
         return this.credit(movement)
+      case 'opening':
+        return this.open(movement)
+      case 'count':
+        return this.countDifference(movement)
+      case 'restock':
+        return this.restock(movement)
     }
   }
 
@@ -541,6 +719,94 @@ class Book {
         for (const [t, onHand] of taken) t.onHand = onHand
         this.restore(saved)
       },
+    }
+  }
+
+  /**
+   * Stock going from `qty0` down to `qty1` takes every receipt's goods in proportion, as usage does
+   * (nothing when it goes up). Returns what undoes it.
+   */
+  private takeInProportion(qty0: Decimal, qty1: Decimal): Undo {
+    if (qty0.gt(0) && !qty1.lt(qty0)) return () => {}
+    const kept = qty0.gt(0) ? max(ZERO, qty1.dividedBy(qty0)) : ZERO
+    const taken: [Track, Decimal][] = []
+    for (const t of this.tracks.values()) {
+      if (t.onHand.isZero()) continue
+      taken.push([t, t.onHand])
+      t.onHand = t.onHand.times(kept)
+    }
+    return () => {
+      for (const [t, onHand] of taken) t.onHand = onHand
+    }
+  }
+
+  private open(movement: Extract<Applied['movement'], { type: 'opening' }>) {
+    const saved = this.scalars()
+    const before = this.state
+    const r = wacOpen(before, movement)
+    const untake = this.takeInProportion(toDec(before.qty), toDec(r.state.qty))
+    // Every receipt is touched, and the run ends.
+    this.count += 1
+    this.newRun(r.state)
+    this.state = r.state
+    const change = toDec(r.change)
+    return {
+      step: {
+        state: r.state,
+        valueIn: amount(max(ZERO, change)),
+        valueOut: amount(max(ZERO, change.negated())),
+        adjustment: amount(ZERO),
+      },
+      applied: { movement, value: r.change },
+      undo: () => {
+        untake()
+        this.restore(saved)
+      },
+    }
+  }
+
+  private countDifference(movement: Extract<Applied['movement'], { type: 'count' }>) {
+    const saved = this.scalars()
+    const before = this.state
+    const r = wacCount(before, movement.qty)
+    const untake = this.takeInProportion(toDec(before.qty), toDec(r.state.qty))
+    // Every receipt is touched, and the run ends.
+    this.count += 1
+    this.newRun(r.state)
+    this.state = r.state
+    const moved = toDec(r.value)
+    return {
+      step: {
+        state: r.state,
+        valueIn: amount(max(ZERO, moved)),
+        valueOut: amount(max(ZERO, moved.negated())),
+        adjustment: r.adjustment,
+      },
+      applied: { movement, value: r.value },
+      undo: () => {
+        untake()
+        this.restore(saved)
+      },
+    }
+  }
+
+  private restock(movement: Extract<Applied['movement'], { type: 'restock' }>) {
+    const saved = this.scalars()
+    const before = this.state
+    const r = wacRestock(before, movement)
+    // Every receipt is touched, and the run ends: the goods are none of theirs.
+    this.count += 1
+    this.newRun(r.state)
+    this.state = r.state
+    return {
+      step: {
+        state: r.state,
+        valueIn: amount(toDec(movement.value)),
+        valueOut: amount(ZERO),
+        adjustment: r.adjustment,
+      },
+      applied: { movement, value: plain(toDec(movement.value)) },
+      undo: () => this.restore(saved),
     }
   }
 
