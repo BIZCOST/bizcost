@@ -42,6 +42,7 @@ import { assertQueryable } from '../trpc'
 import { decodeCursor, encodeCursor, requestHashOf } from './catalog'
 import { fillSaleMaterialCosts } from './sale-costs'
 import {
+  assertNotBeforeFirstCount,
   assertPostable,
   insertMovement,
   isoOf,
@@ -857,7 +858,8 @@ interface MovementRecord extends Record<string, unknown> {
 /**
  * `purchaseReturn.reverse`: a posted return or credit note leaves the ledger "as if never posted"
  * (each material's ledger replayed without it), dated on its own day or the first open day.
- * Idempotent: one already reversed is returned as it is.
+ * Idempotent: one already reversed is returned as it is. STOCK_COUNTED for a return posted before a
+ * first count of one of its materials that stands (M4 Step 2: that count is reversed first).
  */
 export async function reverseReturn(
   ctx: BusinessCtx,
@@ -917,6 +919,12 @@ export async function reverseReturn(
        limit 1
     `)) as unknown as { found: number }[]
     if (later) throw new AppError('has_later_returns')
+    // A return (a credit note moves no quantity) posted before a first count that stands (stock.ts).
+    await assertNotBeforeFirstCount(
+      tx,
+      ctx.businessId,
+      movements.map((m) => m.id),
+    )
     for (const materialId of materialIds) {
       const mine = movements.filter((m) => m.material_id === materialId)
       const ledger = toWacMovements(await materialLedger(tx, ctx.businessId, materialId))

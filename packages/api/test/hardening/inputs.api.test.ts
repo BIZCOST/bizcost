@@ -1,5 +1,6 @@
 import { randomBytes } from 'node:crypto'
 import type {
+  CountDto,
   CreditNoteDto,
   DocumentSettingsDto,
   InvoiceDto,
@@ -32,7 +33,7 @@ import { handlerFor, mutate, SECRET_KEY, type CallResult } from '../helpers'
 import { CostScope, ProductCostsApi, tag } from '../product-costs'
 import { codeOf, line, ok, purchaseInput } from '../purchasing'
 import { BAKER, CapturedEmails, WORKSHOP } from '../settings'
-import { businessDigest, proceduresOf } from './fixture'
+import { businessDigest, PREVIEW_MODULES, proceduresOf } from './fixture'
 import { updateFieldsOf } from '../sales'
 import {
   decimalsIn,
@@ -58,13 +59,14 @@ import {
 //     version (nothing written), and served with the right one.
 //   - Ids of existing rows: every mutation that takes only an id (and its version or a reason) answers
 //     NOT_FOUND for an id no row has: none of them makes a row.
+// The API runs with the modules still being built previewed (D-125; Stock since M4 Step 2).
 
 class InputsApi extends ProductCostsApi {
   readonly emails = new CapturedEmails()
   override readonly handler = handlerFor(
     this.db,
     undefined,
-    { supabaseSecretKey: SECRET_KEY },
+    { supabaseSecretKey: SECRET_KEY, previewModules: PREVIEW_MODULES },
     { emailSender: this.emails },
   )
 }
@@ -590,6 +592,42 @@ interface Variant {
   readBack?: (data: unknown) => Promise<unknown>
 }
 
+/**
+ * A draft first count of a new material (in litres, with a bottle of 1.5 L), dated today, in every
+ * branch of the shop (M4 Step 2).
+ */
+async function newOpening(): Promise<CountDto> {
+  const material = await shop.newMaterial({
+    name: `Oil ${tag()}`,
+    unit: 'l',
+    packs: [{ id: newId(), name: 'bottle', qty: '1.5', ofUnit: 'l' }],
+  })
+  return ok(
+    await shop.run<{ data: CountDto }>('count.start', {
+      id: newId(),
+      kind: 'opening',
+      businessDate: today,
+      materialIds: [material.id],
+    }),
+  ).data
+}
+
+/** As newOpening, every line counted (2 L), read again. */
+async function countedOpening(): Promise<CountDto> {
+  const count = await newOpening()
+  for (const countLine of count.lines) {
+    ok(
+      await shop.run('count.saveLine', {
+        countId: count.id,
+        lineId: countLine.id,
+        parts: [{ qty: '2', unit: 'l' }],
+        version: countLine.version,
+      }),
+    )
+  }
+  return ok(await shop.run<{ data: CountDto }>('count.get', { id: count.id })).data
+}
+
 /** The owner's minutes are read back from what products cost (the product's own answer omits them). */
 const minutesOf = async (data: unknown) =>
   ok(await alone.run('product.costs', { ids: [(data as ProductDto).id] }))
@@ -1090,6 +1128,24 @@ const DIGITS: Record<string, Variant[]> = {
       },
     },
   ],
+  // Stock (M4 Step 2): a counted line typed in several parts, a unit and a pack.
+  'count.saveLine': [
+    {
+      input: async () => {
+        const count = await newOpening()
+        const countLine = count.lines[0]!
+        return {
+          countId: count.id,
+          lineId: countLine.id,
+          parts: [
+            { qty: '2.5', unit: 'l' },
+            { qty: '3', packId: count.materials[0]!.packs[0]!.id },
+          ],
+          version: countLine.version,
+        }
+      },
+    },
+  ],
 }
 
 function decimalPaths(path: string): string[] {
@@ -1332,6 +1388,13 @@ const CREATES: Record<string, Create> = {
   'channelStatement.create': {
     input: async () => statementInput(channelId),
     other: async (input) => ({ ...input, commission: '1' }),
+  },
+  'count.start': {
+    input: async () => {
+      const material = await shop.newMaterial({ name: `Oil ${tag()}`, unit: 'l' })
+      return { id: newId(), kind: 'opening', businessDate: today, materialIds: [material.id] }
+    },
+    other: async (input) => ({ ...input, note: `Other ${tag()}` }),
   },
 }
 
@@ -1742,6 +1805,35 @@ const VERSIONED: Record<string, Versioned> = {
       await shop.run<{ version: number }>('member.locations', { memberId: member.memberId }),
     )
     return { memberId: member.memberId, version, locationIds: [] }
+  },
+  // Stock (M4 Step 2): a line's own version, and the count's.
+  'count.saveLine': async () => {
+    const count = await newOpening()
+    const countLine = count.lines[0]!
+    return {
+      countId: count.id,
+      lineId: countLine.id,
+      parts: [{ qty: '1', unit: 'l' }],
+      version: countLine.version,
+    }
+  },
+  'count.clearLine': async () => {
+    const count = await countedOpening()
+    const countLine = count.lines[0]!
+    return { countId: count.id, lineId: countLine.id, version: countLine.version }
+  },
+  'count.removeLine': async () => {
+    const count = await newOpening()
+    const countLine = count.lines[0]!
+    return { countId: count.id, lineId: countLine.id, version: countLine.version }
+  },
+  'count.finalize': async () => {
+    const count = await countedOpening()
+    return { id: count.id, version: count.version }
+  },
+  'count.discard': async () => {
+    const count = await newOpening()
+    return { id: count.id, version: count.version }
   },
 }
 

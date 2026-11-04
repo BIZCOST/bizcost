@@ -18,7 +18,9 @@ import {
 // stock quantity; this checks the values: a material whose stock on hand is a quantity no document
 // holds (the fixture's purchase and return, then two more purchases of 3.1 L and 4.07 L), and every
 // business query answered for the owner, who may see everything: no value in any answer is that stock,
-// in base units or in the material's unit, for the business or for a location.
+// in base units or in the material's unit, for the business or for a location. M4 Step 2 (Stock,
+// previewed) shows the stock of a material from its first count only: this one is never counted, so
+// the stock procedures are walked too and must not show it either (D-339 Q2).
 
 let api: Api
 let tenant: Tenant

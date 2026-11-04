@@ -18,7 +18,7 @@ import { authedProcedure, businessProcedure, publicProcedure, router } from './t
 const costly = z.object({ name: z.string(), cost: sensitive(zDecimal, 'cost') })
 
 describe('appRouter contract', () => {
-  it('serves exactly the M1 and M2 procedures and those of M3 so far', () => {
+  it('serves exactly the M1, M2 and M3 procedures and those of M4 so far', () => {
     expect(Object.keys(appRouter._def.procedures).sort()).toEqual([
       'account.delete',
       'account.setLastBusiness',
@@ -56,6 +56,17 @@ describe('appRouter contract', () => {
       'costCategory.list',
       'costCategory.unarchive',
       'costCategory.update',
+      'count.addLines',
+      'count.clearLine',
+      'count.discard',
+      'count.finalize',
+      'count.get',
+      'count.list',
+      'count.removeLine',
+      'count.reverse',
+      'count.review',
+      'count.saveLine',
+      'count.start',
       'creditNote.create',
       'creditNote.discard',
       'creditNote.get',
@@ -234,6 +245,9 @@ describe('appRouter contract', () => {
       'saleImport.post',
       'saleImport.reverse',
       'saleImport.setOverlap',
+      'stock.card',
+      'stock.list',
+      'stock.untracked',
       'supplier.archive',
       'supplier.create',
       'supplier.get',
@@ -338,6 +352,7 @@ describe('numbers a client sends', () => {
         'sale.update lines.*.discount.amount',
         'sale.update deliveryCost',
         'sale.fillDeliveryCost deliveryCost',
+        'count.saveLine parts.*.qty',
       ]),
     )
   })
@@ -396,14 +411,17 @@ describe('numbers a client sends', () => {
 
 // "Capabilities hide … stock quantities where they don't apply" (M2 definition of done): in M2 the
 // ledger records stock, but nothing shows it (stock screens and counts are Phase 4, with keeps_stock).
-// Every output field of every procedure is walked: none is a stock quantity.
+// Every output field of every procedure is walked: none is a stock quantity, but those of Stock (M4
+// Step 2: `stock.*` and `count.*`, module inventory, which needs keeps_stock).
 describe('no procedure outputs a stock quantity', () => {
   it('no output field is named for stock on hand or a balance', () => {
     const outputs = Object.entries(
       appRouter._def.procedures as unknown as Record<string, { _def: { output?: unknown } }>,
-    ).flatMap(([path, procedure]) =>
-      inputLeaves(procedure._def.output as Schema).map((leaf) => `${path} ${leaf.path}`),
     )
+      .filter(([path]) => !/^(?:stock|count)./.test(path))
+      .flatMap(([path, procedure]) =>
+        inputLeaves(procedure._def.output as Schema).map((leaf) => `${path} ${leaf.path}`),
+      )
     expect(outputs.length).toBeGreaterThan(500)
     expect(outputs.filter((at) => /stock|on_?hand|balance/i.test(at))).toEqual([])
   })

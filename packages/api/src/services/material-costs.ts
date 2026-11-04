@@ -13,16 +13,16 @@ import { AppError } from '../errors'
 import { uuidArray } from './stock'
 
 // The material cost view (ROADMAP.md M2 Step 3; D-115): the average a material's cost uses today and
-// its last purchase price. Until the business's first stock count (Phase 4; businesses keep no
-// first_stock_count_at yet, so every business is before it), the average is the average of the
-// material's purchases in the last 90 days: Σ value ÷ Σ base quantity of its posted purchase lines
+// its last purchase price. Until the material's first stock count (M4 Step 2, D-339 Q2: per material,
+// materials.stock_tracked_from), the average is the average of its purchases in the last 90 days: Σ value ÷ Σ base quantity of its posted purchase lines
 // dated in the 90 days ending today (the business's time zone), reversed purchases left out, and each
 // line net of its posted returns and credit notes (D-120 rule 4). With none in the window it is the
 // unit cost of its last posted purchase; never bought: no average (the page says "no price yet").
 // Computed on read: the sums in SQL from the ledger's purchase rows (the index on material and
 // business_date), each division in the domain once (costRatio: 12 decimals, never rounded to the
 // currency). The stock-based average (material_costs) is kept from the first posting on, so the switch
-// at the first count needs no rebuild.
+// at the first count needs no rebuild: from that count on, the material reads it (basis `stock`, one
+// base unit at material_costs.avg_cost; counted before any price: none yet, never 0).
 //
 // Sensitive: the averages are `cost`, the last purchase's prices `supplier_price` (the redact
 // middleware removes them for members who may not see them).
@@ -50,30 +50,39 @@ export interface CostRecord extends Record<string, unknown> {
   last_net_value: string | null
   doc_value: string | null
   doc_qty: string | null
+  /** materials.stock_tracked_from (its first count's day), null while not tracked. */
+  tracked_from: string | null
+  /** Its stock average per base unit (material_costs.avg_cost), null without one. */
+  stock_avg: string | null
 }
 
 /**
  * The sums of the D-115 average and the last purchase of each live material of the business among
- * `ids`, by material id (a material that is not one is missing from the map).
+ * `ids`, by material id (a material that is not one is missing from the map). `asOf` (YYYY-MM-DD,
+ * default today in the business's time zone): the day the 90 days end, purchases dated after it left
+ * out (a first count takes the average as of its own day, Q3).
  */
 export async function costRecordsOf(
   tx: Tx,
   businessId: string,
   ids: readonly string[],
+  asOf?: string,
 ): Promise<Map<string, CostRecord>> {
   if (ids.length === 0) return new Map()
   const records = (await tx.execute(sql`
     with today as (
-      select (now() at time zone b.timezone)::date as d
+      select coalesce(${asOf ?? null}::date, (now() at time zone b.timezone)::date) as d
         from app.businesses b
        where b.id = ${businessId}
     ),
     receipts as (
       select m.id, m.material_id, m.purchase_line_id, m.business_date, m.seq, m.qty, m.value
         from app.stock_movements m
+       cross join today
        where m.business_id = ${businessId}
          and m.material_id = any(${uuidArray(ids)})
          and m.kind = 'purchase'
+         and m.business_date <= today.d
          and not exists (
            select 1 from app.stock_movements r
             where r.business_id = m.business_id and r.reverses_id = m.id)
@@ -122,9 +131,13 @@ export async function costRecordsOf(
            trim_scale(sum(n.value) filter (
              where n.qty > 0 and np.purchase_id = pl.purchase_id))::text as doc_value,
            trim_scale(sum(n.qty) filter (
-             where n.qty > 0 and np.purchase_id = pl.purchase_id))::text as doc_qty
+             where n.qty > 0 and np.purchase_id = pl.purchase_id))::text as doc_qty,
+           mat.stock_tracked_from::text as tracked_from,
+           trim_scale(mc.avg_cost)::text as stock_avg
       from app.materials mat
      cross join today
+      left join app.material_costs mc
+        on mc.business_id = mat.business_id and mc.material_id = mat.id
       left join lines n on n.material_id = mat.id
       left join app.purchase_lines np
         on np.business_id = mat.business_id and np.id = n.purchase_line_id
@@ -136,25 +149,30 @@ export async function costRecordsOf(
      where mat.business_id = ${businessId}
        and mat.id = any(${uuidArray(ids)})
        and mat.deleted_at is null
-     group by mat.id, mat.unit, today.d, pl.purchase_id
+     group by mat.id, mat.unit, today.d, pl.purchase_id, mat.stock_tracked_from, mc.avg_cost
   `)) as unknown as CostRecord[]
   return new Map(records.map((record) => [record.material_id, record] as const))
 }
 
 /** The sums a material's average is made of, and which average it is (D-115). */
 export interface AverageBasis {
-  readonly basis: 'purchases_90_days' | 'last_purchase'
-  /** Σ value of the purchases it counts (numeric(28,12)). */
+  readonly basis: 'purchases_90_days' | 'last_purchase' | 'stock'
+  /** Σ value of the purchases it counts (numeric(28,12)); `stock`: the stock average. */
   readonly value: string
-  /** Σ base quantity of those purchases (more than zero). */
+  /** Σ base quantity of those purchases (more than zero); `stock`: one base unit. */
   readonly qty: string
 }
 
 /**
- * The average a material's cost uses today (D-115): its purchases of the last 90 days, else its last
- * purchase document; null when it was never bought ("no price yet", never 0).
+ * The average a material's cost uses today (D-115): from its first count on (M4 Step 2, per
+ * material), its stock average (null while the counted stock has no price yet); before it, its
+ * purchases of the last 90 days, else its last purchase document; null when it was never bought ("no
+ * price yet", never 0).
  */
 export function averageBasisOf(r: CostRecord): AverageBasis | null {
+  if (r.tracked_from !== null) {
+    return r.stock_avg === null ? null : { value: r.stock_avg, qty: '1', basis: 'stock' }
+  }
   if (r.window_value !== null && r.window_qty !== null) {
     return { value: r.window_value, qty: r.window_qty, basis: 'purchases_90_days' }
   }
@@ -246,7 +264,13 @@ function toDto(r: CostRecord): MaterialCostDto {
     unit: r.unit,
     average:
       window && perBaseUnit !== null && perUnit !== null
-        ? { basis: window.basis, from: r.window_from, to: r.today, perUnit, perBaseUnit }
+        ? {
+            basis: window.basis,
+            from: window.basis === 'stock' ? (r.tracked_from ?? r.window_from) : r.window_from,
+            to: r.today,
+            perUnit,
+            perBaseUnit,
+          }
         : null,
     lastPurchase:
       last &&

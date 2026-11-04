@@ -42,15 +42,16 @@ select tables_are(
     'sale_imports', 'sale_import_rows', 'import_profiles', 'product_aliases', 'channel_statements',
     'customers', 'document_counters', 'orders', 'order_lines', 'customer_payments',
     'quotations', 'quotation_lines', 'quotation_stages', 'document_renders',
-    'invoices', 'invoice_lines', 'credit_notes', 'credit_note_lines'
+    'invoices', 'invoice_lines', 'credit_notes', 'credit_note_lines',
+    'stock_counts', 'stock_count_lines'
   ],
-  'app contains exactly the Milestone 1 and M2 tables and those of M3 so far'
+  'app contains exactly the Milestone 1, M2 and M3 tables and those of M4 so far'
 );
 
 select is(
   (select count(*)::int from business_tables),
-  54,
-  'sanity: 54 app tables carry business_id (the checks below are not vacuous)'
+  56,
+  'sanity: 56 app tables carry business_id (the checks below are not vacuous)'
 );
 
 -- 2. Row level security ---------------------------------------------------------
@@ -316,7 +317,12 @@ select is_empty(
          ('credit_note_lines', 'invoice_line_id', 'invoice_lines'),
          ('customer_payments', 'invoice_id', 'invoices'),
          ('sales', 'invoice_id', 'invoices'),
-         ('sales', 'credit_note_id', 'credit_notes')
+         ('sales', 'credit_note_id', 'credit_notes'),
+         ('stock_counts', 'location_id', 'locations'),
+         ('stock_count_lines', 'count_id', 'stock_counts'),
+         ('stock_count_lines', 'location_id', 'locations'),
+         ('stock_count_lines', 'material_id', 'materials'),
+         ('stock_movements', 'count_line_id', 'stock_count_lines')
        ) as v(child, col, parent)
       where not exists (
         select 1
@@ -570,7 +576,18 @@ select is_empty(
          ('sale_lines', 'time_cost'),
          ('sale_line_materials', 'sale_line_id'), ('sale_line_materials', 'material_id'),
          ('sale_line_materials', 'base_qty'), ('sale_line_materials', 'unit_cost'),
-         ('sale_line_materials', 'cost'), ('sale_line_materials', 'basis')
+         ('sale_line_materials', 'cost'), ('sale_line_materials', 'basis'),
+         ('materials', 'stock_tracked_from'), ('stock_movements', 'count_line_id'),
+         ('stock_counts', 'kind'), ('stock_counts', 'location_id'), ('stock_counts', 'business_date'),
+         ('stock_counts', 'status'), ('stock_counts', 'note'), ('stock_counts', 'posted_at'),
+         ('stock_counts', 'posted_by'), ('stock_counts', 'reversed_at'),
+         ('stock_counts', 'reversed_by'), ('stock_counts', 'reversal_date'),
+         ('stock_count_lines', 'count_id'), ('stock_count_lines', 'location_id'),
+         ('stock_count_lines', 'material_id'), ('stock_count_lines', 'parts'),
+         ('stock_count_lines', 'counted_base_qty'), ('stock_count_lines', 'counted_by'),
+         ('stock_count_lines', 'counted_at'), ('stock_count_lines', 'book_base_qty'),
+         ('stock_count_lines', 'difference_qty'), ('stock_count_lines', 'difference_value'),
+         ('stock_count_lines', 'unit_cost')
        ) as v(tbl, col)
       where not exists (
         select 1 from pg_attribute a
@@ -578,7 +595,7 @@ select is_empty(
            and a.attname = v.col
            and a.attnum > 0
            and not a.attisdropped) $$,
-  'every documented column exists (Milestone 1, M2 and M3 so far)'
+  'every documented column exists (Milestone 1, M2, M3 and M4 so far)'
 );
 
 select hasnt_column('app', 'businesses', 'business_id', 'businesses is the tenant root and has no business_id');

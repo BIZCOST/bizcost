@@ -182,6 +182,40 @@ export const APP_ERROR_CODES = [
    * the quotation to the end, so the work is billed and counted once (M3 Step 8).
    */
   'quotation_invoiced',
+  /** Finalizing a count while one of its lines is not counted yet (M4 Step 2). */
+  'count_incomplete',
+  /**
+   * Starting or finalizing a count dated on or before the last finalized count of one of its lines,
+   * or on or before its material's first count; a first count dated before something already recorded
+   * for one of its materials (counts of a branch's material go in day order, D-341; M4 Step 2).
+   */
+  'count_out_of_order',
+  /** A first count of a material whose stock is already tracked (M4 Step 2). */
+  'stock_tracked',
+  /** A count of a material whose stock is not tracked yet: it starts with a first count (M4 Step 2). */
+  'stock_not_tracked',
+  /**
+   * Reversing a count while a later finalized count of one of its materials in its branch stands (a
+   * first count: of one of its materials anywhere): that count is reversed first (M4 Step 2).
+   */
+  'has_later_counts',
+  /**
+   * Reversing a purchase or a supplier return recorded before a first count of one of its materials
+   * that stands: the first count set that material's stock, so it is reversed first (M4 Step 2).
+   * `names`: those materials.
+   */
+  'stock_counted',
+  /**
+   * Starting or finalizing a first count while a removed branch still holds stock of one of its
+   * materials (M4 Step 2; Step 4 brings the way to clear it). `names`: those branches, `materials`:
+   * those materials.
+   */
+  'branch_has_stock',
+  /**
+   * Reversing a first count while stock of one of its materials was taken out since (a supplier
+   * return that stands): that is reversed first (M4 Step 2). `names`: those materials.
+   */
+  'stock_used_since',
   'internal',
 ] as const
 export type AppErrorCode = (typeof APP_ERROR_CODES)[number]
@@ -207,4 +241,6 @@ export interface AppErrorData {
    * from `costCategory.create` or `.update` the category (M2 Step 5). Absent otherwise.
    */
   names?: string[]
+  /** BRANCH_HAS_STOCK: the materials the removed branches hold (M4 Step 2). Absent otherwise. */
+  materials?: string[]
 }

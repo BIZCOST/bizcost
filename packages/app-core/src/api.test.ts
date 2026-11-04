@@ -2,6 +2,8 @@ import { TRPCClientError } from '@trpc/client'
 import { describe, expect, it } from 'vitest'
 import {
   apiErrorKey,
+  apiErrorMaterials,
+  apiErrorNames,
   createQueryClient,
   isAccessChange,
   PERMISSIONS_VERSION_HEADER,
@@ -10,13 +12,13 @@ import {
   API_STALE_TIME_MS,
 } from './api'
 
-function serverError(appCode: string) {
+function serverError(appCode: string, extra: Record<string, unknown> = {}) {
   return new TRPCClientError('x', {
     result: {
       error: {
         code: -32603,
         message: 'x',
-        data: { code: 'X', httpStatus: 400, appCode, i18nKey: `errors.${appCode}` },
+        data: { code: 'X', httpStatus: 400, appCode, i18nKey: `errors.${appCode}`, ...extra },
       },
     },
   })
@@ -37,6 +39,19 @@ describe('apiErrorKey', () => {
     expect(apiErrorKey(serverError('made_up'))).toBe('errors.internal')
     expect(apiErrorKey(new Error('boom'))).toBe('errors.internal')
     expect(apiErrorKey(undefined)).toBe('errors.internal')
+  })
+})
+
+describe('the names a refusal is about', () => {
+  it('reads data.names, and data.materials when the names are something else', () => {
+    const error = serverError('branch_has_stock', {
+      names: ['Old shop', 7],
+      materials: ['Milk', 'Beans'],
+    })
+    expect(apiErrorNames(error)).toEqual(['Old shop'])
+    expect(apiErrorMaterials(error)).toEqual(['Milk', 'Beans'])
+    expect(apiErrorMaterials(serverError('stock_tracked', { names: ['Milk'] }))).toEqual([])
+    expect(apiErrorNames(new Error('boom'))).toEqual([])
   })
 })
 

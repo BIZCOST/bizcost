@@ -508,7 +508,9 @@ create temp view m3_tables as
        'suppliers', 'purchases', 'purchase_lines', 'purchase_returns', 'purchase_return_lines',
        'stock_movements', 'material_costs', 'stock_balances', 'attachments',
        'recipes', 'recipe_lines', 'purchase_payments',
-       'cost_categories', 'expenses', 'expense_payments', 'running_costs'
+       'cost_categories', 'expenses', 'expense_payments', 'running_costs',
+       -- M4's tables: their links are tried in 31_stock_counts.test.sql (M4 Step 2).
+       'stock_counts', 'stock_count_lines'
      ]);
 
 -- Every foreign key of an M3 table (but business_id → businesses) is tried above, and nothing else.

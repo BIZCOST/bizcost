@@ -32,13 +32,15 @@ export class Races {
   readonly dbs: Db[]
   readonly handlers: Handler[]
 
+  /** `config`: more of the API's config on every instance (the stock suites' module preview). */
   constructor(
     private readonly admin: Admin,
     readonly instances: number,
+    config: Parameters<typeof handlerFor>[2] = {},
   ) {
     this.dbs = Array.from({ length: instances }, () => connectApi())
     this.handlers = this.dbs.map((db) =>
-      handlerFor(db, undefined, { supabaseSecretKey: SECRET_KEY }),
+      handlerFor(db, undefined, { supabaseSecretKey: SECRET_KEY, ...config }),
     )
   }
 

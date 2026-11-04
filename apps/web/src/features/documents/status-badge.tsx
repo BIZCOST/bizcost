@@ -7,7 +7,8 @@ import { Badge } from '@/components/ui/badge'
 // A document's status next to its name (purchases, supplier returns and credit notes, sales): a draft
 // changes nothing yet, a final one counts, a reversed one no longer does (D-114, D-227). In Arabic the
 // word agrees with the document: «مشتريات معتمدة», but «مرتجع معتمد» (a return or a credit note,
-// `kind="document"`); a sale says its own words (`kind="sale"`, the sales messages).
+// `kind="document"`); a sale says its own words (`kind="sale"`, the sales messages), and a stock
+// count its own (`kind="count"`, M4 Step 2: a posted count is "Finalized").
 
 const TONES = { draft: 'warning', posted: 'success', reversed: 'neutral' } as const
 
@@ -16,16 +17,18 @@ export function StatusBadge({
   kind = 'purchase',
 }: {
   status: DocumentStatus
-  kind?: 'purchase' | 'document' | 'sale'
+  kind?: 'purchase' | 'document' | 'sale' | 'count'
 }) {
   const { t } = useTranslation()
   return (
     <Badge tone={TONES[status]}>
       {kind === 'sale'
         ? t(`sales.status.${status}`)
-        : kind === 'purchase'
-          ? t(`purchasing.status.${status}`)
-          : t(`purchasing.statusDoc.${status}`)}
+        : kind === 'count'
+          ? t(`stock.status.${status}`)
+          : kind === 'purchase'
+            ? t(`purchasing.status.${status}`)
+            : t(`purchasing.statusDoc.${status}`)}
     </Badge>
   )
 }

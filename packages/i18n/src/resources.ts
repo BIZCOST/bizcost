@@ -16,6 +16,7 @@ import arReports from '../locales/ar/reports.json'
 import arSales from '../locales/ar/sales.json'
 import arSettings from '../locales/ar/settings.json'
 import arSetup from '../locales/ar/setup.json'
+import arStock from '../locales/ar/stock.json'
 import arUnits from '../locales/ar/units.json'
 import enAccount from '../locales/en/account.json'
 import enAuth from '../locales/en/auth.json'
@@ -34,6 +35,7 @@ import enReports from '../locales/en/reports.json'
 import enSales from '../locales/en/sales.json'
 import enSettings from '../locales/en/settings.json'
 import enSetup from '../locales/en/setup.json'
+import enStock from '../locales/en/stock.json'
 import enUnits from '../locales/en/units.json'
 import { NAMESPACES, type MessageBundle, type Messages, type Namespace } from './namespaces'
 
@@ -77,6 +79,7 @@ export const en = {
   reports: enReports,
   orders: enOrders,
   documents: enDocuments,
+  stock: enStock,
 } as const
 export type SourceMessages = typeof en
 
@@ -101,6 +104,7 @@ export const resources: Readonly<Record<Locale, Readonly<Record<Namespace, Messa
     reports: arReports,
     orders: arOrders,
     documents: arDocuments,
+    stock: arStock,
   },
 }
 

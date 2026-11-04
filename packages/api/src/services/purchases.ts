@@ -47,6 +47,7 @@ import { containsPattern, decodeCursor, encodeCursor, requestHashOf } from './ca
 import { baseQtyOf, loadMaterials, type MaterialInfo } from './purchase-materials'
 import { fillSaleMaterialCosts } from './sale-costs'
 import {
+  assertNotBeforeFirstCount,
   assertPostable,
   insertMovement,
   isoOf,
@@ -1096,6 +1097,8 @@ interface ReceiptRecord extends Record<string, unknown> {
  * (D-114 rule 3). PURCHASE_HAS_RETURNS while returns or credit notes of it are posted (D-120 rule 1),
  * PURCHASE_HAS_PAYMENTS while payments recorded on it stand (they are reversed first; the purchase
  * row is locked first, as recording a payment locks it, so neither slips past the other).
+ * STOCK_COUNTED when it was posted before a first count of one of its materials that stands (M4 Step
+ * 2: that count is reversed first; assertNotBeforeFirstCount).
  */
 async function reverseInTx(tx: Tx, ctx: BusinessCtx, id: string): Promise<void> {
   const head = await lockPurchase(tx, ctx.businessId, id)
@@ -1131,6 +1134,11 @@ async function reverseInTx(tx: Tx, ctx: BusinessCtx, id: string): Promise<void> 
   const materialIds = [...new Set(receipts.map((r) => r.material_id))].sort()
   await lockMaterials(tx, ctx.businessId, materialIds)
   const costs = await lockCostRows(tx, ctx.businessId, materialIds)
+  await assertNotBeforeFirstCount(
+    tx,
+    ctx.businessId,
+    receipts.map((r) => r.id),
+  )
   const balances = await lockBalances(
     tx,
     ctx.businessId,

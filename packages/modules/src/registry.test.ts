@@ -16,6 +16,7 @@ import {
   MODULES,
   type ModuleId,
   type ModuleManifest,
+  type NavEntry,
 } from './manifests'
 import { keysMissingNeeds, PERMISSION_CATALOG, type PermissionKey } from './permissions'
 import { ROLE_TEMPLATE_KEYS, ROLE_TEMPLATES } from './role-templates'
@@ -64,8 +65,8 @@ describe('module manifests', () => {
 
   it('give planned modules no permission keys, nav or quick actions until their build starts (no stubs)', () => {
     // A module gets its keys and nav when its build starts and stays planned (hidden) until it is
-    // released (D-124, D-125). None is being built since Release B (M3 Step 9) released Quotations
-    // and Invoices, whose keys came with their builds (Steps 7 and 8).
+    // released (D-124, D-125). Release B (M3 Step 9) released Quotations and Invoices, whose keys came
+    // with their builds (Steps 7 and 8).
     expect(byId.get('quotations')).toMatchObject({
       availability: 'released',
       permissionKeys: [
@@ -85,7 +86,20 @@ describe('module manifests', () => {
       ],
       sensitiveFields: [],
     })
-    for (const m of MODULES.filter((x) => x.availability === 'planned')) {
+    // M4 Step 2 builds Stock (released with Release A, Step 5): its keys and its page while planned.
+    expect(byId.get('inventory')).toMatchObject({
+      availability: 'planned',
+      permissionKeys: ['inventory.stock.view', 'inventory.counts.enter', 'inventory.counts.manage'],
+      quickActions: [],
+      sensitiveFields: ['cost'],
+      requiresCapabilities: ['keeps_stock'],
+    })
+    const stockNav: readonly NavEntry[] = byId.get('inventory')?.nav ?? []
+    expect(stockNav.map((entry) => [entry.id, entry.permission])).toEqual([
+      ['stock', 'inventory.stock.view'],
+      ['stock', 'inventory.counts.enter'],
+    ])
+    for (const m of MODULES.filter((x) => x.availability === 'planned' && x.id !== 'inventory')) {
       expect(m.permissionKeys, m.id).toEqual([])
       expect(m.nav, m.id).toEqual([])
       expect(m.quickActions, m.id).toEqual([])
@@ -311,6 +325,10 @@ describe('module manifests', () => {
       // Invoices.
       ['quotations', 'sales'],
       ['invoices', 'sales'],
+      // M4 Step 2: Stock (one page, reached with "see stock" or with "count stock"; shown once released,
+      // Release A of M4).
+      ['stock', 'main'],
+      ['stock', 'main'],
     ])
   })
 
@@ -324,7 +342,7 @@ describe('module manifests', () => {
 })
 
 describe('permission catalog', () => {
-  it('holds the keys of dashboard, settings, products, materials, suppliers, purchases, expenses, running costs, the cost engine, sales and reports, and one data key per sensitivity category', () => {
+  it('holds the keys of dashboard, settings, products, materials, suppliers, purchases, expenses, running costs, the cost engine, sales, reports and stock, and one data key per sensitivity category', () => {
     expect([...PERMISSION_CATALOG].sort()).toEqual(
       [
         'dashboard.home.view',
@@ -387,6 +405,10 @@ describe('permission catalog', () => {
         'invoices.documents.manage',
         'invoices.documents.issue',
         'invoices.documents.credit',
+        // M4 Step 2: Stock.
+        'inventory.stock.view',
+        'inventory.counts.enter',
+        'inventory.counts.manage',
         'data.cost.view',
         'data.profit_margin.view',
         'data.supplier_price.view',
@@ -525,6 +547,10 @@ describe('role templates', () => {
         'invoices.documents.manage',
         'invoices.documents.issue',
         'invoices.documents.credit',
+        // M4 Step 2 (Q16): sees stock, counts, starts tracking and finalizes counts.
+        'inventory.stock.view',
+        'inventory.counts.enter',
+        'inventory.counts.manage',
         'data.cost.view',
         'data.profit_margin.view',
         'data.supplier_price.view',
@@ -556,6 +582,8 @@ describe('role templates', () => {
         'invoices.documents.manage',
         'invoices.documents.issue',
         'invoices.documents.credit',
+        // M4 Step 2 (Q16): sees stock.
+        'inventory.stock.view',
         'data.cost.view',
         'data.profit_margin.view',
         'data.supplier_price.view',
@@ -587,6 +615,8 @@ describe('role templates', () => {
         'quotations.documents.decide',
         'invoices.documents.view',
         'invoices.documents.manage',
+        // M4 Step 2 (Q16): sees stock.
+        'inventory.stock.view',
       ].sort(),
     )
     expect(keysOf('supervisor')).toEqual(
@@ -606,6 +636,9 @@ describe('role templates', () => {
         'orders.documents.view',
         'orders.documents.manage',
         'orders.documents.deliver',
+        // M4 Step 2 (Q16): sees stock and counts (blind: no "manage counts").
+        'inventory.stock.view',
+        'inventory.counts.enter',
       ].sort(),
     )
     // The owner's answers of 2026-09-29 (D-179, D-180): what goes into each product (quantities) and
@@ -626,6 +659,8 @@ describe('role templates', () => {
         'customers.items.manage',
         'orders.documents.manage',
         'orders.documents.deliver',
+        // M4 Step 2 (Q16): counts stock blind (no "see stock").
+        'inventory.counts.enter',
       ].sort(),
     )
     expect(keysMissingNeeds(keysOf('employee'))).toEqual([])

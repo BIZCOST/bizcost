@@ -361,7 +361,10 @@ async function insertMaterial(ctx: BusinessCtx, input: CreateInput): Promise<Mat
   )
 }
 
-/** Whether a purchase line (drafts too), a stock movement or a recipe line names the material. */
+/**
+ * Whether a purchase line (drafts too), a stock movement, a recipe line or a count's line (a draft's
+ * too: its counted parts are in the material's units, M4 Step 2) names the material.
+ */
 async function materialInUse(tx: Tx, businessId: string, id: string): Promise<boolean> {
   const [row] = (await tx.execute(sql`
     select exists (
@@ -377,6 +380,11 @@ async function materialInUse(tx: Tx, businessId: string, id: string): Promise<bo
              select 1 from app.recipe_lines r
               where r.business_id = ${businessId} and r.material_id = ${id}
                 and r.deleted_at is null
+           )
+        or exists (
+             select 1 from app.stock_count_lines c
+              where c.business_id = ${businessId} and c.material_id = ${id}
+                and c.deleted_at is null
            ) as used
   `)) as unknown as { used: boolean }[]
   return row?.used === true

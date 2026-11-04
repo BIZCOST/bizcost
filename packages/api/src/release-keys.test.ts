@@ -16,7 +16,7 @@ function migrationPairs(name: string): string[] {
   const [file] = readdirSync(MIGRATIONS).filter((file) => file.endsWith(`_${name}.sql`))
   if (!file) throw new Error(`no ${name} migration`)
   const sql = readFileSync(`${MIGRATIONS}${file}`, 'utf8')
-  return [...sql.matchAll(/\('([a-z_]+)', '([a-z_.]+)'\)/g)].map(
+  return [...sql.matchAll(/\('([a-z_]+)', '([a-z_]+\.[a-z_.]+)'\)/g)].map(
     ([, role, key]) => `${role} ${key}`,
   )
 }
@@ -48,5 +48,19 @@ describe('the release migrations', () => {
     expect(pairs).toContain('admin settings.documents.manage')
     expect(pairs).toContain('sales invoices.documents.manage')
     expect(pairs).not.toContain('sales invoices.documents.issue')
+  })
+
+  // Not a release: Stock's keys came with its build (M4 Step 2, D-124), for the roles businesses
+  // already had, while it stays planned until Release A of M4.
+  it('stock_counts_security states exactly the templates’ defaults of Stock’s keys', () => {
+    const pairs = templatePairs((key) => moduleOf(key) === 'inventory')
+    expect(migrationPairs('stock_counts_security').sort()).toEqual(pairs.sort())
+    // The plan's Q16 table: the Employee counts blind (no "see stock"), only managers manage counts.
+    expect(pairs).toContain('employee inventory.counts.enter')
+    expect(pairs).not.toContain('employee inventory.stock.view')
+    expect(pairs.filter((p) => p.endsWith('inventory.counts.manage')).sort()).toEqual([
+      'admin inventory.counts.manage',
+      'manager inventory.counts.manage',
+    ])
   })
 })

@@ -10,6 +10,16 @@ export const repoRoot = fileURLToPath(new URL('../..', import.meta.url))
 export const port = Number(process.env.E2E_PORT ?? 3100)
 export const baseURL = `http://localhost:${port}`
 
+/**
+ * A development server (`next dev`) with the dev-only preview of the modules being built (D-125,
+ * D-127), on E2E_PREVIEW_PORT (default: the port after E2E_PORT). Only the specs of those modules run
+ * on it: a production build never shows a module before its release, whatever its environment says.
+ * M4 Step 2: Stock (`inventory`, released with Release A of M4, Step 5).
+ */
+export const previewPort = Number(process.env.E2E_PREVIEW_PORT ?? port + 1)
+export const previewBaseURL = `http://localhost:${previewPort}`
+export const PREVIEW_MODULES = 'inventory'
+
 export interface Stack {
   apiUrl: string
   publishableKey: string

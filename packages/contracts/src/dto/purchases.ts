@@ -785,11 +785,12 @@ export const materialCostsInput = z.object({
 export type MaterialCostsInput = z.input<typeof materialCostsInput>
 
 /**
- * Which average is shown (the page says it, D-115): until the business's first stock count, the
- * average of the material's purchases in the last 90 days, or, with none in that window, the unit
- * cost of its last purchase. After the first count (Phase 4): the stock average.
+ * Which average is shown (the page says it, D-115): until the material's first stock count, the
+ * average of its purchases in the last 90 days, or, with none in that window, the unit cost of its
+ * last purchase. From its first count on (M4 Step 2, D-339 Q2: per material): its stock average
+ * (`stock`; `from` is then the day of that count).
  */
-export const averageBasisDto = z.enum(['purchases_90_days', 'last_purchase'])
+export const averageBasisDto = z.enum(['purchases_90_days', 'last_purchase', 'stock'])
 
 export const materialCostDto = z.object({
   materialId: zUuid,

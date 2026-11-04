@@ -52,6 +52,14 @@
   "details_missing": "The tax invoice needs a few details first. Add what is missing, then issue it again.",
   "exceeds_invoice": "That's more than is left of this invoice to credit. Check the quantity or the amount.",
   "quotation_invoiced": "An invoice was already issued from this quotation, so it isn't made into an order. Invoice the rest from the quotation.",
+  "count_incomplete": "Some items in this count aren't counted yet. Count them, or take them off the count, then finalize.",
+  "count_out_of_order": "This count's day is too early: one of its items was counted on or after that day, or has entries after it. Start a count with a later day.",
+  "stock_tracked": "You already track the stock of one of these items. Take it off this first count.",
+  "stock_not_tracked": "You don't track the stock of one of these items yet, so this count can't include it. Take it off this count: tracking starts with a first count.",
+  "has_later_counts": "One of these items was counted again after this count. Reverse that later count first, then try again.",
+  "stock_counted": "One of these items was counted in a first count after this was recorded, so this can't be reversed now. Reverse that first count, then try again.",
+  "branch_has_stock": "A branch you removed still has stock of one of these items, so its first count can't include it yet. Take that item off this first count for now.",
+  "stock_used_since": "Stock of one of these items was taken out after this first count (for example, returned to a supplier). Reverse that first, then try again.",
   "internal": "Something went wrong on our side. Please try again.",
   "network": "Can't connect. Check your internet and try again.",
   "last_channel": "This is your only active sales channel. Add another channel first, then archive this one.",
@@ -64,5 +72,12 @@
   "exceeds_sale": "That's more than is left of this sale to refund. Check the quantity or the amount.",
   "order_cancelled": "This order was cancelled, so it can't be changed, delivered or paid. Money given back is still recorded.",
   "below_paid": "The order's total can't be less than what the customer already paid. Give money back first, or keep the total.",
-  "payment_has_money_back": "Money was given back to the customer from this payment. Reverse the money given back first, then the payment."
+  "payment_has_money_back": "Money was given back to the customer from this payment. Reverse the money given back first, then the payment.",
+  "named": {
+    "stock_tracked": "Their stock is tracked already: {{names}}. Take them off this first count.",
+    "stock_not_tracked": "Their stock isn't tracked yet: {{names}}. Take them off this count: tracking starts with a first count.",
+    "stock_counted": "Counted in a first count after this was recorded: {{names}}. Reverse that first count first, then try again.",
+    "branch_has_stock": "A branch you removed ({{names}}) still has stock of {{items}}, so this first count can't include them yet. Take them off this first count for now.",
+    "stock_used_since": "Stock was taken out since this first count (for example, returned to a supplier): {{names}}. Reverse that first, then try again."
+  }
 }

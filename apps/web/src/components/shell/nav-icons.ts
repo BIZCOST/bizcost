@@ -20,6 +20,7 @@ import {
   UserRoundPlusIcon,
   UsersRoundIcon,
   WalletIcon,
+  WarehouseIcon,
   type LucideIcon,
 } from 'lucide-react'
 
@@ -58,6 +59,8 @@ const NAV_ICONS: Readonly<Record<string, LucideIcon>> = {
   // Quotations (M3 Step 7) and Invoices (M3 Step 8), released with Release B (Step 9), and "+".
   'file-text': FileTextIcon,
   'receipt-text': ReceiptTextIcon,
+  // Stock (M4 Step 2; planned until Release A of M4, shown before it only by the dev-only preview).
+  warehouse: WarehouseIcon,
 }
 
 export const FALLBACK_NAV_ICON: LucideIcon = LayoutGridIcon

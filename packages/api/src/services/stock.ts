@@ -4,6 +4,7 @@ import {
   isCurrencyCode,
   newId,
   replayWac,
+  sumDecimals,
   type CostAmount,
   type CurrencyCode,
   type Quantity,
@@ -39,6 +40,13 @@ import { AppError } from '../errors'
 // the business row, then those lines (business row → sale lines). Nothing locks a cost row or the
 // business row while holding a sale line, and a sale's reversal locks only its header, so none of
 // these wait in a cycle.
+//
+// Counts (M4 Step 2, D-339, D-340) are documents posted in the same order: the count FOR UPDATE, the
+// business row FOR SHARE, its materials (FOR SHARE; FOR NO KEY UPDATE for a first count, which sets
+// or clears materials.stock_tracked_from, so no posting holding a material FOR SHARE waits on it while
+// it waits for that posting's cost row), the cost rows, the balances. A first count writes one
+// `opening` row per branch line of each material and the cost engine reads them back as ONE opening
+// (toWacMovements); a later count one `count` row per line that found a difference.
 
 const UUID_TEXT = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 
@@ -345,6 +353,12 @@ export interface LedgerEntry {
   readonly reversesKind: StockMovementKind | null
   readonly purchaseLineId: string | null
   readonly returnLineId: string | null
+  /** An opening or count row, or its reversal: its count line, that line's count and what it counted. */
+  readonly countLineId: string | null
+  readonly countId: string | null
+  readonly countedQty: string | null
+  /** As stored: the average an opening started at (per base unit). */
+  readonly unitCost: string | null
 }
 
 interface LedgerRecord extends Record<string, unknown> {
@@ -358,6 +372,10 @@ interface LedgerRecord extends Record<string, unknown> {
   reverses_kind: StockMovementKind | null
   purchase_line_id: string | null
   return_line_id: string | null
+  count_line_id: string | null
+  count_id: string | null
+  counted_qty: string | null
+  unit_cost: string | null
 }
 
 /** Every movement of a material, in posting order. */
@@ -369,9 +387,13 @@ export async function materialLedger(
   const records = (await tx.execute(sql`
     select m.id, m.kind, m.location_id, trim_scale(m.qty)::text as qty,
            trim_scale(m.value)::text as value, m.receipt_id, m.reverses_id,
-           r.kind as reverses_kind, m.purchase_line_id, m.return_line_id
+           r.kind as reverses_kind, m.purchase_line_id, m.return_line_id, m.count_line_id,
+           cl.count_id, trim_scale(cl.counted_base_qty)::text as counted_qty,
+           trim_scale(m.unit_cost)::text as unit_cost
       from app.stock_movements m
       left join app.stock_movements r on r.business_id = m.business_id and r.id = m.reverses_id
+      left join app.stock_count_lines cl
+        on cl.business_id = m.business_id and cl.id = m.count_line_id
      where m.business_id = ${businessId} and m.material_id = ${materialId}
      order by m.seq
   `)) as unknown as LedgerRecord[]
@@ -386,6 +408,10 @@ export async function materialLedger(
     reversesKind: r.reverses_kind,
     purchaseLineId: r.purchase_line_id,
     returnLineId: r.return_line_id,
+    countLineId: r.count_line_id,
+    countId: r.count_id,
+    countedQty: r.counted_qty,
+    unitCost: r.unit_cost,
   }))
 }
 
@@ -395,43 +421,132 @@ export function negate(value: string): string {
   return value.startsWith('-') ? value.slice(1) : `-${value}`
 }
 
-/** The WAC engine's movements for a stored ledger (values as posted). */
+/**
+ * The WAC engine's movements for a stored ledger (values as posted). A first count's rows of one
+ * material (one per branch line, consecutive: posted together under its cost row's lock) are ONE
+ * opening: its id the first row's, its quantity what the lines counted together, its value the rows'
+ * values added (each row's adjustment is its share of the book the count replaced), at the average
+ * it started at; their reversal rows are ONE opening_reversal. A count's row is a count difference.
+ */
 export function toWacMovements(ledger: readonly LedgerEntry[]): WacMovement[] {
-  return ledger.map((entry): WacMovement => {
-    switch (entry.kind) {
-      case 'purchase':
-        return {
-          type: 'receipt',
-          id: entry.id,
-          qty: entry.qty as Quantity,
-          value: entry.value as CostAmount,
-        }
-      case 'purchase_return':
-        return {
-          type: 'return',
-          id: entry.id,
-          receiptId: entry.receiptId ?? '',
-          qty: negate(entry.qty) as Quantity,
-          value: negate(entry.value) as CostAmount,
-        }
-      case 'purchase_credit':
-        return {
-          type: 'credit',
-          id: entry.id,
-          receiptId: entry.receiptId ?? '',
-          amount: negate(entry.value) as CostAmount,
-        }
-      case 'reversal': {
-        const target = entry.reversesId ?? ''
-        if (entry.reversesKind === 'purchase')
-          return { type: 'receipt_reversal', receiptId: target }
-        if (entry.reversesKind === 'purchase_return') {
-          return { type: 'return_reversal', returnId: target }
-        }
-        return { type: 'credit_reversal', creditId: target }
+  const out: WacMovement[] = []
+  // The opening being read (its count, what it adds up to so far, where it is in `out`), the count
+  // whose opening the last reversal read undid, and each count's opening id.
+  let open: { countId: string; qty: string; value: string; at: number } | null = null
+  let undone: string | null = null
+  const openingIds = new Map<string, string>()
+  for (const entry of ledger) {
+    if (entry.kind === 'opening') {
+      const countId = entry.countId ?? ''
+      undone = null
+      if (open !== null && open.countId === countId && open.at === out.length - 1) {
+        open.qty = sumDecimals([open.qty, entry.countedQty ?? '0'])
+        open.value = sumDecimals([open.value, entry.value])
+        const first = out[open.at] as Extract<WacMovement, { type: 'opening' }>
+        out[open.at] = { ...first, qty: open.qty as Quantity, value: open.value as CostAmount }
+        continue
       }
+      openingIds.set(countId, entry.id)
+      open = { countId, qty: entry.countedQty ?? '0', value: entry.value, at: out.length }
+      out.push({
+        type: 'opening',
+        id: entry.id,
+        qty: open.qty as Quantity,
+        value: open.value as CostAmount,
+        avgCost: entry.unitCost as UnitCost | null,
+      })
+      continue
     }
-  })
+    open = null
+    if (entry.kind === 'reversal' && entry.reversesKind === 'opening') {
+      const countId = entry.countId ?? ''
+      if (undone === countId) continue
+      undone = countId
+      out.push({ type: 'opening_reversal', openingId: openingIds.get(countId) ?? '' })
+      continue
+    }
+    undone = null
+    out.push(toWacMovement(entry))
+  }
+  return out
+}
+
+/** One stored movement (not a first count's row) as the WAC engine reads it. */
+function toWacMovement(entry: LedgerEntry): WacMovement {
+  switch (entry.kind) {
+    case 'purchase':
+      return {
+        type: 'receipt',
+        id: entry.id,
+        qty: entry.qty as Quantity,
+        value: entry.value as CostAmount,
+      }
+    case 'purchase_return':
+      return {
+        type: 'return',
+        id: entry.id,
+        receiptId: entry.receiptId ?? '',
+        qty: negate(entry.qty) as Quantity,
+        value: negate(entry.value) as CostAmount,
+      }
+    case 'purchase_credit':
+      return {
+        type: 'credit',
+        id: entry.id,
+        receiptId: entry.receiptId ?? '',
+        amount: negate(entry.value) as CostAmount,
+      }
+    case 'count':
+      return { type: 'count', id: entry.id, qty: entry.qty as Quantity }
+    case 'opening':
+      throw new AppError('internal', { message: 'an opening row is read with its count' })
+    case 'reversal': {
+      const target = entry.reversesId ?? ''
+      if (entry.reversesKind === 'purchase') return { type: 'receipt_reversal', receiptId: target }
+      if (entry.reversesKind === 'purchase_return') {
+        return { type: 'return_reversal', returnId: target }
+      }
+      if (entry.reversesKind === 'count') return { type: 'count_reversal', countId: target }
+      return { type: 'credit_reversal', creditId: target }
+    }
+  }
+}
+
+/**
+ * A movement that moved quantity and was posted before a first count of its material that stands is
+ * not reversed (STOCK_COUNTED, naming those materials): the first count set the material's stock to
+ * what was counted (absolute in the cost engine, D-344), but its rows say only how far each branch
+ * moved (relative), so taking such a movement out would change the balances and not the cost row,
+ * and the two projections would part (material_costs.qty ≠ Σ stock_balances.qty). By posting order
+ * (`seq`), not by day: what was posted after the first count, whatever its day, comes after it in the
+ * ledger and reverses as anything else. Until late entries get their offset (M4 Step 3), that first
+ * count is reversed first. Read under the materials' locks (lock 3): a first count's finalize or
+ * reversal holds them FOR NO KEY UPDATE, so neither changes the answer before this commits.
+ */
+export async function assertNotBeforeFirstCount(
+  tx: Tx,
+  businessId: string,
+  movementIds: readonly string[],
+): Promise<void> {
+  if (movementIds.length === 0) return
+  const rows = (await tx.execute(sql`
+    select mat.name
+      from app.materials mat
+     where mat.business_id = ${businessId}
+       and exists (
+         select 1
+           from app.stock_movements m
+           join app.stock_movements o
+             on o.business_id = m.business_id and o.material_id = m.material_id
+            and o.kind = 'opening' and o.seq > m.seq
+           join app.stock_count_lines l on l.business_id = o.business_id and l.id = o.count_line_id
+           join app.stock_counts c on c.business_id = l.business_id and c.id = l.count_id
+          where m.business_id = ${businessId} and m.id = any(${uuidArray(movementIds)})
+            and m.material_id = mat.id and m.qty <> 0
+            and c.status = 'posted' and c.deleted_at is null)
+     order by lower(mat.name), mat.id
+  `)) as unknown as { name: string }[]
+  if (rows.length > 0) throw new AppError('stock_counted', { names: rows.map((r) => r.name) })
 }
 
 /** A movement to insert (its id is chosen by the caller, its seq by the database). */
@@ -449,6 +564,7 @@ export interface NewMovement {
   readonly returnLineId?: string | null
   readonly receiptId?: string | null
   readonly reversesId?: string | null
+  readonly countLineId?: string | null
 }
 
 /** Inserts a movement; returns its posting sequence. */
@@ -474,6 +590,7 @@ export async function insertMovement(
       returnLineId: movement.returnLineId ?? null,
       receiptId: movement.receiptId ?? null,
       reversesId: movement.reversesId ?? null,
+      countLineId: movement.countLineId ?? null,
     })
     .returning({ seq: stockMovements.seq })
   if (!row) throw new AppError('internal', { message: 'movement not inserted' })

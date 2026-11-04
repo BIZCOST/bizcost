@@ -55,10 +55,10 @@ const PREVIEW_ENVIRONMENTS: ReadonlySet<string> = new Set(['development', 'test'
  * The module registry for a server config: MODULES, unless the config names preview modules AND
  * NODE_ENV is development or test (`next dev`, Vitest). `next build`/`next start` and Vercel run with
  * NODE_ENV=production, so a production server never shows an unreleased module, whatever its
- * environment says (the web app also refuses to read BIZCOST_PREVIEW_MODULES there). No module is
- * being built between Release B (M3 Step 9) and Phase 4, so today it previews nothing, as after the
- * Costing Core's release (M2 Step 7) and Release A (M3 Step 6); the tests start a build in a registry
- * of their own (`manifests`).
+ * environment says (the web app also refuses to read BIZCOST_PREVIEW_MODULES there). Today it may
+ * preview Stock (`inventory`, M4 Step 2, until M4's Release A); between Release B (M3 Step 9) and
+ * then it previewed nothing, as after the Costing Core's release (M2 Step 7) and Release A (M3 Step
+ * 6). The tests may start a build in a registry of their own (`manifests`).
  */
 export function moduleRegistry(
   config: Pick<ApiConfig, 'previewModules'>,

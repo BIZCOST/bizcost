@@ -158,8 +158,12 @@ describe('parseServerEnv', () => {
     it('refuses a module that cannot be previewed (unknown or not being built)', () => {
       const dev = { ...base, NODE_ENV: 'development' }
       expect(() =>
-        parseServerEnv({ ...dev, BIZCOST_PREVIEW_MODULES: 'materials,inventory' }),
-      ).toThrow(/BIZCOST_PREVIEW_MODULES: inventory/)
+        parseServerEnv({ ...dev, BIZCOST_PREVIEW_MODULES: 'materials,usage_waste' }),
+      ).toThrow(/BIZCOST_PREVIEW_MODULES: usage_waste/)
+      // Stock is being built (M4 Step 2): it may be previewed.
+      expect(
+        parseServerEnv({ ...dev, BIZCOST_PREVIEW_MODULES: 'inventory' }).previewModules,
+      ).toEqual(['inventory'])
       // Quotations and Invoices are released (Release B, M3 Step 9): a local server started with the
       // list of their build (M3 Steps 7 and 8) keeps starting, and previews nothing.
       expect(

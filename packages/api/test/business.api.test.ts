@@ -308,12 +308,14 @@ describe('business.context', () => {
         // The owner's answers of 2026-09-29 (D-179, D-180): recipes (quantities) and their
         // materials, and entering expenses; nothing sensitive. Entering and finalizing their own
         // sales (M3 Step 2, Q10); adding customers, entering and delivering their own orders (M3
-        // Step 5, Q10; D-269), served since Release A (M3 Step 6).
+        // Step 5, Q10; D-269), served since Release A (M3 Step 6). Counting stock blind (M4 Step 2,
+        // Q16; Stock is planned, so no section shows for it yet).
         keys: [
           'customers.items.manage',
           'dashboard.home.view',
           'expenses.documents.manage',
           'expenses.documents.view',
+          'inventory.counts.enter',
           'materials.items.view',
           'orders.documents.deliver',
           'orders.documents.manage',

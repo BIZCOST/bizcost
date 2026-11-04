@@ -1,6 +1,5 @@
 'use client'
 
-import type { I18nKey } from '@bizcost/i18n'
 import type { LucideIcon } from 'lucide-react'
 import type { ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
@@ -16,6 +15,7 @@ import {
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog'
 import { Button } from '@/components/ui/button'
+import { useSayRefusal, type Refusal } from './refusal'
 
 /**
  * "Finalize this purchase?", "Reverse this sale?"…: what will happen, in plain words, then the
@@ -46,7 +46,8 @@ export function ConfirmDialog({
   action: string
   busyLabel: string
   busy: boolean
-  error: I18nKey | null
+  /** Why the action failed (with the names it is about, when the server sent them). */
+  error: Refusal | null
   destructive?: boolean
   /** The action can't be taken now (the error or the note says why). */
   disabled?: boolean
@@ -56,6 +57,7 @@ export function ConfirmDialog({
   children?: ReactNode
 }) {
   const { t } = useTranslation()
+  const say = useSayRefusal()
   return (
     <AlertDialog open={open} onOpenChange={(next) => !next && !busy && onClose()}>
       {/* A tall one (a choice it takes, on a small phone) scrolls inside the screen. */}
@@ -73,7 +75,7 @@ export function ConfirmDialog({
           </AlertDialogDescription>
         </AlertDialogHeader>
         {children}
-        {error ? <FormAlert tone="error">{t(error)}</FormAlert> : null}
+        {error ? <FormAlert tone="error">{say(error)}</FormAlert> : null}
         <AlertDialogFooter>
           <AlertDialogCancel disabled={busy}>{t('actions.cancel')}</AlertDialogCancel>
           <Button

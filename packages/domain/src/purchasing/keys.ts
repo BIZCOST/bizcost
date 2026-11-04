@@ -112,13 +112,18 @@ export type PurchaseReturnKind = (typeof PURCHASE_RETURN_KINDS)[number]
  * `stock_movements.kind` (D-110, D-120): a posted purchase line brings goods in (`purchase`), a
  * supplier return takes goods out at the price paid for them (`purchase_return`), a credit note
  * lowers the value of the credited goods (`purchase_credit`, no quantity), and `reversal` undoes one
- * of those (it names the movement it reverses).
+ * of those (it names the movement it reverses). M4 Step 2 (D-339, D-340): a material's first count
+ * sets its stock in each branch (`opening`, one row per branch line of the count, together one
+ * wacOpen), and a later count's difference (`count`, one row per line that found one); each names
+ * its count line, and `reversal` undoes them too.
  */
 export const STOCK_MOVEMENT_KINDS = [
   'purchase',
   'purchase_return',
   'purchase_credit',
   'reversal',
+  'opening',
+  'count',
 ] as const
 export type StockMovementKind = (typeof STOCK_MOVEMENT_KINDS)[number]
 

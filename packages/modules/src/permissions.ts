@@ -111,6 +111,9 @@ export const PERMISSION_NEEDS: Readonly<Partial<Record<PermissionKey, readonly P
     'invoices.documents.manage': ['invoices.documents.view'],
     'invoices.documents.issue': ['invoices.documents.view'],
     'invoices.documents.credit': ['invoices.documents.view'],
+    // Stock (M4 Step 2, the plan's Q16 table): counting needs no "see stock" (an Employee counts
+    // blind, Q6); starting, reviewing, finalizing and reversing counts shows the stock, so it needs it.
+    'inventory.counts.manage': ['inventory.stock.view'],
   }
 
 /** The keys of `keys` granted without a key they need (empty when the set is coherent). */

@@ -20,7 +20,9 @@ import { PERMISSION_CATALOG, type PermissionKey } from './permissions'
 // Q10 table: the Manager and Sales see, prepare and record the customer's answer, the Accountant sees
 // them; "Manage documents" (Settings) is the Owner's and the Admin's; invoices_security for the invoices
 // keys of M3 Step 8, by the plan's Q10 table: the Manager and the Accountant see, prepare, issue and
-// credit, Sales sees and prepares (not issue).
+// credit, Sales sees and prepares (not issue); stock_counts_security for the stock keys of M4 Step 2, by
+// the plan's Q16 table: everyone but the Employee sees stock, the Manager, the Supervisor and the
+// Employee count (blind without "manage"), the Manager starts tracking and finalizes counts.
 
 export const ROLE_TEMPLATE_KEYS = [
   OWNER_TEMPLATE_KEY,
@@ -101,6 +103,9 @@ export const ROLE_TEMPLATES: readonly RoleTemplate[] = [
       'invoices.documents.manage',
       'invoices.documents.issue',
       'invoices.documents.credit',
+      'inventory.stock.view',
+      'inventory.counts.enter',
+      'inventory.counts.manage',
       'data.cost.view',
       'data.profit_margin.view',
       'data.supplier_price.view',
@@ -132,6 +137,7 @@ export const ROLE_TEMPLATES: readonly RoleTemplate[] = [
       'invoices.documents.manage',
       'invoices.documents.issue',
       'invoices.documents.credit',
+      'inventory.stock.view',
       'data.cost.view',
       'data.profit_margin.view',
       'data.supplier_price.view',
@@ -160,6 +166,7 @@ export const ROLE_TEMPLATES: readonly RoleTemplate[] = [
       'quotations.documents.decide',
       'invoices.documents.view',
       'invoices.documents.manage',
+      'inventory.stock.view',
     ],
   },
   {
@@ -180,6 +187,8 @@ export const ROLE_TEMPLATES: readonly RoleTemplate[] = [
       'orders.documents.view',
       'orders.documents.manage',
       'orders.documents.deliver',
+      'inventory.stock.view',
+      'inventory.counts.enter',
     ],
   },
   // The owner's answers of 2026-09-29 (D-179, D-180): an employee sees what goes into each product
@@ -201,6 +210,7 @@ export const ROLE_TEMPLATES: readonly RoleTemplate[] = [
       'customers.items.manage',
       'orders.documents.manage',
       'orders.documents.deliver',
+      'inventory.counts.enter',
     ],
   },
 ]

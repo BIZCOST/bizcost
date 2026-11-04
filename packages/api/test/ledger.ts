@@ -10,7 +10,13 @@ import type { Admin } from './helpers'
 //   - each movement's `adjustment`: the replay's step for it (value after = value before + value −
 //     adjustment, D-109), so the stored value is conserved: cost value = Σ value − Σ adjustment;
 //   - the balances (one per location and material, D-114 rule 5): the sum of the movements' quantities
-//     there; a pair with movements has a row.
+//     there; a pair with movements has a row;
+//   - the two projections against each other: a material's cost row quantity is its balances added.
+// Counts (M4 Step 2, D-340): a first count's rows of one material (one per branch line, consecutive)
+// are one opening of what its lines counted together, worth their values added, at the average they
+// name; their adjustments add up to the stock's value just before it (the book it replaced), and
+// their reversal rows are one opening reversal whose adjustments add up to its step's. A count's row
+// is a count difference.
 // An empty list means the projections are exactly a rebuild of the ledger.
 
 export interface Drift {
@@ -26,22 +32,29 @@ interface MovementRow {
   seq: string
   material_id: string
   location_id: string
-  kind: 'purchase' | 'purchase_return' | 'purchase_credit' | 'reversal'
+  kind: 'purchase' | 'purchase_return' | 'purchase_credit' | 'reversal' | 'opening' | 'count'
   qty: string
   value: string
   adjustment: string
+  unit_cost: string | null
   receipt_id: string | null
   reverses_id: string | null
   reverses_kind: string | null
+  count_id: string | null
+  counted_qty: string | null
 }
 
 const negate = (v: string) => (v.startsWith('-') ? v.slice(1) : v === '0' ? '0' : `-${v}`)
 const same = (a: string | null, b: string | null) =>
   a === null || b === null ? a === b : compareDecimal(a, b) === 0
 
-/** A stored movement as the WAC engine reads it (values as posted). */
+/** A stored movement (not a first count's row) as the WAC engine reads it (values as posted). */
 export function toWacMovement(r: MovementRow): WacMovement {
   switch (r.kind) {
+    case 'opening':
+      throw new Error('an opening is read with the other rows of its count (groupsOf)')
+    case 'count':
+      return { type: 'count', id: r.id, qty: r.qty } as WacMovement
     case 'purchase':
       return { type: 'receipt', id: r.id, qty: r.qty, value: r.value } as WacMovement
     case 'purchase_return':
@@ -65,8 +78,71 @@ export function toWacMovement(r: MovementRow): WacMovement {
       if (r.reverses_kind === 'purchase_return') {
         return { type: 'return_reversal', returnId: r.reverses_id! }
       }
+      if (r.reverses_kind === 'count') return { type: 'count_reversal', countId: r.reverses_id! }
       return { type: 'credit_reversal', creditId: r.reverses_id! }
   }
+}
+
+/** One engine movement and the stored rows it is made of (several for a first count). */
+interface Group {
+  readonly rows: MovementRow[]
+  readonly movement: WacMovement
+}
+
+/**
+ * A material's stored rows as engine movements: a first count's consecutive rows are one opening
+ * (what its lines counted, their values added, the average they name), their reversal rows one
+ * opening reversal; every other row is one movement.
+ */
+function groupsOf(ledger: readonly MovementRow[]): Group[] {
+  const groups: Group[] = []
+  const openings = new Map<string, string>()
+  for (const r of ledger) {
+    const last = groups.at(-1)
+    const lastRow = last?.rows.at(-1)
+    if (r.kind === 'opening') {
+      if (last && lastRow?.kind === 'opening' && lastRow.count_id === r.count_id) {
+        last.rows.push(r)
+        const rows = last.rows
+        groups[groups.length - 1] = {
+          rows,
+          movement: {
+            type: 'opening',
+            id: rows[0]!.id,
+            qty: sumDecimals(rows.map((x) => x.counted_qty ?? '0')),
+            value: sumDecimals(rows.map((x) => x.value)),
+            avgCost: rows[0]!.unit_cost,
+          } as WacMovement,
+        }
+        continue
+      }
+      openings.set(r.count_id ?? '', r.id)
+      groups.push({
+        rows: [r],
+        movement: {
+          type: 'opening',
+          id: r.id,
+          qty: r.counted_qty ?? '0',
+          value: r.value,
+          avgCost: r.unit_cost,
+        } as WacMovement,
+      })
+      continue
+    }
+    if (r.kind === 'reversal' && r.reverses_kind === 'opening') {
+      if (last && last.movement.type === 'opening_reversal' && lastRow?.count_id === r.count_id) {
+        last.rows.push(r)
+        continue
+      }
+      groups.push({
+        rows: [r],
+        movement: { type: 'opening_reversal', openingId: openings.get(r.count_id ?? '') ?? '' },
+      })
+      continue
+    }
+    groups.push({ rows: [r], movement: toWacMovement(r) })
+  }
+  return groups
 }
 
 /** Every difference between the business's projections and a rebuild from its ledger. */
@@ -75,10 +151,13 @@ export async function ledgerDrift(admin: Admin, businessId: string): Promise<Dri
   const movements = await admin<MovementRow[]>`
     select m.id, m.seq::text as seq, m.material_id, m.location_id, m.kind,
            trim_scale(m.qty)::text as qty, trim_scale(m.value)::text as value,
-           trim_scale(m.adjustment)::text as adjustment, m.receipt_id, m.reverses_id,
-           r.kind as reverses_kind
+           trim_scale(m.adjustment)::text as adjustment, trim_scale(m.unit_cost)::text as unit_cost,
+           m.receipt_id, m.reverses_id, r.kind as reverses_kind, cl.count_id,
+           trim_scale(cl.counted_base_qty)::text as counted_qty
       from app.stock_movements m
       left join app.stock_movements r on r.business_id = m.business_id and r.id = m.reverses_id
+      left join app.stock_count_lines cl
+        on cl.business_id = m.business_id and cl.id = m.count_line_id
      where m.business_id = ${businessId}
      order by m.seq`
   const costRows = await admin<
@@ -107,8 +186,10 @@ export async function ledgerDrift(admin: Admin, businessId: string): Promise<Dri
 
   for (const [material, ledger] of byMaterial) {
     let replay: ReturnType<typeof replayWac>
+    let groups: Group[]
     try {
-      replay = replayWac(ledger.map(toWacMovement))
+      groups = groupsOf(ledger)
+      replay = replayWac(groups.map((g) => g.movement))
     } catch (error) {
       drift.push({ material, what: 'replay', stored: ledger.length, rebuilt: String(error) })
       continue
@@ -131,14 +212,24 @@ export async function ledgerDrift(admin: Admin, businessId: string): Promise<Dri
     if (row.last_seq !== lastSeq) {
       drift.push({ material, what: 'last_seq', stored: row.last_seq, rebuilt: lastSeq })
     }
-    for (const [index, movement] of ledger.entries()) {
+    for (const [index, group] of groups.entries()) {
       const step = replay.steps[index]!
-      if (!same(movement.adjustment, step.adjustment)) {
+      const first = group.rows[0]!
+      const adjustment = sumDecimals(group.rows.map((r) => r.adjustment))
+      // A first count's rows carry the book they replaced: the stock's value just before it (its
+      // step moves the value by value − that, with no adjustment of its own).
+      const expected =
+        group.movement.type === 'opening'
+          ? index === 0
+            ? '0'
+            : replay.steps[index - 1]!.state.value
+          : step.adjustment
+      if (!same(adjustment, expected)) {
         drift.push({
           material,
-          what: `adjustment of ${movement.kind} ${movement.id}`,
-          stored: movement.adjustment,
-          rebuilt: step.adjustment,
+          what: `adjustment of ${first.kind} ${first.id}`,
+          stored: adjustment,
+          rebuilt: expected,
         })
       }
     }
@@ -197,6 +288,24 @@ export async function ledgerDrift(admin: Admin, businessId: string): Promise<Dri
         what: 'balance without movements',
         stored: balance.qty,
         rebuilt: '0',
+      })
+    }
+  }
+
+  // The two projections agree with each other: a material's one quantity (its cost row) is what its
+  // branches hold together (its balances). Each may rebuild from the ledger and still part from the
+  // other (a first count is absolute in the cost engine, relative per branch in the balances).
+  const held = new Map<string, string[]>()
+  for (const b of balances) held.set(b.material_id, [...(held.get(b.material_id) ?? []), b.qty])
+  for (const material of new Set([...costs.keys(), ...held.keys()])) {
+    const costQty = costs.get(material)?.qty ?? '0'
+    const branches = sumDecimals(held.get(material) ?? [])
+    if (!same(costQty, branches)) {
+      drift.push({
+        material,
+        what: 'cost row qty ≠ Σ balances',
+        stored: costQty,
+        rebuilt: branches,
       })
     }
   }

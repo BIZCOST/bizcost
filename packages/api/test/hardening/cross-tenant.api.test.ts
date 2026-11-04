@@ -2645,6 +2645,212 @@ const PROBES: Record<string, Probe> = {
       { input: { id: attacker.invoice.id, newId: victim.quotation.id }, own: ['conflict'] },
     ],
   },
+  // Stock (M4 Step 2, previewed).
+  'stock.list': {
+    base: 'business',
+    reason: `${NO_ROWS}; a branch filter is looked up in that business (NOT_FOUND)`,
+    variants: (victim) => [
+      { input: {} },
+      { input: { locationId: victim.branch.id }, own: ['not_found'] },
+    ],
+  },
+  'stock.untracked': {
+    base: 'business',
+    reason: NO_ROWS,
+    variants: () => [{ input: {} }],
+  },
+  'stock.card': {
+    base: 'business',
+    reason: 'the material and a branch filter are looked up in the x-business-id business',
+    variants: (victim, attacker) => [
+      { input: { materialId: victim.stockMaterial.id }, own: ['not_found'] },
+      {
+        input: { materialId: attacker.stockMaterial.id, locationId: victim.branch.id },
+        own: ['not_found'],
+      },
+    ],
+  },
+  'count.list': {
+    base: 'business',
+    reason: `${NO_ROWS}; a branch filter is looked up in that business (NOT_FOUND)`,
+    variants: (victim) => [
+      { input: { status: 'all' } },
+      { input: { locationId: victim.branch.id }, own: ['not_found'] },
+    ],
+  },
+  'count.get': {
+    base: 'business',
+    reason:
+      'looked up in the x-business-id business (a count of a branch: in the caller’s branches)',
+    variants: (victim) => [
+      { input: { id: victim.openingCount.id }, own: ['not_found'] },
+      { input: { id: victim.draftCount.id }, own: ['not_found'] },
+    ],
+  },
+  'count.review': {
+    base: 'business',
+    reason: 'looked up in the x-business-id business',
+    variants: (victim) => [{ input: { id: victim.draftCount.id }, own: ['not_found'] }],
+  },
+  'count.start': {
+    base: 'business',
+    reason:
+      'its materials and branch are looked up in the x-business-id business; a count id used ' +
+      'anywhere is CONFLICT',
+    variants: (victim, attacker) => [
+      {
+        input: {
+          id: newId(),
+          kind: 'opening',
+          businessDate: attacker.purchase.businessDate,
+          materialIds: [victim.material.id],
+        },
+        own: ['not_found'],
+      },
+      {
+        input: {
+          id: newId(),
+          kind: 'count',
+          businessDate: attacker.purchase.businessDate,
+          locationId: victim.branch.id,
+          materialIds: [attacker.stockMaterial.id],
+        },
+        own: ['not_found'],
+      },
+      {
+        input: {
+          id: victim.draftCount.id,
+          kind: 'count',
+          businessDate: attacker.purchase.businessDate,
+          materialIds: [attacker.stockMaterial.id],
+        },
+        own: ['conflict'],
+      },
+    ],
+    unattacked: {
+      materialIds:
+        'the walk reads "all" or the ids as one field: each id is attacked above (the victim’s ' +
+        'material, NOT_FOUND)',
+    },
+  },
+  'count.saveLine': {
+    base: 'business',
+    reason:
+      'the count (locked), its line and the pack of each part are looked up in the x-business-id ' +
+      'business (the line’s own material)',
+    variants: (victim, attacker) => [
+      {
+        input: {
+          countId: victim.draftCount.id,
+          lineId: victim.draftCount.lines[0]?.id,
+          parts: [{ qty: '1', unit: 'piece' }],
+          version: 1,
+        },
+        own: ['not_found'],
+      },
+      {
+        input: {
+          countId: attacker.draftCount.id,
+          lineId: victim.draftCount.lines[0]?.id,
+          parts: [{ qty: '1', unit: 'piece' }],
+          version: 1,
+        },
+        own: ['not_found'],
+      },
+      {
+        input: {
+          countId: attacker.draftCount.id,
+          lineId: attacker.draftCount.lines[0]?.id,
+          parts: [{ qty: '1', packId: victim.material.packs[0]?.id }],
+          version: attacker.draftCount.lines[0]?.version,
+        },
+        own: ['validation'],
+      },
+    ],
+  },
+  'count.clearLine': {
+    base: 'business',
+    reason: 'the count (locked) and its line are looked up in the x-business-id business',
+    variants: (victim, attacker) => [
+      {
+        input: {
+          countId: victim.draftCount.id,
+          lineId: victim.draftCount.lines[0]?.id,
+          version: 1,
+        },
+        own: ['not_found'],
+      },
+      {
+        input: {
+          countId: attacker.draftCount.id,
+          lineId: victim.draftCount.lines[0]?.id,
+          version: 1,
+        },
+        own: ['not_found'],
+      },
+    ],
+  },
+  'count.removeLine': {
+    base: 'business',
+    reason: 'the count (locked) and its line are looked up in the x-business-id business',
+    variants: (victim, attacker) => [
+      {
+        input: {
+          countId: victim.draftCount.id,
+          lineId: victim.draftCount.lines[0]?.id,
+          version: 1,
+        },
+        own: ['not_found'],
+      },
+      {
+        input: {
+          countId: attacker.draftCount.id,
+          lineId: victim.draftCount.lines[0]?.id,
+          version: 1,
+        },
+        own: ['not_found'],
+      },
+    ],
+  },
+  'count.addLines': {
+    base: 'business',
+    reason: 'the count (locked) and its materials are looked up in the x-business-id business',
+    variants: (victim, attacker) => [
+      {
+        input: { countId: victim.draftCount.id, materialIds: [attacker.stockMaterial.id] },
+        own: ['not_found'],
+      },
+      {
+        input: { countId: attacker.draftCount.id, materialIds: [victim.stockMaterial.id] },
+        own: ['not_found'],
+      },
+    ],
+  },
+  'count.finalize': {
+    base: 'business',
+    reason: 'looked up (and locked) in the x-business-id business',
+    variants: (victim) => [
+      {
+        input: { id: victim.draftCount.id, version: victim.draftCount.version },
+        own: ['not_found'],
+      },
+    ],
+  },
+  'count.discard': {
+    base: 'business',
+    reason: 'looked up (and locked) in the x-business-id business',
+    variants: (victim) => [
+      {
+        input: { id: victim.draftCount.id, version: victim.draftCount.version },
+        own: ['not_found'],
+      },
+    ],
+  },
+  'count.reverse': {
+    base: 'business',
+    reason: 'looked up (and locked) in the x-business-id business',
+    variants: (victim) => [{ input: { id: victim.openingCount.id }, own: ['not_found'] }],
+  },
   'creditNote.list': {
     base: 'business',
     reason: `${NO_ROWS}; an invoice or customer filter is looked up in that business (NOT_FOUND)`,

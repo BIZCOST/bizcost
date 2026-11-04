@@ -1269,7 +1269,7 @@ function RealProfitReport() {
                   {data.profitShown ? (
                     <div className="space-y-5">
                       <Parts data={data} parts={parts} context={context} />
-                      <Months data={data} by={params.by} />
+                      <Months data={data} by={data.groupBy} />
                     </div>
                   ) : null}
                 </div>
@@ -1280,7 +1280,9 @@ function RealProfitReport() {
                     body={t('reports.profit.empty.filteredBody')}
                   />
                 ) : (
-                  <Groups data={data} by={params.by} parts={parts} context={context} />
+                  // The grouping the data was made for: while another one loads, the previous
+                  // report stays on screen (keepPreviousData) and its keys are not months.
+                  <Groups data={data} by={data.groupBy} parts={parts} context={context} />
                 )}
               </>
             )}

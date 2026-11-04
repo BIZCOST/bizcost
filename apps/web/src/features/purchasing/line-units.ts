@@ -22,6 +22,12 @@ import { materialUnits, outerPacks, UNITS_BY_DIMENSION, type ChainStep } from '.
 // conversions are the domain units engine's own, the ones the API posts with, so what a line says in
 // words ("2 cartons = 24 bottles = 24 L") is what comes into stock.
 
+/**
+ * What these helpers read of a material: its unit, kind of measure, packs and conversions (a
+ * material of the catalog, or a stock answer's material, M4 Step 2).
+ */
+export type MaterialUnitsDto = Pick<MaterialDto, 'unit' | 'dimension' | 'packs' | 'crossFactors'>
+
 /** A line's unit as the form holds it: `unit:kg`, `pack:<id>`, or '' until chosen. */
 export type LineUnit = '' | `unit:${StandardUnit}` | `pack:${string}`
 
@@ -37,12 +43,12 @@ export function lineUnitOf(unit: StandardUnit | null, packId: string | null): Li
 }
 
 /** The units engine's view of a material. */
-export function unitsOf(material: MaterialDto): MaterialUnits {
+export function unitsOf(material: MaterialUnitsDto): MaterialUnits {
   return materialUnits(material.unit, material.packs, material.crossFactors)
 }
 
 /** The kinds of measure a material can be bought in: its own, then those it has a conversion for. */
-export function dimensionsOf(material: MaterialDto): Dimension[] {
+export function dimensionsOf(material: MaterialUnitsDto): Dimension[] {
   const own = material.dimension
   return [own, ...material.crossFactors.map((cross) => dimensionOf(cross.unit))].filter(
     (dimension, index, all) => all.indexOf(dimension) === index,
@@ -50,7 +56,7 @@ export function dimensionsOf(material: MaterialDto): Dimension[] {
 }
 
 /** Whether `value` is a unit this material can be bought in (its pack, or a unit it converts). */
-export function isUnitOf(material: MaterialDto, value: LineUnit): boolean {
+export function isUnitOf(material: MaterialUnitsDto, value: LineUnit): boolean {
   if (value.startsWith('pack:')) return material.packs.some((pack) => `pack:${pack.id}` === value)
   if (!value.startsWith('unit:')) return false
   const unit = value.slice(5) as StandardUnit
@@ -61,7 +67,7 @@ export function isUnitOf(material: MaterialDto, value: LineUnit): boolean {
  * The unit a new line of this material starts in: the biggest pack it is bought in (the first pack
  * no other pack holds), else the unit it is counted in. People buy the way the material was set up.
  */
-export function defaultUnitOf(material: MaterialDto): LineUnit {
+export function defaultUnitOf(material: MaterialUnitsDto): LineUnit {
   const pack = outerPacks(material.packs)[0]
   return pack ? `pack:${pack.id}` : `unit:${material.unit}`
 }
@@ -71,7 +77,7 @@ export function defaultUnitOf(material: MaterialDto): LineUnit {
  * rounded, or is more than a stored quantity holds (the API refuses the same, D-130).
  */
 export function baseQuantity(
-  material: MaterialDto,
+  material: MaterialUnitsDto,
   qty: Quantity,
   unit: UnitRef,
 ): { ok: true; base: Quantity } | { ok: false; error: 'too_small' | 'too_large' | 'unit' } {
@@ -93,7 +99,7 @@ export function baseQuantity(
  * already in the counting unit says nothing more ([]). Null when it cannot be converted.
  */
 export function quantityInWords(
-  material: MaterialDto,
+  material: MaterialUnitsDto,
   qty: Quantity,
   unit: UnitRef,
 ): ChainStep[] | null {
@@ -136,7 +142,7 @@ export function quantityInWords(
  * display): AED 45 for 1 bag of 1 kg → 45 per kg. Null when it cannot be worked out.
  */
 export function pricePerCountingUnit(
-  material: MaterialDto,
+  material: MaterialUnitsDto,
   amount: string,
   qty: Quantity,
   unit: UnitRef,
@@ -152,6 +158,6 @@ export function pricePerCountingUnit(
 }
 
 /** The base unit of a material's kind of measure (ml for litres, g for kilos). */
-export function baseUnitOf(material: MaterialDto): StandardUnit {
+export function baseUnitOf(material: MaterialUnitsDto): StandardUnit {
   return BASE_UNITS[material.dimension]
 }

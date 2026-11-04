@@ -36,12 +36,26 @@ export function apiErrorCode(error: unknown): AppErrorCode | undefined {
  * use the unit), when the server sent any; else empty.
  */
 export function apiErrorNames(error: unknown): string[] {
+  return stringsOf(error, 'names')
+}
+
+/**
+ * The materials a refusal is about when its names are something else (`error.data.materials`:
+ * BRANCH_HAS_STOCK names the removed branches, these the materials they hold); else empty.
+ */
+export function apiErrorMaterials(error: unknown): string[] {
+  return stringsOf(error, 'materials')
+}
+
+function stringsOf(error: unknown, field: 'names' | 'materials'): string[] {
   if (!(error instanceof TRPCClientError)) return []
   const data: unknown = error.data
-  const names =
-    typeof data === 'object' && data !== null && 'names' in data ? data.names : undefined
-  return Array.isArray(names)
-    ? names.filter((name): name is string => typeof name === 'string')
+  const values =
+    typeof data === 'object' && data !== null && field in data
+      ? (data as Record<typeof field, unknown>)[field]
+      : undefined
+  return Array.isArray(values)
+    ? values.filter((value): value is string => typeof value === 'string')
     : []
 }
 

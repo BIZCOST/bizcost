@@ -14,6 +14,7 @@ import { sql } from 'drizzle-orm'
 import {
   boolean,
   check,
+  date,
   foreignKey,
   index,
   numeric,
@@ -58,6 +59,10 @@ export const materials = tenantTable(
     unit: text('unit').$type<StandardUnit>().notNull(),
     // Archived: hidden from pickers; still listed (filter) and never deleted (D-123).
     archivedAt: timestamptz('archived_at'),
+    // Stock is tracked from this business day (M4 Step 2, D-339 Q2): the day of the material's first
+    // count (its opening), set when that count is finalized and cleared when it is reversed. Until then
+    // its cost is the 90-day purchase average and nothing takes it out of stock (D-115, D-219).
+    stockTrackedFrom: date('stock_tracked_from', { mode: 'string' }),
   },
   (t) => [
     // One name per business, compared the way people read it (app.name_key: case, spaces, Arabic

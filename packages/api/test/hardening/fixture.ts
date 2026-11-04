@@ -1,5 +1,6 @@
 import { randomBytes } from 'node:crypto'
 import type {
+  CountDto,
   CreditNoteDto,
   DocumentImageUploadUrlDto,
   InvoiceDto,
@@ -89,6 +90,11 @@ import { CapturedEmails, join, setupBusiness, WORKSHOP } from '../settings'
 // M3 Step 8: Invoices (released with Quotations). Each business also has an issued (plain) invoice of
 // the customer (a product line and a typed one, its LPO and a payment on it), a draft invoice, an
 // issued credit note of the invoice and a draft credit note.
+//
+// M4 Step 2: Stock is planned until Release A of M4, so the suites run with the dev-only preview of
+// it (D-125), as a local server does, and its procedures are attacked like the others (as M3 Step 2
+// did for Sales). Each business also has a material kept in stock, bought yesterday, with a finalized
+// first count of it in both branches (yesterday) and a draft count of the other branch (today).
 
 export type Handler = ReturnType<typeof handlerFor>
 
@@ -106,12 +112,23 @@ export interface Api {
   close: () => Promise<void>
 }
 
-/** The API as deployed (secret key for Storage, emails kept instead of sent), and its test users. */
+/** The modules still being built that the suites preview (D-125): Stock since M4 Step 2. */
+export const PREVIEW_MODULES = ['inventory'] as const
+
+/**
+ * The API as deployed (secret key for Storage, emails kept instead of sent), with the modules still
+ * being built previewed, and its test users.
+ */
 export function openApi(router?: AnyRouter): Api {
   const db = connectApi()
   const admin = connectAdmin()
   const emails = new CapturedEmails()
-  const handler = handlerFor(db, router, { supabaseSecretKey: SECRET_KEY }, { emailSender: emails })
+  const handler = handlerFor(
+    db,
+    router,
+    { supabaseSecretKey: SECRET_KEY, previewModules: PREVIEW_MODULES },
+    { emailSender: emails },
+  )
   const users: TestUser[] = []
   return {
     db,
@@ -326,6 +343,12 @@ export interface Tenant {
   invoiceLinePicture: AttachmentDto
   /** The stamp image of Settings → Documents (its object path). */
   stampPath: string
+  /** M4 Step 2: a material kept in stock (in pieces), bought yesterday. */
+  stockMaterial: MaterialDto
+  /** Its finalized first count, yesterday, in both branches (90 and 10 pieces). */
+  openingCount: CountDto
+  /** A draft count of its other branch (`branch`), today (not counted yet). */
+  draftCount: CountDto
 }
 
 function ok<T>(result: CallResult<T>, what: string): T {
@@ -1197,6 +1220,94 @@ export async function createTenant(api: Api, label: string): Promise<Tenant> {
     'document.setImage (stamp)',
   )
 
+  // M4 Step 2: a material kept in stock, its first count (yesterday) and a draft count of the other
+  // branch (today).
+  const yesterdayDate = new Date(`${today}T00:00:00Z`)
+  yesterdayDate.setUTCDate(yesterdayDate.getUTCDate() - 1)
+  const yesterday = yesterdayDate.toISOString().slice(0, 10)
+  const stockMaterial = ok(
+    await as('material.create', 'mutation', {
+      id: newId(),
+      name: `Cups ${label} ${tag}`,
+      unit: 'piece',
+    }),
+    'material.create (stock)',
+  ) as MaterialDto
+  const cupsDraft = (
+    ok(
+      await as('purchase.create', 'mutation', {
+        id: newId(),
+        businessDate: yesterday,
+        documentType: 'no_invoice',
+        paymentMethod: 'cash',
+        lines: [
+          {
+            kind: 'material',
+            id: newId(),
+            materialId: stockMaterial.id,
+            qty: '100',
+            unit: 'piece',
+            unitPrice: '0.5',
+          },
+        ],
+      }),
+      'purchase.create (stock)',
+    ) as { data: PurchaseDto }
+  ).data
+  ok(
+    await as('purchase.post', 'mutation', { id: cupsDraft.id, version: cupsDraft.version }),
+    'purchase.post (stock)',
+  )
+  const openingDraft = (
+    ok(
+      await as('count.start', 'mutation', {
+        id: newId(),
+        kind: 'opening',
+        businessDate: yesterday,
+        materialIds: [stockMaterial.id],
+        note: `First count ${label} ${tag}`,
+      }),
+      'count.start (opening)',
+    ) as { data: CountDto }
+  ).data
+  for (const countLine of openingDraft.lines) {
+    ok(
+      await as('count.saveLine', 'mutation', {
+        countId: openingDraft.id,
+        lineId: countLine.id,
+        parts: [{ qty: countLine.locationId === branch.id ? '10' : '90', unit: 'piece' }],
+        version: countLine.version,
+      }),
+      'count.saveLine',
+    )
+  }
+  // Read again: each saved line moved the count's version on.
+  const counted = (
+    ok(await as('count.get', 'query', { id: openingDraft.id }), 'count.get') as { data: CountDto }
+  ).data
+  const openingCount = (
+    ok(
+      await as('count.finalize', 'mutation', {
+        id: counted.id,
+        version: counted.version,
+      }),
+      'count.finalize',
+    ) as { data: CountDto }
+  ).data
+  const draftCount = (
+    ok(
+      await as('count.start', 'mutation', {
+        id: newId(),
+        kind: 'count',
+        businessDate: today,
+        locationId: branch.id,
+        materialIds: [stockMaterial.id],
+        note: `Count ${label} ${tag}`,
+      }),
+      'count.start (count)',
+    ) as { data: CountDto }
+  ).data
+
   return {
     id,
     label,
@@ -1264,6 +1375,9 @@ export async function createTenant(api: Api, label: string): Promise<Tenant> {
     invoiceFile,
     invoiceLinePicture,
     stampPath: stampUpload.path,
+    stockMaterial,
+    openingCount,
+    draftCount,
   }
 }
 
@@ -1310,6 +1424,9 @@ export function queryInputOf(path: string, tenant: Tenant): unknown {
   if (path === 'invoice.history') return { id: tenant.invoice.id }
   if (path === 'creditNote.get') return { id: tenant.creditNote.id }
   if (path === 'creditNote.history') return { id: tenant.creditNote.id }
+  if (path === 'stock.card') return { materialId: tenant.stockMaterial.id }
+  if (path === 'count.get') return { id: tenant.openingCount.id }
+  if (path === 'count.review') return { id: tenant.draftCount.id }
   if (path === 'customer.statement') {
     return {
       customerId: tenant.customer.id,
@@ -1441,6 +1558,14 @@ export function markersOf(tenant: Tenant): string[] {
       (file) => [file.id, file.fileName],
     ),
     tenant.stampPath,
+    tenant.stockMaterial.id,
+    tenant.stockMaterial.name,
+    tenant.openingCount.id,
+    tenant.openingCount.note ?? tenant.openingCount.id,
+    ...tenant.openingCount.lines.map((l) => l.id),
+    tenant.draftCount.id,
+    tenant.draftCount.note ?? tenant.draftCount.id,
+    ...tenant.draftCount.lines.map((l) => l.id),
     ...Object.values(tenant.roles).map((role) => role.id),
     ...[tenant.owner, tenant.admin, tenant.employee].flatMap(({ user }) => [
       user.id,

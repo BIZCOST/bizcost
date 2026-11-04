@@ -266,6 +266,17 @@ export const RECEIVABLES_MESSAGES: readonly MessageSpec[] = [
  */
 export const REPORTS_MESSAGES: readonly MessageSpec[] = ['reports', 'units']
 
+/**
+ * Stock (M4 Step 2; its layout; planned until Release A of M4): its own words, the unit names (stock
+ * and counts said in packs and units), and the catalog's number messages (a counted quantity), list
+ * words ("Show more", the search) and the unit picker's word for a unit of another kind.
+ */
+export const STOCK_MESSAGES: readonly MessageSpec[] = [
+  'stock',
+  'units',
+  { namespace: 'catalog', paths: ['numbers', 'list', 'form.otherKindOption'] },
+]
+
 /** Settings of a business (layout): the section list, the settings home and every section's frame. */
 export const SETTINGS_MESSAGES: readonly MessageSpec[] = ['settings']
 

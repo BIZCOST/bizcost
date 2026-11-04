@@ -37,9 +37,9 @@ function previewableIds(manifests: readonly ModuleManifest[]): readonly ModuleId
 
 /**
  * Planned modules whose build has started (they have nav entries): the only ones the dev-only preview
- * may show (D-125). None since Release B (M3 Step 9) released Quotations and Invoices, as after the
- * Costing Core's release (M2 Step 7) and Release A (M3 Step 6); the switch stays for the modules built
- * next (Phase 4).
+ * may show (D-125). Stock (`inventory`) since M4 Step 2, until Release A of M4 (Step 5); none between
+ * Release B (M3 Step 9) and then, as after the Costing Core's release (M2 Step 7) and Release A (M3
+ * Step 6).
  */
 export const PREVIEWABLE_MODULE_IDS: readonly ModuleId[] = previewableIds(MODULES)
 

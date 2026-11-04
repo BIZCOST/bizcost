@@ -372,7 +372,9 @@ describe('a café imports its POS day file', () => {
   })
 
   it('skips the days already imported by default, and replaces them on request', async () => {
-    const day = shift(today, -3)
+    // Its neighbours stay in its month (a file keeps within one month), whatever day today is.
+    const day =
+      Number(today.slice(8)) >= 5 ? shift(today, -3) : shift(`${today.slice(0, 8)}01`, -15)
     const first = await cafe.importDraft({
       channelId: shop.id,
       shape: 'lines',

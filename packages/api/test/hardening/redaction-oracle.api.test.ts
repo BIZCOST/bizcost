@@ -1,6 +1,7 @@
 import { randomBytes } from 'node:crypto'
 import {
   type BusinessProfileDto,
+  type CountDto,
   type CreditNoteDto,
   type CustomerDto,
   type InvoiceDto,
@@ -55,7 +56,7 @@ import {
   type Api,
   type Person,
 } from './fixture'
-import { updateFieldsOf } from '../sales'
+import { shift, updateFieldsOf } from '../sales'
 import { inputLeaves, inputSchemaOf, optionsOf } from './schema'
 
 // Redaction oracle over EVERY procedure whose output has sensitivity tags (ROADMAP.md Step 9; M1
@@ -645,6 +646,10 @@ async function readableSale(persona: Persona, extra?: object): Promise<string> {
 const orderValues = { cost: [] as string[], profit_margin: [] as string[] }
 let customer: CustomerDto
 let deliveredOrder: OrderDto
+/** M4 Step 2: cups kept in stock, their first count and a draft count (stockFixture). */
+let cups: MaterialDto
+let cupsOpening: CountDto
+let cupsCount: CountDto
 
 function orderInput(extra: object = {}) {
   return {
@@ -796,11 +801,231 @@ async function newPostedStatement(): Promise<{ id: string; channelId: string }> 
   return draft
 }
 
+// Stock (M4 Step 2, previewed): cups bought 7 at 3.71 (25.97) and counted 9 at their first count, so
+// they start at 9 × 3.71 = 33.39 (7.42 more than the book: the line's difference value, `cost`), the
+// average 3.71 a piece; a draft count of them finds 8 (−1: −3.71 at the average). Each finalize and
+// reversal case counts a material of its own: 5 bought at 2.93 (14.65), counted 6 (17.58, so 2.93 more,
+// at 2.93 a piece). A draft carries no difference yet: its cases name no value (the paths are still
+// redacted for a member without costs).
+const CUP_PRICE = '3.71'
+const CUPS_BOUGHT = '25.97'
+const CUPS_VALUE = '33.39'
+const CUPS_DIFFERENCE = '7.42'
+const COUNTED_PRICE = '2.93'
+
+/** A material of its own (in pieces), with `qty` bought today at `price` when given. */
+async function stockMaterial(qty?: string, price?: string): Promise<MaterialDto> {
+  const made = await asOwner<MaterialDto>('material.create', 'mutation', {
+    id: newId(),
+    name: `Oracle stock ${newId().slice(-8)}`,
+    unit: 'piece',
+  })
+  if (qty !== undefined && price !== undefined) {
+    const bought = (
+      await asOwner<{ data: PurchaseDto }>('purchase.create', 'mutation', {
+        ...draftInput(),
+        lines: [
+          {
+            kind: 'material',
+            id: newId(),
+            materialId: made.id,
+            qty,
+            unit: 'piece',
+            unitPrice: price,
+          },
+        ],
+      })
+    ).data
+    await asOwner('purchase.post', 'mutation', { id: bought.id, version: bought.version })
+  }
+  return made
+}
+
+/**
+ * A draft first count of `materialId` on `date` (today unless said); every line counted `counted`
+ * pieces when given.
+ */
+async function draftOpening(
+  materialId: string,
+  counted?: string,
+  date: string = today,
+): Promise<CountDto> {
+  const draft = (
+    await asOwner<{ data: CountDto }>('count.start', 'mutation', {
+      id: newId(),
+      kind: 'opening',
+      businessDate: date,
+      materialIds: [materialId],
+    })
+  ).data
+  if (counted === undefined) return draft
+  for (const countLine of draft.lines) {
+    await asOwner('count.saveLine', 'mutation', {
+      countId: draft.id,
+      lineId: countLine.id,
+      parts: [{ qty: counted, unit: 'piece' }],
+      version: countLine.version,
+    })
+  }
+  return (await asOwner<{ data: CountDto }>('count.get', 'query', { id: draft.id })).data
+}
+
+/** A material of its own counted 6 at its first count (5 bought at 2.93), finalized. */
+async function finalizedOpening(): Promise<CountDto> {
+  const counted = await draftOpening((await stockMaterial('5', COUNTED_PRICE)).id, '6')
+  return (
+    await asOwner<{ data: CountDto }>('count.finalize', 'mutation', {
+      id: counted.id,
+      version: counted.version,
+    })
+  ).data
+}
+
+/**
+ * The cups, their first count and a draft count (the beforeAll of the stock cases). Bought and first
+ * counted yesterday: a later count goes after the first count's day (COUNT_OUT_OF_ORDER).
+ */
+async function stockFixture() {
+  const yesterday = shift(today, -1)
+  cups = await asOwner<MaterialDto>('material.create', 'mutation', {
+    id: newId(),
+    name: 'Oracle cups',
+    unit: 'piece',
+  })
+  const bought = (
+    await asOwner<{ data: PurchaseDto }>('purchase.create', 'mutation', {
+      ...draftInput(),
+      businessDate: yesterday,
+      lines: [
+        {
+          kind: 'material',
+          id: newId(),
+          materialId: cups.id,
+          qty: '7',
+          unit: 'piece',
+          unitPrice: CUP_PRICE,
+        },
+      ],
+    })
+  ).data
+  await asOwner('purchase.post', 'mutation', { id: bought.id, version: bought.version })
+  const counted = await draftOpening(cups.id, '9', yesterday)
+  cupsOpening = (
+    await asOwner<{ data: CountDto }>('count.finalize', 'mutation', {
+      id: counted.id,
+      version: counted.version,
+    })
+  ).data
+  const draft = (
+    await asOwner<{ data: CountDto }>('count.start', 'mutation', {
+      id: newId(),
+      kind: 'count',
+      businessDate: today,
+      materialIds: [cups.id],
+    })
+  ).data
+  const countLine = draft.lines[0]!
+  await asOwner('count.saveLine', 'mutation', {
+    countId: draft.id,
+    lineId: countLine.id,
+    parts: [{ qty: '8', unit: 'piece' }],
+    version: countLine.version,
+  })
+  cupsCount = draft
+}
+
 const IMPORT = { cost: [IMPORT_FEES] }
 const STATEMENT = { cost: [STATEMENT_COMMISSION, STATEMENT_SALES] }
 
 /** Production procedures with sensitive output (M2 Step 3). */
 const PRODUCTION_ORACLE: Record<string, OracleEntry> = {
+  // Stock (M4 Step 2): stock values and a count's differences are `cost`; a count's differences only
+  // for a member who manages counts (withheld otherwise, blind counting, Q6); finalized counts are
+  // read by whoever sees stock (an Employee only counts: NOT_FOUND).
+  'stock.list': {
+    permission: 'inventory.stock.view',
+    input: { search: 'Oracle cups' },
+    valuesOf: { cost: [CUPS_VALUE, CUP_PRICE] },
+  },
+  'stock.card': {
+    permission: 'inventory.stock.view',
+    prepare: () => Promise.resolve({ materialId: cups.id }),
+    valuesOf: { cost: [CUPS_BOUGHT, CUPS_DIFFERENCE, CUP_PRICE] },
+  },
+  'count.get': {
+    alsoNeeds: { key: 'inventory.stock.view', refusal: 'not_found' },
+    prepare: () => Promise.resolve({ id: cupsOpening.id }),
+    valuesOf: { cost: [CUPS_DIFFERENCE, CUP_PRICE] },
+    withheldWithout: 'inventory.counts.manage',
+  },
+  'count.review': {
+    permission: 'inventory.counts.manage',
+    prepare: () => Promise.resolve({ id: cupsCount.id }),
+    valuesOf: { cost: [CUP_PRICE] },
+  },
+  'count.start': {
+    permission: 'inventory.counts.manage',
+    prepare: async () => ({
+      id: newId(),
+      kind: 'opening',
+      businessDate: today,
+      materialIds: [(await stockMaterial()).id],
+    }),
+    valuesOf: { cost: [] },
+  },
+  'count.saveLine': {
+    permission: 'inventory.counts.enter',
+    prepare: async () => {
+      const draft = await draftOpening((await stockMaterial()).id)
+      const countLine = draft.lines[0]!
+      return {
+        countId: draft.id,
+        lineId: countLine.id,
+        parts: [{ qty: '4', unit: 'piece' }],
+        version: countLine.version,
+      }
+    },
+    valuesOf: { cost: [] },
+  },
+  'count.clearLine': {
+    permission: 'inventory.counts.manage',
+    prepare: async () => {
+      const draft = await draftOpening((await stockMaterial()).id, '4')
+      const countLine = draft.lines[0]!
+      return { countId: draft.id, lineId: countLine.id, version: countLine.version }
+    },
+    valuesOf: { cost: [] },
+  },
+  'count.addLines': {
+    permission: 'inventory.counts.manage',
+    prepare: async () => ({
+      countId: (await draftOpening((await stockMaterial()).id)).id,
+      materialIds: [(await stockMaterial()).id],
+    }),
+    valuesOf: { cost: [] },
+  },
+  'count.removeLine': {
+    permission: 'inventory.counts.manage',
+    prepare: async () => {
+      const draft = await draftOpening((await stockMaterial()).id)
+      const countLine = draft.lines[0]!
+      return { countId: draft.id, lineId: countLine.id, version: countLine.version }
+    },
+    valuesOf: { cost: [] },
+  },
+  'count.finalize': {
+    permission: 'inventory.counts.manage',
+    prepare: async () => {
+      const counted = await draftOpening((await stockMaterial('5', COUNTED_PRICE)).id, '6')
+      return { id: counted.id, version: counted.version }
+    },
+    valuesOf: { cost: [COUNTED_PRICE] },
+  },
+  'count.reverse': {
+    permission: 'inventory.counts.manage',
+    prepare: async () => ({ id: (await finalizedOpening()).id }),
+    valuesOf: { cost: [COUNTED_PRICE] },
+  },
   // Imports (M3 Step 4): every import is seen by a member who sees every sale (the import key needs
   // entering and finalizing sales; the members who hold it see every sale).
   'saleImport.get': {
@@ -1671,6 +1896,8 @@ beforeAll(async () => {
     })
     ownExpenses.set(template, own.id)
   }
+  // M4 Step 2: cups kept in stock, their first count and a draft count.
+  await stockFixture()
 }, 90_000)
 
 afterAll(async () => {
@@ -2141,7 +2368,7 @@ const PLAIN_QUERY_FIELDS: Record<string, string> = {
   search: 'names, references and descriptions only, never an amount (proven below)',
   status: 'a record’s state',
   state: 'a running cost’s state as of today',
-  kind: 'a return or a credit note',
+  kind: 'a return or a credit note; a first count or a count (M4 Step 2)',
   type: 'a product or a service',
   enteredBy: 'who entered an expense',
   entity: 'which kind of record a receipt belongs to',
@@ -2166,6 +2393,8 @@ const PLAIN_QUERY_FIELDS: Record<string, string> = {
   // M3 Step 8.
   quotationId: 'names a record (a filter on the quotation)',
   invoiceId: 'names a record (a filter on the invoice)',
+  // M4 Step 2.
+  materialId: 'names a record (a material’s stock card)',
 }
 
 /** Each option of a field that sorts or filters by value: the category it orders on, or none. */

@@ -361,6 +361,15 @@ describe('APP_ERROR_CODES', () => {
     'details_missing',
     'exceeds_invoice',
     'quotation_invoiced',
+    // M4 Step 2: counts.
+    'count_incomplete',
+    'count_out_of_order',
+    'stock_tracked',
+    'stock_not_tracked',
+    'has_later_counts',
+    'stock_counted',
+    'branch_has_stock',
+    'stock_used_since',
     'internal',
   ]
 

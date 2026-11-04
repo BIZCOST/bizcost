@@ -37,6 +37,7 @@ import { NBSP } from '@/features/catalog/units'
 import { Locked, Money, useBusinessDate, useMoney, useUnitCost } from '@/features/documents/amounts'
 import { closedFor, nextDay } from '@/features/documents/books'
 import { ConfirmDialog } from '@/features/documents/confirm-dialog'
+import { refusalOf, type Refusal } from '@/features/documents/refusal'
 import { Panel } from '@/features/documents/panel'
 import { StatusBadge } from '@/features/documents/status-badge'
 import { Totals } from '@/features/documents/totals'
@@ -119,7 +120,7 @@ export function PurchaseView({
   const [confirm, setConfirm] = useState<'reverse' | 'correct' | 'finalize' | 'discard' | null>(
     null,
   )
-  const [confirmError, setConfirmError] = useState<I18nKey | null>(null)
+  const [confirmError, setConfirmError] = useState<Refusal | null>(null)
   const [busy, setBusy] = useState(false)
   const [sheet, setSheet] = useState<{ kind: PurchaseReturnKind; id?: string; key: string } | null>(
     null,
@@ -215,7 +216,8 @@ export function PurchaseView({
       await action()
       setConfirm(null)
     } catch (error) {
-      setConfirmError(errorKey(error))
+      // Reversing a purchase of a material counted in a first count since names it (STOCK_COUNTED).
+      setConfirmError(refusalOf(error, locale, errorKey(error)))
     } finally {
       setBusy(false)
     }

@@ -131,7 +131,8 @@
       "average": "Average cost",
       "basis": {
         "purchases_90_days": "from your purchases of the last 90 days",
-        "last_purchase": "from your last purchase (none in the last 90 days)"
+        "last_purchase": "from your last purchase (none in the last 90 days)",
+        "stock": "from your stock, counted since your first count"
       },
       "noPrice": "No price yet. It shows once a first purchase is final.",
       "lastPurchase": "Last purchase cost",

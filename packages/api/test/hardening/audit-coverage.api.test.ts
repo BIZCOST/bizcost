@@ -1,5 +1,6 @@
 import { randomBytes } from 'node:crypto'
 import type {
+  CountDto,
   CreditNoteDto,
   InvoiceDto,
   DocumentImageUploadUrlDto,
@@ -577,6 +578,43 @@ async function uploadedSignature(): Promise<string> {
   )
   expect((await uploadTo(upload.uploadUrl, PNG, 'image/png')).ok).toBe(true)
   return upload.path
+}
+
+/**
+ * A draft first count of a new material (M4 Step 2), dated today (the purchases' day: books.close
+ * closes the day before), in every branch; `counted`: every line counted (1 L).
+ */
+async function newOpening(counted = false): Promise<CountDto> {
+  const material = await ok(
+    call<MaterialDto>(tenant.owner, 'material.create', 'mutation', {
+      id: newId(),
+      name: `Oil ${newId()}`,
+      unit: 'l',
+    }),
+  )
+  const count = (
+    await ok(
+      call<{ data: CountDto }>(tenant.owner, 'count.start', 'mutation', {
+        id: newId(),
+        kind: 'opening',
+        businessDate: tenant.purchase.businessDate,
+        materialIds: [material.id],
+      }),
+    )
+  ).data
+  if (!counted) return count
+  for (const countLine of count.lines) {
+    await ok(
+      call(tenant.owner, 'count.saveLine', 'mutation', {
+        countId: count.id,
+        lineId: countLine.id,
+        parts: [{ qty: '1', unit: 'l' }],
+        version: countLine.version,
+      }),
+    )
+  }
+  return (await ok(call<{ data: CountDto }>(tenant.owner, 'count.get', 'query', { id: count.id })))
+    .data
 }
 
 async function asOwner(path: string, input?: unknown): Promise<Done> {
@@ -1657,6 +1695,85 @@ const AUDIT: Record<string, AuditProbe> = {
         version,
         locationIds: [tenant.branch.id],
       })
+    },
+  },
+  // Stock (M4 Step 2).
+  'count.start': {
+    run: async () => {
+      const material = await ok(
+        call<MaterialDto>(tenant.owner, 'material.create', 'mutation', {
+          id: newId(),
+          name: `Oil ${newId()}`,
+          unit: 'l',
+        }),
+      )
+      return asOwner('count.start', {
+        id: newId(),
+        kind: 'opening',
+        businessDate: tenant.purchase.businessDate,
+        materialIds: [material.id],
+      })
+    },
+  },
+  'count.saveLine': {
+    run: async () => {
+      const count = await newOpening()
+      const countLine = count.lines[0]!
+      return asOwner('count.saveLine', {
+        countId: count.id,
+        lineId: countLine.id,
+        parts: [{ qty: '3', unit: 'l' }],
+        version: countLine.version,
+      })
+    },
+  },
+  'count.clearLine': {
+    run: async () => {
+      const count = await newOpening(true)
+      const countLine = count.lines[0]!
+      return asOwner('count.clearLine', {
+        countId: count.id,
+        lineId: countLine.id,
+        version: countLine.version,
+      })
+    },
+  },
+  'count.addLines': {
+    run: async () => {
+      const count = await newOpening()
+      return asOwner('count.addLines', { countId: count.id, materialIds: [tenant.material.id] })
+    },
+  },
+  'count.removeLine': {
+    run: async () => {
+      const count = await newOpening()
+      const countLine = count.lines[0]!
+      return asOwner('count.removeLine', {
+        countId: count.id,
+        lineId: countLine.id,
+        version: countLine.version,
+      })
+    },
+  },
+  'count.finalize': {
+    run: async () => {
+      const count = await newOpening(true)
+      return asOwner('count.finalize', { id: count.id, version: count.version })
+    },
+  },
+  'count.discard': {
+    run: async () => {
+      const count = await newOpening()
+      return asOwner('count.discard', { id: count.id, version: count.version })
+    },
+  },
+  'count.reverse': {
+    run: async () => {
+      const count = await newOpening(true)
+      await ok(
+        call(tenant.owner, 'count.finalize', 'mutation', { id: count.id, version: count.version }),
+      )
+      return asOwner('count.reverse', { id: count.id })
     },
   },
   'books.close': {

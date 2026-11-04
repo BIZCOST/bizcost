@@ -746,6 +746,47 @@ const INVOICES = {
   requiresCapabilities: [],
 } as const satisfies ModuleManifest
 
+// Stock (M4 Step 2; planned until Release A, M4 Step 5, served before that only under the dev-only
+// preview, D-125): a material's stock is tracked from its first count, counted in every branch on one
+// day (Q2, Q3); later counts of a branch find what differs from the book (Q5, Q6). Its keys came with
+// its build (D-124), by the plan's Q16 table: `inventory.stock.view` sees stock on hand, the stock
+// card and finalized counts (their counted quantities); `.counts.enter` fills a count's lines without
+// seeing what the book expects (blind, Q6); `.counts.manage` starts tracking, starts, reviews,
+// finalizes, discards and reverses counts, and sees expected quantities and differences. A member
+// limited to some branches counts and sees stock only there (D-234). Stock values and a difference's
+// value are `cost` (the costs switch, D-190). Its page is reached with either "see stock" or "count
+// stock" (two entries of one page, listed once by buildModuleNav); on a phone it is under More (Q17;
+// "+" gets "Count stock" with Release A). It needs Materials (what it counts) and keeps_stock.
+const INVENTORY = {
+  id: 'inventory',
+  kind: 'optional',
+  availability: 'planned',
+  phase: 4,
+  deps: ['materials'],
+  permissionKeys: ['inventory.stock.view', 'inventory.counts.enter', 'inventory.counts.manage'],
+  nav: [
+    {
+      id: 'stock',
+      labelKey: 'nav.stock',
+      path: 'stock',
+      icon: 'warehouse',
+      group: 'main',
+      permission: 'inventory.stock.view',
+    },
+    {
+      id: 'stock',
+      labelKey: 'nav.stock',
+      path: 'stock',
+      icon: 'warehouse',
+      group: 'main',
+      permission: 'inventory.counts.enter',
+    },
+  ],
+  quickActions: [],
+  sensitiveFields: ['cost'],
+  requiresCapabilities: ['keeps_stock'],
+} as const satisfies ModuleManifest
+
 interface PlannedManifest extends ModuleManifest {
   readonly availability: 'planned'
   readonly permissionKeys: readonly []
@@ -796,10 +837,7 @@ export const MODULES = [
   REPORTS,
   QUOTATIONS,
   INVOICES,
-  planned('inventory', 'optional', 4, {
-    deps: ['materials'],
-    requiresCapabilities: ['keeps_stock'],
-  }),
+  INVENTORY,
   planned('usage_waste', 'optional', 4, {
     deps: ['inventory'],
     requiresCapabilities: ['keeps_stock'],

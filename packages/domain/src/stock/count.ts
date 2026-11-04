@@ -1,5 +1,6 @@
 import { costOfQty, type CostBasis } from '../costing/recipe'
 import type { WacOpening } from '../costing/wac'
+import { splitDecimals } from '../documents/split'
 import { exactProduct, plain, roundHalfUp, toDec } from '../numbers/decimal'
 import {
   checkDecimal,
@@ -65,6 +66,43 @@ export function openingOf(countedQty: Quantity, average: CostBasis | null): WacO
     roundHalfUp(toDec(average.value).dividedBy(toDec(average.qty)), COST_SCALE),
   ) as UnitCost
   return { qty: countedQty, value, avgCost }
+}
+
+/** One branch line of a material's first count, as its stock movement stores it (M4 Step 2). */
+export interface OpeningRow {
+  /** Its share of what the counted stock is worth. */
+  readonly value: CostAmount
+  /** Its share of the book value the count replaces (all of it on the first line). */
+  readonly adjustment: CostAmount
+}
+
+/**
+ * The rows of a material's first count, one per branch line, in the order given (the API gives the
+ * lowest location id first): the opening's `value` (zero or more, at most 12 decimals) split by the
+ * counted quantities with the largest remainder at 12 decimals (splitByWeights: the shares add up to
+ * it exactly, each within one last decimal of its exact share, equal shares when nothing was counted),
+ * and the book value the count replaces (`bookValue`: the cost row's value before it, of any sign)
+ * entirely on the first row. So Σ (value − adjustment) = value − bookValue, exactly what wacOpen moves
+ * the stock's value by, and Σ value is the value the cost engine reads back (D-340). Throws RangeError
+ * for no line, a counted quantity below zero, or a value below zero or with more than 12 decimals.
+ */
+export function openingRows(
+  counted: readonly Quantity[],
+  value: CostAmount,
+  bookValue: CostAmount,
+): OpeningRow[] {
+  if (counted.length === 0) throw new RangeError('A first count needs a line')
+  const weights = counted.map((qty) => {
+    if (checkDecimal(qty, 'quantity') !== null || toDec(qty).lt(0)) {
+      throw new RangeError(`Not a counted quantity: "${qty}"`)
+    }
+    return toDec(qty)
+  })
+  const book = plain(toDec(bookValue)) as CostAmount
+  return splitDecimals(toDec(value), weights, COST_SCALE).map((share, index) => ({
+    value: plain(share) as CostAmount,
+    adjustment: index === 0 ? book : ('0' as CostAmount),
+  }))
 }
 
 /** counted − book: the line's difference (below zero: less was there than the book said). */

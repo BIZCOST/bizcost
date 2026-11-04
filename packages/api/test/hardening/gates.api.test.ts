@@ -16,6 +16,7 @@ import {
   ALWAYS_ENABLED_MODULE_IDS,
   MODULES as MANIFESTS,
   roleTemplateByKey,
+  withPreviewModules,
   type CapabilityKey,
   type ModuleId,
   type ModuleManifest,
@@ -30,6 +31,7 @@ import {
   callProcedure,
   createTenant,
   openApi,
+  PREVIEW_MODULES,
   proceduresOf,
   tenantDigest,
   type Api,
@@ -59,10 +61,10 @@ import { inputLeaves, inputSchemaOf, optionsOf } from './schema'
 //     (nothing written), accepted where it does.
 
 /**
- * The registry the suites' API serves: the manifests as released code has them (Quotations and
- * Invoices released with Release B, M3 Step 9; nothing is previewed).
+ * The registry the suites' API serves: the manifests with the modules being built previewed (D-125;
+ * Stock since M4 Step 2), as a local server has them.
  */
-const MODULES: readonly ModuleManifest[] = MANIFESTS
+const MODULES: readonly ModuleManifest[] = withPreviewModules(PREVIEW_MODULES, MANIFESTS)
 
 /** Any of the groups, each with every module on; [] = no module gate. */
 type Gate = readonly (readonly ModuleId[])[]
@@ -109,6 +111,8 @@ const SALES_AND_PRODUCTS: Gate = [['sales', 'products']]
  */
 const BOOKS: Gate = [['purchases'], ['expenses'], ['sales'], ['orders']]
 const BOOKS_READ: Gate = [...BOOKS, ['payments']]
+/** Stock (M4 Step 2): its procedures also need keeps_stock, which turning it on takes. */
+const INVENTORY: Gate = [['inventory']]
 
 const MODULE_GATES: Record<string, Gate> = {
   'attachment.add': RECEIPTS,
@@ -144,6 +148,17 @@ const MODULE_GATES: Record<string, Gate> = {
   'costCategory.list': EXPENSES_OR_RUNNING_COSTS,
   'costCategory.unarchive': EXPENSES_OR_RUNNING_COSTS,
   'costCategory.update': EXPENSES_OR_RUNNING_COSTS,
+  'count.addLines': INVENTORY,
+  'count.clearLine': INVENTORY,
+  'count.discard': INVENTORY,
+  'count.finalize': INVENTORY,
+  'count.get': INVENTORY,
+  'count.list': INVENTORY,
+  'count.removeLine': INVENTORY,
+  'count.reverse': INVENTORY,
+  'count.review': INVENTORY,
+  'count.saveLine': INVENTORY,
+  'count.start': INVENTORY,
   // Credit notes (M3 Step 8).
   'creditNote.create': INVOICES,
   'creditNote.discard': INVOICES,
@@ -331,6 +346,9 @@ const MODULE_GATES: Record<string, Gate> = {
   'saleImport.post': SALES_AND_PRODUCTS,
   'saleImport.reverse': SALES_AND_PRODUCTS,
   'saleImport.setOverlap': SALES_AND_PRODUCTS,
+  'stock.card': INVENTORY,
+  'stock.list': INVENTORY,
+  'stock.untracked': INVENTORY,
   'supplier.archive': SUPPLIERS,
   'supplier.create': SUPPLIERS,
   'supplier.get': SUPPLIERS,
@@ -1074,6 +1092,29 @@ const HIDDEN_FIELDS: Record<string, HiddenField | { notHidden: string }> = {
     capability: 'multi_location',
     input: (b) => create('profit.summary', { from: b.today, to: b.today, groupBy: 'branch' }),
   },
+  // Stock (M4 Step 2): its procedures are served only to a business that keeps stock, which the
+  // business run alone here does not (MODULE_DISABLED comes first); stock-counts.api.test.ts proves
+  // a count of another branch is CAPABILITY_DISABLED for a business with one location.
+  'count.start locationId': {
+    notHidden:
+      'a count’s branch: null is the default location, and another needs multi_location ' +
+      '(resolveLocation, as a purchase’s; stock-counts.api.test.ts)',
+  },
+  'count.list locationId': {
+    notHidden:
+      'a filter: with one location every count is at it, and a member limited to branches sees only ' +
+      'theirs whatever it names (the branch limits below)',
+  },
+  'stock.list locationId': {
+    notHidden:
+      'a filter: with one location all stock is there, and a member limited to branches sees only ' +
+      'theirs (the branch limits below)',
+  },
+  'stock.card locationId': {
+    notHidden:
+      'a filter: with one location every movement is there, and a member limited to branches sees ' +
+      'only theirs (the branch limits below)',
+  },
   'member.updateLocations locationIds.*': {
     capability: 'multi_location',
     input: async (b) => {
@@ -1507,6 +1548,76 @@ const BRANCH_LIMITS: Record<string, BranchLimit> = {
       branchRecordOf(t).map(([entity, entityId]) =>
         notFound({ entity, entityId, contentType: 'image/png' }),
       ),
+  },
+  // Stock (M4 Step 2): the fixture's draft count is of the other branch; its first count covers both
+  // (changing it is for a member who works in every branch: FORBIDDEN).
+  'count.addLines': {
+    refused: (t) => [
+      notFound({ countId: t.draftCount.id, materialIds: [t.stockMaterial.id] }),
+      forbidden({ countId: t.openingCount.id, materialIds: [t.material.id] }),
+    ],
+  },
+  'count.clearLine': {
+    refused: (t) => [
+      notFound({
+        countId: t.draftCount.id,
+        lineId: t.draftCount.lines[0]!.id,
+        version: t.draftCount.lines[0]!.version,
+      }),
+    ],
+  },
+  'count.discard': {
+    refused: (t) => [notFound({ id: t.draftCount.id, version: t.draftCount.version })],
+  },
+  'count.finalize': {
+    refused: (t) => [notFound({ id: t.draftCount.id, version: t.draftCount.version })],
+  },
+  'count.get': { refused: (t) => [notFound({ id: t.draftCount.id })] },
+  'count.list': { refused: (t) => [forbidden({ locationId: t.branch.id })] },
+  'count.removeLine': {
+    refused: (t) => [
+      notFound({
+        countId: t.draftCount.id,
+        lineId: t.draftCount.lines[0]!.id,
+        version: t.draftCount.lines[0]!.version,
+      }),
+    ],
+  },
+  'count.reverse': { refused: (t) => [forbidden({ id: t.openingCount.id })] },
+  'count.review': { refused: (t) => [notFound({ id: t.draftCount.id })] },
+  'count.saveLine': {
+    refused: (t) => [
+      notFound({
+        countId: t.draftCount.id,
+        lineId: t.draftCount.lines[0]!.id,
+        parts: [{ qty: '1', unit: 'piece' }],
+        version: t.draftCount.lines[0]!.version,
+      }),
+    ],
+  },
+  'count.start': {
+    refused: (t) => [
+      forbidden({
+        id: newId(),
+        kind: 'count',
+        businessDate: branchToday,
+        locationId: t.branch.id,
+        materialIds: 'all',
+      }),
+      forbidden({
+        id: newId(),
+        kind: 'opening',
+        businessDate: branchToday,
+        materialIds: [t.material.id],
+      }),
+    ],
+  },
+  'stock.card': {
+    refused: (t) => [forbidden({ materialId: t.stockMaterial.id, locationId: t.branch.id })],
+  },
+  'stock.list': { refused: (t) => [forbidden({ locationId: t.branch.id })] },
+  'stock.untracked': {
+    wide: 'materials not tracked yet: what a first count may start, business-wide',
   },
   'creditNote.create': {
     refused: (t) => [
@@ -2094,7 +2205,12 @@ describe('the Employee acts on no one else’s sale, order, quotation, invoice, 
     before = await tenantDigest(api.admin, tenant)
   })
 
-  const REFUSED = BUSINESS.filter((p) => BRANCH_LIMITS[p.path]?.refused)
+  // A count is filled by whoever counts (Q6: several people fill one count, M4 Step 2): the Employee
+  // reads and fills the lines of a draft count the owner started, in the branches they work in.
+  const SHARED_WITH_COUNTERS = new Set(['count.get', 'count.saveLine'])
+  const REFUSED = BUSINESS.filter(
+    (p) => BRANCH_LIMITS[p.path]?.refused && !SHARED_WITH_COUNTERS.has(p.path),
+  )
   const LISTS = BUSINESS.filter((p) => BRANCH_LIMITS[p.path]?.lists)
 
   it.each(REFUSED.map((p) => [p.path, p] as const))(

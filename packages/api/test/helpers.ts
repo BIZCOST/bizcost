@@ -350,6 +350,7 @@ export interface CallResult<T = unknown> {
       appCode: string
       i18nKey: string
       names?: string[]
+      materials?: string[]
       stack?: string
     }
   }

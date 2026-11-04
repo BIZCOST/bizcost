@@ -374,6 +374,17 @@ test('the owner of a café sees its real profit, explained, in English on a desk
   await expectSound(owner, 'en')
   await shot(owner, 'profit-en-1440-last-month')
 
+  // Switching the grouping with its buttons: the products' report stays on screen while the months'
+  // loads, and is never read as months (it once broke the page).
+  await owner.locator('[data-group-by="month"]').click()
+  await expect(owner).toHaveURL(/by=month/)
+  await expect(rows).toHaveCount(1)
+  await expect(rows.first()).toContainText(monthName(last))
+  await owner.locator('[data-group-by="product"]').click()
+  await expect(owner).not.toHaveURL(/by=/)
+  await expect(rows).toHaveCount(2)
+  await expect(rows.first()).toContainText('Spanish Latte')
+
   // Sorted by margin (the owner sees profit), and only what sold at a low margin: none.
   await owner.getByLabel('Sort by').selectOption('margin_percent_asc')
   await expect(owner).toHaveURL(/sort=margin_percent_asc/)

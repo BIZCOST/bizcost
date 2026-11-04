@@ -30,6 +30,7 @@ import {
   SETTINGS_MESSAGES,
   SETTINGS_SECTION_MESSAGES,
   SETUP_MESSAGES,
+  STOCK_MESSAGES,
   SUPPLIERS_MESSAGES,
 } from './route-messages'
 
@@ -378,6 +379,27 @@ describe("each route's messages have the keys its code translates", () => {
           'components/ui',
         ],
         REPORTS_MESSAGES,
+      ),
+    ).toEqual({})
+  })
+
+  it('Stock: on hand, counts, the count sheet, the review and the stock card (M4 Step 2)', () => {
+    expect(
+      missing(
+        [
+          'features/stock',
+          'features/documents/amounts.tsx',
+          'features/documents/books.ts',
+          'features/documents/confirm-dialog.tsx',
+          'features/documents/panel.tsx',
+          'features/documents/search-box.tsx',
+          'features/documents/status-badge.tsx',
+          'features/catalog/catalog-list.tsx',
+          'features/catalog/catalog-loading.tsx',
+          'features/catalog/unit-parts.tsx',
+          'components/ui',
+        ],
+        STOCK_MESSAGES,
       ),
     ).toEqual({})
   })

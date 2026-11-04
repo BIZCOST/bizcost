@@ -298,18 +298,22 @@ export {
   COUNT_REASONS,
   DEFAULT_USAGE_TOLERANCE,
   MAX_PREPARED_DEPTH,
+  STOCK_COUNT_KINDS,
   WASTE_REASONS,
   type CountReason,
+  type StockCountKind,
   type WasteReason,
 } from './stock/keys'
 export {
   countDifference,
   countedBaseQty,
   openingOf,
+  openingRows,
   splitLoss,
   type CountedPart,
   type ExplainedPart,
   type LossSplit,
+  type OpeningRow,
   type ReasonPart,
 } from './stock/count'
 export { absorbingCount, lateOffset, type FinalCount, type LateOffset } from './stock/late'

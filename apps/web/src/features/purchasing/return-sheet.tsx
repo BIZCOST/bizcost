@@ -32,6 +32,7 @@ import { nameAfterQuantity, NBSP } from '@/features/catalog/units'
 import { Money, useBusinessDate, useMoney } from '@/features/documents/amounts'
 import { closedFor, firstOpenDay } from '@/features/documents/books'
 import { ConfirmDialog } from '@/features/documents/confirm-dialog'
+import { refusalOf, type Refusal } from '@/features/documents/refusal'
 import { MoneyInput } from '@/features/documents/line-editor'
 import { StatusBadge } from '@/features/documents/status-badge'
 import { can } from '@/features/settings/sections'
@@ -152,7 +153,7 @@ function ReturnForm({
   const [submitted, setSubmitted] = useState(false)
   const [serverError, setServerError] = useState<I18nKey | null>(null)
   const [confirm, setConfirm] = useState<'finalize' | 'reverse' | 'discard' | null>(null)
-  const [confirmError, setConfirmError] = useState<I18nKey | null>(null)
+  const [confirmError, setConfirmError] = useState<Refusal | null>(null)
   const [busy, setBusy] = useState<Busy>(null)
   // Finalize was tapped while the closed books stop it: said at the top too.
   const [finalizeBlocked, setFinalizeBlocked] = useState(false)
@@ -338,10 +339,11 @@ function ReturnForm({
       setConfirm(null)
       onClose()
     } catch (error) {
+      // A return of a material counted in a first count since names it (STOCK_COUNTED).
       setConfirmError(
         apiErrorCode(error) === 'books_closed'
           ? 'purchasing.confirm.reverseClosed'
-          : errorKey(error),
+          : refusalOf(error, locale, errorKey(error)),
       )
     } finally {
       setBusy(null)

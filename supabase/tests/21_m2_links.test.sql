@@ -380,6 +380,8 @@ select is_empty(
        where c.contype = 'f'
          and c.conrelid in (select to_regclass('app.' || table_name) from m2_tables)
          and c.confrelid <> 'app.businesses'::regclass
+         -- A movement's count line (M4 Step 2): tried in 31_stock_counts.test.sql.
+         and c.confrelid <> 'app.stock_count_lines'::regclass
       except
       select 'app.' || child, cols from links)
      union all

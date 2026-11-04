@@ -23,6 +23,14 @@ export type WasteReason = (typeof WASTE_REASONS)[number]
 export const COUNT_REASONS = [...WASTE_REASONS, 'recipe'] as const
 export type CountReason = (typeof COUNT_REASONS)[number]
 
+/**
+ * `stock_counts.kind` (M4 Step 2): a material's first count (`opening`: every active branch on one
+ * day, it starts the material's stock, Q2, Q3) or a later count of one branch (`count`: its
+ * differences against the book, Q5, Q6).
+ */
+export const STOCK_COUNT_KINDS = ['opening', 'count'] as const
+export type StockCountKind = (typeof STOCK_COUNT_KINDS)[number]
+
 /** The business's tolerance before usage is flagged, until it sets its own (Q10). */
 export const DEFAULT_USAGE_TOLERANCE = '5' as Percent
 

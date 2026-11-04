@@ -224,8 +224,8 @@ describe('module gates', () => {
 })
 
 describe('the dev-only preview (D-125)', () => {
-  // No module is being built between Release B (M3 Step 9) and Phase 4: a test registry starts the
-  // build of Inventory (its keys and nav) while it stays planned.
+  // A test registry of its own: Inventory with one key and one entry, while it stays planned (the real
+  // one is being built since M4 Step 2, with its own keys and nav).
   const building: ModuleManifest = {
     ...inventory,
     permissionKeys: ['inventory.view'],
@@ -243,8 +243,8 @@ describe('the dev-only preview (D-125)', () => {
   const registry = MODULES.map((m) => (m.id === 'inventory' ? building : m))
   const inventoryOn = resolveEnabledModules([{ key: 'inventory', enabled: true }])
 
-  it('may show only planned modules whose build started: none since Release B (M3 Step 9)', () => {
-    expect(PREVIEWABLE_MODULE_IDS).toEqual([])
+  it('may show only planned modules whose build started: Stock since M4 Step 2', () => {
+    expect(PREVIEWABLE_MODULE_IDS).toEqual(['inventory'])
   })
 
   it('parses a comma or space separated list, ignores released modules, and names what it cannot preview', () => {
@@ -279,11 +279,13 @@ describe('the dev-only preview (D-125)', () => {
       released: [],
       invalid: ['usage_waste', 'Inventory', 'nope'],
     })
-    // The real registry previews nothing: no module is being built.
-    expect(parsePreviewModules('quotations,invoices,inventory,materials,sales')).toEqual({
-      ids: [],
+    // The real registry previews Stock, the module being built (M4 Step 2), and nothing else.
+    expect(
+      parsePreviewModules('quotations,invoices,inventory,materials,sales,usage_waste'),
+    ).toEqual({
+      ids: ['inventory'],
       released: ['materials', 'sales', 'quotations', 'invoices'],
-      invalid: ['inventory'],
+      invalid: ['usage_waste'],
     })
   })
 
@@ -300,8 +302,12 @@ describe('the dev-only preview (D-125)', () => {
     expect(building.availability).toBe('planned')
     expect(isModuleActive(building, inventoryOn)).toBe(false)
     expect(withPreviewModules([], registry)).toBe(registry)
-    // With the real registry nothing changes for a module not being built, or released.
-    expect(withPreviewModules(['inventory', 'materials', 'sales', 'quotations'])).toBe(MODULES)
+    // With the real registry nothing changes for a module not being built, or released; Stock (M4
+    // Step 2) is counted as released.
+    expect(withPreviewModules(['usage_waste', 'materials', 'sales', 'quotations'])).toBe(MODULES)
+    expect(withPreviewModules(['inventory']).find((m) => m.id === 'inventory')?.availability).toBe(
+      'released',
+    )
   })
 
   it('still needs the business to have the module on and the member its permission', () => {

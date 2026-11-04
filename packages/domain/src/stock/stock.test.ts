@@ -1,9 +1,9 @@
 import fc from 'fast-check'
 import { describe, expect, it } from 'vitest'
-import { toDec } from '../numbers/decimal'
+import { plain, toDec } from '../numbers/decimal'
 import type { CostAmount, Percent, Quantity } from '../numbers/kinds'
 import type { MaterialUnits } from '../units/materials'
-import { countDifference, countedBaseQty, openingOf, splitLoss } from './count'
+import { countDifference, countedBaseQty, openingOf, openingRows, splitLoss } from './count'
 import { DEFAULT_USAGE_TOLERANCE } from './keys'
 import { absorbingCount, lateOffset, type FinalCount } from './late'
 import { stockLevel } from './levels'
@@ -58,6 +58,76 @@ describe('counted lines and first counts', () => {
   it('gives a count’s difference as counted − book', () => {
     expect(countDifference(q('50'), q('130'))).toBe('-80')
     expect(countDifference(q('5'), q('-2'))).toBe('7')
+  })
+})
+
+describe('a first count in several branches (M4 Step 2)', () => {
+  it('splits its value by what each branch counted, the old book on the first line', () => {
+    // 25 L in the main branch and 15 L at Marina: 40 L at 6.00 = 240, replacing a book of 216.
+    expect(openingRows([q('25000'), q('15000')], v('240'), v('216'))).toEqual([
+      { value: '150', adjustment: '216' },
+      { value: '90', adjustment: '0' },
+    ])
+    // Thirds: the shares add up exactly; the last decimal goes to the first line on a tie.
+    expect(openingRows([q('1'), q('1'), q('1')], v('10'), v('-4.5'))).toEqual([
+      { value: '3.333333333334', adjustment: '-4.5' },
+      { value: '3.333333333333', adjustment: '0' },
+      { value: '3.333333333333', adjustment: '0' },
+    ])
+    // A branch that counted nothing takes nothing; nothing counted anywhere is worth nothing.
+    expect(openingRows([q('0'), q('12')], v('72'), v('0'))).toEqual([
+      { value: '0', adjustment: '0' },
+      { value: '72', adjustment: '0' },
+    ])
+    expect(openingRows([q('0'), q('0')], v('0'), v('30'))).toEqual([
+      { value: '0', adjustment: '30' },
+      { value: '0', adjustment: '0' },
+    ])
+  })
+
+  it('refuses no line, a quantity below zero, or a value below zero', () => {
+    expect(() => openingRows([], v('0'), v('0'))).toThrow(RangeError)
+    expect(() => openingRows([q('-1')], v('0'), v('0'))).toThrow(RangeError)
+    expect(() => openingRows([q('1')], v('-1'), v('0'))).toThrow(RangeError)
+  })
+
+  it('moves the stock value as wacOpen does: shares add up, none below zero, each at its share', () => {
+    const qtyArb = fc
+      .integer({ min: 0, max: 10_000_000 })
+      .map((n) => toDec(String(n)).dividedBy(1000).toString())
+    const valueArb = fc
+      .bigInt({ min: 0n, max: 10n ** 20n })
+      .map((n) => plain(toDec(n.toString()).dividedBy('1e12')))
+    const bookArb = fc
+      .bigInt({ min: -(10n ** 18n), max: 10n ** 18n })
+      .map((n) => plain(toDec(n.toString()).dividedBy('1e12')))
+    fc.assert(
+      fc.property(
+        fc.array(qtyArb, { minLength: 1, maxLength: 8 }),
+        valueArb,
+        bookArb,
+        (counted, value, book) => {
+          const rows = openingRows(counted.map(q), v(value), v(book))
+          const sum = (xs: string[]) => xs.reduce((s, x) => s.plus(toDec(x)), toDec('0'))
+          expect(sum(rows.map((r) => r.value)).eq(toDec(value))).toBe(true)
+          expect(
+            sum(rows.map((r) => r.value))
+              .minus(sum(rows.map((r) => r.adjustment)))
+              .eq(toDec(value).minus(toDec(book))),
+          ).toBe(true)
+          const total = sum(counted)
+          for (const [i, row] of rows.entries()) {
+            expect(toDec(row.value).gte(0)).toBe(true)
+            expect(toDec(row.value).decimalPlaces()).toBeLessThanOrEqual(12)
+            if (total.gt(0)) {
+              const exact = toDec(value).times(toDec(counted[i]!)).dividedBy(total)
+              expect(toDec(row.value).minus(exact).abs().lt(toDec('0.000000000001'))).toBe(true)
+            }
+          }
+        },
+      ),
+      { numRuns: 300 },
+    )
   })
 })
 

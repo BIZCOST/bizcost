@@ -70,6 +70,14 @@ const TRPC_CODE_OF: Record<AppErrorCode, TRPC_ERROR_CODE_KEY> = {
   details_missing: 'BAD_REQUEST',
   exceeds_invoice: 'BAD_REQUEST',
   quotation_invoiced: 'CONFLICT',
+  count_incomplete: 'CONFLICT',
+  count_out_of_order: 'CONFLICT',
+  stock_tracked: 'CONFLICT',
+  stock_not_tracked: 'CONFLICT',
+  has_later_counts: 'CONFLICT',
+  stock_counted: 'CONFLICT',
+  branch_has_stock: 'CONFLICT',
+  stock_used_since: 'CONFLICT',
   internal: 'INTERNAL_SERVER_ERROR',
 }
 
@@ -77,14 +85,22 @@ const TRPC_CODE_OF: Record<AppErrorCode, TRPC_ERROR_CODE_KEY> = {
  * A tRPC error with an app code. The message defaults to the code: never put SQL or data in it.
  * `names`: what the refusal is about, by the names the caller may see (UNIT_IN_USE: the products whose
  * recipes use the unit, D-152); the formatter sends them as `data.names` for the message to say.
+ * `materials`: the materials it is about when `names` names something else (BRANCH_HAS_STOCK names
+ * the branches), sent as `data.materials`.
  */
 export class AppError extends TRPCError {
   readonly appCode: AppErrorCode
   readonly names: readonly string[]
+  readonly materials: readonly string[]
 
   constructor(
     appCode: AppErrorCode,
-    options: { message?: string; cause?: unknown; names?: readonly string[] } = {},
+    options: {
+      message?: string
+      cause?: unknown
+      names?: readonly string[]
+      materials?: readonly string[]
+    } = {},
   ) {
     super({
       code: TRPC_CODE_OF[appCode],
@@ -94,6 +110,7 @@ export class AppError extends TRPCError {
     this.name = 'AppError'
     this.appCode = appCode
     this.names = options.names ?? []
+    this.materials = options.materials ?? []
   }
 }
 
@@ -231,6 +248,7 @@ export function formatError({
     i18nKey: appErrorI18nKey(appCode),
   }
   if (error instanceof AppError && error.names.length > 0) data.names = [...error.names]
+  if (error instanceof AppError && error.materials.length > 0) data.materials = [...error.materials]
   if (shape.data.path !== undefined) data.path = shape.data.path
   if (!production && shape.data.stack !== undefined) data.stack = shape.data.stack
   return { message: production ? appCode : shape.message, code: shape.code, data }
