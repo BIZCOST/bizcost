@@ -40,6 +40,18 @@ export interface ApiConfig {
    * BIZCOST_PREVIEW_MODULES). Ignored unless NODE_ENV is development or test (moduleRegistry).
    */
   readonly previewModules?: readonly string[]
+  /**
+   * Released modules held back on this deployment (D-350, D-359; BIZCOST_HELD_MODULES, read in
+   * production too): the gates, the nav and the pages treat them as not yet built (moduleRegistry).
+   */
+  readonly heldModules?: readonly string[]
+  /**
+   * Addresses of the platform admins, in lower case (BIZCOST_PLATFORM_ADMINS, D-357): who may open the
+   * owner's beta page and its procedures. None by default: then nobody may.
+   */
+  readonly platformAdmins?: readonly string[]
+  /** Where "Send feedback" is emailed (BIZCOST_FEEDBACK_EMAIL, D-356); without it, only saved. */
+  readonly feedbackEmail?: string
 }
 
 export interface ApiDeps {

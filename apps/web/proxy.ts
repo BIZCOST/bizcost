@@ -11,9 +11,10 @@ const AUTH_PAGES = new Set(['/login', '/signup', '/verify', '/forgot'])
 
 /**
  * Open either way: the reset code signs the user in before they choose a new password or go
- * straight in (D-071), so the reset page must stay reachable with a session.
+ * straight in (D-071), so the reset page must stay reachable with a session; and the privacy policy and
+ * the terms are for everyone, from the sign-up form and the account menu (D-358).
  */
-const OPEN_PAGES = new Set(['/reset'])
+const OPEN_PAGES = new Set(['/reset', '/privacy', '/terms'])
 
 /**
  * An invitation link (`/invite/<token>`) is open either way too: a signed-out visitor signs in or

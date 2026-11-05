@@ -856,7 +856,14 @@ const TIGHT_TIMEOUT_MS = 3000
 describe('4. the first purchase that 43,200 waiting material rows wait for posts with every statement under 3 s', () => {
   it('posted on a connection with a 3 s statement timeout, every line filled once', async () => {
     const tightDb = createDb(`${process.env.DATABASE_URL}?statement_timeout=${TIGHT_TIMEOUT_MS}`)
-    const tight = handlerFor(tightDb, undefined, { supabaseSecretKey: SECRET_KEY })
+    // A failure's message must name the database's own words (a timeout, or what else): CI hides the rest.
+    const reported: unknown[] = []
+    const tight = handlerFor(
+      tightDb,
+      undefined,
+      { supabaseSecretKey: SECRET_KEY },
+      { reportError: (error) => reported.push(error) },
+    )
     try {
       const parts: MaterialDto[] = []
       for (let i = 0; i < 24; i++) {
@@ -897,7 +904,11 @@ describe('4. the first purchase that 43,200 waiting material rows wait for posts
         { id: draft.id, version: draft.version },
         tight,
       )
-      expect(posted.error?.data.appCode, posted.raw.slice(0, 300)).toBeUndefined()
+      const cause = (error: unknown): string =>
+        error instanceof Error
+          ? `${error.message.slice(0, 120)} <- ${cause(error.cause)}`
+          : String(error)
+      expect(posted.error?.data.appCode, reported.map(cause).join('; ')).toBeUndefined()
       // 24 materials × 1 g at 0.01 a gram: 0.24 a platter, on every line of every sale.
       for (const sale of [sales[0]!, sales[5]!]) {
         const lines = (await shop.sale(sale.id)).lines

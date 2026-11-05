@@ -12,6 +12,8 @@ export interface EmailMessage {
   readonly subject: string
   readonly html: string
   readonly text: string
+  /** Where a reply goes, when not to the sender (feedback: the person who wrote it). */
+  readonly replyTo?: string
 }
 
 export interface EmailSender {
@@ -81,6 +83,7 @@ function smtpSender(config: Extract<EmailConfig, { transport: 'smtp' }>): EmailS
             subject: message.subject,
             html: message.html,
             text: message.text,
+            ...(message.replyTo ? { replyTo: message.replyTo } : {}),
           }),
           SEND_TIMEOUT_MS,
         )
@@ -108,6 +111,7 @@ function resendSender(config: Extract<EmailConfig, { transport: 'resend' }>): Em
             subject: message.subject,
             html: message.html,
             text: message.text,
+            ...(message.replyTo ? { reply_to: message.replyTo } : {}),
           }),
           signal: AbortSignal.timeout(SEND_TIMEOUT_MS),
         })

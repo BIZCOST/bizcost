@@ -1,3 +1,4 @@
+import { LEGAL_METADATA_KEY, LEGAL_VERSION } from '@bizcost/contracts'
 import type { Db } from '@bizcost/db'
 import type { Locale } from '@bizcost/domain'
 import { PREVIEWABLE_MODULE_IDS } from '@bizcost/modules'
@@ -138,7 +139,8 @@ export class DemoApi {
         email,
         password: DEMO_PASSWORD,
         email_confirm: true,
-        user_metadata: { locale: person.locale },
+        // As someone who ticked the sign-up form's box (D-358).
+        user_metadata: { locale: person.locale, [LEGAL_METADATA_KEY]: LEGAL_VERSION },
       }),
     })
     const row = (await response.json()) as { id: string }

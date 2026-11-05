@@ -86,6 +86,15 @@ export {
   type SaleLineKind,
   type SaleVatRate,
 } from './documents/sale'
+// A row of an invoice or a credit note as it prints: unit price × qty − discount = before VAT (or the
+// total, when the price includes VAT); before VAT + VAT = total. D-360.
+export {
+  printedRow,
+  printedVatColumn,
+  type PrintedRow,
+  type PrintedRowInput,
+  type PrintedVatColumn,
+} from './documents/printed-row'
 // Refunds and credits (M3 Step 5): what is left of each line, by quantity or by amount, never more;
 // each later credit starts from the value its earlier ones left (VAT ER Art. 60); a credit note's VAT
 // once per rate on the running total of its invoice's credit notes (M3 Step 8 review).
@@ -100,6 +109,7 @@ export {
   type CreditAmounts,
   type CreditRateBasis,
   type CreditRateLine,
+  type CreditRatePart,
   type CreditBy,
   type CreditedLine,
   type CreditErrorCode,

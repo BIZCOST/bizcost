@@ -15,6 +15,7 @@ import {
   type CreditRequest,
 } from './credit'
 import { computeSale, type SaleLineInput } from './sale'
+import { subtractDecimals, sumDecimals } from './split'
 
 // What is left to refund on a line, and how a refund line is made (M3 Step 5; VAT ER Art. 60: each
 // later credit starts from the value the earlier ones left). Goldens: the baker's cake refunded 20 by
@@ -283,11 +284,12 @@ describe('properties', () => {
 })
 
 describe('creditRateVat: VAT once per rate on every credit note (PINT-AE S-09)', () => {
-  const at5 = (before = { net: '0', gross: '0', vat: '0' }, takesAllLeft = false) => ({
+  const none = { charged: '0', before: { typed: '0', vat: '0' }, takesAllLeft: false }
+  const at5 = (before = { typed: '0', vat: '0' }, takesAllLeft = false) => ({
     vatRate: '5',
     invoiceVat: '2469.14',
-    before,
-    takesAllLeft,
+    beforeVat: { charged: '2469.14', before, takesAllLeft },
+    withVat: none,
   })
   const lines = (n: number, typed: string, priceIncludesVat = false) =>
     Array.from({ length: n }, () => ({ priceIncludesVat, typed }))
@@ -302,7 +304,7 @@ describe('creditRateVat: VAT once per rate on every credit note (PINT-AE S-09)',
     for (const vat of first) expect(['61.72', '61.73']).toContain(vat)
     // The other 6 take all that is left: exactly the VAT left, so the two add up to the invoice's.
     const second = creditRateVat(
-      at5({ net: '41975.38', gross: '0', vat: '2098.77' }, true),
+      at5({ typed: '41975.38', vat: '2098.77' }, true),
       lines(6, '1234.57'),
       'AED',
     )
@@ -310,24 +312,21 @@ describe('creditRateVat: VAT once per rate on every credit note (PINT-AE S-09)',
   })
 
   it('prices with VAT: the VAT inside the running total, never more than is left', () => {
-    const basis = { vatRate: '5', invoiceVat: '15', before: { net: '0', gross: '0', vat: '0' } }
-    expect(creditRateVat({ ...basis, takesAllLeft: false }, lines(1, '105', true), 'AED')).toEqual([
-      '5',
-    ])
+    const basis = (before: { typed: string; vat: string }, takesAllLeft: boolean) => ({
+      vatRate: '5',
+      invoiceVat: '15',
+      beforeVat: none,
+      withVat: { charged: '15', before, takesAllLeft },
+    })
     expect(
-      creditRateVat(
-        { ...basis, before: { net: '0', gross: '210', vat: '10' }, takesAllLeft: true },
-        lines(1, '105', true),
-        'AED',
-      ),
+      creditRateVat(basis({ typed: '0', vat: '0' }, false), lines(1, '105', true), 'AED'),
+    ).toEqual(['5'])
+    expect(
+      creditRateVat(basis({ typed: '210', vat: '10' }, true), lines(1, '105', true), 'AED'),
     ).toEqual(['5'])
     // Everything taken back already: nothing more.
     expect(
-      creditRateVat(
-        { ...basis, before: { net: '0', gross: '315', vat: '15' }, takesAllLeft: false },
-        lines(1, '1', true),
-        'AED',
-      ),
+      creditRateVat(basis({ typed: '315', vat: '15' }, false), lines(1, '1', true), 'AED'),
     ).toEqual(['0'])
   })
 
@@ -345,7 +344,7 @@ describe('creditRateVat: VAT once per rate on every credit note (PINT-AE S-09)',
           const invoiceNet = sum(nets)
           // The invoice's VAT, once on its net.
           const invoiceVat = plain(toDec(invoiceNet).times(5).dividedBy(100).toDecimalPlaces(2, 4))
-          let before = { net: '0', gross: '0', vat: '0' }
+          let before = { typed: '0', vat: '0' }
           const groups = Array.from({ length: notes }, (_, k) =>
             nets.filter((_, i) => i % notes === k),
           )
@@ -354,7 +353,12 @@ describe('creditRateVat: VAT once per rate on every credit note (PINT-AE S-09)',
             const all = k === groups.length - 1 || groups.slice(k + 1).every((g) => g.length === 0)
             const vat = sum(
               creditRateVat(
-                { vatRate: '5', invoiceVat, before, takesAllLeft: all },
+                {
+                  vatRate: '5',
+                  invoiceVat,
+                  beforeVat: { charged: invoiceVat, before, takesAllLeft: all },
+                  withVat: none,
+                },
                 group.map((typed) => ({ priceIncludesVat: false, typed })),
                 'AED',
               ),
@@ -362,12 +366,286 @@ describe('creditRateVat: VAT once per rate on every credit note (PINT-AE S-09)',
             const net = sum(group)
             const exact = toDec(net).times(5).dividedBy(100).toDecimalPlaces(2, 4)
             expect(toDec(vat).minus(exact).abs().lte('0.01')).toBe(true)
-            before = { net: sum([before.net, net]), gross: '0', vat: sum([before.vat, vat]) }
+            before = { typed: sum([before.typed, net]), vat: sum([before.vat, vat]) }
           })
           expect(before.vat).toBe(plain(toDec(invoiceVat)))
         },
       ),
       { numRuns: 500 },
+    )
+  })
+})
+
+// A rate whose lines are priced both ways (D-121, D-220: "one sale can hold both"), through the real
+// engine and the rows as the API stores them (D-365). The invoice works each kind out on its own, so a
+// credit note must too: weighing 1,050.00 with VAT against 1,000.00 before VAT as if they were one
+// basis gave rows of 48.78 and 51.22 and left 1.22 owed on a supply cancelled whole, for ever.
+describe('creditRateVat: both kinds of price at one rate', () => {
+  interface Invoiced {
+    readonly withVat: boolean
+    readonly net: string
+    readonly vat: string
+    readonly total: string
+  }
+
+  const invoiceOf = (prices: readonly { typed: string; withVat: boolean }[]) => {
+    const sale = computeSale(
+      {
+        vatRegistered: true,
+        lines: prices.map((p) => ({
+          kind: 'item' as const,
+          qty: '1' as Quantity,
+          unitPrice: p.typed as Money,
+          priceIncludesVat: p.withVat,
+          vatCategory: 'standard' as const,
+        })),
+      },
+      'AED',
+    )
+    return {
+      sale,
+      lines: sale.lines.map((l, i): Invoiced => ({
+        withVat: prices[i]!.withVat,
+        net: l.net,
+        vat: l.vat,
+        total: l.total,
+      })),
+    }
+  }
+
+  /** The rows a note stores: what it took as typed stays, and its other amount moves with the VAT. */
+  const rows = (
+    invoice: readonly Invoiced[],
+    taken: readonly { at: number; typed: string }[],
+    before: {
+      net: { typed: string; vat: string }
+      gross: { typed: string; vat: string }
+    },
+    left: readonly string[],
+  ) => {
+    const after = (i: number) =>
+      toDec(left[i]!)
+        .minus(toDec(taken.find((t) => t.at === i)?.typed ?? '0'))
+        .lte(0)
+    const part = (withVat: boolean) => ({
+      charged: sumDecimals(invoice.filter((l) => l.withVat === withVat).map((l) => l.vat)),
+      before: withVat ? before.gross : before.net,
+      takesAllLeft: invoice.every((l, i) => l.withVat !== withVat || after(i)),
+    })
+    const shares = creditRateVat(
+      {
+        vatRate: '5',
+        invoiceVat: sumDecimals(invoice.map((l) => l.vat)),
+        beforeVat: part(false),
+        withVat: part(true),
+      },
+      taken.map((t) => ({ priceIncludesVat: invoice[t.at]!.withVat, typed: t.typed })),
+      'AED',
+    )
+    return taken.map((t, k) => {
+      const vat = shares[k]!
+      return invoice[t.at]!.withVat
+        ? { at: t.at, net: subtractDecimals(t.typed, vat), vat, total: t.typed }
+        : { at: t.at, net: t.typed, vat, total: sumDecimals([t.typed, vat]) }
+    })
+  }
+
+  const nothingBefore = { net: { typed: '0', vat: '0' }, gross: { typed: '0', vat: '0' } }
+
+  it('1,000.00 before VAT and 1,050.00 with VAT, both taken back: 50.00 and 50.00, nothing left', () => {
+    const { lines: invoice, sale } = invoiceOf([
+      { typed: '1000', withVat: false },
+      { typed: '1050', withVat: true },
+    ])
+    expect(sale).toMatchObject({ net: '2000.00', vat: '100.00', total: '2100.00' })
+    const note = rows(
+      invoice,
+      [
+        { at: 0, typed: '1000' },
+        { at: 1, typed: '1050' },
+      ],
+      nothingBefore,
+      ['1000', '1050'],
+    )
+    expect(
+      note.map((r) => [plain(toDec(r.net)), plain(toDec(r.vat)), plain(toDec(r.total))]),
+    ).toEqual([
+      ['1000', '50', '1050'],
+      ['1000', '50', '1050'],
+    ])
+  })
+
+  it('100,000.00 and 105,000.00 too: the larger the amounts, the larger it used to leave', () => {
+    const { lines: invoice } = invoiceOf([
+      { typed: '100000', withVat: false },
+      { typed: '105000', withVat: true },
+    ])
+    const note = rows(
+      invoice,
+      [
+        { at: 0, typed: '100000' },
+        { at: 1, typed: '105000' },
+      ],
+      nothingBefore,
+      ['100000', '105000'],
+    )
+    expect(note.map((r) => plain(toDec(r.vat)))).toEqual(['5000', '5000'])
+  })
+
+  it('a deposit taken off at the rate: the two kinds never pass the VAT the invoice has left', () => {
+    const note = creditRateVat(
+      {
+        vatRate: '5',
+        // Each kind was charged 5.00; a deposit took 5.00 of VAT off the rate.
+        invoiceVat: '5',
+        beforeVat: { charged: '5', before: { typed: '0', vat: '0' }, takesAllLeft: true },
+        withVat: { charged: '5', before: { typed: '0', vat: '0' }, takesAllLeft: true },
+      },
+      [
+        { priceIncludesVat: false, typed: '100' },
+        { priceIncludesVat: true, typed: '105' },
+      ],
+      'AED',
+    )
+    expect(note).toEqual(['2.5', '2.5'])
+  })
+
+  it("a note that finishes one kind and not the other stays inside the rule's 0.02", () => {
+    // Two roundings of the first note, the invoice's own and the second note's add up: 0.0245 before the
+    // kind still running gave a fils back. Its running total takes it up on the last note.
+    const { lines: invoice, sale } = invoiceOf([
+      { typed: '3758.39', withVat: false },
+      { typed: '9684.89', withVat: true },
+    ])
+    const typed = ['3758.39', '9684.89']
+    const first = rows(
+      invoice,
+      [
+        { at: 0, typed: '468.10' },
+        { at: 1, typed: '7060.31' },
+      ],
+      nothingBefore,
+      typed,
+    )
+    const before = {
+      net: { typed: '468.10', vat: first[0]!.vat },
+      gross: { typed: '7060.31', vat: first[1]!.vat },
+    }
+    const second = rows(
+      invoice,
+      [
+        { at: 0, typed: '3290.29' },
+        { at: 1, typed: '101.00' },
+      ],
+      before,
+      ['3290.29', '2624.58'],
+    )
+    const taxable = toDec(second[0]!.net).plus(toDec(second[1]!.net))
+    const noteVat = toDec(second[0]!.vat).plus(toDec(second[1]!.vat))
+    expect(noteVat.minus(taxable.times(5).dividedBy(100)).abs().lte('0.02')).toBe(true)
+    const last = rows(
+      invoice,
+      [{ at: 1, typed: '2523.58' }],
+      {
+        net: { typed: '3758.39', vat: sumDecimals([first[0]!.vat, second[0]!.vat]) },
+        gross: { typed: '7161.31', vat: sumDecimals([first[1]!.vat, second[1]!.vat]) },
+      },
+      ['0', '2523.58'],
+    )
+    const all = [...first, ...second, ...last]
+    expect(compareDecimal(sumDecimals(all.map((r) => r.total)), sale.total)).toBe(0)
+    expect(compareDecimal(sumDecimals(all.map((r) => r.vat)), sale.vat)).toBe(0)
+  })
+
+  const generated = fc
+    .array(
+      fc.record({
+        cents: fc.integer({ min: 1, max: 99_999_999 }),
+        withVat: fc.boolean(),
+        // Which note takes this line (the last note takes whatever is left of every line).
+        note: fc.integer({ min: 0, max: 3 }),
+        // Half of the line is taken by an earlier note.
+        split: fc.boolean(),
+      }),
+      { minLength: 2, maxLength: 12 },
+    )
+    .filter((ls) => ls.some((l) => l.withVat) && ls.some((l) => !l.withVat))
+  const typedOf = (cents: number) => plain(toDec(String(cents)).dividedBy(100))
+
+  it('a whole note on any invoice with both kinds: every row is what the invoice charged it', () => {
+    fc.assert(
+      fc.property(generated, (ls) => {
+        const { lines: invoice, sale } = invoiceOf(
+          ls.map((l) => ({ typed: typedOf(l.cents), withVat: l.withVat })),
+        )
+        const typed = invoice.map((l) => (l.withVat ? l.total : l.net))
+        const note = rows(
+          invoice,
+          invoice.map((_, at) => ({ at, typed: typed[at]! })),
+          nothingBefore,
+          typed,
+        )
+        note.forEach((row, i) => {
+          expect(compareDecimal(row.vat, invoice[i]!.vat)).toBe(0)
+          expect(compareDecimal(row.net, invoice[i]!.net)).toBe(0)
+          expect(compareDecimal(row.total, invoice[i]!.total)).toBe(0)
+        })
+        expect(compareDecimal(sumDecimals(note.map((r) => r.total)), sale.total)).toBe(0)
+      }),
+      { numRuns: 1000 },
+    )
+  })
+
+  it('any notes on it, whole lines or halves: all taken back leaves nothing, each note inside S-09', () => {
+    fc.assert(
+      fc.property(generated, (ls) => {
+        const { lines: invoice, sale } = invoiceOf(
+          ls.map((l) => ({ typed: typedOf(l.cents), withVat: l.withVat })),
+        )
+        const left = invoice.map((l) => toDec(l.withVat ? l.total : l.net))
+        const before = { net: { typed: '0', vat: '0' }, gross: { typed: '0', vat: '0' } }
+        const credited = { net: '0', vat: '0', total: '0' }
+        for (let k = 0; k <= 4; k++) {
+          const taken = ls.flatMap((l, at) => {
+            if (left[at]!.lte(0)) return []
+            if (k === 4 || l.note === k) return [{ at, typed: plain(left[at]!) }]
+            if (l.split && l.note > k) {
+              const half = left[at]!.dividedBy(2).toDecimalPlaces(2)
+              return half.gt(0) ? [{ at, typed: plain(half) }] : []
+            }
+            return []
+          })
+          if (taken.length === 0) continue
+          const note = rows(
+            invoice,
+            taken,
+            before,
+            left.map((v) => plain(v)),
+          )
+          // PINT-AE aligned-ibrp-s-09: the note's VAT against its taxable amount × 5%, in the rule's 0.02.
+          const exact = note
+            .reduce((a, r) => a.plus(toDec(r.net)), toDec('0'))
+            .times(5)
+            .dividedBy(100)
+          const noteVat = toDec(sumDecimals(note.map((r) => r.vat)))
+          expect(noteVat.minus(exact).abs().lte('0.02')).toBe(true)
+          note.forEach((row) => {
+            left[row.at] = left[row.at]!.minus(
+              toDec(invoice[row.at]!.withVat ? row.total : row.net),
+            )
+            const side = invoice[row.at]!.withVat ? before.gross : before.net
+            side.typed = sumDecimals([side.typed, invoice[row.at]!.withVat ? row.total : row.net])
+            side.vat = sumDecimals([side.vat, row.vat])
+            credited.net = sumDecimals([credited.net, row.net])
+            credited.vat = sumDecimals([credited.vat, row.vat])
+            credited.total = sumDecimals([credited.total, row.total])
+          })
+        }
+        expect(compareDecimal(credited.net, sale.net)).toBe(0)
+        expect(compareDecimal(credited.vat, sale.vat)).toBe(0)
+        expect(compareDecimal(credited.total, sale.total)).toBe(0)
+      }),
+      { numRuns: 1000 },
     )
   })
 })

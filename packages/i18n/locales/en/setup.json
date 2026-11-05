@@ -356,7 +356,7 @@
       "pos": "Import your POS sales to see your real profit.",
       "apps": "Bring in sales from your online store or delivery apps, with their fees.",
       "with_orders": "Add the sales you don't record as orders.",
-      "invoices": "Record your sales to see your real profit, and make your invoices from them.",
+      "invoices": "Record your sales to see your real profit, sale by sale.",
       "default": "Add your sales to see your real profit."
     },
     "payments": {
@@ -380,10 +380,10 @@
       "quotes": "Prepare written quotes for your customers before you start."
     },
     "invoices": {
-      "projects": "Send invoices, including stage invoices for each project.",
-      "vat": "Your business is registered for VAT, so send tax invoices to your customers.",
-      "quotes": "Turn accepted quotes into invoices and get paid.",
-      "default": "Send invoices to your customers and follow what they owe."
+      "projects": "Your projects' invoices, including stage invoices.",
+      "vat": "Your business is registered for VAT: this is where its tax invoices are.",
+      "quotes": "Accepted quotes become invoices, and you follow what you are owed.",
+      "default": "Your customers' invoices, and what they still owe."
     },
     "inventory": {
       "default": "See how much is left in stock."
@@ -423,7 +423,7 @@
       "outside_pos": "Turn this on if some orders don't go through your POS."
     },
     "invoices": {
-      "pos_off": "Your POS prints your receipts. Turn this on if you also need to send tax invoices, for example to companies."
+      "pos_off": "Your POS prints your receipts. Tax invoices are here if you also need them, for example for companies."
     }
   },
   "location": {

@@ -848,7 +848,7 @@ test('Settings → Documents: the letterhead without a logo and with one, the si
   await page.goto(`/b/${businessId}`)
   const step = page.getByRole('listitem').filter({ hasText: 'Add your business address' })
   await expect(step).toBeVisible()
-  await expect(step).toContainText('Your quotations and invoices print it')
+  await expect(step).toContainText('Your documents print it')
 
   // The business profile: phones, email, address and trade licence.
   await page.goto(`/b/${businessId}/settings/business`)

@@ -1,10 +1,12 @@
 import {
+  acceptTermsInput,
   deleteAccountDto,
   profileDto,
   setLastBusinessInput,
   updateProfileInput,
 } from '@bizcost/contracts'
 import { deleteAccount, setLastBusiness, updateProfile } from '../services/account'
+import { acceptTerms } from '../services/profile'
 import { authedProcedure, router } from '../trpc'
 
 /**
@@ -16,6 +18,7 @@ import { authedProcedure, router } from '../trpc'
  *   the only member, anonymizes the profile and deletes the auth user (services/account.ts).
  * - `setLastBusiness`: remembers the business the caller opened last (profiles.last_business_id), for
  *   where to go after sign-in. The web calls it when a business page opens; createFromSetup sets it too.
+ * - `acceptTerms`: the caller accepts the terms and privacy policy in force, once (D-358).
  */
 export const accountRouter = router({
   updateProfile: authedProcedure
@@ -26,6 +29,10 @@ export const accountRouter = router({
     .input(setLastBusinessInput)
     .output(profileDto)
     .mutation(({ ctx, input }) => setLastBusiness(ctx, ctx.auth, input.businessId)),
+  acceptTerms: authedProcedure
+    .input(acceptTermsInput)
+    .output(profileDto)
+    .mutation(({ ctx, input }) => acceptTerms(ctx, ctx.auth, input)),
   delete: authedProcedure
     .output(deleteAccountDto)
     .mutation(({ ctx }) => deleteAccount(ctx, ctx.auth)),

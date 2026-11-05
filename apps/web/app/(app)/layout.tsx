@@ -1,5 +1,6 @@
 import type { ReactNode } from 'react'
 import { LocaleSync, SessionEnded } from '@/components/app/session-sync'
+import { TermsGate } from '@/features/legal/terms-gate'
 import { getLocale } from '@/lib/i18n/server'
 import { SessionProvider } from '@/lib/session'
 import { sessionEmail } from '@/lib/supabase/server'
@@ -18,7 +19,8 @@ export default async function AppLayout({ children }: { children: ReactNode }) {
     <ApiProvider me={me}>
       <SessionProvider email={email}>
         {me.profile.locale !== locale ? <LocaleSync locale={me.profile.locale} /> : null}
-        {children}
+        {/* Accepted once, on the sign-up form or here (D-358): "send me a code" makes accounts too. */}
+        {me.profile.termsAccepted ? children : <TermsGate />}
       </SessionProvider>
     </ApiProvider>
   )

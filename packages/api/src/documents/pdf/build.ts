@@ -3,7 +3,9 @@ import {
   compareDecimal,
   DOCUMENT_ACCENTS,
   isDocumentAccent,
+  printedRow,
   printedSubtotal,
+  printedVatColumn,
   subtractDecimals,
   sumDecimals,
   type CreditReason,
@@ -12,6 +14,7 @@ import {
   type Emirate,
   type Money,
   type Percent,
+  type PrintedVatColumn,
   type StandardUnit,
   type VatCategory,
 } from '@bizcost/domain'
@@ -560,7 +563,6 @@ export function buildQuotationPdfInput(source: {
       showPictures: lines.some((line) => line.picture !== null),
       showAreas: lines.some((line) => line.area !== null),
       showDiscount: lines.some((line) => line.discount !== null),
-      showVat: false,
     },
     lines,
     totals: rows,
@@ -592,6 +594,11 @@ export function buildQuotationPdfInput(source: {
 export interface PdfInvoiceLine extends PdfQuotationLine {
   /** `deduction`: a deposit invoice taken off (its amount negative). */
   readonly kind: 'item' | 'delivery' | 'deduction'
+  /** Before VAT, after every discount and adjustment (the document's discount included). */
+  readonly net: string
+  readonly vat: string
+  /** net + VAT. */
+  readonly total: string
 }
 
 /** A payment an invoice received, as printed beside its totals. */
@@ -699,7 +706,10 @@ function partyOf(customer: PdfCustomer, showTrn: boolean, locale: 'en' | 'ar') {
   }
 }
 
-/** A line's VAT rate as its column prints it: "5%", "0%", "Exempt" (in the business's language). */
+/**
+ * A line's VAT rate as its VAT cell says it under its amount, on a document that mixes rates: "5%",
+ * "0%", "Exempt" (in the business's language).
+ */
 function vatRateText(
   locale: 'en' | 'ar',
   category: VatCategory | null,
@@ -709,6 +719,18 @@ function vatRateText(
   if (category === 'exempt') return pick(messagesOf(locale), 'pdf.vatCategory.exempt')
   if (category === 'zero_rated') return pick(messagesOf(locale), 'pdf.vatCategory.zeroRated')
   return formatPercent(rate ?? '0')
+}
+
+/**
+ * The heading of a tax document's VAT column (D-360, the owner's «اكتب بس VAT 5%»): "VAT 5%", the one
+ * rate said once ("VAT 0%", "VAT exempt"), or "VAT" when the document mixes rates and each row says its
+ * own. Latin in both languages, as he asked: no Arabic pair.
+ */
+function vatHeadOf(locale: 'en' | 'ar', column: PrintedVatColumn): string {
+  const messages = messagesOf(locale)
+  if (column.kind !== 'one') return pick(messages, 'pdf.table.vatHead.mixed')
+  if (column.vatCategory === 'exempt') return pick(messages, 'pdf.table.vatHead.exempt')
+  return fill(pick(messages, 'pdf.table.vatHead.rate'), { rate: formatQuantity(column.vatRate) })
 }
 
 /** The VAT rows of a document's totals: one per rate, its taxable amount named. */
@@ -730,11 +752,13 @@ function vatRows(
 }
 
 /**
- * The DocumentPdfInput of an invoice (M3 Step 8): «فاتورة ضريبية · Tax Invoice» with the 12 particulars
+ * The DocumentPdfInput of an invoice (M3 Step 8): «فاتورة ضريبية · Tax Invoice» with particulars (a)–(k)
  * of VAT ER Art. 59(1) (the seller's names, address and TRN; the recipient's when registered; its
  * number, issue date, date of supply when different, each line's unit price, quantity, VAT rate and
- * amount, any discount, the total and the VAT in AED), or a plain «فاتورة · Invoice» that says nothing of
- * tax (no TRN, no VAT column or rows). Its payments print beside its totals with what is still due.
+ * amount, any discount, the total and the VAT in AED; (l), the reverse charge's statement, cannot print
+ * yet, D-307), or a plain «فاتورة · Invoice» that says nothing of tax (no TRN, no VAT column or rows). Its
+ * rows always add up as printed (D-360, printedRow). Its payments print beside its totals with what is
+ * still due.
  */
 export function buildInvoicePdfInput(source: {
   readonly business: PdfBusiness
@@ -759,26 +783,46 @@ export function buildInvoicePdfInput(source: {
     line.priceIncludesVat &&
     line.vatRate !== null &&
     compareDecimal(line.vatRate, '0') > 0
-  const lines: DocumentPdfLine[] = inv.lines.map((line, i) => ({
-    no: i + 1,
-    area:
-      line.area !== null && hasVisibleCharacter(line.area)
-        ? typedText(line.area, fallback, RUN.area)
-        : null,
-    picture: known(line.picture),
-    title: typedText(line.title, fallback, RUN.title) ?? { text: line.title, dir: fallback },
-    details: typedText(line.details, fallback, RUN.details),
-    note: typedText(line.note, fallback, RUN.details),
-    qty: formatQuantity(line.kind === 'deduction' ? '1' : line.qty),
-    unit: line.unit ? pick(messagesOf(locale), `pdf.unit.${line.unit}`) : null,
-    unitPrice: money(
-      line.kind === 'deduction' ? subtractDecimals('0', line.unitPrice) : line.unitPrice,
-    ),
-    discount: zero(line.lineDiscount) ? null : money(line.lineDiscount),
-    vatRate: tax ? vatRateText(locale, line.vatCategory, line.vatRate) : null,
-    amount: money(subtractDecimals(line.subtotal, line.lineDiscount)),
-    includesVat: includesVat(line),
-  }))
+  const vatColumn = tax ? printedVatColumn(inv.lines) : null
+  const lines: DocumentPdfLine[] = inv.lines.map((line, i) => {
+    // Unit price × qty − discount = before VAT (the total when its price includes VAT); before VAT +
+    // VAT = total. Its discount holds its share of the document's discount and "Round the total".
+    const row = printedRow(
+      {
+        qty: line.qty,
+        unitPrice: line.unitPrice,
+        priceIncludesVat: inv.vatRegistered && line.priceIncludesVat,
+        vatRate: line.vatRate,
+        net: line.net,
+        total: line.total,
+      },
+      inv.currency as CurrencyCode,
+    )
+    return {
+      no: i + 1,
+      area:
+        line.area !== null && hasVisibleCharacter(line.area)
+          ? typedText(line.area, fallback, RUN.area)
+          : null,
+      picture: known(line.picture),
+      title: typedText(line.title, fallback, RUN.title) ?? { text: line.title, dir: fallback },
+      details: typedText(line.details, fallback, RUN.details),
+      note: typedText(line.note, fallback, RUN.details),
+      // A deposit taken off prints as 1 × its price below zero (stored −1 × its price).
+      qty: formatQuantity(line.kind === 'deduction' ? '1' : line.qty),
+      unit: line.unit ? pick(messagesOf(locale), `pdf.unit.${line.unit}`) : null,
+      unitPrice: money(
+        line.kind === 'deduction' ? subtractDecimals('0', line.unitPrice) : line.unitPrice,
+      ),
+      discount: money(row.discount),
+      vatRate:
+        vatColumn?.kind === 'mixed' ? vatRateText(locale, line.vatCategory, line.vatRate) : null,
+      beforeVat: tax ? money(line.net) : null,
+      vatAmount: tax ? money(line.vat) : null,
+      amount: money(line.total),
+      includesVat: row.includesVat,
+    }
+  })
 
   const lineDiscounts = sumDecimals(inv.lines.map((line) => line.lineDiscount))
   const printed = printedSubtotal(
@@ -895,8 +939,9 @@ export function buildInvoicePdfInput(source: {
     table: {
       showPictures: lines.some((line) => line.picture !== null),
       showAreas: lines.some((line) => line.area !== null),
-      showDiscount: lines.some((line) => line.discount !== null),
-      showVat: tax,
+      showDiscount: true,
+      rows: tax ? 'tax' : 'plain',
+      ...(vatColumn ? { vatHead: vatHeadOf(locale, vatColumn) } : {}),
     },
     lines,
     totals: rows,
@@ -959,6 +1004,7 @@ export interface PdfCreditNote {
     readonly vatCategory: VatCategory | null
     readonly vatRate: string | null
     readonly net: string
+    readonly vat: string
     readonly total: string
   }[]
 }
@@ -968,7 +1014,7 @@ export interface PdfCreditNote {
  * particulars of VAT ER Art. 60(1): the seller's and the recipient's names, addresses and TRNs, its
  * issue date, the invoice's value of the supply (after the credit notes before it), the correct value,
  * the difference and its VAT in AED, the reason, and the invoice it corrects (number and date); or a
- * plain «إشعار دائن · Credit Note» that says nothing of tax.
+ * plain «إشعار دائن · Credit Note» that says nothing of tax. Its rows read as an invoice's (D-360).
  */
 export function buildCreditNotePdfInput(source: {
   readonly business: PdfBusiness
@@ -987,12 +1033,19 @@ export function buildCreditNotePdfInput(source: {
   const images = source.images
   const known = (key: string | null) => (key !== null && key in images ? key : null)
   const byAmount = cn.by === 'amount'
+  const vatColumn = tax ? printedVatColumn(cn.lines) : null
   const lines: DocumentPdfLine[] = cn.lines.map((line, i) => {
-    const includesVat =
-      cn.vatRegistered &&
-      line.priceIncludesVat &&
-      line.vatRate !== null &&
-      compareDecimal(line.vatRate, '0') > 0
+    const row = printedRow(
+      {
+        qty: line.qty,
+        unitPrice: line.unitPrice,
+        priceIncludesVat: cn.vatRegistered && line.priceIncludesVat,
+        vatRate: line.vatRate,
+        net: line.net,
+        total: line.total,
+      },
+      cn.currency as CurrencyCode,
+    )
     return {
       no: i + 1,
       area: null,
@@ -1004,10 +1057,16 @@ export function buildCreditNotePdfInput(source: {
       qty: byAmount ? '—' : formatQuantity(line.qty),
       unit: byAmount || !line.unit ? null : pick(messagesOf(locale), `pdf.unit.${line.unit}`),
       unitPrice: byAmount ? '—' : money(line.unitPrice),
-      discount: null,
-      vatRate: tax ? vatRateText(locale, line.vatCategory, line.vatRate) : null,
-      amount: money(includesVat ? line.total : line.net),
-      includesVat,
+      // A line taking back what is left of a discounted line keeps its price and quantity and stores
+      // no discount: the row's discount says what separates them from what it takes back.
+      discount: money(byAmount ? '0' : row.discount),
+      vatRate:
+        vatColumn?.kind === 'mixed' ? vatRateText(locale, line.vatCategory, line.vatRate) : null,
+      beforeVat: tax ? money(line.net) : null,
+      vatAmount: tax ? money(line.vat) : null,
+      amount: money(line.total),
+      // By amount it prints no price to mark; its before VAT and VAT say the rest.
+      includesVat: !byAmount && row.includesVat,
     }
   })
   const rows: DocumentPdfTotalRow[] = [
@@ -1062,7 +1121,13 @@ export function buildCreditNotePdfInput(source: {
     letterhead: letterheadOf(business, source.businessImages, images),
     customer: partyOf(customer, customer.showTrn && tax, locale),
     opening: null,
-    table: { showPictures: false, showAreas: false, showDiscount: false, showVat: tax },
+    table: {
+      showPictures: false,
+      showAreas: false,
+      showDiscount: true,
+      rows: tax ? 'tax' : 'plain',
+      ...(vatColumn ? { vatHead: vatHeadOf(locale, vatColumn) } : {}),
+    },
     lines,
     totals: rows,
     stages: [],
@@ -1233,7 +1298,7 @@ export function buildStatementPdfInput(source: {
     letterhead: letterheadOf(business, source.businessImages, source.images),
     customer: partyOf(customer, false, locale),
     opening: null,
-    table: { showPictures: false, showAreas: false, showDiscount: false, showVat: false },
+    table: { showPictures: false, showAreas: false, showDiscount: false },
     lines: [],
     totals: [
       { label: both('pdf.statement.opening'), amount: money(st.opening), strong: false },

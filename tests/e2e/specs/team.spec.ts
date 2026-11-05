@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto'
 import { expect, test, type BrowserContext, type Page } from '@playwright/test'
 import {
+  acceptTerms,
   ageSignIn,
   callApi,
   createBusiness,
@@ -136,6 +137,7 @@ test('the owner invites someone; the email arrives and a new user joins from it'
   await expect(inviteePage.getByText('e•••@test.bizcost.local')).toBeVisible()
   await inviteePage.getByLabel('Email', { exact: true }).fill(inviteeEmail)
   await inviteePage.getByRole('textbox', { name: 'Password', exact: true }).fill(PASSWORD)
+  await acceptTerms(inviteePage)
   await inviteePage.getByRole('button', { name: 'Create account' }).click()
   await expect(inviteePage).toHaveURL('/verify')
   cleanup.push(await findUserId(inviteeEmail))

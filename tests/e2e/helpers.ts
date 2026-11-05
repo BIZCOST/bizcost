@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto'
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { crc32, deflateSync } from 'node:zlib'
+import { LEGAL_METADATA_KEY, LEGAL_VERSION } from '@bizcost/contracts'
 import { RAW_KEY } from '@bizcost/i18n/namespaces'
 import { expect, type BrowserContext, type Locator, type Page } from '@playwright/test'
 import postgres from 'postgres'
@@ -41,12 +42,27 @@ export async function createUser(
   label: string,
   metadata: Record<string, unknown> = { locale: 'en' },
 ): Promise<TestUser> {
-  const email = uniqueEmail(label)
+  return createUserWithEmail(uniqueEmail(label), metadata)
+}
+
+/**
+ * As createUser, at this address. As a person who ticked the sign-up form's box (D-358): the first page
+ * after sign-in is the page itself; beta.spec.ts asks for the terms where a person would be asked.
+ */
+export async function createUserWithEmail(
+  email: string,
+  metadata: Record<string, unknown> = { locale: 'en' },
+): Promise<TestUser> {
   const password = `Pw-${randomUUID()}`
   const response = await fetch(`${stack().apiUrl}/auth/v1/admin/users`, {
     method: 'POST',
     headers: adminHeaders(),
-    body: JSON.stringify({ email, password, email_confirm: true, user_metadata: metadata }),
+    body: JSON.stringify({
+      email,
+      password,
+      email_confirm: true,
+      user_metadata: { [LEGAL_METADATA_KEY]: LEGAL_VERSION, ...metadata },
+    }),
   })
   if (!response.ok) throw new Error(`createUser: ${response.status} ${await response.text()}`)
   const user = (await response.json()) as { id: string }
@@ -332,6 +348,11 @@ export async function enterCode(page: Page, code: string, nth = 0): Promise<void
 
 export async function useLanguage(context: BrowserContext, locale: 'en' | 'ar'): Promise<void> {
   await context.addCookies([{ name: 'bz_locale', value: locale, url: baseURL }])
+}
+
+/** Ticks the sign-up form's box: the terms of use and the privacy policy (D-358). */
+export async function acceptTerms(page: Page): Promise<void> {
+  await page.locator('form input[name="acceptTerms"]').check()
 }
 
 /** Signs in through the page with the password. */

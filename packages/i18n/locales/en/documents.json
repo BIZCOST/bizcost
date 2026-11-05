@@ -56,7 +56,13 @@
       "unitPrice": "Unit price",
       "qty": "Qty",
       "discount": "Discount",
-      "vat": "VAT",
+      "beforeVat": "Before VAT",
+      "vatHead": {
+        "rate": "VAT {{rate}}%",
+        "exempt": "VAT exempt",
+        "mixed": "VAT"
+      },
+      "total": "Total",
       "amount": "Amount",
       "inclVat": "incl. VAT"
     },
@@ -635,6 +641,7 @@
       "partIs": "That's {{amount}}.",
       "deposit": "It's a deposit, paid before the work",
       "depositHint": "The final invoice takes the deposit off before VAT, so VAT is charged once.",
+      "depositHintPlain": "The final invoice takes the deposit off what is left to pay.",
       "depositOnly": "After a deposit invoice, another part is a deposit too; the final invoice bills the rest.",
       "rest": "The rest",
       "restHint": "{{amount}} left to invoice",

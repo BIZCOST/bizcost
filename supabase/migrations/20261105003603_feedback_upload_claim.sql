@@ -1,0 +1,2 @@
+ALTER TABLE "app"."feedback_uploads" DROP CONSTRAINT "feedback_uploads_status_check";--> statement-breakpoint
+ALTER TABLE "app"."feedback_uploads" ADD CONSTRAINT "feedback_uploads_status_check" CHECK (status in ('issued', 'checking', 'used', 'discarded'));

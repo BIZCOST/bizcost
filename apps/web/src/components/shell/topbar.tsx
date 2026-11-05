@@ -2,7 +2,15 @@
 
 import { signOut, useMe } from '@bizcost/app-core'
 import type { I18nKey } from '@bizcost/i18n'
-import { HouseIcon, LogOutIcon, SettingsIcon, UserRoundIcon } from 'lucide-react'
+import {
+  FileTextIcon,
+  FlaskConicalIcon,
+  HouseIcon,
+  LogOutIcon,
+  SettingsIcon,
+  ShieldCheckIcon,
+  UserRoundIcon,
+} from 'lucide-react'
 import Link from 'next/link'
 import { useParams } from 'next/navigation'
 import { useState } from 'react'
@@ -24,6 +32,7 @@ import {
 } from '@/components/ui/dropdown-menu'
 import { usePersistLanguage } from '@/features/account/use-persist-language'
 import { activeMemberships, landingBusinessId } from '@/features/business/memberships'
+import { FeedbackButton } from '@/features/feedback/feedback-button'
 import { useSessionEmail } from '@/lib/session'
 import { authClient } from '@/lib/supabase/browser'
 import { BusinessSwitcher } from './business-switcher'
@@ -124,6 +133,28 @@ function UserMenu() {
             {t('nav.account')}
           </Link>
         </DropdownMenuItem>
+        {/* The owner's beta page: on no business's navigation, only here, for a platform admin. */}
+        {me?.isPlatformAdmin ? (
+          <DropdownMenuItem asChild className="py-2">
+            <Link href="/platform">
+              <FlaskConicalIcon aria-hidden />
+              {t('nav.platform')}
+            </Link>
+          </DropdownMenuItem>
+        ) : null}
+        <DropdownMenuSeparator />
+        <DropdownMenuItem asChild className="py-2">
+          <Link href="/terms">
+            <FileTextIcon aria-hidden />
+            {t('nav.terms')}
+          </Link>
+        </DropdownMenuItem>
+        <DropdownMenuItem asChild className="py-2">
+          <Link href="/privacy">
+            <ShieldCheckIcon aria-hidden />
+            {t('nav.privacy')}
+          </Link>
+        </DropdownMenuItem>
         <DropdownMenuSeparator />
         <DropdownMenuItem
           className="py-2"
@@ -145,6 +176,7 @@ function HeaderActions({ compactLanguage }: { compactLanguage: boolean }) {
   const persistLanguage = usePersistLanguage()
   return (
     <div className="flex shrink-0 items-center gap-1 sm:gap-2">
+      <FeedbackButton />
       <LanguageMenu
         persist={persistLanguage}
         compact={compactLanguage}
@@ -179,8 +211,10 @@ export function PlainTopbar() {
 }
 
 /**
- * The top bar of a business page. Phones: the logo mark and the switcher; tablets: the switcher (the
- * rail has the logo); from 1024px the sidebar has both, and the bar keeps the language and account.
+ * The top bar of a business page. Phones: the switcher alone, since the business's name needs that
+ * width to tell businesses apart (the tab bar goes home); from 640px the logo mark too; tablets: the
+ * switcher (the rail has the logo); from 1024px the sidebar has both, and the bar keeps the language and
+ * account.
  */
 export function BusinessTopbar() {
   const { t } = useTranslation()
@@ -191,7 +225,7 @@ export function BusinessTopbar() {
           <Link
             href="/"
             aria-label={t('brand.logoLabel')}
-            className="flex min-h-11 min-w-11 shrink-0 items-center justify-center rounded-md md:hidden"
+            className="hidden min-h-11 min-w-11 shrink-0 items-center justify-center rounded-md sm:flex md:hidden"
           >
             <LogoMark className="size-7" />
           </Link>

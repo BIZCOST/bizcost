@@ -33,6 +33,7 @@ import {
   printableImageType,
   removeImageUnlessKept,
 } from './document-files'
+import { withPictureCheckSlot } from './picture-check-slot'
 
 // Settings → Business profile and Business language (ROADMAP.md Step 6): legal names, VAT and TRN,
 // the business's default language, and the logo in the private bucket (docs/ARCHITECTURE.md §Storage):
@@ -414,23 +415,25 @@ export async function setLogo(ctx: BusinessCtx, input: SetLogoInput): Promise<Bu
   if (upload?.status !== 'issued') {
     throw new AppError('file_invalid', { message: 'not an open upload of this business' })
   }
-  const object = await downloadObject(ctx.config, input.path)
-  if (!object) throw new AppError('file_invalid', { message: 'no uploaded object' })
-  const sniffed = sniffImageType(object.bytes)
-  const expected = LOGO_CONTENT_TYPES.find((type) => EXTENSION_OF[type] === match[1])
-  const storedType = object.contentType.split(';')[0]?.trim().toLowerCase()
-  if (
-    object.bytes.byteLength > LOGO_MAX_BYTES ||
-    !sniffed ||
-    sniffed !== expected ||
-    storedType !== sniffed ||
-    // With Quotations, Invoices or the statements the logo prints on every document: an image their
-    // compiler decodes within the PDFs' image limits (D-295).
-    (documentsServed(ctx) && (await printableImageType(object.bytes)) !== sniffed)
-  ) {
-    await discard(ctx, input.path)
-    throw new AppError('file_invalid', { message: 'not an allowed image' })
-  }
+  await withPictureCheckSlot(ctx.auth.userId, async () => {
+    const object = await downloadObject(ctx.config, input.path)
+    if (!object) throw new AppError('file_invalid', { message: 'no uploaded object' })
+    const sniffed = sniffImageType(object.bytes)
+    const expected = LOGO_CONTENT_TYPES.find((type) => EXTENSION_OF[type] === match[1])
+    const storedType = object.contentType.split(';')[0]?.trim().toLowerCase()
+    if (
+      object.bytes.byteLength > LOGO_MAX_BYTES ||
+      !sniffed ||
+      sniffed !== expected ||
+      storedType !== sniffed ||
+      // With Quotations, Invoices or the statements the logo prints on every document: an image their
+      // compiler decodes within the PDFs' image limits (D-295).
+      (documentsServed(ctx) && (await printableImageType(object.bytes)) !== sniffed)
+    ) {
+      await discard(ctx, input.path)
+      throw new AppError('file_invalid', { message: 'not an allowed image' })
+    }
+  })
 
   const { row, previous } = await ctx.tx(async (tx) => {
     const [before] = await tx

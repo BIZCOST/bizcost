@@ -98,6 +98,60 @@ export function withPreviewModules(
   )
 }
 
+export interface ParsedHeldModules {
+  /** Modules named, in registry order, once each. */
+  readonly ids: readonly ModuleId[]
+  /** Names that are no module, or a module every business always has (Dashboard, Settings). */
+  readonly invalid: readonly string[]
+  /** Each released module that needs a held one and is not held itself: it would break. */
+  readonly dependents: readonly { readonly module: ModuleId; readonly needs: ModuleId }[]
+}
+
+/**
+ * Reads the list of modules held back on this deployment (BIZCOST_HELD_MODULES, e.g. "invoices",
+ * D-350, D-359): comma or space separated module ids. Read in production too, unlike the preview. The
+ * host app refuses to start on `invalid` names and on `dependents`.
+ */
+export function parseHeldModules(
+  value: string | undefined,
+  manifests: readonly ModuleManifest[] = MODULES,
+): ParsedHeldModules {
+  const names = (value ?? '')
+    .split(/[\s,]+/)
+    .map((name) => name.trim())
+    .filter(Boolean)
+  const named = new Set(names)
+  const holdable = manifests.filter((m) => !ALWAYS_ENABLED_MODULE_IDS.includes(m.id))
+  const known = new Set<string>(holdable.map((m) => m.id))
+  const ids = holdable.filter((m) => named.has(m.id)).map((m) => m.id)
+  const held: ReadonlySet<ModuleId> = new Set(ids)
+  return {
+    ids,
+    invalid: names.filter((name) => !known.has(name)),
+    dependents: manifests.flatMap((m) =>
+      isModuleReleased(m) && !held.has(m.id)
+        ? m.deps.filter((dep) => held.has(dep)).map((needs) => ({ module: m.id, needs }))
+        : [],
+    ),
+  }
+}
+
+/**
+ * The registry with the `held` modules not released: on this deployment they behave as modules not yet
+ * built: the API's gates refuse them, the nav and the "+" leave them out, their pages are not found,
+ * and Smart Setup and Customize mark them "Soon". Whether a business has one on is kept as it is.
+ */
+export function withHeldModules(
+  held: readonly string[],
+  manifests: readonly ModuleManifest[] = MODULES,
+): readonly ModuleManifest[] {
+  const ids = new Set(held)
+  if (ids.size === 0) return manifests
+  return manifests.map((m) =>
+    ids.has(m.id) && m.availability === 'released' ? { ...m, availability: 'planned' } : m,
+  )
+}
+
 /** A business_modules row: the business switched a module on or off. */
 export interface ModuleState {
   readonly key: string

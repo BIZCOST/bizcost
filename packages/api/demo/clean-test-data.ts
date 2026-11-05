@@ -111,6 +111,39 @@ async function report(sql: Sql, tables: string[]) {
   console.log(`  auth.audit_log_entries       ${authLog?.n ?? 0}`)
 }
 
+/** The closed beta's rows of the test users (D-355, D-356), which are in no business. */
+async function removeBetaRows(sql: Sql): Promise<{ objects: number }> {
+  const rows = await sql<{ name: string }[]>`
+    select name from storage.objects
+     where bucket_id = ${BUCKET}
+       and split_part(name, '/', 1) = 'feedback'
+       and split_part(name, '/', 2) in (select id::text from clean_users)`
+  let objects = 0
+  if (rows.length > 0) {
+    const storage = createClient(
+      process.env.SUPABASE_API_URL ?? '',
+      process.env.SUPABASE_SECRET_KEY ?? '',
+      {
+        auth: { persistSession: false, autoRefreshToken: false },
+      },
+    ).storage.from(BUCKET)
+    for (let i = 0; i < rows.length; i += STORAGE_CHUNK) {
+      const paths = rows.slice(i, i + STORAGE_CHUNK).map((r) => r.name)
+      const { data, error } = await storage.remove(paths)
+      if (error)
+        throw new Error(`Storage refused to remove ${paths.length} objects: ${error.message}`)
+      objects += data?.length ?? 0
+    }
+  }
+  await sql`
+    delete from app.feedback
+     where user_id in (select id from clean_users)
+        or from_business_id in (select id from clean_businesses)`
+  await sql`delete from app.feedback_uploads where user_id in (select id from clean_users)`
+  await sql`delete from app.beta_list where lower(email::text) ~ ${TEST_EMAIL}`
+  return { objects }
+}
+
 /** Removes the Storage objects of these businesses through the Storage API (never by SQL). */
 async function removeObjects(sql: Sql, ids: string[]): Promise<number> {
   const rows = await sql<{ name: string }[]>`
@@ -151,7 +184,10 @@ async function main() {
     const ids = (await sql<{ id: string }[]>`select id from clean_businesses order by id`).map(
       (r) => r.id,
     )
-    let objects = 0
+    // Feedback sent by the test users, or from the businesses going (it names them), with its pictures
+    // (feedback/{user}/…, through the Storage API); and the addresses the suites put on the beta list.
+    const beta = await removeBetaRows(sql)
+    let objects = beta.objects
     for (let i = 0; i < ids.length; i += BATCH) {
       const batch = ids.slice(i, i + BATCH)
       objects += await removeObjects(sql, batch)

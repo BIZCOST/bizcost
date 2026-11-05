@@ -27,6 +27,7 @@ import {
 import type { DocumentPdfImage, DocumentPdfInput } from '../documents/pdf/input'
 import { AppError } from '../errors'
 import { anyModulesActive, type ModuleGroup } from '../trpc'
+import { withPictureCheckSlot } from './picture-check-slot'
 
 // The documents' files in the private bucket `business-files` (M3 Step 7; D-085, D-224): the
 // signature and the stamp printed on the business's documents (uploaded and checked like the logo),
@@ -241,12 +242,17 @@ export async function setDocumentImage(
   if (upload?.status !== 'issued' || upload.purpose !== kind) {
     throw new AppError('file_invalid', { message: 'not an open upload of this business' })
   }
-  const object = await downloadObject(ctx.config, path)
-  if (!object) throw new AppError('file_invalid', { message: 'no uploaded object' })
-  const sniffed =
-    object.bytes.byteLength > DOCUMENT_IMAGE_MAX_BYTES
-      ? null
-      : await printableImageType(object.bytes)
+  const { object, sniffed } = await withPictureCheckSlot(ctx.auth.userId, async () => {
+    const downloaded = await downloadObject(ctx.config, path)
+    if (!downloaded) throw new AppError('file_invalid', { message: 'no uploaded object' })
+    return {
+      object: downloaded,
+      sniffed:
+        downloaded.bytes.byteLength > DOCUMENT_IMAGE_MAX_BYTES
+          ? null
+          : await printableImageType(downloaded.bytes),
+    }
+  })
   const storedType = object.contentType.split(';')[0]?.trim().toLowerCase()
   if (
     object.bytes.byteLength > DOCUMENT_IMAGE_MAX_BYTES ||

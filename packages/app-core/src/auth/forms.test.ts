@@ -47,10 +47,16 @@ describe('form schemas', () => {
       email: 'auth.validation.emailRequired',
       password: 'auth.validation.passwordRequired',
     })
-    expect(messages(signUpSchema, { email: 'nope', password: 'short' })).toEqual({
-      email: 'auth.validation.emailInvalid',
-      password: 'auth.validation.passwordTooShort',
-    })
+    expect(messages(signUpSchema, { email: 'nope', password: 'short', acceptTerms: true })).toEqual(
+      {
+        email: 'auth.validation.emailInvalid',
+        password: 'auth.validation.passwordTooShort',
+      },
+    )
+    // The terms of use and the privacy policy, on the form (D-358).
+    expect(
+      messages(signUpSchema, { email: 'a@b.co', password: 'abcdefg1', acceptTerms: false }),
+    ).toEqual({ acceptTerms: 'auth.validation.acceptTerms' })
     expect(messages(changeEmailSchema, { newEmail: 'a@b' })).toEqual({
       newEmail: 'auth.validation.emailInvalid',
     })
@@ -64,8 +70,10 @@ describe('form schemas', () => {
 
   it('limit new passwords to 72 UTF-8 bytes (bcrypt)', () => {
     const ok = { email: 'a@b.co', password: `${'a'.repeat(71)}1` }
-    expect(signUpSchema.safeParse(ok).success).toBe(true)
-    expect(messages(signUpSchema, { ...ok, password: `${'ب'.repeat(36)}a1` })).toEqual({
+    expect(signUpSchema.safeParse({ ...ok, acceptTerms: true }).success).toBe(true)
+    expect(
+      messages(signUpSchema, { ...ok, acceptTerms: true, password: `${'ب'.repeat(36)}a1` }),
+    ).toEqual({
       password: 'auth.validation.passwordTooLong',
     })
   })
@@ -171,14 +179,14 @@ describe('new password rule (D-072, the Auth server letters_digits rule)', () =>
 
   it('never changes the password (no digit or case normalization)', () => {
     expect(newPasswordSchema.parse('Abc-١٢٣-45')).toBe('Abc-١٢٣-45')
-    expect(signUpSchema.parse({ email: 'a@b.co', password: ' AbCd123 ' }).password).toBe(
-      ' AbCd123 ',
-    )
+    expect(
+      signUpSchema.parse({ email: 'a@b.co', password: ' AbCd123 ', acceptTerms: true }).password,
+    ).toBe(' AbCd123 ')
   })
 
   it('applies to every new-password form', () => {
     const weak = 'abcdefgh'
-    expect(messages(signUpSchema, { email: 'a@b.co', password: weak })).toEqual({
+    expect(messages(signUpSchema, { email: 'a@b.co', password: weak, acceptTerms: true })).toEqual({
       password: 'auth.validation.passwordNeedsMix',
     })
     expect(messages(resetPasswordSchema, { password: weak, confirmPassword: weak })).toEqual({

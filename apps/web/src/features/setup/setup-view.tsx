@@ -11,7 +11,14 @@ import { SetupWizard } from './wizard'
  * Smart Setup: the wizard, or its "ready" screen once the business named by `?done=` exists (a reload
  * keeps it; opening /setup again starts a new business).
  */
-export function SetupView({ done }: { done: string | null }) {
+export function SetupView({
+  done,
+  heldModules,
+}: {
+  done: string | null
+  /** Modules this deployment holds back (D-359): the review marks them "Soon". */
+  heldModules: readonly string[]
+}) {
   const { data: me } = useMe()
   const { locale } = useLocale()
   if (!me) return null
@@ -19,5 +26,5 @@ export function SetupView({ done }: { done: string | null }) {
   if (created) {
     return <ReadyStep businessId={created.businessId} name={businessDisplayName(created, locale)} />
   }
-  return <SetupWizard userId={me.profile.id} />
+  return <SetupWizard userId={me.profile.id} heldModules={heldModules} />
 }

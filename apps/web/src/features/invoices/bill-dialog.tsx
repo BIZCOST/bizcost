@@ -30,8 +30,10 @@ import { useMoney } from '@/features/documents/amounts'
 import { ConfirmDialog } from '@/features/documents/confirm-dialog'
 import { MoneyInput } from '@/features/documents/line-editor'
 import { useLocale } from '@/lib/i18n/client'
+import { useBusinessContext } from '@/lib/trpc/client'
 import { cn } from '@/lib/utils'
 import { useRefreshInvoices } from './data'
+import { depositHintKey } from './deposit-hint'
 
 // "This invoice bills" (M3 Step 8; Q22): a draft invoice from an accepted quotation or an order bills
 // everything (nothing billed yet), a part (a % or an amount; a deposit before the work, which the
@@ -80,6 +82,7 @@ export function BillDialog({
   const refresh = useRefreshInvoices()
   const partId = useId()
   const { businessId } = useParams<{ businessId: string }>()
+  const { data: context } = useBusinessContext()
   const fromQuotation = useMutation(trpc.invoice.fromQuotation.mutationOptions())
   const fromOrder = useMutation(trpc.invoice.fromOrder.mutationOptions())
   const issued = useQuery(
@@ -327,7 +330,7 @@ export function BillDialog({
           <span>
             <span className="block font-medium">{t('documents.invoices.bill.deposit')}</span>
             <span className="block text-muted-foreground">
-              {t('documents.invoices.bill.depositHint')}
+              {t(depositHintKey(context?.capabilities.vat_registered === true))}
             </span>
           </span>
         </label>

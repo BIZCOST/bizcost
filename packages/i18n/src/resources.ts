@@ -9,8 +9,10 @@ import arDocuments from '../locales/ar/documents.json'
 import arEmails from '../locales/ar/emails.json'
 import arErrors from '../locales/ar/errors.json'
 import arExpenses from '../locales/ar/expenses.json'
+import arLegal from '../locales/ar/legal.json'
 import arModules from '../locales/ar/modules.json'
 import arOrders from '../locales/ar/orders.json'
+import arPlatform from '../locales/ar/platform.json'
 import arPurchasing from '../locales/ar/purchasing.json'
 import arReports from '../locales/ar/reports.json'
 import arSales from '../locales/ar/sales.json'
@@ -28,8 +30,10 @@ import enDocuments from '../locales/en/documents.json'
 import enEmails from '../locales/en/emails.json'
 import enErrors from '../locales/en/errors.json'
 import enExpenses from '../locales/en/expenses.json'
+import enLegal from '../locales/en/legal.json'
 import enModules from '../locales/en/modules.json'
 import enOrders from '../locales/en/orders.json'
+import enPlatform from '../locales/en/platform.json'
 import enPurchasing from '../locales/en/purchasing.json'
 import enReports from '../locales/en/reports.json'
 import enSales from '../locales/en/sales.json'
@@ -80,6 +84,8 @@ export const en = {
   orders: enOrders,
   documents: enDocuments,
   stock: enStock,
+  legal: enLegal,
+  platform: enPlatform,
 } as const
 export type SourceMessages = typeof en
 
@@ -105,6 +111,8 @@ export const resources: Readonly<Record<Locale, Readonly<Record<Namespace, Messa
     orders: arOrders,
     documents: arDocuments,
     stock: arStock,
+    legal: arLegal,
+    platform: arPlatform,
   },
 }
 

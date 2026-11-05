@@ -109,6 +109,8 @@ export interface Api {
   handler: Handler
   emails: CapturedEmails
   newPerson: (metadata?: Record<string, unknown>) => Promise<Person>
+  /** The one platform admin of this API (the owner's beta page, D-357). */
+  platformAdmin: () => Promise<Person>
   close: () => Promise<void>
 }
 
@@ -123,13 +125,19 @@ export function openApi(router?: AnyRouter): Api {
   const db = connectApi()
   const admin = connectAdmin()
   const emails = new CapturedEmails()
+  const platformEmail = `platform-${newId()}@test.bizcost.local`
   const handler = handlerFor(
     db,
     router,
-    { supabaseSecretKey: SECRET_KEY, previewModules: PREVIEW_MODULES },
+    {
+      supabaseSecretKey: SECRET_KEY,
+      previewModules: PREVIEW_MODULES,
+      platformAdmins: [platformEmail],
+    },
     { emailSender: emails },
   )
   const users: TestUser[] = []
+  let platformAdmin: Promise<Person> | undefined
   return {
     db,
     admin,
@@ -139,6 +147,15 @@ export function openApi(router?: AnyRouter): Api {
       const user = await createUser(metadata)
       users.push(user)
       return { user, token: await mintToken(user) }
+    },
+    platformAdmin: () => {
+      platformAdmin ??= createUser({ locale: 'en' }, { email: platformEmail }).then(
+        async (user) => {
+          users.push(user)
+          return { user, token: await mintToken(user) }
+        },
+      )
+      return platformAdmin
     },
     close: async () => {
       for (const user of users) await deleteUser(user)
@@ -1383,6 +1400,7 @@ export async function createTenant(api: Api, label: string): Promise<Tenant> {
 
 /** A valid input for a business query that needs one, naming the tenant's own rows. */
 export function queryInputOf(path: string, tenant: Tenant): unknown {
+  if (path === 'platform.feedback') return {}
   if (path === 'material.get') return { id: tenant.material.id }
   if (path === 'product.get') return { id: tenant.product.id }
   if (path === 'supplier.get') return { id: tenant.supplier.id }

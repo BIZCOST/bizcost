@@ -274,7 +274,11 @@ const FILLED_DELIVERY = '11.47'
 const PRODUCT_PRICE = '99.99'
 const POOL_RENT = '8123.47'
 const POOL_BILL = '611.29'
-const POOL_TOTAL = '8734.76'
+/**
+ * Last month's costs, 8 734.76; on the 1st of a month the cups too (CUPS_BOUGHT, 25.97): they are bought
+ * yesterday, which is then in last month, and a material no product uses counts in its month's costs.
+ */
+const poolTotal = () => (today.endsWith('-01') ? '8760.73' : '8734.76')
 const HOURLY_RATE = '47.83'
 const costedValues = { cost: [] as string[], profit_margin: [] as string[] }
 const breakdownValues = {
@@ -298,7 +302,7 @@ async function readProfit() {
     groupBy: 'product',
   }
   const { data } = await asOwner<ProfitSummaryDto>('profit.summary', 'query', input)
-  expect(data.total).toMatchObject({ materials: RECIPE_COST, monthCosts: POOL_TOTAL })
+  expect(data.total).toMatchObject({ materials: RECIPE_COST, monthCosts: poolTotal() })
   profitValues.cost = [data.total.materials!, data.total.monthCosts!]
   profitValues.profit_margin = [data.total.profit!]
   return input
@@ -319,8 +323,8 @@ async function readCosted() {
     productId: costed.id,
   })
   expect(data.cost.complete, JSON.stringify(data.cost)).toBe(true)
-  expect(data.monthCosts.total).toBe(POOL_TOTAL)
-  costedValues.cost = [data.cost.materials!, data.cost.total!, POOL_RENT, POOL_BILL, POOL_TOTAL]
+  expect(data.monthCosts.total).toBe(poolTotal())
+  costedValues.cost = [data.cost.materials!, data.cost.total!, POOL_RENT, POOL_BILL, poolTotal()]
   costedValues.profit_margin = [data.margin.amount!, data.margin.percent!]
   breakdownValues.cost = costedValues.cost
   breakdownValues.profit_margin = costedValues.profit_margin

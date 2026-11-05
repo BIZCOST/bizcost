@@ -96,6 +96,7 @@ describe('assertRecentSignIn', () => {
     email: 'a@b.test',
     emailVerified: true,
     locale: 'en',
+    termsVersion: null,
     authenticatedAt,
   })
   const now = 1_800_000_000

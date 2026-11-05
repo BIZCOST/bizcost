@@ -114,6 +114,8 @@ export interface SetupReviewInput {
   readonly recommendation: Recommendation
   /** The current state (switch values). */
   readonly state: SetupState
+  /** Modules held back on this deployment (D-359): shown as not yet available, as planned ones. */
+  readonly heldModules?: readonly string[]
   /**
    * The state the groups are built from (default: `state`). Keep the one from the last capability
    * change, so toggling a module keeps its row in place; groups are recomputed when a capability
@@ -145,6 +147,7 @@ function capabilityOn(state: SetupState, key: CapabilityKey): boolean {
 
 export function buildSetupReview(input: SetupReviewInput): SetupReview {
   const { recommendation: rec, state } = input
+  const held: ReadonlySet<string> = new Set(input.heldModules ?? [])
   const layout = input.layout ?? state
   const answers = normalizeAnswers(input.answers).answers
   // Read with the current switches, so a reason never contradicts a statement the user flipped.
@@ -167,7 +170,7 @@ export function buildSetupReview(input: SetupReviewInput): SetupReview {
     enabled: state.modules.has(id),
     needsVat:
       manifestOf(id).requiresCapabilities.includes('vat_registered') && !state.vatRegistered,
-    availability: manifestOf(id).availability,
+    availability: held.has(id) ? 'planned' : manifestOf(id).availability,
   })
   const jobsRow = (textKey: I18nKey): Draft => ({
     item: JOBS_ITEM,

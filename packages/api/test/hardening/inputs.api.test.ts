@@ -29,7 +29,16 @@ import { newId } from '@bizcost/domain'
 import { QUESTION_SET_VERSION } from '@bizcost/modules'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { appRouter } from '../../src'
-import { handlerFor, mutate, SECRET_KEY, type CallResult } from '../helpers'
+import {
+  createUser,
+  deleteUser,
+  handlerFor,
+  mintToken,
+  mutate,
+  SECRET_KEY,
+  type CallResult,
+  type TestUser,
+} from '../helpers'
 import { CostScope, ProductCostsApi, tag } from '../product-costs'
 import { codeOf, line, ok, purchaseInput } from '../purchasing'
 import { BAKER, CapturedEmails, WORKSHOP } from '../settings'
@@ -61,12 +70,19 @@ import {
 //     NOT_FOUND for an id no row has: none of them makes a row.
 // The API runs with the modules still being built previewed (D-125; Stock since M4 Step 2).
 
+/** Who may call the owner's page's procedures here (D-357). */
+const PLATFORM_ADMIN = `inputs-platform-${newId()}@test.bizcost.local`
+
 class InputsApi extends ProductCostsApi {
   readonly emails = new CapturedEmails()
   override readonly handler = handlerFor(
     this.db,
     undefined,
-    { supabaseSecretKey: SECRET_KEY, previewModules: PREVIEW_MODULES },
+    {
+      supabaseSecretKey: SECRET_KEY,
+      previewModules: PREVIEW_MODULES,
+      platformAdmins: [PLATFORM_ADMIN],
+    },
     { emailSender: this.emails },
   )
 }
@@ -1429,6 +1445,17 @@ const BY_ID = MUTATIONS.filter((p) => {
   return keys.includes('id') && keys.every((k) => ['id', 'version', 'reason', 'pays'].includes(k))
 }).map((p) => p.path)
 
+async function platformToken(): Promise<string> {
+  const user = await createUser({ locale: 'en' }, { email: PLATFORM_ADMIN })
+  platformUsers.push(user)
+  return mintToken(user)
+}
+
+const platformUsers: TestUser[] = []
+afterAll(async () => {
+  for (const user of platformUsers) await deleteUser(user)
+})
+
 describe('idempotent creates replay safely', () => {
   it('every mutation that names its new row by a client id is here', () => {
     const naming = MUTATIONS.filter((p) => {
@@ -1500,7 +1527,9 @@ describe('idempotent creates replay safely', () => {
         ...(keys.has('version') ? { version: 1 } : {}),
         ...(keys.has('reason') ? { reason: 'Why' } : {}),
       }
-      const result = await shop.run(path, input)
+      const result = path.startsWith('platform.')
+        ? await mutate(api.handler, path, { token: await platformToken(), input })
+        : await shop.run(path, input)
       expect(codeOf(result), `${path}: ${result.raw}`).toBe('not_found')
     }
   })

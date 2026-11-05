@@ -1,3 +1,4 @@
+import { LEGAL_METADATA_KEY, LEGAL_VERSION } from '@bizcost/contracts'
 import type { Locale } from '@bizcost/domain'
 import { normalizeEmail, type AuthClient } from './client'
 import { emailRetryAt, sentRecently, type SentCode } from './email-retry'
@@ -67,7 +68,8 @@ export async function signUp(
   const { error } = await auth.signUp({
     email: address,
     password,
-    options: { data: { locale } },
+    // The form's box was ticked: `me` keeps the terms' version when it makes the profile (D-358).
+    options: { data: { locale, [LEGAL_METADATA_KEY]: LEGAL_VERSION } },
   })
   // Signed up again within a minute: only a new address is answered "too soon" (a registered one
   // gets the silent no-op). After this tab's own sign-up code to it, that code still works, so this

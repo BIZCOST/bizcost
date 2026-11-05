@@ -1,3 +1,4 @@
+import { LEGAL_VERSION } from '@bizcost/contracts'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { apiError, failOnce, fakeAuth, tooSoon } from '../test/fake-auth'
 import {
@@ -22,7 +23,8 @@ describe('signUp', () => {
     expect(calls.signUp).toHaveBeenCalledWith({
       email: 'sara@example.com',
       password: 'long-enough-1',
-      options: { data: { locale: 'ar' } },
+      // The form's box was ticked: the terms' version goes with the sign-up (D-358).
+      options: { data: { locale: 'ar', terms_version: LEGAL_VERSION } },
     })
   })
 

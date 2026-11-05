@@ -26,6 +26,28 @@
     "close": "Close",
     "keep": "Keep it"
   },
+  "feedback": {
+    "title": "Send feedback",
+    "hint": "Tell us what went wrong, what is missing or what you would like. We read everything.",
+    "message": "Your message",
+    "placeholder": "What did you try to do? What happened?",
+    "required": "Write your message first.",
+    "picture": "Add a picture (optional)",
+    "pictureChange": "Change the picture",
+    "pictureRemove": "Take the picture off",
+    "pictureInvalid": "Choose a PNG, JPEG or WebP picture of up to 10 MB that opens properly.",
+    "send": "Send",
+    "sending": "Sending…",
+    "sent": "Thank you. We received your message.",
+    "about": "It goes with the page you are on, your name and email and, inside a business, the business's name."
+  },
+  "terms": {
+    "title": "One thing before you go on",
+    "body": "BizCost is in a closed beta. To use it, please read and accept the terms of use and the privacy policy.",
+    "accept": "I accept",
+    "accepting": "Saving…",
+    "signOut": "Sign out"
+  },
   "status": {
     "saving": "Saving…",
     "sending": "Sending…",
@@ -55,6 +77,10 @@
     "main": "Main",
     "home": "Home",
     "account": "Account",
+    "feedback": "Send feedback",
+    "privacy": "Privacy policy",
+    "terms": "Terms of use",
+    "platform": "Beta",
     "accountMenu": "Account menu",
     "settings": "Settings",
     "dashboard": "Dashboard",

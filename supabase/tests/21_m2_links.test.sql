@@ -443,13 +443,22 @@ select is(
     'app.audit_rows()',
     'app.audit_staged_rows()',
     'app.create_business(uuid,text,text,text,uuid,uuid)',
+    'app.drop_signup_of_revoked_invitation()',
+    'app.drop_unconfirmed_signup(text)',
     'app.enforce_active_owner()',
     'app.file_upload_limits()',
     'app.guard_business_file()',
+    'app.guard_feedback()',
     'app.invitation_limits()',
     'app.is_active_member(uuid)',
     'app.my_business_ids()',
-    'app.preview_invitation(text)'
+    'app.my_verified_email()',
+    'app.platform_beta_add(text,text)',
+    'app.platform_beta_list()',
+    'app.platform_beta_remove(uuid)',
+    'app.platform_feedback(uuid,integer)',
+    'app.preview_invitation(text)',
+    'app.signup_allowed(text)'
   ],
   'the SECURITY DEFINER functions of app are exactly the known ones: the Costing Core added none (its triggers run as the caller), M3 Step 4 the audit per statement (D-259) and of the staged rows by import (D-262)'
 );

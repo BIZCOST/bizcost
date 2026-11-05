@@ -1,0 +1,112 @@
+{
+  "betaNotice": "BizCost is in a closed beta, free of charge, by invitation only. This page is written in plain words for the beta. A final version, reviewed by a lawyer, will replace it before anyone pays for BizCost.",
+  "operator": "Who \"we\" are: BizCost is run by its founder, and \"we\" on this page means the founder. The company that will run it is not settled yet; we will name it here before anyone pays for BizCost. Until then the founder is responsible for the service and answers at {{email}}.",
+  "version": "Version of 5 November 2026",
+  "contact": "Questions: {{email}}",
+  "links": {
+    "privacy": "Privacy policy",
+    "terms": "Terms of use"
+  },
+  "privacy": {
+    "title": "Privacy policy",
+    "intro": "BizCost helps a business know its real costs and profit. This page says what we keep, where we keep it, who else handles it, and what you can ask of us.",
+    "keep": {
+      "title": "What we keep",
+      "invited": "Before you have an account: if we invite you, your email address and our short note saying who you are, on our invitation list.",
+      "account": "Your account: your email address, your name, your language, your password, and which version of these terms you accepted and when. The password is stored only as a hash that cannot be read back.",
+      "business": "Your business: its names, tax registration number (TRN), trade licence, phones, email, address, bank details, logo, signature and stamp, as you enter them.",
+      "records": "What you enter to run the business: materials, products and services, recipes, suppliers, purchases and their receipts, expenses, running costs, sales and the files you import, customers and their contact details, orders, payments, quotations and invoices, with their pictures.",
+      "team": "Your team: the people you invite, their email addresses, names, roles and branches.",
+      "history": "A history of changes: who changed what in a business and when, with names and email addresses as they were at the time. It helps you see what happened and helps us fix faults.",
+      "feedback": "Feedback you send: your message, the page it came from (the page's link only, with no details after it), your name, your email, your business's name and any picture you attach.",
+      "technical": "Technical records: Internet addresses and the times of sign-ins, kept by our sign-in service to stop abuse, and short error reports when something breaks."
+    },
+    "cookies": {
+      "title": "Cookies",
+      "body": "We use cookies only for what the app needs: to keep you signed in, to remember your language and to remember the cards you hid. There is no advertising and no tracking of what you do on other sites."
+    },
+    "where": {
+      "title": "Where it is, and who handles it",
+      "intro": "Your data is stored and handled outside the UAE, by these companies, each only for its job:",
+      "supabase": "Supabase, in Mumbai, India: the database, the files and the sign-in.",
+      "vercel": "Vercel, in Mumbai, India: runs the app. Your requests pass through it.",
+      "resend": "Resend, with its records in the United States: sends our emails (sign-in codes, invitations and feedback). It sees the email address and the text of each email.",
+      "sentry": "Sentry, in the United States or another country: receives error reports. Before a report leaves, we remove amounts of cost, profit, margin and price, passwords, customers' details, what was typed and any details after the page's link.",
+      "cloudflare": "Cloudflare Turnstile, in any country where Cloudflare works: checks that a person, not a program, is signing in or creating an account. It sees your Internet address and browser details.",
+      "anthropic": "Anthropic, in the United States: its assistant Claude helps us read your feedback and turn it into fixes. It sees only the feedback we show it, with any picture you attach, and nothing else from your business's records.",
+      "mailbox": "Our own email provider, which can be in another country: a copy of your feedback (your message, name, email, business's name and page, without the picture) and what you write to {{email}} reach our mailbox there."
+    },
+    "use": {
+      "title": "What we use it for",
+      "run": "To run BizCost for you: to work out your costs and profit, and to show your data to you and to the people you let in.",
+      "contact": "To email you what the service needs: sign-in codes and invitations.",
+      "improve": "To fix faults and improve BizCost during the beta, through your feedback and error reports.",
+      "never": "We do not sell your data. We do not show advertising. We do not use your data for anything else without asking you first."
+    },
+    "who": {
+      "title": "Who can see your data",
+      "business": "Inside a business, each member sees what their role allows. Costs, profit and supplier prices stay hidden from a member whose role does not show them.",
+      "other": "Other businesses cannot see your data.",
+      "us": "We reach your data only when we must keep the service running, fix a fault you reported, answer what you asked of us, or follow the law."
+    },
+    "keeping": {
+      "title": "How long we keep it, and deleting",
+      "account": "We keep your data while your account is open. You can delete your account yourself on the account page, unless you are the only owner of a business with other members: then pass the business to someone first. Your account and sign-in go at once, and your name and email no longer show in the team list.",
+      "remains": "Your name or email can stay in some records after that: the history of changes of the businesses you were in, past invitations, our sign-in service's log, copies of feedback already in our mailbox, and our invitation list. Write to us to have them looked at.",
+      "business": "A business only you were in is then closed and nobody can open it, but its records stay stored for now. To have them erased, write to us: we erase them, unless the law requires us to keep them for a time, as it does for a business that issued tax invoices.",
+      "feedback": "Feedback you sent stays until we have dealt with it. Your name and email no longer show beside it once your account is deleted, but its text and picture stay, and so does the copy in our mailbox. Ask us and we will remove them.",
+      "backups": "Backups are kept for up to 7 days, then replaced."
+    },
+    "rights": {
+      "title": "What you can ask",
+      "body": "You can ask us for a copy of your data, to correct it or to erase it, and ask what we hold about you. Write to {{email}} and we will answer as soon as we can."
+    },
+    "changes": {
+      "title": "Changes",
+      "body": "If this policy changes in a way that matters, we will tell you in the app and ask you to accept it again."
+    }
+  },
+  "terms": {
+    "title": "Terms of use",
+    "intro": "By creating an account or using BizCost you accept these terms and our privacy policy.",
+    "who": {
+      "title": "Who can use it",
+      "invited": "During the beta only people we invited, and the people a business invites to its team, can have an account.",
+      "account": "You are responsible for what is done with your account. Keep your password and codes to yourself.",
+      "business": "When you create a business you confirm that you may enter its information, and you decide who else may see it."
+    },
+    "beta": {
+      "title": "It is a beta",
+      "free": "BizCost is free during the beta. We will tell you before that changes; nobody is charged without agreeing first.",
+      "changes": "It is still being built. Features may change, move or stop, and some may be off for your account. Faults can happen.",
+      "stop": "We may end the beta or close an account that breaks these terms. We will tell you in good time when we can, so you can ask for a copy of your data."
+    },
+    "numbers": {
+      "title": "The numbers are help, not advice",
+      "estimates": "Costs and profit are worked out from what you enter. Check them before you rely on them.",
+      "advice": "BizCost does not give accounting, tax or legal advice. You remain responsible for your books, your tax and the documents you give to others. Ask your accountant or tax agent when in doubt.",
+      "documents": "Check every quotation and document before you send it."
+    },
+    "yours": {
+      "title": "Your data stays yours",
+      "body": "What you enter belongs to you or your business. You let us store and process it only to run BizCost for you, as the privacy policy says."
+    },
+    "use": {
+      "title": "What you must not do",
+      "law": "Do not use BizCost for anything against the law, or enter data you have no right to enter.",
+      "abuse": "Do not try to reach another business's data, to break or overload the service, or to get around its limits."
+    },
+    "liability": {
+      "title": "No guarantee",
+      "body": "BizCost is given as it is during the beta, without a promise that it will always work or be free of faults. As far as the law allows, we are not responsible for lost profit or for decisions made from its numbers. Keep your own copy of anything you cannot afford to lose: your documents download as PDFs, and you can ask us for a copy of the rest."
+    },
+    "changes": {
+      "title": "Changes",
+      "body": "We may change these terms. If a change matters, we will tell you in the app and ask you to accept it again."
+    },
+    "contact": {
+      "title": "Talk to us",
+      "body": "Use \"Send feedback\" in the app, or write to {{email}}."
+    }
+  }
+}

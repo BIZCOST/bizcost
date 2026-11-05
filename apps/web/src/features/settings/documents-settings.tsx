@@ -674,9 +674,10 @@ function DocumentsForm({
                 <Textarea
                   aria-label={t(label)}
                   aria-invalid={Boolean(shown(errors[field]))}
-                  dir="auto"
+                  // Empty, it follows the page: an Arabic placeholder and caret stay on the right.
+                  dir={draft[field] ? 'auto' : undefined}
                   rows={rows}
-                  className="[unicode-bidi:plaintext]"
+                  className={draft[field] ? '[unicode-bidi:plaintext]' : undefined}
                   placeholder={t(placeholder)}
                   value={draft[field]}
                   onChange={(event) =>

@@ -155,7 +155,7 @@ describe('the totals block adds up as printed (prices that include VAT)', () => 
     )
   })
 
-  it('a 10 % discount on 1,050.00 with VAT prints Subtotal 1,050.00, Discount −105.00, then 900.00 before VAT', () => {
+  it('a 10 % discount on 1,050.00 with VAT: the rows add up, to 900.00 before VAT', () => {
     const input: SaleInput = {
       lines: [included('1050.00')],
       vatRegistered: true,

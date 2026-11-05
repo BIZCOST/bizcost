@@ -1,15 +1,26 @@
 name: DB migrate
 
 # Applies supabase/migrations to a hosted Supabase project, then the project settings of
-# supabase/config.toml (docs/ARCHITECTURE.md §Runbooks › Migrations). Manual only: never on a push or
-# a pull request. Each target is a GitHub Environment (Settings → Environments) that holds its
-# project's secrets:
+# supabase/config.toml with this environment's values, then reads the settings back
+# (docs/ARCHITECTURE.md §Runbooks › Migrations). The only way settings reach a project: never
+# `supabase config push` by hand, which would write the local stack's values and open sign-up (D-361).
+# Manual only: never on a push or a pull request. Each target is a GitHub Environment (Settings →
+# Environments) that holds its project's secrets:
 #   secrets  SUPABASE_ACCESS_TOKEN (a Supabase personal access token), SUPABASE_DB_PASSWORD (the
-#            project's postgres password), SUPABASE_PROJECT_REF (the 20-letter project ref)
+#            project's postgres password), SUPABASE_PROJECT_REF (the 20-letter project ref),
+#            SUPABASE_AUTH_EMAIL_SMTP_PASS (the Resend key for Auth's emails),
+#            SUPABASE_AUTH_CAPTCHA_SECRET (the Turnstile widget's secret key)
 #   variable APP_URL (the web app's origin, e.g. https://app.example.com): Auth's site URL
-# `production` has required reviewers, so a run waits for the owner's approval before it starts; both
-# environments allow the main branch only. Until the secrets exist, a run stops at its first step and
-# names the missing ones.
+# Both environments allow the main branch only. Until the secrets exist, a run stops at its first step
+# and names the missing ones.
+#
+# A real run on production needs its typed confirmation (the `gate` job, before any secret is read):
+# it is the only approval when the repository is private below GitHub Enterprise, where required
+# reviewers are not available (environment secrets need Pro or Team there, D-354). On a public
+# repository `production` also has required reviewers, so the run waits for the owner's approval too.
+# A dry run needs no typed confirmation, since it changes nothing, but its job still names the environment
+# to read the secrets, so on a public repository a dry run of `production` waits for that approval as
+# well: open the run → Review deployments → Approve.
 #
 # The access token works for every project of the owner's account, so the secrets reach only the
 # steps that talk to the project (step-level `env`), never the checkout or the CLI install, and the
@@ -28,6 +39,10 @@ on:
         description: Only show what would change (migrations and settings)
         type: boolean
         default: false
+      confirm:
+        description: 'A real run on production only: type  migrate production'
+        type: string
+        default: ''
 
 permissions:
   contents: read
@@ -38,32 +53,60 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  migrate:
+  # No environment and no secret here: a wrong answer stops the run before anything is read. The inputs
+  # reach the script through `env`, never pasted into it.
+  gate:
     # Migrations reach staging and production from main only (local → staging → production).
     if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: A real run on production is confirmed in words
+        env:
+          TARGET: ${{ inputs.environment }}
+          DRY_RUN: ${{ inputs.dry_run }}
+          CONFIRM: ${{ inputs.confirm }}
+        run: |
+          if [ "$TARGET" = "production" ] && [ "$DRY_RUN" != "true" ] && [ "$CONFIRM" != "migrate production" ]; then
+            echo "::error::A real run on production needs the confirm input to say: migrate production. Read the dry run's two lists first (docs/ARCHITECTURE.md, Runbooks, Migrations)."
+            exit 1
+          fi
+
+  migrate:
+    needs: gate
+    runs-on: ubuntu-24.04
     timeout-minutes: 30
     environment: ${{ inputs.environment }}
     steps:
       - name: Require the environment's secrets
         env:
+          TARGET: ${{ inputs.environment }}
           SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
           SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
           PROJECT_REF: ${{ secrets.SUPABASE_PROJECT_REF }}
+          SMTP_PASS: ${{ secrets.SUPABASE_AUTH_EMAIL_SMTP_PASS }}
+          CAPTCHA_SECRET: ${{ secrets.SUPABASE_AUTH_CAPTCHA_SECRET }}
           APP_URL: ${{ vars.APP_URL }}
         run: |
           missing=""
-          for name in SUPABASE_ACCESS_TOKEN SUPABASE_DB_PASSWORD PROJECT_REF APP_URL; do
+          for name in SUPABASE_ACCESS_TOKEN SUPABASE_DB_PASSWORD PROJECT_REF SMTP_PASS CAPTCHA_SECRET APP_URL; do
             [ -n "${!name}" ] || missing="$missing $name"
           done
           if [ -n "$missing" ]; then
-            echo "::error::The '${{ inputs.environment }}' environment lacks:$missing (PROJECT_REF is the secret SUPABASE_PROJECT_REF, APP_URL the variable)"
+            echo "::error::The '$TARGET' environment lacks:$missing (PROJECT_REF is the secret SUPABASE_PROJECT_REF, SMTP_PASS SUPABASE_AUTH_EMAIL_SMTP_PASS, CAPTCHA_SECRET SUPABASE_AUTH_CAPTCHA_SECRET, APP_URL the variable). A private repository below GitHub Pro has no environment secrets."
             exit 1
           fi
           case "$APP_URL" in
             https://*) ;;
             *) echo "::error::APP_URL must be an https:// origin"; exit 1 ;;
           esac
+      - name: Say when this run leaves sign-up open
+        env:
+          CLOSED_SIGNUP: ${{ vars.CLOSED_SIGNUP }}
+        run: |
+          if [ "$CLOSED_SIGNUP" = "false" ]; then
+            echo "::warning::CLOSED_SIGNUP is false: this run opens sign-up to anyone on this project."
+          fi
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
@@ -94,16 +137,23 @@ jobs:
           SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
           SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
         run: supabase db push --linked --dry-run
-      # What `config push` below would change (read-only). config.toml's site URL and redirect list are
-      # the local app's; the CLI reads SUPABASE_<SECTION>_<KEY> over config.toml, so the diff and the
-      # push both use the environment's APP_URL instead. Read it before the real run (runbook step 3):
+      # config.toml's site URL, redirect list, SMTP, CAPTCHA and closed sign-up are the local stack's, and
+      # the pinned CLI's `config diff` and `config push` read only the file, not SUPABASE_AUTH_* (D-361).
+      # So this run's own checkout gets the environment's values first; it is never committed. Sign-up
+      # stays closed unless the environment's variable CLOSED_SIGNUP says false (D-355).
+      - name: This environment's values in config.toml (this checkout only)
+        env:
+          APP_URL: ${{ vars.APP_URL }}
+          CLOSED_SIGNUP: ${{ vars.CLOSED_SIGNUP }}
+        run: node packages/config/ci/hosted-config.mjs
+      # What `config push` below would change (read-only). Read it before the real run (runbook step 3):
       # a setting the dashboard customized on purpose would be overwritten.
       - name: Project settings that would change (Auth, API, Storage)
         env:
           SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
           PROJECT_REF: ${{ secrets.SUPABASE_PROJECT_REF }}
-          SUPABASE_AUTH_SITE_URL: ${{ vars.APP_URL }}
-          SUPABASE_AUTH_ADDITIONAL_REDIRECT_URLS: ${{ vars.APP_URL }}
+          SUPABASE_AUTH_EMAIL_SMTP_PASS: ${{ secrets.SUPABASE_AUTH_EMAIL_SMTP_PASS }}
+          SUPABASE_AUTH_CAPTCHA_SECRET: ${{ secrets.SUPABASE_AUTH_CAPTCHA_SECRET }}
         run: supabase config diff --project-ref "$PROJECT_REF"
       - if: ${{ !inputs.dry_run }}
         name: Apply the migrations
@@ -116,8 +166,8 @@ jobs:
         env:
           SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
           PROJECT_REF: ${{ secrets.SUPABASE_PROJECT_REF }}
-          SUPABASE_AUTH_SITE_URL: ${{ vars.APP_URL }}
-          SUPABASE_AUTH_ADDITIONAL_REDIRECT_URLS: ${{ vars.APP_URL }}
+          SUPABASE_AUTH_EMAIL_SMTP_PASS: ${{ secrets.SUPABASE_AUTH_EMAIL_SMTP_PASS }}
+          SUPABASE_AUTH_CAPTCHA_SECRET: ${{ secrets.SUPABASE_AUTH_CAPTCHA_SECRET }}
         run: supabase config push --project-ref "$PROJECT_REF" --yes
       - if: ${{ !inputs.dry_run }}
         name: Migrations on the project after the push
@@ -125,3 +175,19 @@ jobs:
           SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
           SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
         run: supabase migration list --linked
+      # Last, and on a dry run too: what the project really has. A real run fails unless closed sign-up,
+      # CAPTCHA and SMTP are on and the site URL is the app's; a dry run only says so (a project's first
+      # dry run is before anything was pushed). The weekly release reads this line (runbook).
+      - name: Closed sign-up, CAPTCHA and SMTP on the project
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+          PROJECT_REF: ${{ secrets.SUPABASE_PROJECT_REF }}
+          APP_URL: ${{ vars.APP_URL }}
+          CLOSED_SIGNUP: ${{ vars.CLOSED_SIGNUP }}
+          DRY_RUN: ${{ inputs.dry_run }}
+        run: |
+          if [ "$DRY_RUN" = "true" ]; then
+            node packages/config/ci/check-hosted-auth.mjs --report
+          else
+            node packages/config/ci/check-hosted-auth.mjs
+          fi

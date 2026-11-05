@@ -1,8 +1,17 @@
 import type Decimal from 'decimal.js'
-import { compareDecimal, Dec, plain, roundHalfUp, toDec } from '../numbers/decimal'
+import {
+  compareDecimal,
+  Dec,
+  exactProduct,
+  plain,
+  pow10,
+  roundHalfUp,
+  toDec,
+} from '../numbers/decimal'
 import { checkDecimal } from '../numbers/kinds'
 import { currencyMinorUnit, fitsCurrency, type CurrencyCode } from '../numbers/rounding'
 import { proportionOf, splitDecimals, subtractDecimals, sumDecimals } from './split'
+import { vatIn } from './vat'
 
 // What is left to refund or credit on each line of a finalized sale, and how a refund line is made
 // (M3 Step 5; the plan's "credit maths"; VAT Executive Regulation Art. 60: a credit states the value
@@ -205,16 +214,29 @@ export function fitCredit(
 
 /**
  * What a credit note works its VAT out from at one rate (more than zero) of its invoice: the invoice's
- * VAT at that rate (after any deposit it took off), what the credit notes issued before took back at it
- * (their lines' amounts typed before VAT, `net`, and with VAT, `gross`, and their VAT), and whether this
- * one takes back all that is left of the invoice's lines at the rate.
+ * VAT at that rate (after any deposit it took off), and its lines priced before VAT and those priced
+ * with VAT, each kind on its own (D-365).
  */
 export interface CreditRateBasis {
   readonly vatRate: string
   readonly invoiceVat: string
-  readonly before: { readonly net: string; readonly gross: string; readonly vat: string }
+  readonly beforeVat: CreditRatePart
+  readonly withVat: CreditRatePart
+}
+
+/**
+ * One kind of price at the rate: the VAT the invoice's lines of that kind were charged, what the credit
+ * notes issued before took back of them (their amounts as typed and their VAT), and whether this one
+ * takes back all that is left of them.
+ */
+export interface CreditRatePart {
+  readonly charged: string
+  readonly before: { readonly typed: string; readonly vat: string }
   readonly takesAllLeft: boolean
 }
+
+/** PINT-AE aligned-ibrp-s-09's slack on a note's VAT against its taxable amount × the rate (0.02 in AED). */
+const CREDIT_NOTE_VAT_SLACK_MINOR_UNITS = 2
 
 /** A line of a credit note at the rate: what it takes back as its prices are typed (positive). */
 export interface CreditRateLine {
@@ -224,15 +246,19 @@ export interface CreditRateLine {
 
 /**
  * The VAT a credit note takes back at one rate, and its share on each of its lines (M3 Step 8 review;
- * PINT-AE aligned-ibrp-s-09 on every credit note, as on its invoice, D-220): the VAT of the running
- * total of the invoice's credit notes at the rate (this one's amounts added to those before them, the
- * VAT worked out once on the sum as computeSale does: prices without VAT times the rate, prices with
- * VAT their VAT inside) less the VAT the credit notes before took back, so each note's VAT is within a
- * fils of its taxable amount × the rate however many lines it takes, and the notes' VAT adds up to the
- * invoice's; the note that takes back all that is left takes exactly the VAT left. Never below zero nor
- * more than the VAT left. Shared over the lines by what each takes back (largest remainder): a line
- * keeps what it took as typed (its net, or its total when its price includes VAT), so its VAT and its
- * other amount move together. Returns the lines' VAT in order.
+ * PINT-AE aligned-ibrp-s-09 on every credit note, as on its invoice, D-220). Lines priced before VAT and
+ * lines priced with VAT are worked out apart, as computeSale works their invoice out (D-365): each
+ * kind's VAT is the VAT of the running total of the invoice's credit notes on that kind (this one's
+ * amounts added to those before them, the VAT worked out once on the sum: prices without VAT times the
+ * rate, prices with VAT their VAT inside) less the VAT the credit notes before took back of it, and the
+ * note that takes back all that is left of a kind takes exactly the VAT left on it. So each kind's VAT
+ * adds up to what its lines were charged, and a supply cancelled whole leaves nothing owed, however many
+ * notes it took. One kind's VAT is within a fils of its taxable amount × the rate; a note holding both
+ * kinds is within the rule's 0.02 slack. Never below zero nor more than the VAT left, of the kind and of
+ * the rate. Shared over the kind's lines by what each takes back (largest remainder), all in one basis,
+ * so a row's VAT stays near the rate on its before VAT: a line keeps what it took as typed (its net, or
+ * its total when its price includes VAT), so its VAT and its other amount move together. Returns the
+ * lines' VAT in order.
  */
 export function creditRateVat(
   basis: CreditRateBasis,
@@ -242,35 +268,66 @@ export function creditRateVat(
   const digits = currencyMinorUnit(currency)
   const r = toDec(basis.vatRate)
   if (!r.gt(0) || lines.length === 0) return lines.map(() => '0')
-  const net = lines
-    .filter((l) => !l.priceIncludesVat)
-    .reduce((a, l) => a.plus(toDec(l.typed)), toDec('0'))
-  const gross = lines
-    .filter((l) => l.priceIncludesVat)
-    .reduce((a, l) => a.plus(toDec(l.typed)), toDec('0'))
-  const before = toDec(basis.before.vat)
-  const left = Dec.max(toDec(basis.invoiceVat).minus(before), 0)
-  let vat: Decimal
-  if (basis.takesAllLeft) {
-    vat = left
-  } else {
-    const allNet = toDec(basis.before.net).plus(net)
-    const allGross = toDec(basis.before.gross).plus(gross)
-    // (net × rate × (100 + rate) + gross × rate × 100) ÷ (100 × (100 + rate)), divided once.
-    const exact = allNet
-      .times(r)
-      .times(r.plus(100))
-      .plus(allGross.times(r).times(100))
-      .dividedBy(r.plus(100).times(100))
-    vat = Dec.min(Dec.max(roundHalfUp(exact, digits).minus(before), 0), left)
+  const zero = toDec('0')
+  const kinds = [
+    {
+      withVat: false,
+      part: basis.beforeVat,
+      vatOf: (typed: Decimal) => roundHalfUp(exactProduct([typed, r]).dividedBy(100), digits),
+    },
+    {
+      withVat: true,
+      part: basis.withVat,
+      vatOf: (typed: Decimal) => vatIn(typed, basis.vatRate, digits),
+    },
+  ].map(({ withVat, part, vatOf }) => {
+    const at = lines.flatMap((l, i) => (l.priceIncludesVat === withVat ? [i] : []))
+    const weights = at.map((i) => toDec(lines[i]!.typed))
+    const typed = weights.reduce((a, w) => a.plus(w), zero)
+    const before = toDec(part.before.vat)
+    const left = Dec.max(toDec(part.charged).minus(before), 0)
+    // Never more VAT than is left of the kind, nor than what the lines priced with it hold.
+    const most = withVat ? Dec.min(left, typed) : left
+    const running = vatOf(toDec(part.before.typed).plus(typed)).minus(before)
+    const vat =
+      at.length === 0 ? zero : part.takesAllLeft ? most : Dec.min(Dec.max(running, 0), most)
+    return { at, weights, typed, part, most, vat }
+  })
+  const outside = kinds[0]!
+  const inside = kinds[1]!
+  // A deposit taken off at the rate leaves less than the kinds were charged: never past the rate's.
+  const rateLeft = Dec.max(
+    toDec(basis.invoiceVat)
+      .minus(toDec(outside.part.before.vat))
+      .minus(toDec(inside.part.before.vat)),
+    0,
+  )
+  const wanted = [outside.vat, inside.vat]
+  const capped = outside.vat.plus(inside.vat).gt(rateLeft)
+  const vats = capped ? splitDecimals(rateLeft, wanted, digits) : wanted
+  // Two kinds' roundings on one note can add up past the rule's slack (by under half a fils, about 3 in
+  // 10,000 notes that finish one kind and not the other): the kind still running gives a fils back, and
+  // its running total takes it up on its next note.
+  if (!capped && outside.at.length > 0 && inside.at.length > 0) {
+    const taxable = outside.typed.plus(inside.typed).minus(vats[1]!)
+    const off = vats[0]!.plus(vats[1]!).minus(exactProduct([taxable, r]).dividedBy(100))
+    const unit = pow10(-digits)
+    if (off.abs().gt(unit.times(CREDIT_NOTE_VAT_SLACK_MINOR_UNITS))) {
+      const k = inside.part.takesAllLeft ? 0 : 1
+      const kind = kinds[k]!
+      if (!kind.part.takesAllLeft) {
+        const moved = vats[k]!.plus(off.gt(0) ? unit.negated() : unit)
+        vats[k] = Dec.min(Dec.max(moved, 0), kind.most)
+      }
+    }
   }
-  // Never more VAT than what the lines priced with it hold, when only they credit at the rate.
-  if (net.isZero()) vat = Dec.min(vat, gross)
-  return splitDecimals(
-    vat,
-    lines.map((l) => toDec(l.typed)),
-    digits,
-  ).map((share) => plain(share))
+  const shares = lines.map(() => '0')
+  kinds.forEach((kind, k) => {
+    splitDecimals(vats[k]!, kind.weights, digits).forEach((share, j) => {
+      shares[kind.at[j]!] = plain(share)
+    })
+  })
+  return shares
 }
 
 /** What a set of credit lines takes back in all (positive): Σ of their nets, VAT and totals. */

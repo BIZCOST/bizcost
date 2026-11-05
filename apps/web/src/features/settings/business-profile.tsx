@@ -368,7 +368,6 @@ function DetailsForm({
             <TextField
               label={t('settings.business.letterhead.addressLine')}
               autoComplete="street-address"
-              dir="auto"
               readOnly={!canEdit}
               className="[unicode-bidi:plaintext] sm:col-span-2"
               placeholder={t('settings.business.letterhead.addressPlaceholder')}
@@ -413,7 +412,6 @@ function DetailsForm({
             />
             <TextField
               label={t('settings.business.letterhead.tradeLicenceAuthority')}
-              dir="auto"
               autoComplete="off"
               readOnly={!canEdit}
               className="[unicode-bidi:plaintext]"

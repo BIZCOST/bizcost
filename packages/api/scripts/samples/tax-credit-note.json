@@ -207,9 +207,25 @@
       "en": "Discount",
       "ar": "الخصم"
     },
-    "table.vat": {
+    "table.beforeVat": {
+      "en": "Before VAT",
+      "ar": "قبل الضريبة"
+    },
+    "table.vatHead.rate": {
+      "en": "VAT {{rate}}%",
+      "ar": "VAT {{rate}}%"
+    },
+    "table.vatHead.exempt": {
+      "en": "VAT exempt",
+      "ar": "VAT exempt"
+    },
+    "table.vatHead.mixed": {
       "en": "VAT",
-      "ar": "الضريبة"
+      "ar": "VAT"
+    },
+    "table.total": {
+      "en": "Total",
+      "ar": "الإجمالي"
     },
     "table.amount": {
       "en": "Amount",
@@ -459,6 +475,10 @@
       "en": "Total credited",
       "ar": "إجمالي المبلغ الدائن"
     },
+    "credit.payable": {
+      "en": "Credited in all",
+      "ar": "إجمالي المبلغ الدائن مع فرق التقريب"
+    },
     "credit.reason": {
       "en": "Reason for this credit note",
       "ar": "سبب الإشعار الدائن"
@@ -571,6 +591,42 @@
       "en": "Paid at the sale",
       "ar": "دُفع عند البيع"
     },
+    "statement.saleReversed": {
+      "en": "Sale reversed",
+      "ar": "إبطال عملية بيع"
+    },
+    "statement.refundReversed": {
+      "en": "Refund reversed",
+      "ar": "إبطال استرداد"
+    },
+    "statement.paymentReversed": {
+      "en": "Payment reversed",
+      "ar": "إبطال دفعة"
+    },
+    "statement.paymentReversedOn": {
+      "en": "Payment reversed – {{reference}}",
+      "ar": "إبطال دفعة – ⁦{{reference}}⁩"
+    },
+    "statement.money_backReversed": {
+      "en": "Money given back, reversed",
+      "ar": "إبطال مبلغ أُعيد للعميل"
+    },
+    "statement.money_backReversedOn": {
+      "en": "Money given back, reversed – {{reference}}",
+      "ar": "إبطال مبلغ أُعيد للعميل – ⁦{{reference}}⁩"
+    },
+    "statement.owedThroughOrder": {
+      "en": "Already owed for order {{order}}: {{amount}}",
+      "ar": "مستحق سابقًا عن الطلب ⁦{{order}}⁩: {{amount}}"
+    },
+    "statement.owedThroughSale": {
+      "en": "Already owed for the sale: {{amount}}",
+      "ar": "مستحق سابقًا عن عملية البيع: {{amount}}"
+    },
+    "statement.stillOwedOrder": {
+      "en": "Still owed for order {{order}}: {{amount}}",
+      "ar": "ما زال مستحقًا عن الطلب ⁦{{order}}⁩: {{amount}}"
+    },
     "statement.ahead": {
       "en": "paid ahead",
       "ar": "مدفوع مقدّمًا"
@@ -578,6 +634,22 @@
     "statement.closingAhead": {
       "en": "Paid ahead at the end",
       "ar": "مدفوع مقدّمًا في النهاية"
+    },
+    "statement.invoiced_plain": {
+      "en": "Orders and sales",
+      "ar": "الطلبات والمبيعات"
+    },
+    "statement.credited_plain": {
+      "en": "Refunded",
+      "ar": "المسترد"
+    },
+    "statement.charge_plain": {
+      "en": "Orders and sales",
+      "ar": "الطلبات والمبيعات"
+    },
+    "statement.credit_plain": {
+      "en": "Payments and refunds",
+      "ar": "الدفعات والاستردادات"
     }
   },
   "title": {
@@ -661,8 +733,9 @@
   "table": {
     "showPictures": false,
     "showAreas": false,
-    "showDiscount": false,
-    "showVat": true
+    "showDiscount": true,
+    "rows": "tax",
+    "vatHead": "VAT 5%"
   },
   "lines": [
     {
@@ -678,9 +751,31 @@
       "qty": "100",
       "unit": "م²",
       "unitPrice": "18.00",
-      "discount": null,
-      "vatRate": "5%",
-      "amount": "1,800.00",
+      "discount": "0.00",
+      "vatRate": null,
+      "beforeVat": "1,800.00",
+      "vatAmount": "90.00",
+      "amount": "1,890.00",
+      "includesVat": false
+    },
+    {
+      "no": 2,
+      "area": null,
+      "picture": null,
+      "title": {
+        "text": "Labour",
+        "dir": "ltr"
+      },
+      "details": null,
+      "note": null,
+      "qty": "1",
+      "unit": null,
+      "unitPrice": "650.00",
+      "discount": "65.00",
+      "vatRate": null,
+      "beforeVat": "585.00",
+      "vatAmount": "29.25",
+      "amount": "614.25",
       "includesVat": false
     }
   ],
@@ -698,7 +793,7 @@
         "en": "Correct value of the supply",
         "ar": "القيمة الصحيحة للتوريد"
       },
-      "amount": "11,925.00",
+      "amount": "11,340.00",
       "strong": false
     },
     {
@@ -706,7 +801,7 @@
         "en": "Difference",
         "ar": "الفرق"
       },
-      "amount": "1,800.00",
+      "amount": "2,385.00",
       "strong": false
     },
     {
@@ -714,7 +809,7 @@
         "en": "VAT 5% on the difference",
         "ar": "ضريبة القيمة المضافة 5% على الفرق"
       },
-      "amount": "90.00",
+      "amount": "119.25",
       "strong": false
     },
     {
@@ -722,7 +817,7 @@
         "en": "Total credited",
         "ar": "إجمالي المبلغ الدائن"
       },
-      "amount": "1,890.00",
+      "amount": "2,504.25",
       "strong": true
     }
   ],
@@ -734,7 +829,7 @@
       "ar": "تغيّر السعر"
     },
     "text": {
-      "text": "100 m² of painting were not done: the client painted the store room himself.",
+      "text": "100 m² of painting and one day of labour were not done: the client painted the store room himself.",
       "dir": "ltr"
     }
   },

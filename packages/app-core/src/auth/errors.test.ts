@@ -1,3 +1,4 @@
+import { BETA_REFUSED_MESSAGE } from '@bizcost/contracts'
 import { hasMessage, LOCALES } from '@bizcost/i18n'
 import {
   AuthRetryableFetchError,
@@ -14,6 +15,24 @@ import {
   passwordErrorField,
   SILENT_ERROR_CODES,
 } from './errors'
+
+describe('closed sign-up (D-355)', () => {
+  it('reads the Auth hook’s refusal by its own words, never another 403', () => {
+    expect(authErrorKey({ status: 403, code: 'unknown', message: BETA_REFUSED_MESSAGE })).toBe(
+      'auth.errors.betaInviteOnly',
+    )
+    expect(authErrorKey({ status: 403, code: 'unknown', message: 'Forbidden' })).toBe(
+      'errors.internal',
+    )
+    expect(authErrorKey({ status: 400, message: BETA_REFUSED_MESSAGE })).toBe('errors.internal')
+  })
+
+  it('is never hidden as "looks sent": the person must be told', () => {
+    const refusal = { status: 403, code: 'unknown', message: BETA_REFUSED_MESSAGE }
+    expect(isSilentError(refusal, 'signUp')).toBe(false)
+    expect(isSilentError(refusal, 'signInCode')).toBe(false)
+  })
+})
 
 describe('authErrorKey', () => {
   it('maps Supabase error codes to i18n keys', () => {

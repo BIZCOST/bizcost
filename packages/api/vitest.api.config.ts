@@ -1,5 +1,6 @@
 import { execSync } from 'node:child_process'
 import { fileURLToPath } from 'node:url'
+import { timeBudget } from '@bizcost/config/vitest/budget'
 import { defineConfig, mergeConfig } from 'vitest/config'
 import unitConfig from './vitest.config.ts'
 
@@ -59,8 +60,8 @@ const config = mergeConfig(
         ),
       },
       fileParallelism: false,
-      testTimeout: 20_000,
-      hookTimeout: 60_000,
+      testTimeout: timeBudget(20_000),
+      hookTimeout: timeBudget(60_000),
     },
   }),
 )

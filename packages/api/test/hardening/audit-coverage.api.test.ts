@@ -1,4 +1,5 @@
 import { randomBytes } from 'node:crypto'
+import { LEGAL_VERSION } from '@bizcost/contracts'
 import type {
   CountDto,
   CreditNoteDto,
@@ -625,7 +626,74 @@ async function asOwner(path: string, input?: unknown): Promise<Done> {
   }
 }
 
+const NOT_BUSINESS_DATA =
+  'the operator’s rows, outside any business, with their own actor columns (D-355, D-356); audit_log ' +
+  'belongs to a business'
+
 const AUDIT: Record<string, AuditProbe> = {
+  'account.acceptTerms': {
+    noAudit: 'writes only the caller’s own profile; profiles are account rows (D-050, D-358)',
+    run: async () => ({
+      result: await call(tenant.admin, 'account.acceptTerms', 'mutation', {
+        termsVersion: LEGAL_VERSION,
+      }),
+      actor: tenant.admin.user,
+      businessId: tenant.id,
+    }),
+  },
+  'feedback.imageUploadUrl': {
+    noAudit: NOT_BUSINESS_DATA,
+    run: async () => ({
+      result: await call(tenant.admin, 'feedback.imageUploadUrl', 'mutation', {
+        contentType: 'image/png',
+      }),
+      actor: tenant.admin.user,
+      businessId: tenant.id,
+    }),
+  },
+  'feedback.send': {
+    noAudit: NOT_BUSINESS_DATA,
+    run: async () => ({
+      result: await call(tenant.admin, 'feedback.send', 'mutation', {
+        message: 'Audit probe',
+        pagePath: '/',
+      }),
+      actor: tenant.admin.user,
+      businessId: tenant.id,
+    }),
+  },
+  'platform.betaAdd': {
+    noAudit: NOT_BUSINESS_DATA,
+    run: async () => {
+      const person = await api.platformAdmin()
+      const result = await callProcedure(
+        api.handler,
+        { path: 'platform.betaAdd', type: 'mutation' },
+        person.token,
+        { input: { email: `audit-${newId()}@test.bizcost.local` } },
+      )
+      return { result, actor: person.user, businessId: tenant.id }
+    },
+  },
+  'platform.betaRemove': {
+    noAudit: NOT_BUSINESS_DATA,
+    run: async () => {
+      const person = await api.platformAdmin()
+      const added = await callProcedure<{ id: string }>(
+        api.handler,
+        { path: 'platform.betaAdd', type: 'mutation' },
+        person.token,
+        { input: { email: `audit-${newId()}@test.bizcost.local` } },
+      )
+      const result = await callProcedure(
+        api.handler,
+        { path: 'platform.betaRemove', type: 'mutation' },
+        person.token,
+        { input: { id: added.data?.id } },
+      )
+      return { result, actor: person.user, businessId: tenant.id }
+    },
+  },
   'account.updateProfile': {
     run: async () => {
       // A new name is copied to the caller's memberships (D-065): those rows are audited.
@@ -1829,7 +1897,10 @@ describe('audit coverage', () => {
         procedure.path === 'invitation.preview'
           ? { token: tenant.invitationToken }
           : queryInputOf(procedure.path, tenant)
-      const result = await callProcedure(api.handler, procedure, tenant.owner.token, {
+      const token = procedure.path.startsWith('platform.')
+        ? (await api.platformAdmin()).token
+        : tenant.owner.token
+      const result = await callProcedure(api.handler, procedure, token, {
         businessId: procedure.base === 'business' ? tenant.id : undefined,
         input,
       })

@@ -3,7 +3,7 @@ import { newId, subtractDecimals, sumDecimals } from '@bizcost/domain'
 import { afterAll, describe, expect, it } from 'vitest'
 import { codeOf, ok } from './purchasing'
 import { quoteTyped } from './quotations'
-import { InvoiceScope, InvoicesApi, typed } from './invoices'
+import { InvoiceScope, InvoicesApi, product, typed } from './invoices'
 
 // Credit notes that bill less and credit notes that lower the price (ROADMAP.md M3 Step 8; Q3, A2;
 // D-305): a credit note posts a negative sale only once the work its invoice bills has counted (a
@@ -62,6 +62,67 @@ describe('a deposit invoice credited before the final invoice', () => {
     expect((await salesOf(scope, 'order')).map((s) => s.total)).toEqual(['10500'])
     const owed = await scope.receivables({ customerId: customer.id })
     expect(owed.owed).toBe('10500')
+  }, 60_000)
+})
+
+describe('a rate holding prices before VAT and with VAT (D-365)', () => {
+  /** An issued invoice of 1,000.00 before VAT and 1,050.00 with VAT, 5 % on both. */
+  async function mixed() {
+    const { scope, customer } = await opened()
+    const before = await scope.service('1000')
+    const withVat = await scope.service('1050', { priceIncludesVat: true })
+    const invoice = await scope.issued({
+      customerId: customer.id,
+      lines: [product(before.id, '1', '1000'), product(withVat.id, '1', '1050')],
+    })
+    expect(invoice).toMatchObject({ netTotal: '2000', vatTotal: '100', total: '2100' })
+    return { scope, customer, invoice }
+  }
+
+  it('cancelled whole: 50.00 on each row, nothing owed, and the note reads as cancelling all of it', async () => {
+    const { scope, customer, invoice } = await mixed()
+    const note = await scope.credit(invoice.id, {
+      by: 'quantity',
+      reason: 'cancelled',
+      reasonText: 'The job was cancelled',
+      lines: invoice.lines.map((l) => ({ invoiceLineId: l.id, qty: l.qty })),
+    })
+    expect(note.lines.map((l) => [l.net, l.vat, l.total])).toEqual([
+      ['1000', '50', '1050'],
+      ['1000', '50', '1050'],
+    ])
+    expect(note).toMatchObject({ netTotal: '2000', vatTotal: '100', total: '2100' })
+    // ER Art. 60(1)(e): the supply was 2,000.00 and is now nothing; this note took back all of it.
+    expect(note.values).toEqual({
+      valueBefore: '2000',
+      valueAfter: '0',
+      difference: '2000',
+      vat: '100',
+    })
+    const owed = await scope.receivables({ customerId: customer.id })
+    expect(owed.owed).toBe('0')
+  }, 60_000)
+
+  it('cancelled in two notes by amount: each row at 5 %, nothing owed at the end', async () => {
+    const { scope, customer, invoice } = await mixed()
+    const half = invoice.lines.map((l) => ({
+      invoiceLineId: l.id,
+      amount: l.priceIncludesVat ? '525' : '500',
+    }))
+    for (const reasonText of ['First half', 'Second half']) {
+      const note = await scope.credit(invoice.id, {
+        by: 'amount',
+        reason: 'cancelled',
+        reasonText,
+        lines: half,
+      })
+      expect(note.lines.map((l) => [l.net, l.vat, l.total])).toEqual([
+        ['500', '25', '525'],
+        ['500', '25', '525'],
+      ])
+    }
+    const owed = await scope.receivables({ customerId: customer.id })
+    expect(owed.owed).toBe('0')
   }, 60_000)
 })
 

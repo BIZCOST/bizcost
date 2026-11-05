@@ -1,4 +1,4 @@
-import { secureSessionCookies } from '@bizcost/contracts'
+import { LEGAL_METADATA_KEY, secureSessionCookies } from '@bizcost/contracts'
 import { isLocale, isUuid, type Locale } from '@bizcost/domain'
 import { createServerClient, parseCookieHeader, serializeCookieHeader } from '@supabase/ssr'
 import {
@@ -28,6 +28,11 @@ export interface AuthUser {
   readonly emailVerified: boolean
   /** user_metadata.locale when it is a supported locale (kept in sync with profiles.locale). */
   readonly locale: Locale | null
+  /**
+   * The terms version ticked on the sign-up form (user_metadata.terms_version): what the person says
+   * they accepted, copied to the profile when `me` makes it (D-358). Writable by them, as it should be.
+   */
+  readonly termsVersion: string | null
   /**
    * When the user last proved who they are in this session (seconds since the epoch): the newest
    * `amr` entry (a password sign-in, or an emailed code they entered). Null when the token has no
@@ -156,6 +161,8 @@ export function userFromClaims(algorithm: string | undefined, claims: JwtPayload
     email,
     emailVerified: email !== null && metadata.email_verified === true,
     locale: isLocale(metadata.locale) ? metadata.locale : null,
+    termsVersion:
+      typeof metadata[LEGAL_METADATA_KEY] === 'string' ? metadata[LEGAL_METADATA_KEY] : null,
     authenticatedAt: authenticatedAtOf(claims.amr),
   }
 }

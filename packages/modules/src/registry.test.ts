@@ -19,10 +19,66 @@ import {
   type NavEntry,
 } from './manifests'
 import { keysMissingNeeds, PERMISSION_CATALOG, type PermissionKey } from './permissions'
+import { buildModuleNav, isModuleActive, parseHeldModules, withHeldModules } from './registry'
 import { ROLE_TEMPLATE_KEYS, ROLE_TEMPLATES } from './role-templates'
 
 const byId = new Map(MODULES.map((m) => [m.id, m]))
 const catalog = new Set<string>(PERMISSION_CATALOG)
+
+describe('modules held back on a deployment (D-359)', () => {
+  it('reads known modules, in registry order, once each; commas or spaces', () => {
+    expect(parseHeldModules(undefined).ids).toEqual([])
+    expect(parseHeldModules('').ids).toEqual([])
+    expect(parseHeldModules('invoices').ids).toEqual(['invoices'])
+    expect(parseHeldModules(' invoices , invoices  quotations ').ids).toEqual([
+      'quotations',
+      'invoices',
+    ])
+  })
+
+  it('names what cannot be held: an unknown module, Dashboard, Settings', () => {
+    expect(parseHeldModules('invoice,settings,dashboard,invoices').invalid).toEqual([
+      'invoice',
+      'settings',
+      'dashboard',
+    ])
+  })
+
+  it('a module others need must be held with them', () => {
+    expect(parseHeldModules('invoices').dependents).toEqual([])
+    const sales = parseHeldModules('sales').dependents
+    expect(sales).toContainEqual({ module: 'invoices', needs: 'sales' })
+    expect(parseHeldModules('sales,invoices').dependents).not.toContainEqual({
+      module: 'invoices',
+      needs: 'sales',
+    })
+  })
+
+  it('a held module stops being released; nothing else changes', () => {
+    const held = withHeldModules(['invoices'])
+    expect(held.find((m) => m.id === 'invoices')?.availability).toBe('planned')
+    const others = held.filter((m) => m.id !== 'invoices')
+    expect(others).toEqual(MODULES.filter((m) => m.id !== 'invoices'))
+    expect(withHeldModules([])).toBe(MODULES)
+  })
+
+  it('its nav and "+" go, with its gate: the same rules as a module not yet built', () => {
+    const modules = withHeldModules(['invoices'])
+    const enabled = new Set([
+      'invoices',
+      'quotations',
+      'products',
+      'customers',
+      'payments',
+      'sales',
+    ])
+    const invoices = modules.find((m) => m.id === 'invoices')!
+    expect(isModuleActive(invoices, enabled)).toBe(false)
+    const nav = buildModuleNav(enabled, () => true, modules)
+    expect(nav.map((m) => m.id)).not.toContain('invoices')
+    expect(nav.map((m) => m.id)).toContain('quotations')
+  })
+})
 
 describe('module manifests', () => {
   it('cover every module of PRODUCT.md §7, once, in MODULE_IDS order', () => {

@@ -27,11 +27,19 @@ import { reportApiError } from '../report-error'
 
 let deps: ApiDeps | undefined
 
+/**
+ * Connections of one server instance. Under Vercel's Fluid compute an instance answers many requests
+ * at once, and a transaction holds its connection throughout, so a pool of 1 makes every request wait
+ * for a long one (a purchase that fills thousands of sale lines). The transaction pooler shares its
+ * server connections, so these stay few (D-353).
+ */
+const INSTANCE_POOL_SIZE = 5
+
 function apiDeps(): ApiDeps {
   if (!deps) {
     const env = serverEnv()
     deps = {
-      db: createDb(env.databaseUrl),
+      db: createDb(env.databaseUrl, { max: INSTANCE_POOL_SIZE, ca: env.databaseCaCert }),
       config: {
         supabaseUrl: env.supabaseUrl,
         supabasePublishableKey: env.supabasePublishableKey,
@@ -42,6 +50,9 @@ function apiDeps(): ApiDeps {
         appUrl: env.appUrl,
         email: env.email,
         previewModules: env.previewModules,
+        heldModules: env.heldModules,
+        platformAdmins: env.platformAdmins,
+        feedbackEmail: env.feedbackEmail,
       },
       reportError: reportApiError,
     }
@@ -59,11 +70,17 @@ export function apiHandler(): (req: Request) => Promise<Response> {
 
 /**
  * The module registry this server runs with, as the API's gates see it: the manifests, with the
- * dev-only preview counted as released in development and test (moduleRegistry, D-125). A module's
+ * dev-only preview counted as released in development and test (D-125), without the modules this
+ * deployment holds back (D-359; moduleRegistry). A module's
  * pages exist only while it is released here; elsewhere its address is "Page not found".
  */
 export function serverModules(): readonly ModuleManifest[] {
   return moduleRegistry(apiDeps().config, process.env.NODE_ENV)
+}
+
+/** The released modules this deployment holds back (D-359), for what the browser shows of them. */
+export function heldModules(): readonly string[] {
+  return apiDeps().config.heldModules ?? []
 }
 
 /** Whether module `id` is released on this server (its pages exist). */

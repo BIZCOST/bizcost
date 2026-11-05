@@ -30,14 +30,12 @@ const nextConfig: NextConfig = {
   ],
   headers: async () => [{ source: '/:path*', headers: securityHeaders }],
   // The documents' PDFs (M3 Step 7, D-224) render in a worker thread of the API function, from files
-  // the bundler never sees: the worker, the template, the four IBM Plex fonts and the Typst compiler's
-  // WebAssembly. They are traced into the function so a deployed build has them next to it.
+  // the bundler never sees: the worker, the template and the four IBM Plex fonts are traced into the
+  // function here. Turbopack's includes skip node_modules, so the Typst compiler and its WebAssembly get
+  // there through packages/api/src/documents/pdf/deploy-trace.ts (D-353); CI renders from the trace alone.
+  serverExternalPackages: ['@myriaddreamin/typst.ts', '@myriaddreamin/typst-ts-web-compiler'],
   outputFileTracingIncludes: {
-    '/api/trpc/[trpc]': [
-      '../../packages/api/src/documents/pdf/**/*',
-      '../../node_modules/@myriaddreamin/typst.ts/**/*',
-      '../../node_modules/@myriaddreamin/typst-ts-web-compiler/**/*',
-    ],
+    '/api/trpc/[trpc]': ['../../packages/api/src/documents/pdf/**/*'],
   },
 }
 

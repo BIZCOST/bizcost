@@ -22,7 +22,7 @@
       },
       "address": {
         "title": "Add your business address",
-        "todo": "Your quotations and invoices print it on your letterhead, with your phone and email.",
+        "todo": "Your documents print it on your letterhead, with your phone and email.",
         "done": "Your address is saved.",
         "action": "Add address"
       },

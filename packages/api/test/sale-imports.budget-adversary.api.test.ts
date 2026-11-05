@@ -1,3 +1,4 @@
+import { timeBudget } from '@bizcost/config/vitest/budget'
 import { createHash } from 'node:crypto'
 import type { ProductDto, SaleImportDto } from '@bizcost/contracts'
 import { IMPORT_ROWS_CHUNK } from '@bizcost/contracts'
@@ -25,7 +26,7 @@ import { CAFE } from './sales'
 // same 50,000 rows stay SHOP_ITEMS × 31 day × item totals. Products are plain (no recipe), so the
 // finalizing has less to cost than the step's own test.
 
-const FILE_BUDGET_MS = 10_000
+const FILE_BUDGET_MS = timeBudget(10_000)
 const FILE_ROWS = 50_000
 const SHOP_ITEMS = 1000
 

@@ -20,6 +20,7 @@ const costly = z.object({ name: z.string(), cost: sensitive(zDecimal, 'cost') })
 describe('appRouter contract', () => {
   it('serves exactly the M1, M2 and M3 procedures and those of M4 so far', () => {
     expect(Object.keys(appRouter._def.procedures).sort()).toEqual([
+      'account.acceptTerms',
       'account.delete',
       'account.setLastBusiness',
       'account.updateProfile',
@@ -117,6 +118,8 @@ describe('appRouter contract', () => {
       'expensePayment.list',
       'expensePayment.record',
       'expensePayment.reverse',
+      'feedback.imageUploadUrl',
+      'feedback.send',
       'health',
       'importProfile.list',
       'importProfile.remove',
@@ -171,6 +174,10 @@ describe('appRouter contract', () => {
       'order.update',
       'payable.list',
       'payable.mine',
+      'platform.betaAdd',
+      'platform.betaList',
+      'platform.betaRemove',
+      'platform.feedback',
       'product.archive',
       'product.costs',
       'product.create',

@@ -1,3 +1,4 @@
+import { timeBudget } from '@bizcost/config/vitest/budget'
 import { defineConfig, mergeConfig } from 'vitest/config'
 import unitConfig from './vitest.config.ts'
 
@@ -17,8 +18,8 @@ const config = mergeConfig(
           'postgresql://bizcost_api:bizcost_local_dev@127.0.0.1:54322/postgres',
       },
       fileParallelism: false,
-      testTimeout: 20_000,
-      hookTimeout: 30_000,
+      testTimeout: timeBudget(20_000),
+      hookTimeout: timeBudget(30_000),
     },
   }),
 )

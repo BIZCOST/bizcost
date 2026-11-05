@@ -13,7 +13,7 @@ import { loadBusinessAccess, type BusinessAccess } from './access'
 import { memoized, type Context } from './context'
 import { AppError, formatError, toAppError } from './errors'
 import { redactionFailure, redactOutput } from './redact'
-import { isDeletedAccount } from './services/profile'
+import { isDeletedAccount, isPlatformAdmin } from './services/profile'
 
 // tRPC setup and the procedure bases (docs/ARCHITECTURE.md §API & request flow, §Permissions).
 // Middleware order on every procedure:
@@ -344,6 +344,17 @@ export function assertQueryable(
     }
   }
 }
+
+/**
+ * Platform admins only (BIZCOST_PLATFORM_ADMINS, D-357): the owner's beta page. FORBIDDEN for everyone
+ * else, whatever their roles: no tenant role reaches it. No sensitive fields, no business.
+ */
+const platformAdmin = authed.unstable_pipe(async ({ ctx, next }) => {
+  if (!(await isPlatformAdmin(ctx, ctx.auth))) throw new AppError('forbidden')
+  return next()
+})
+
+export const platformProcedure = base.use(openAccount).use(platformAdmin).use(redact)
 
 /** Middleware identities for the contract tests (every procedure is redacted, sensitive ones scoped). */
 export const middlewareMarkers: {

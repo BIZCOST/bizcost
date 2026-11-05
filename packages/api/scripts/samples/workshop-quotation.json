@@ -207,9 +207,25 @@
       "en": "Discount",
       "ar": "الخصم"
     },
-    "table.vat": {
+    "table.beforeVat": {
+      "en": "Before VAT",
+      "ar": "قبل الضريبة"
+    },
+    "table.vatHead.rate": {
+      "en": "VAT {{rate}}%",
+      "ar": "VAT {{rate}}%"
+    },
+    "table.vatHead.exempt": {
+      "en": "VAT exempt",
+      "ar": "VAT exempt"
+    },
+    "table.vatHead.mixed": {
       "en": "VAT",
-      "ar": "الضريبة"
+      "ar": "VAT"
+    },
+    "table.total": {
+      "en": "Total",
+      "ar": "الإجمالي"
     },
     "table.amount": {
       "en": "Amount",
@@ -459,6 +475,10 @@
       "en": "Total credited",
       "ar": "إجمالي المبلغ الدائن"
     },
+    "credit.payable": {
+      "en": "Credited in all",
+      "ar": "إجمالي المبلغ الدائن مع فرق التقريب"
+    },
     "credit.reason": {
       "en": "Reason for this credit note",
       "ar": "سبب الإشعار الدائن"
@@ -571,6 +591,42 @@
       "en": "Paid at the sale",
       "ar": "دُفع عند البيع"
     },
+    "statement.saleReversed": {
+      "en": "Sale reversed",
+      "ar": "إبطال عملية بيع"
+    },
+    "statement.refundReversed": {
+      "en": "Refund reversed",
+      "ar": "إبطال استرداد"
+    },
+    "statement.paymentReversed": {
+      "en": "Payment reversed",
+      "ar": "إبطال دفعة"
+    },
+    "statement.paymentReversedOn": {
+      "en": "Payment reversed – {{reference}}",
+      "ar": "إبطال دفعة – ⁦{{reference}}⁩"
+    },
+    "statement.money_backReversed": {
+      "en": "Money given back, reversed",
+      "ar": "إبطال مبلغ أُعيد للعميل"
+    },
+    "statement.money_backReversedOn": {
+      "en": "Money given back, reversed – {{reference}}",
+      "ar": "إبطال مبلغ أُعيد للعميل – ⁦{{reference}}⁩"
+    },
+    "statement.owedThroughOrder": {
+      "en": "Already owed for order {{order}}: {{amount}}",
+      "ar": "مستحق سابقًا عن الطلب ⁦{{order}}⁩: {{amount}}"
+    },
+    "statement.owedThroughSale": {
+      "en": "Already owed for the sale: {{amount}}",
+      "ar": "مستحق سابقًا عن عملية البيع: {{amount}}"
+    },
+    "statement.stillOwedOrder": {
+      "en": "Still owed for order {{order}}: {{amount}}",
+      "ar": "ما زال مستحقًا عن الطلب ⁦{{order}}⁩: {{amount}}"
+    },
     "statement.ahead": {
       "en": "paid ahead",
       "ar": "مدفوع مقدّمًا"
@@ -578,6 +634,22 @@
     "statement.closingAhead": {
       "en": "Paid ahead at the end",
       "ar": "مدفوع مقدّمًا في النهاية"
+    },
+    "statement.invoiced_plain": {
+      "en": "Orders and sales",
+      "ar": "الطلبات والمبيعات"
+    },
+    "statement.credited_plain": {
+      "en": "Refunded",
+      "ar": "المسترد"
+    },
+    "statement.charge_plain": {
+      "en": "Orders and sales",
+      "ar": "الطلبات والمبيعات"
+    },
+    "statement.credit_plain": {
+      "en": "Payments and refunds",
+      "ar": "الدفعات والاستردادات"
     }
   },
   "title": {
@@ -643,8 +715,7 @@
   "table": {
     "showPictures": false,
     "showAreas": false,
-    "showDiscount": false,
-    "showVat": false
+    "showDiscount": false
   },
   "lines": [
     {

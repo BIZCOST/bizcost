@@ -5,13 +5,24 @@ on:
     branches: [main]
   pull_request:
 
+permissions:
+  contents: read
+
 concurrency:
   group: ci-${{ github.ref }}
   cancel-in-progress: true
 
+# The runner image is named, not `ubuntu-latest`: that label moves to Ubuntu 26 from 2026-10-19, and a
+# moving image is a failure nobody asked for. Change it here on purpose, in a commit of its own.
+#
+# Each job fails on its own: a red API suite must never hide the e2e suite again (it stopped the old
+# single job's e2e step for weeks). Time budgets and test timeouts allow for these runners
+# (packages/config/vitest, D-351).
+
 jobs:
   check:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
     env:
       NEXT_TELEMETRY_DISABLED: '1'
     steps:
@@ -23,7 +34,10 @@ jobs:
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - run: pnpm format:check
-      - run: pnpm check
+      # `pnpm check` (typecheck + lint + test) in two steps: every package's tsc and ESLint at once took
+      # the cores from the tests, whose time budgets then failed. The tests run two packages at a time.
+      - run: pnpm exec turbo run typecheck lint
+      - run: pnpm exec turbo run test --concurrency=2
       # The server environment is read on the first request, so the build needs none. The two public
       # values are inlined into the browser code: dummy ones that are not *.supabase.co, which the
       # bundle check below must find (so it proves it scanned the client code).
@@ -35,9 +49,14 @@ jobs:
       # chunks and prerendered pages. Mobile builds get the same check with Step 8.
       - name: No supabase.co in the web client
         run: node packages/config/ci/check-bundle-hosts.js apps/web/.next --expect auth.bizcost-ci.invalid
+      # The files the hosted API function needs to make a PDF are in its trace (D-353), and the PDF
+      # engine runs from those files alone, as it does on Vercel (Linux, like this runner).
+      - name: The PDF engine is in the API function's trace
+        run: node packages/config/ci/check-pdf-trace.mjs apps/web/.next
 
   db:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
     steps:
       - uses: actions/checkout@v7
       - uses: pnpm/action-setup@v6
@@ -62,21 +81,41 @@ jobs:
       - run: pnpm auth:signing-key
       # Postgres (migrations + seed.sql), Auth, Storage (the business logo), the Data API (PostgREST:
       # the hardening tests attack /rest/v1 as hosted projects expose it), the API gateway and Mailpit
-      # (the emailed codes, and invitations over SMTP): what pgTAP, the @bizcost/db tests, the
-      # @bizcost/api integration tests and the e2e tests need. `supabase db start` alone has no Auth.
+      # (the emailed codes, and invitations over SMTP): what pgTAP, the @bizcost/db tests and the
+      # @bizcost/api integration tests need. `supabase db start` alone has no Auth.
       - run: >-
           supabase start
           -x realtime,imgproxy,postgres-meta,studio,edge-runtime,logflare,vector,supavisor
       - run: supabase test db
       - run: pnpm --filter @bizcost/db test:db
       - run: pnpm --filter @bizcost/api test:api
+
+  e2e:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    env:
+      NEXT_TELEMETRY_DISABLED: '1'
+    steps:
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - id: supabase-cli
+        run: echo "version=$(jq -r '.devDependencies.supabase' package.json)" >> "$GITHUB_OUTPUT"
+      - uses: supabase/setup-cli@v3
+        with:
+          version: ${{ steps.supabase-cli.outputs.version }}
+      - run: pnpm auth:signing-key
+      - run: >-
+          supabase start
+          -x realtime,imgproxy,postgres-meta,studio,edge-runtime,logflare,vector,supavisor
       # End-to-end (Playwright, Chromium only) against a production build of the web app
       # (tests/e2e; it also reads supabase/signing_keys.json created above).
       - run: pnpm --filter @bizcost/e2e exec playwright install --with-deps chromium
       - run: pnpm e2e
-        env:
-          CI: 'true'
-          NEXT_TELEMETRY_DISABLED: '1'
       - if: failure()
         uses: actions/upload-artifact@v7
         with:

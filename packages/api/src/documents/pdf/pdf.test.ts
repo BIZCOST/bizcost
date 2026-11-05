@@ -1,3 +1,4 @@
+import { timeBudget } from '@bizcost/config/vitest/budget'
 import { createHash } from 'node:crypto'
 import childProcess from 'node:child_process'
 import fs from 'node:fs'
@@ -246,7 +247,7 @@ describe('pages, speed and determinism', () => {
     const { pdf, took } = await timed((k) =>
       pdfInput({ lines: 200, intro: `Document ${k}, a different one.` }),
     )
-    expect(took).toBeLessThan(1000)
+    expect(took).toBeLessThan(timeBudget(1000))
     const pages = await pdfText(pdf)
     expect(pages.length).toBeGreaterThanOrEqual(4)
     // Every page with lines repeats the table's head.
@@ -262,7 +263,7 @@ describe('pages, speed and determinism', () => {
     const { pdf, took } = await timed((k) =>
       pdfInput({ lines: 200, areas: true, intro: `Document ${k}, a different one.` }),
     )
-    expect(took).toBeLessThan(1000)
+    expect(took).toBeLessThan(timeBudget(1000))
     const pages = await pdfText(pdf)
     expect(pages.length).toBeGreaterThanOrEqual(4)
     // An area that runs over a page is named again on the next one.

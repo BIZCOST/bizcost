@@ -1,6 +1,6 @@
 import 'server-only'
 import type { EmailConfig } from '@bizcost/api'
-import { parsePreviewModules } from '@bizcost/modules'
+import { parseHeldModules, parsePreviewModules } from '@bizcost/modules'
 import { z } from 'zod'
 
 // Server environment of the API, validated on first use (not at import, so `next build` needs no
@@ -37,6 +37,22 @@ const schema = z
     SUPABASE_SECRET_KEY: optional(z.string().min(1)),
     /** postgres URL of the API role bizcost_api (never postgres/service_role). */
     DATABASE_URL: z.string().regex(/^postgres(ql)?:\/\//, 'must be a postgres:// URL'),
+    /**
+     * The hosted database's CA certificate (PEM; public, not a secret), so a connection proves who it
+     * reached (D-362). createDb refuses a hosted database without it. Line ends may be written \n, but
+     * they must be there: a paste that lost them parses as a certificate that matches nothing, and every
+     * connection then fails with a TLS error that names neither this variable nor its format.
+     */
+    DATABASE_CA_CERT: optional(
+      z
+        .string()
+        .transform((value) => value.replaceAll('\\n', '\n').trim())
+        .refine(
+          (value) =>
+            /^-----BEGIN CERTIFICATE-----\r?\n[\s\S]+\r?\n-----END CERTIFICATE-----$/.test(value),
+          'must be a PEM certificate that keeps its line ends, from its BEGIN line to its END line',
+        ),
+    ),
     MIN_SUPPORTED_APP_VERSION: optional(
       z.string().regex(/^\d+\.\d+\.\d+$/, 'must be a version such as 1.4.0'),
     ),
@@ -58,6 +74,15 @@ const schema = z
      * Read only when NODE_ENV is development or test; ignored in production (next build/start).
      */
     BIZCOST_PREVIEW_MODULES: optional(z.string()),
+    /**
+     * Released modules this deployment holds back, e.g. "invoices" until the tax agent's review (D-350,
+     * D-359). Read in production too, unlike the preview. An unknown name stops the server.
+     */
+    BIZCOST_HELD_MODULES: optional(z.string()),
+    /** Comma-separated addresses of the platform admins: the owner's beta page (D-357). */
+    BIZCOST_PLATFORM_ADMINS: optional(z.string()),
+    /** Where "Send feedback" is emailed (D-356). Without it, feedback is only saved. */
+    BIZCOST_FEEDBACK_EMAIL: optional(z.email()),
   })
   .transform((env, ctx) => {
     const supabaseUrl = env.NEXT_PUBLIC_SUPABASE_URL ?? env.SUPABASE_URL
@@ -115,6 +140,32 @@ const schema = z
       }
       previewModules = preview.ids
     }
+    const held = parseHeldModules(env.BIZCOST_HELD_MODULES)
+    if (held.invalid.length > 0) {
+      ctx.addIssue({
+        code: 'custom',
+        message: `BIZCOST_HELD_MODULES: ${held.invalid.join(', ')} cannot be held`,
+      })
+      return z.NEVER
+    }
+    if (held.dependents.length > 0) {
+      const needs = held.dependents.map((d) => `${d.module} needs ${d.needs}`).join(', ')
+      ctx.addIssue({
+        code: 'custom',
+        message: `BIZCOST_HELD_MODULES: hold these too, or the others (${needs})`,
+      })
+      return z.NEVER
+    }
+    const platformAdmins = (env.BIZCOST_PLATFORM_ADMINS ?? '')
+      .split(',')
+      .map((address) => address.trim().toLowerCase())
+      .filter(Boolean)
+    for (const address of platformAdmins) {
+      if (!z.email().safeParse(address).success) {
+        ctx.addIssue({ code: 'custom', message: 'BIZCOST_PLATFORM_ADMINS: not an email address' })
+        return z.NEVER
+      }
+    }
     const allowedOrigins = origins ?? DEV_ORIGINS
     for (const value of allowedOrigins) {
       const checked = origin.safeParse(value)
@@ -127,6 +178,7 @@ const schema = z
       supabaseUrl,
       supabasePublishableKey: env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY,
       databaseUrl: env.DATABASE_URL,
+      databaseCaCert: env.DATABASE_CA_CERT,
       minSupportedAppVersion: env.MIN_SUPPORTED_APP_VERSION ?? '0.0.0',
       allowedOrigins,
       version: env.VERCEL_GIT_COMMIT_SHA?.slice(0, 12) ?? 'dev',
@@ -136,6 +188,9 @@ const schema = z
       // Without a transport (development), sending an invitation fails with a clear error.
       email,
       previewModules,
+      heldModules: held.ids,
+      platformAdmins,
+      feedbackEmail: env.BIZCOST_FEEDBACK_EMAIL,
     }
   })
 

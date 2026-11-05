@@ -166,6 +166,21 @@ export function switchPermission(
   return next
 }
 
+/**
+ * The permissions the Roles section offers this business: its visible groups and its sensitive-data
+ * switches. What a role says it can do names only these: a key of a module still planned or held back
+ * stays on the role and does nothing, so a card must not claim it (D-125, D-359).
+ */
+export function offeredPermissionKeys(
+  capabilities: Readonly<Record<string, boolean>>,
+  modules: readonly string[],
+): ReadonlySet<string> {
+  return new Set<string>([
+    ...visiblePermissionGroups(capabilities, modules).flatMap((group) => group.keys),
+    ...offeredSensitiveDataSwitches(modules).flatMap((sensitive) => sensitive.keys),
+  ])
+}
+
 // ---------------------------------------------------------------------------------------------------
 // The sensitive-data section (M2 Step 7, D-190): "See costs, supplier prices and margins" as one
 // switch, and later payroll and employees' personal data with the modules that show them.

@@ -1,3 +1,4 @@
+import { timeBudget } from '@bizcost/config/vitest/budget'
 import type { DocumentPdfDto, InvoiceDto } from '@bizcost/contracts'
 import { newId } from '@bizcost/domain'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
@@ -11,7 +12,7 @@ import { FIT_OUT } from './quotations'
 // issued invoice (its stored copy), through the API as the owner, after a first call warms the
 // server's engine as a running server is. Locally, each well under 1 s.
 
-const BUDGET_MS = 1000
+const BUDGET_MS = timeBudget(1000)
 
 let api: InvoicesApi
 let shop: InvoiceScope

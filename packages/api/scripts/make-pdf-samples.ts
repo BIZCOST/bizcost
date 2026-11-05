@@ -11,7 +11,10 @@
 // across the page break (D-299). scripts/samples/workshop-quotation.json: the
 // demo carpentry workshop (Al Itqan Carpentry) in English, without a logo or pictures, a draft.
 // Step 8 (made by the API's own builders): tax-invoice.json, tax-credit-note.json,
-// workshop-final-invoice.json, designer-invoice.json and factory-statement.json (see below).
+// workshop-final-invoice.json, designer-invoice.json and factory-statement.json (see below). D-360's
+// columns, through the sales engine: mixed-rates-invoice.json (5 %, zero-rated and exempt, amounts in
+// the hundreds of millions, a total rounded), vat-inclusive-invoice.json (prices with VAT, a document
+// discount, a total rounded) and fit-out-invoice.json (areas and pictures over two pages).
 // Every business, customer and figure here is fictional (the demo personas), never a real customer.
 // Amounts are worked out in fils (whole numbers), never in floating point.
 
@@ -19,11 +22,22 @@ import { writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import {
+  computeSale,
+  solveRoundAmount,
+  sumDecimals,
+  type Money,
+  type Percent,
+  type Quantity,
+  type SaleInput,
+  type VatCategory,
+} from '@bizcost/domain'
+import {
   buildCreditNotePdfInput,
   buildInvoicePdfInput,
   buildQuotationPdfInput,
   buildStatementPdfInput,
   type PdfBusiness,
+  type PdfInvoice,
   type PdfInvoiceLine,
   type PdfQuotation,
 } from '../src/documents/pdf/build'
@@ -475,8 +489,8 @@ const workshop = buildQuotationPdfInput({
 // before it was issued, with the LPO, the quotation it came from and a payment), its tax credit note
 // CN-0001 for 100 m² of painting (1,800.00 + VAT 90.00), the workshop's final invoice after its deposit
 // invoice (20,000.00 − 5,000.00 deposit = 15,000.00 + VAT 750.00 = 15,750.00), the designer's plain
-// invoice (not VAT-registered: never the word "tax") and the factory's September statement (opening 0,
-// invoiced 10,500.00, paid 8,000.00, closing 2,500.00).
+// invoice (not VAT-registered: never the word "tax"; one line 500 less 100) and the factory's September
+// statement (opening 0, invoiced 10,500.00, paid 8,000.00, closing 2,500.00).
 const fitOutBusiness: PdfBusiness = {
   legalName: 'Modern Touch Interiors',
   legalNameAr: 'لمسة عصرية للديكور',
@@ -521,6 +535,8 @@ const invoiceLine = (
   discount: string,
 ): PdfInvoiceLine => {
   const subtotal = amount(times(qty, price))
+  const net = fils(subtotal) - fils(discount)
+  const vat = vat5(net)
   return {
     kind: 'item',
     area: null,
@@ -532,10 +548,92 @@ const invoiceLine = (
     unitPrice: price,
     subtotal,
     lineDiscount: discount,
+    net: amount(net),
+    vat: amount(vat),
+    total: amount(net + vat),
     priceIncludesVat: false,
     vatCategory: 'standard',
     vatRate: '5',
     picture: null,
+  }
+}
+/** A line as the description of a document the sales engine works out. */
+interface EngineLine {
+  readonly area?: string
+  readonly title: string
+  readonly details?: string
+  readonly qty: string
+  readonly unit: PdfInvoiceLine['unit']
+  readonly price: string
+  readonly vatCategory?: VatCategory
+  readonly priceIncludesVat?: boolean
+  readonly percentOff?: string
+  readonly picture?: string
+}
+/** A tax invoice's amounts and lines from the sales engine, as an issued invoice stores them. */
+function engineInvoice(
+  lines: readonly EngineLine[],
+  options: { readonly percentOff?: string; readonly wanted?: string },
+): Pick<
+  PdfInvoice,
+  | 'vatRegistered'
+  | 'subtotal'
+  | 'discountTotal'
+  | 'adjustment'
+  | 'roundingDifference'
+  | 'netTotal'
+  | 'vatTotal'
+  | 'total'
+  | 'payable'
+  | 'vatRates'
+  | 'lines'
+> {
+  const input: SaleInput = {
+    vatRegistered: true,
+    discount: options.percentOff ? { percent: options.percentOff as Percent } : null,
+    lines: lines.map((line) => ({
+      kind: 'item',
+      qty: line.qty as Quantity,
+      unitPrice: line.price as Money,
+      priceIncludesVat: line.priceIncludesVat ?? false,
+      vatCategory: line.vatCategory ?? 'standard',
+      discount: line.percentOff ? { percent: line.percentOff as Percent } : null,
+    })),
+  }
+  const solved = options.wanted ? solveRoundAmount(input, options.wanted as Money, 'AED') : null
+  const sale = solved ? solved.sale : computeSale(input, 'AED')
+  const subtotal = sumDecimals(sale.lines.map((line) => line.subtotal))
+  const ownDiscounts = sumDecimals(sale.lines.map((line) => line.discount))
+  return {
+    vatRegistered: true,
+    subtotal,
+    discountTotal: sumDecimals([ownDiscounts, sale.documentDiscount]),
+    adjustment: sale.adjustment,
+    roundingDifference: sale.roundingDifference,
+    netTotal: sale.net,
+    vatTotal: sale.vat,
+    total: sale.total,
+    payable: sale.payable,
+    vatRates: sale.rates,
+    lines: sale.lines.map((line, i) => ({
+      kind: 'item',
+      area: lines[i]!.area ?? null,
+      title: lines[i]!.title,
+      details: lines[i]!.details ?? null,
+      note: null,
+      qty: lines[i]!.qty,
+      unit: lines[i]!.unit,
+      unitPrice: lines[i]!.price,
+      subtotal: line.subtotal,
+      lineDiscount: line.discount,
+      net: line.net,
+      vat: line.vat,
+      total: line.total,
+      priceIncludesVat: line.priceIncludesVat,
+      vatCategory: line.vatCategory,
+      vatRate: line.vatRate,
+      picture: lines[i]!.picture ?? null,
+    })),
   }
 }
 const taxInvoice = buildInvoicePdfInput({
@@ -595,15 +693,16 @@ const taxCreditNote = buildCreditNotePdfInput({
     invoiceNumber: 'INV-0001',
     invoiceDate: '2026-10-18',
     reason: 'price_changed',
-    reasonText: '100 m² of painting were not done: the client painted the store room himself.',
+    reasonText:
+      '100 m² of painting and one day of labour were not done: the client painted the store room himself.',
     currency: 'AED',
     vatRegistered: true,
-    netTotal: '1800.00',
-    vatTotal: '90.00',
-    total: '1890.00',
-    vatRates: [{ vatCategory: 'standard', vatRate: '5', net: '1800.00', vat: '90.00' }],
+    netTotal: '2385.00',
+    vatTotal: '119.25',
+    total: '2504.25',
+    vatRates: [{ vatCategory: 'standard', vatRate: '5', net: '2385.00', vat: '119.25' }],
     valueBefore: '13725.00',
-    valueAfter: '11925.00',
+    valueAfter: '11340.00',
     notes: null,
     issuedAt: new Date('2026-10-25T08:00:00Z'),
     lines: [
@@ -616,7 +715,21 @@ const taxCreditNote = buildCreditNotePdfInput({
         vatCategory: 'standard',
         vatRate: '5',
         net: '1800.00',
+        vat: '90.00',
         total: '1890.00',
+      },
+      {
+        // One of the invoice's 5 days of labour at 650.00 less 10 %.
+        title: 'Labour',
+        qty: '1',
+        unit: null,
+        unitPrice: '650',
+        priceIncludesVat: false,
+        vatCategory: 'standard',
+        vatRate: '5',
+        net: '585.00',
+        vat: '29.25',
+        total: '614.25',
       },
     ],
   },
@@ -691,6 +804,9 @@ const workshopFinal = buildInvoicePdfInput({
         unitPrice: '5000.00',
         subtotal: '-5000.00',
         lineDiscount: '0',
+        net: '-5000.00',
+        vat: '-250.00',
+        total: '-5250.00',
         priceIncludesVat: false,
         vatCategory: 'standard',
         vatRate: '5',
@@ -744,14 +860,14 @@ const designerInvoice = buildInvoicePdfInput({
     orderNumber: null,
     currency: 'AED',
     vatRegistered: false,
-    subtotal: '2000.00',
-    discountTotal: '0',
+    subtotal: '2500.00',
+    discountTotal: '100.00',
     adjustment: '0',
     roundingDifference: '0',
-    netTotal: '2000.00',
+    netTotal: '2400.00',
     vatTotal: '0',
-    total: '2000.00',
-    payable: '2000.00',
+    total: '2400.00',
+    payable: '2400.00',
     vatRates: [],
     terms: null,
     notes: null,
@@ -766,6 +882,15 @@ const designerInvoice = buildInvoicePdfInput({
           '2000',
           '0',
         ),
+        vat: '0',
+        total: '2000.00',
+        vatCategory: null,
+        vatRate: null,
+      },
+      {
+        ...invoiceLine('Business cards', 'Design only, both sides', '1', null, '500', '100.00'),
+        vat: '0',
+        total: '400.00',
         vatCategory: null,
         vatRate: null,
       },
@@ -783,6 +908,158 @@ const designerInvoice = buildInvoicePdfInput({
   },
   businessImages: { logo: null, signature: null, stamp: null },
   images: {},
+})
+
+// D-360's hard cases. The fit-out company's tower invoice: 5 %, zero-rated and exempt lines (each row
+// says its own rate under its VAT), a price with VAT, amounts in the hundreds of millions, and a total
+// rounded (each line's discount holds its share of the adjustment).
+const mixedRatesInvoice = buildInvoicePdfInput({
+  business: fitOutBusiness,
+  invoice: {
+    kind: 'tax_invoice',
+    number: 'INV-0042',
+    draft: false,
+    issueDate: '2026-10-20',
+    supplyDate: '2026-10-20',
+    dueDate: '2026-11-19',
+    lpo: 'LPO-GH-2311',
+    quotationNumber: null,
+    orderNumber: null,
+    currency: 'AED',
+    ...engineInvoice(
+      [
+        {
+          title: 'واجهة زجاجية للبرج',
+          details: 'Double glazing, aluminium frames, supply and fixing',
+          qty: '12500.5',
+          unit: 'm2',
+          price: '18750',
+          percentOff: '5',
+        },
+        {
+          title: 'Joinery exported to Muscat',
+          details: 'Zero-rated: exported with the customs papers',
+          qty: '1',
+          unit: 'piece',
+          price: '2450000',
+          vatCategory: 'zero_rated',
+        },
+        {
+          title: 'إيجار سكني لموظفي الموقع',
+          details: 'Exempt: residential rent, 12 months',
+          qty: '12',
+          unit: null,
+          price: '104166.67',
+          vatCategory: 'exempt',
+        },
+        {
+          title: 'Site supervision',
+          details: 'Price with VAT',
+          qty: '3',
+          unit: null,
+          price: '10500',
+          priceIncludesVat: true,
+        },
+        { title: 'Site survey', qty: '1', unit: null, price: '450' },
+      ],
+      { wanted: '237500000.00' },
+    ),
+    terms: 'Payment within 30 days of the invoice date.',
+    notes: null,
+    issuedAt: new Date('2026-10-20T08:00:00Z'),
+    payments: [],
+  },
+  customer: fitOutCustomer,
+  businessImages: fitOutLogo,
+  images: fitOutImages,
+})
+
+// The workshop's prices with VAT: each row reads to its total, a document discount of 10 % and a total
+// rounded inside each row's discount, in English.
+const vatInclusiveInvoice = buildInvoicePdfInput({
+  business: workshopBusiness,
+  invoice: {
+    kind: 'tax_invoice',
+    number: 'INV-0009',
+    draft: false,
+    issueDate: '2026-10-22',
+    supplyDate: '2026-10-22',
+    dueDate: null,
+    lpo: null,
+    quotationNumber: null,
+    orderNumber: null,
+    currency: 'AED',
+    ...engineInvoice(
+      [
+        { title: 'Dining chairs', qty: '3', unit: 'piece', price: '1050', priceIncludesVat: true },
+        {
+          title: 'Coffee table, solid oak',
+          details: 'Natural oil finish',
+          qty: '1',
+          unit: 'piece',
+          price: '2625',
+          priceIncludesVat: true,
+          percentOff: '5',
+        },
+        { title: 'Oak shelf', qty: '2.5', unit: 'm', price: '399', priceIncludesVat: true },
+      ],
+      { percentOff: '10', wanted: '5950.00' },
+    ),
+    terms: null,
+    notes: 'Prices include VAT, as on our price list.',
+    issuedAt: new Date('2026-10-22T07:30:00Z'),
+    payments: [],
+  },
+  customer: {
+    name: 'Faisal Al Mazrouei',
+    phone: '+971 50 555 0188',
+    trn: null,
+    addressLine: 'Villa 3, Al Rahmaniya 1',
+    city: 'Sharjah',
+    emirate: 'sharjah',
+    showTrn: true,
+  },
+  businessImages: { logo: null, signature: null, stamp: null },
+  images: {},
+})
+
+// The villa's quotation as an invoice: areas and pictures over two pages, the head repeated.
+const fitOutInvoice = buildInvoicePdfInput({
+  business: fitOutBusiness,
+  invoice: {
+    kind: 'tax_invoice',
+    number: 'INV-0015',
+    draft: false,
+    issueDate: '2026-10-25',
+    supplyDate: '2026-10-25',
+    dueDate: '2026-11-24',
+    lpo: null,
+    quotationNumber: 'Q-0007',
+    orderNumber: null,
+    currency: 'AED',
+    ...engineInvoice(
+      fitOutLines.map((line) => ({
+        ...(line.area ? { area: line.area } : {}),
+        title: line.title,
+        ...(line.details ? { details: line.details } : {}),
+        qty: line.qty,
+        unit: line.unit,
+        price: line.price,
+        ...(line.picture ? { picture: line.picture } : {}),
+      })),
+      { wanted: '83900' },
+    ),
+    terms: 'Payment as per the stages of the quotation.',
+    notes: null,
+    issuedAt: new Date('2026-10-25T08:30:00Z'),
+    payments: [],
+  },
+  customer: { ...fitOutCustomer, site: 'Villa 18, Al Barsha South' },
+  businessImages: fitOutLogo,
+  images: {
+    ...fitOutImages,
+    ...Object.fromEntries(pictureKeys.map((key) => [key, image(key, 'jpg')])),
+  },
 })
 
 const factoryStatement = buildStatementPdfInput({
@@ -886,5 +1163,8 @@ write('tax-invoice.json', taxInvoice)
 write('tax-credit-note.json', taxCreditNote)
 write('workshop-final-invoice.json', workshopFinal)
 write('designer-invoice.json', designerInvoice)
+write('mixed-rates-invoice.json', mixedRatesInvoice)
+write('vat-inclusive-invoice.json', vatInclusiveInvoice)
+write('fit-out-invoice.json', fitOutInvoice)
 write('factory-statement.json', factoryStatement)
 console.log(`wrote the samples in ${samples}`)

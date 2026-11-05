@@ -10,6 +10,8 @@ export const profileDto = z.object({
   displayName: z.string(),
   locale: localeDto,
   lastBusinessId: zUuid.nullable(),
+  /** Accepted the terms and privacy policy in force (LEGAL_VERSION, D-358). */
+  termsAccepted: z.boolean(),
 })
 export type ProfileDto = z.infer<typeof profileDto>
 
@@ -38,5 +40,7 @@ export type MembershipDto = z.infer<typeof membershipDto>
 export const meDto = z.object({
   profile: profileDto,
   memberships: z.array(membershipDto),
+  /** The owner's beta page is open to this person (BIZCOST_PLATFORM_ADMINS, D-357). */
+  isPlatformAdmin: z.boolean(),
 })
 export type MeDto = z.infer<typeof meDto>

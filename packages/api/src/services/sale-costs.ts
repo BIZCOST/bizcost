@@ -41,9 +41,9 @@ import { jsonRecords, uuidArray } from './stock'
 // on each other. The new lock edge: cost rows → sale lines (a purchase's posting, a return's or credit
 // note's reversal: D-236), business row → sale lines (the hourly rate); nothing locks in the other
 // direction. Every statement here takes its ids and rows as ONE parameter (uuidArray, jsonRecords), so
-// no number of lines or waiting sales reaches the driver's limit of parameters (D-236), and writes or
-// locks at most ROWS_PER_STATEMENT rows (D-331): however many sales wait for a first purchase, each
-// statement's work stays bounded, far within the 15 s statement timeout on a loaded machine.
+// no number of lines or waiting sales reaches the driver's limit of parameters (D-236), and writes,
+// locks or reads a bounded number of rows (D-331, D-351): however many sales wait for a first purchase,
+// each statement's work stays bounded, far within the 15 s statement timeout on a loaded machine.
 
 /**
  * The most rows one statement here writes or locks (D-331). A row costs its triggers and its audit
@@ -52,6 +52,9 @@ import { jsonRecords, uuidArray } from './stock'
  * and the locks taken in the same ascending order, chunk after chunk.
  */
 export const ROWS_PER_STATEMENT = 1000
+
+/** The most sale lines whose material rows one statement reads: a recipe of 60 makes it 6,000 rows. */
+const LINES_PER_READ = 100
 
 /**
  * Writes the fill-once values of one chunk of rows of `table` (at most ROWS_PER_STATEMENT, D-331): the
@@ -362,16 +365,47 @@ async function lockLines(tx: Tx, businessId: string, lineIds: readonly string[])
   }
   // A new statement: it sees what a fill that held these lines committed. A refund's line (M3 Step
   // 5) is priced as of the day of the sale it takes back, so it mirrors that sale's cost.
-  return (await tx.execute(sql`
-    select l.id, coalesce(o.business_date, s.business_date)::text as business_date, l.cost_basis,
-           trim_scale(l.cost)::text as cost, trim_scale(l.time_minutes)::text as time_minutes,
-           trim_scale(l.time_cost)::text as time_cost
-      from app.sale_lines l
-      join app.sales s on s.business_id = l.business_id and s.id = l.sale_id
-      left join app.sales o on o.business_id = s.business_id and o.id = s.refund_of_id
-     where l.business_id = ${businessId} and l.id = any(${uuidArray(ids)})
-     order by l.id
-  `)) as unknown as FillLineRecord[]
+  const lines: FillLineRecord[] = []
+  for (const chunk of chunksOf(ids)) {
+    const rows = (await tx.execute(sql`
+      select l.id, coalesce(o.business_date, s.business_date)::text as business_date, l.cost_basis,
+             trim_scale(l.cost)::text as cost, trim_scale(l.time_minutes)::text as time_minutes,
+             trim_scale(l.time_cost)::text as time_cost
+        from app.sale_lines l
+        join app.sales s on s.business_id = l.business_id and s.id = l.sale_id
+        left join app.sales o on o.business_id = s.business_id and o.id = s.refund_of_id
+       where l.business_id = ${businessId} and l.id = any(${uuidArray(chunk)})
+       order by l.id
+    `)) as unknown as FillLineRecord[]
+    for (const row of rows) lines.push(row)
+  }
+  return lines
+}
+
+/**
+ * The material rows of `lineIds`, LINES_PER_READ lines a statement (D-351): the one statement that was
+ * left growing with the rows waiting (D-331). 43,200 rows in one answer spilled their sort to disk and
+ * passed a 3 s statement timeout on CI's runners; a few thousand a statement never comes near it.
+ */
+async function materialRowsOf(
+  tx: Tx,
+  businessId: string,
+  lineIds: readonly string[],
+): Promise<FillMaterialRecord[]> {
+  const materials: FillMaterialRecord[] = []
+  for (const chunk of chunksOf(lineIds, LINES_PER_READ)) {
+    const rows = (await tx.execute(sql`
+      select m.id, m.sale_line_id, m.material_id, trim_scale(m.base_qty)::text as base_qty,
+             trim_scale(m.unit_cost)::text as unit_cost, trim_scale(m.cost)::text as cost, m.basis
+        from app.sale_line_materials m
+       where m.business_id = ${businessId}
+         and m.sale_line_id = any(${uuidArray(chunk)})
+         and m.deleted_at is null
+       order by m.sale_line_id, m.id
+    `)) as unknown as FillMaterialRecord[]
+    for (const row of rows) materials.push(row)
+  }
+  return materials
 }
 
 /** A stored line as the domain's snapshot (its time as stored). */
@@ -431,15 +465,11 @@ export async function fillSaleMaterialCosts(
     businessId,
     waiting.map((w) => w.sale_line_id),
   )
-  const materials = (await tx.execute(sql`
-    select m.id, m.sale_line_id, m.material_id, trim_scale(m.base_qty)::text as base_qty,
-           trim_scale(m.unit_cost)::text as unit_cost, trim_scale(m.cost)::text as cost, m.basis
-      from app.sale_line_materials m
-     where m.business_id = ${businessId}
-       and m.sale_line_id = any(${uuidArray(lines.map((l) => l.id))})
-       and m.deleted_at is null
-     order by m.sale_line_id, m.id
-  `)) as unknown as FillMaterialRecord[]
+  const materials = await materialRowsOf(
+    tx,
+    businessId,
+    lines.map((l) => l.id),
+  )
   const purchases = await postedPurchaseLinesOf(tx, businessId, ids)
   const byLine = new Map<string, FillMaterialRecord[]>()
   for (const m of materials) {

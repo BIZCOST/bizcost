@@ -10,5 +10,15 @@
     "expiry": "This invitation expires in 7 days. To accept it, sign in or create an account with {{email}}.",
     "ignore": "If you weren't expecting this, you can ignore this email."
   },
+  "feedback": {
+    "subject": "New BizCost feedback",
+    "title": "Someone sent feedback",
+    "business": "Business",
+    "noBusiness": "None (outside any business)",
+    "member": "From",
+    "page": "Page",
+    "picture": "It came with a picture.",
+    "open": "Read it on the beta page"
+  },
   "footer": "Know your costs. Grow your business."
 }

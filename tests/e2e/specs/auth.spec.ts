@@ -1,5 +1,6 @@
 import { expect, test, type Page } from '@playwright/test'
 import {
+  acceptTerms,
   createUser,
   deleteUser,
   drawn,
@@ -79,6 +80,7 @@ test('sign up with an email code and land on home', async ({ page }) => {
   await page.goto('/signup')
   await page.getByLabel('Email', { exact: true }).fill(email)
   await page.getByRole('textbox', { name: 'Password', exact: true }).fill('A-long-password-42')
+  await acceptTerms(page)
   await page.getByRole('button', { name: 'Create account' }).click()
 
   await expect(page).toHaveURL('/verify')
@@ -122,6 +124,7 @@ test('sign-up password rule (D-072): the checklist, and both the page and Auth r
   await expect(rule('letter')).toHaveAttribute('data-met', 'true')
   await expect(rule('digit')).toHaveAttribute('data-met', 'false')
   await expect(announcement).toHaveText('') // screen readers hear only a change of the whole rule
+  await acceptTerms(page)
   await page.getByRole('button', { name: 'Create account' }).click()
   // "(a-z, 0-9)" stays whole on one line: a no-break space and a word joiner after each hyphen.
   const error = page
@@ -160,6 +163,7 @@ test('sign-up password rule (D-072): the checklist, and both the page and Auth r
     await expect(rule(name)).toHaveAttribute('data-met', 'true')
   }
   await expect(announcement).toHaveText('Your password meets all the rules.')
+  await acceptTerms(page)
   await page.getByRole('button', { name: 'Create account' }).click()
   await expect(page).toHaveURL('/verify')
   await expect(page.getByText(withValue('We sent a code to ', email))).toBeVisible()
@@ -175,6 +179,7 @@ test('signing up twice with a new email: no error, and the first code still work
     await page.goto('/signup')
     await page.getByLabel('Email', { exact: true }).fill(email)
     await page.getByRole('textbox', { name: 'Password', exact: true }).fill('A-long-password-42')
+    await acceptTerms(page)
     const [response] = await Promise.all([
       page.waitForResponse((r) => r.url().includes('/auth/v1/signup')),
       page.getByRole('button', { name: 'Create account' }).click(),
@@ -204,6 +209,7 @@ test('signing up again with a registered email looks the same, and its note says
   await page.goto('/signup')
   await page.getByLabel('Email', { exact: true }).fill(user.email)
   await page.getByRole('textbox', { name: 'Password', exact: true }).fill('A-long-password-42')
+  await acceptTerms(page)
   await page.getByRole('button', { name: 'Create account' }).click()
   await expect(page).toHaveURL('/verify')
   await expect(page.getByText(withValue('We sent a code to ', user.email))).toBeVisible()
@@ -466,6 +472,8 @@ test('an email code for a new address creates the account and signs in (D-062)',
   users.push(await findUserId(email))
   await enterCode(page, await nextCode(email))
   await expect(page).toHaveURL('/')
+  // It made an account without the sign-up form's box: the terms first, once (D-358).
+  await page.getByRole('button', { name: 'I accept' }).click()
   await expect(page.getByRole('heading', { level: 1 })).toHaveText('Welcome to BizCost')
 })
 

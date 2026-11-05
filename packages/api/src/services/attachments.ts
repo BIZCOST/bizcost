@@ -28,6 +28,7 @@ import type { BusinessCtx } from '../business-context'
 import type { ApiConfig } from '../deps'
 import { AppError } from '../errors'
 import { printableImageType } from './document-files'
+import { withPictureCheckSlot } from './picture-check-slot'
 import { isoOf, uuidArray } from './stock'
 
 // Attachments (ROADMAP.md M2 Step 3; DATA_MODEL.md §6 Files; D-030, D-085): files attached to a
@@ -476,27 +477,30 @@ export async function addAttachment(
   if (upload?.status !== 'issued' || upload.purpose !== 'attachment') {
     throw new AppError('attachment_invalid', { message: 'not an open upload of this business' })
   }
-  const object = await downloadObject(ctx.config, input.path)
-  if (!object) throw new AppError('attachment_invalid', { message: 'no uploaded object' })
-  const sniffed = sniffAttachmentType(object.bytes)
-  const storedType = object.contentType.split(';')[0]?.trim().toLowerCase()
-  if (
-    object.bytes.byteLength === 0 ||
-    object.bytes.byteLength > ATTACHMENT_MAX_BYTES ||
-    !sniffed ||
-    EXTENSION_OF[sniffed] !== match[1] ||
-    storedType !== sniffed ||
-    (LINE_ENTITIES.has(input.entity) && !IMAGE_TYPES.has(sniffed))
-  ) {
-    await discard(ctx, input.path)
-    throw new AppError('attachment_invalid', { message: 'not an allowed file' })
-  }
-  // A line's picture prints on the quotation's PDF: it must be an image the PDF compiler decodes,
-  // within the PDFs' image limits (D-295).
-  if (LINE_ENTITIES.has(input.entity) && (await printableImageType(object.bytes)) !== sniffed) {
-    await discard(ctx, input.path)
-    throw new AppError('attachment_invalid', { message: 'not an image a document can print' })
-  }
+  const { object, sniffed } = await withPictureCheckSlot(ctx.auth.userId, async () => {
+    const downloaded = await downloadObject(ctx.config, input.path)
+    if (!downloaded) throw new AppError('attachment_invalid', { message: 'no uploaded object' })
+    const type = sniffAttachmentType(downloaded.bytes)
+    const storedType = downloaded.contentType.split(';')[0]?.trim().toLowerCase()
+    if (
+      downloaded.bytes.byteLength === 0 ||
+      downloaded.bytes.byteLength > ATTACHMENT_MAX_BYTES ||
+      !type ||
+      EXTENSION_OF[type] !== match[1] ||
+      storedType !== type ||
+      (LINE_ENTITIES.has(input.entity) && !IMAGE_TYPES.has(type))
+    ) {
+      await discard(ctx, input.path)
+      throw new AppError('attachment_invalid', { message: 'not an allowed file' })
+    }
+    // A line's picture prints on the quotation's PDF: it must be an image the PDF compiler decodes,
+    // within the PDFs' image limits (D-295).
+    if (LINE_ENTITIES.has(input.entity) && (await printableImageType(downloaded.bytes)) !== type) {
+      await discard(ctx, input.path)
+      throw new AppError('attachment_invalid', { message: 'not an image a document can print' })
+    }
+    return { object: downloaded, sniffed: type }
+  })
   const records = await ctx.tx(async (tx) => {
     // The upload is closed only while it is still open: two adds of one path wait for each other
     // here, and the second finds it closed. Refused later, the transaction reopens it.

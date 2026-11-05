@@ -1,3 +1,4 @@
+import { timeBudget } from '@bizcost/config/vitest/budget'
 import { createHash } from 'node:crypto'
 import type { LocationDto, ProductDto, SaleImportDto } from '@bizcost/contracts'
 import { newId } from '@bizcost/domain'
@@ -311,6 +312,6 @@ describe("5. One draft's preview never pins the API process", () => {
     expect(preview.totalNames).toBe(20_000)
     // Today about 6 s of the API's one thread (and its transaction held) per get; 100,000 names (the
     // row limit) about 30 s; and every match, overlap and finalize call does it again.
-    expect(ms).toBeLessThan(2_000)
+    expect(ms).toBeLessThan(timeBudget(2_000))
   }, 300_000)
 })

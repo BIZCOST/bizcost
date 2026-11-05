@@ -669,6 +669,9 @@ importers:
       '@bizcost/config':
         specifier: workspace:*
         version: link:../../packages/config
+      '@bizcost/contracts':
+        specifier: workspace:*
+        version: link:../../packages/contracts
       '@bizcost/i18n':
         specifier: workspace:*
         version: link:../../packages/i18n

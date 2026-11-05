@@ -19,8 +19,9 @@ function membership(businessId: string, status: MembershipDto['status'] = 'activ
 
 function me(lastBusinessId: string | null, memberships: MembershipDto[]): MeDto {
   return {
-    profile: { id: C, displayName: 'Sara', locale: 'en', lastBusinessId },
+    profile: { id: C, displayName: 'Sara', locale: 'en', lastBusinessId, termsAccepted: true },
     memberships,
+    isPlatformAdmin: false,
   }
 }
 

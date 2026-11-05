@@ -1869,7 +1869,15 @@ test('DoD: the fit-out company’s tax invoice INV-0001 from Q-0001 in Arabic on
   await expect(total(page, 'net')).toContainText(money('ar', '13,725.00'))
   await expect(total(page, 'vat-standard-5')).toContainText(money('ar', '686.25'))
   await expect(total(page, 'total')).toContainText(money('ar', '14,411.25'))
-  await expect(page.getByRole('main')).toContainText(money('ar', '2,925.00'))
+  // The rows, as the PDF's columns (D-360): 5 × 650.00 − 325.00 = 2,925.00 before VAT; no discount: 0.00.
+  const row = (line: number, amount: string) =>
+    page
+      .locator('[data-quotation-line]')
+      .nth(line)
+      .locator(`[data-invoice-amount="${amount}"]:visible`)
+  await expect(row(2, 'discount')).toHaveText('325.00')
+  await expect(row(2, 'beforeVat')).toHaveText('2,925.00')
+  await expect(row(0, 'discount')).toHaveText('0.00')
   await expectSound(page, 'ar')
 
   // A credit note for 100 m² of the painting, its reason and event date; an event 15 days old says

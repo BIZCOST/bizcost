@@ -1,3 +1,4 @@
+import { timeBudget } from '@bizcost/config/vitest/budget'
 import { createServer, type ServerResponse } from 'node:http'
 import type { AddressInfo } from 'node:net'
 import {
@@ -264,7 +265,7 @@ describe('me: the Arabic name and the logo of each business', () => {
       )
       let started = Date.now()
       const [membership] = await memberships(owner, hung)
-      expect(Date.now() - started).toBeLessThan(SIGNING_TIMEOUT_MS + 3000)
+      expect(Date.now() - started).toBeLessThan(SIGNING_TIMEOUT_MS + timeBudget(3000))
       expect(membership).toMatchObject({ businessId, legalName: 'Moon Café', logoUrl: null })
       expect(storage.signRequests()).toBe(1)
       expect(reported).toHaveLength(1)
@@ -272,7 +273,7 @@ describe('me: the Arabic name and the logo of each business', () => {
       // The next `me` answers without asking Storage (and without another report).
       started = Date.now()
       expect((await memberships(owner, hung))[0]).toMatchObject({ businessId, logoUrl: null })
-      expect(Date.now() - started).toBeLessThan(SIGNING_TIMEOUT_MS)
+      expect(Date.now() - started).toBeLessThan(timeBudget(SIGNING_TIMEOUT_MS))
       expect(storage.signRequests()).toBe(1)
       expect(reported).toHaveLength(1)
     } finally {

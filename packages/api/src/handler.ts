@@ -31,6 +31,9 @@ export function createFetchHandler(
       // One request may not queue an unbounded number of calls on the (small) connection pool.
       maxBatchSize: API_MAX_BATCH_SIZE,
       createContext: ({ req, resHeaders }) => createContext({ req, resHeaders, deps, router }),
+      // Answers name neither the person nor the business in their URL, and hold their data: no browser
+      // or shared cache keeps one (D-362). Sign-out does not empty the browser's cache.
+      responseMeta: () => ({ headers: { 'cache-control': 'private, no-store' } }),
       onError: ({ error, ctx, path }) => {
         if (appCodeOf(error) === 'internal') {
           deps.reportError?.(error, { requestId: ctx?.requestId, path })

@@ -15,7 +15,14 @@ describe('healthDto', () => {
 
 describe('meDto', () => {
   const me = {
-    profile: { id: newId(), displayName: 'Rashed', locale: 'ar', lastBusinessId: null },
+    profile: {
+      id: newId(),
+      displayName: 'Rashed',
+      locale: 'ar',
+      lastBusinessId: null,
+      termsAccepted: true,
+    },
+    isPlatformAdmin: false,
     memberships: [
       {
         businessId: newId(),

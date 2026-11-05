@@ -43,9 +43,10 @@ select tables_are(
     'customers', 'document_counters', 'orders', 'order_lines', 'customer_payments',
     'quotations', 'quotation_lines', 'quotation_stages', 'document_renders',
     'invoices', 'invoice_lines', 'credit_notes', 'credit_note_lines',
-    'stock_counts', 'stock_count_lines'
+    'stock_counts', 'stock_count_lines',
+    'beta_list', 'feedback', 'feedback_uploads'
   ],
-  'app contains exactly the Milestone 1, M2 and M3 tables and those of M4 so far'
+  'app contains exactly the Milestone 1, M2 and M3 tables, those of M4 so far and the beta''s'
 );
 
 select is(
@@ -387,8 +388,10 @@ select is_empty(
                                      where a.attrelid = t.relid and a.attname = 'user_id'))
         and not (t.table_name = 'business_invitations'
                  and i.indkey[0] = (select a.attnum from pg_attribute a
-                                     where a.attrelid = t.relid and a.attname = 'created_by')) $$,
-  'every index on a tenant table leads with business_id (except global token_hash, per-user membership lookups and the per-user invitation limit)'
+                                     where a.attrelid = t.relid and a.attname = 'created_by'))
+        and not (t.table_name = 'business_invitations'
+                 and i.indexrelid = to_regclass('app.business_invitations_pending_email_idx')) $$,
+  'every index on a tenant table leads with business_id (except global token_hash, per-user membership lookups, the per-user invitation limit and the Auth hook''s look for a pending invitation by address)'
 );
 
 -- 7. Triggers ------------------------------------------------------------------------------
@@ -613,7 +616,7 @@ select columns_are(
 
 select columns_are(
   'app', 'profiles',
-  array['id', 'display_name', 'locale', 'last_business_id', 'anonymized_at', 'created_at', 'updated_at'],
+  array['id', 'display_name', 'locale', 'last_business_id', 'anonymized_at', 'terms_version', 'terms_accepted_at', 'created_at', 'updated_at'],
   'profiles has exactly the documented columns'
 );
 

@@ -560,10 +560,15 @@
 }
 
 // ------------------------------------------------------------------------------------------------
-// The lines: No. | Picture | Area | Description | Unit price | Qty | (Discount) | (VAT) | Amount
+// The lines. A quotation: No. | Picture | Area | Description | Unit price | Qty | (Discount) | Amount.
+// An invoice and a credit note (D-360, the owner's request of 2026-11-04), each row checkable with a
+// calculator: No. | Picture | Area | Description | Unit price | Qty | Discount | Before VAT | VAT | Total,
+// and without VAT on a plain document: … | Unit price | Qty | Discount | Total.
 // ------------------------------------------------------------------------------------------------
 
 #let t = data.table
+// "tax" or "plain": an invoice's or a credit note's rows; none: a quotation's.
+#let billing = t.at("rows", default: none)
 #let show-pics = t.showPictures and data.lines.any(l => l.picture != none and data.images.at(l.picture, default: none) != none)
 #let show-areas = t.showAreas and data.lines.any(l => l.area != none)
 // Every line's picture in one frame, the same on every line (D-299: «تتضبط تلقائي بنفس المقاس»): 20 ×
@@ -586,7 +591,6 @@
   if show-areas { (area-w,) } else { () },
   (1fr, auto, auto),
   if t.showDiscount { (auto,) } else { () },
-  if t.showVat { (auto,) } else { () },
   (auto,),
   // An empty column 0 pt wide: its unbreakable cells keep the first and the last lines of a long area
   // on one page (area-plan), so no page holds a piece of an area too short for its name.
@@ -594,14 +598,29 @@
 ).flatten()
 #let head(key, at: ds) = bi2(L(key), size: 7.3pt, fill: white, weight: "bold", fill2: white.transparentize(22%), at: at, gap: 2.2pt)
 #let num-at = right
-// The heads of the number columns, after the description's.
-#let number-heads = (
-  head("table.unitPrice", at: num-at),
-  head("table.qty", at: num-at),
-  ..if t.showDiscount { (head("table.discount", at: num-at),) } else { () },
-  ..if t.showVat { (head("table.vat", at: num-at),) } else { () },
-  head("table.amount", at: num-at),
-)
+// The heads of the number columns, after the description's. A tax document's VAT heading is one Latin
+// line, as the owner asked («اكتب بس VAT 5%»): no Arabic pair.
+#let number-heads = if billing != none {
+  (
+    head("table.unitPrice", at: num-at),
+    head("table.qty", at: num-at),
+    head("table.discount", at: num-at),
+    ..if billing == "tax" {
+      (
+        head("table.beforeVat", at: num-at),
+        align(num-at, ltr-iso(t.vatHead, size: 7.3pt, fill: white, weight: "bold")),
+      )
+    } else { () },
+    head("table.total", at: num-at),
+  )
+} else {
+  (
+    head("table.unitPrice", at: num-at),
+    head("table.qty", at: num-at),
+    ..if t.showDiscount { (head("table.discount", at: num-at),) } else { () },
+    head("table.amount", at: num-at),
+  )
+}
 #let head-cells = (
   head("table.no", at: center),
   ..if show-pics { (table.cell(inset: (x: pic-pad, y: 1.9mm), head("table.picture", at: center)),) } else { () },
@@ -707,24 +726,120 @@
     align(num-at, ltr-iso(line.amount, weight: "bold")),
     bi2(L("table.inclVat", en: "incl. VAT", ar: "شامل الضريبة"), size: 6.2pt, at: num-at, gap: 1.2pt)))
 } else { align(num-at, ltr-iso(line.amount, weight: "bold")) }
-// A line's number cells: price, quantity with its unit, (discount), (VAT), amount.
-#let number-cells(line) = (
-  align(num-at, ltr-iso(line.unitPrice)),
-  align(num-at, qty-cell(line)),
-  ..if t.showDiscount { (align(num-at, ltr-iso(if line.discount == none { "" } else { line.discount }, fill: muted)),) } else { () },
-  ..if t.showVat { (align(num-at, ltr-iso(if line.vatRate == none { "" } else { line.vatRate }, fill: body-ink)),) } else { () },
-  amount-cell(line),
-)
+
+// An invoice's or a credit note's rows (D-360). Their sizes (`plan`, billing-plan below): `size` for
+// their numbers, `wrap` when even the least size leaves a number wider than its column, and `widths`, each
+// number column's width inside its insets. A number is a left-to-right isolate; in `wrap` it may also
+// break after a thousands comma, so no amount ever runs into the next column: each group in its own box
+// without overhang, so a line ends on the column's edge with its comma, never past it.
+#let num(s, plan, ..style) = if plan.wrap {
+  let groups = s.split(",")
+  align(num-at, block(text(dir: ltr, lang: "en", overhang: false, size: plan.size, ..style,
+    groups.enumerate().map(((i, g)) => box[#g#if i < groups.len() - 1 [,]]).join([\u{200B}]))))
+} else { align(num-at, ltr-iso(s, size: plan.size, ..style)) }
+// The price as typed; typed with VAT it says so under it, and its row reads to the total.
+#let billing-price(line, plan) = if line.at("includesVat", default: false) {
+  align(num-at, stack(dir: ttb, spacing: 1.3mm, num(line.unitPrice, plan),
+    bi2(L("table.inclVat", en: "incl. VAT", ar: "شامل الضريبة"), size: 6.2pt, at: num-at, gap: 2.2pt)))
+} else { num(line.unitPrice, plan) }
+// The quantity, its unit in a box as wide as the longest unit, so the quantities line up; in `wrap` the
+// unit goes under it.
+#let billing-qty(line, plan) = {
+  let unit = if line.unit != none { unit-iso(line.unit, fill: muted, size: plan.size - 0.8pt) }
+  if plan.wrap {
+    align(num-at, stack(dir: ttb, spacing: 1mm, num(line.qty, plan), if unit != none { align(num-at, unit) }))
+  } else {
+    align(num-at, box(text(dir: if rtl-doc { rtl } else { ltr }, {
+      ltr-iso(line.qty, size: plan.size)
+      if unit-w > 0mm { h(2.2pt); box(width: unit-w * (plan.size / 8.4pt), align(ds, unit)) }
+    })))
+  }
+}
+// The line's VAT; on a document that mixes rates its rate or word under it (ER Art. 59(1)(h)).
+#let billing-vat(line, plan) = if line.vatRate != none {
+  align(num-at, stack(dir: ttb, spacing: 1.1mm, num(line.vatAmount, plan, fill: body-ink),
+    align(num-at, unit-iso(line.vatRate, fill: muted, size: 6.8pt))))
+} else { num(line.vatAmount, plan, fill: body-ink) }
+// A line's number cells: (a quotation) price, quantity with its unit, (discount), amount; (an invoice
+// or a credit note) price, quantity with its unit, discount, (before VAT, VAT), total.
+#let number-cells(line, plan) = if plan != none {
+  (
+    billing-price(line, plan),
+    billing-qty(line, plan),
+    num(line.discount, plan, fill: muted),
+    ..if billing == "tax" { (num(line.beforeVat, plan), billing-vat(line, plan)) } else { () },
+    num(line.amount, plan, weight: "bold"),
+  )
+} else {
+  (
+    align(num-at, ltr-iso(line.unitPrice)),
+    align(num-at, qty-cell(line)),
+    ..if t.showDiscount { (align(num-at, ltr-iso(if line.discount == none { "" } else { line.discount }, fill: muted)),) } else { () },
+    amount-cell(line),
+  )
+}
+#let others-w = 7.5mm + (if show-pics { pic-w + 2 * pic-pad } else { 0mm }) + (if show-areas { area-w } else { 0mm })
+// Each number column's widest cell (its head too) at `plan`'s size, inside its insets.
+#let number-widths(plan) = {
+  let widths = number-heads.map(h => measure(h).width)
+  for line in data.lines {
+    widths = number-cells(line, plan).zip(widths).map(((cell, w)) => calc.max(w, measure(cell).width))
+  }
+  widths
+}
+// The sizes of an invoice's or a credit note's rows, called in a context: five amounts beside each other
+// leave the description little room when they grow, so the numbers go smaller (never below 6.6 pt) to
+// keep it 42 mm wide; only then, for amounts no size can hold, do the widest columns narrow and their
+// numbers break after a comma (D-360; D-295's rule: nothing runs out of its cell or off the page).
+#let billing-plan() = if billing == none { none } else {
+  let full-size = 8.4pt
+  let least = 6.6pt
+  let heads = number-heads.map(h => measure(h).width)
+  let full = number-widths((size: full-size, wrap: false))
+  let room = content-w - others-w - 42mm - full.len() * 2 * 1.9mm
+  let at(size) = full.zip(heads).map(((w, h)) => calc.max(h, w * (size / full-size)))
+  if full.sum() <= room {
+    (size: full-size, wrap: false, widths: full)
+  } else if at(least).sum() <= room {
+    let lo = least
+    let hi = full-size
+    for _ in range(8) {
+      let mid = (lo + hi) / 2
+      if at(mid).sum() <= room { lo = mid } else { hi = mid }
+    }
+    let plan = (size: lo, wrap: false)
+    (..plan, widths: number-widths(plan))
+  } else {
+    let plan = (size: least, wrap: true)
+    let natural = number-widths(plan)
+    let capped(cap) = natural.zip(heads).map(((w, h)) => calc.min(w, calc.max(h, cap)))
+    let lo = 0pt
+    let hi = calc.max(..natural)
+    for _ in range(12) {
+      let mid = (lo + hi) / 2
+      if capped(mid).sum() <= room { lo = mid } else { hi = mid }
+    }
+    (..plan, widths: capped(lo))
+  }
+}
+// The table's columns: a quotation's (auto, as the table sizes them); an invoice's as planned.
+#let columns-of(plan) = if plan == none { columns } else {
+  (
+    (7.5mm,),
+    if show-pics { (pic-w + 2 * pic-pad,) } else { () },
+    if show-areas { (area-w,) } else { () },
+    (1fr,),
+    // 0.6 pt to spare, so a number measured to fit never wraps on rounding.
+    plan.widths.map(w => w + 2 * 1.9mm + 0.6pt),
+    if show-areas { (0pt,) } else { () },
+  ).flatten()
+}
 // The description's width as the table lays it out (D-295), measured once and called in a context:
 // the content width less every other column, each number column as wide as its widest cell (its head
 // too) with its insets, as the table sizes an auto column, so long amounts narrow it.
-#let desc-width() = {
-  let widths = number-heads.map(h => measure(h).width)
-  for line in data.lines {
-    widths = number-cells(line).zip(widths).map(((cell, w)) => calc.max(w, measure(cell).width))
-  }
-  let others = 7.5mm + (if show-pics { pic-w + 2 * pic-pad } else { 0mm }) + (if show-areas { area-w } else { 0mm })
-  calc.max(20mm, content-w - others - widths.map(w => w + 2 * 1.9mm).sum() - 2 * 1.9mm)
+#let desc-width(plan) = {
+  let widths = if plan != none { plan.widths.map(w => w + 0.6pt) } else { number-widths(none) }
+  calc.max(20mm, content-w - others-w - widths.map(w => w + 2 * 1.9mm).sum() - 2 * 1.9mm)
 }
 // The rows to let break: called in a context (it measures).
 #let tall-rows(width) = if maybe-tall.len() == 0 { () } else {
@@ -733,14 +848,16 @@
 }
 
 // The least height of a line's row, as the table lays it out (its description in the column's width
-// `w`): its picture's frame, its description or its amount, with the cells' insets. A row is never
+// `w`): its picture's frame, its description or its amounts, with the cells' insets. A row is never
 // shorter, so the area plan below never asks too little of a page.
-#let row-low(line, w) = {
+#let row-low(line, w, plan) = {
   let file = if show-pics and line.picture != none { data.images.at(line.picture, default: none) }
   calc.max(
     if file != none { pic-h + 2 * pic-pad } else { 0pt },
     measure(block(width: w, description(line, w))).height + 2 * 1.55mm,
-    measure(amount-cell(line)).height + 2 * 1.55mm,
+    2 * 1.55mm + if plan != none {
+      calc.max(..number-cells(line, plan).map(c => measure(c).height))
+    } else { measure(amount-cell(line)).height },
   )
 }
 // The areas (D-299: the owner sets which lines each holds, the server keeps them together): each run
@@ -753,7 +870,7 @@
 //   - A longer one may break across pages, but its first lines and its last, enough for the name, stay
 //     together (the 0 pt column's unbreakable cells, `keep`), so each page's piece of it holds the name.
 // Called in a context, with the description's width `w` and the rows let break (`tall`: never kept).
-#let area-plan(w, tall) = {
+#let area-plan(w, tall, plan) = {
   let runs = ()
   for (i, line) in data.lines.enumerate() {
     let key = if line.area == none { none } else { line.area.text }
@@ -766,12 +883,12 @@
   runs.map(run => {
     let needs = area-needs(data.lines.at(run.start).area)
     let rows = range(run.start, run.start + run.count)
-    let lows = rows.map(i => row-low(data.lines.at(i), w))
-    let plan = (..run, needs: needs, lows: lows, whole: false, floor: none, keep: ())
-    if needs == none { return plan }
+    let lows = rows.map(i => row-low(data.lines.at(i), w, plan))
+    let area = (..run, needs: needs, lows: lows, whole: false, floor: none, keep: ())
+    if needs == none { return area }
     let need = needs.wrap + 2 * area-inset + 0.6mm
     if lows.sum() < 2 * need and not rows.any(i => tall.contains(i)) {
-      return (..plan, whole: true, floor: needs.grow)
+      return (..area, whole: true, floor: needs.grow)
     }
     // The first rows that hold the name, and the last (a row let break is never kept).
     let head = 0
@@ -789,7 +906,7 @@
     let keep = ()
     if head > 1 { keep.push((start: run.start, count: head)) }
     if tail > 1 { keep.push((start: run.start + run.count - tail, count: tail)) }
-    (..plan, keep: keep)
+    (..area, keep: keep)
   })
 }
 // Each area cut where the pages break (each line's page read from the previous layout pass, one query
@@ -833,7 +950,7 @@
 
 // Every line's cells but the area's, made once (the layout passes reuse them): before the area cell
 // (No., picture) and after it (description, price, quantity, unit, discount, VAT, amount).
-#let make-line-cells(tall, w) = data.lines.enumerate().map(((i, line)) => {
+#let make-line-cells(tall, w, plan) = data.lines.enumerate().map(((i, line)) => {
   let breakable = tall.contains(i)
   let before = (table.cell(breakable: breakable, align(center, [#ltr-iso(str(line.no), fill: muted)#if show-areas [#metadata(i)<bz-row>]])),)
   if show-pics {
@@ -843,7 +960,7 @@
         image(file.path, format: file.format, width: pic-w, height: pic-h, fit: "cover"))
     })))
   }
-  (before: before, after: (table.cell(breakable: breakable, description(line, w)), ..number-cells(line)))
+  (before: before, after: (table.cell(breakable: breakable, description(line, w)), ..number-cells(line, plan)))
 })
 
 // The table's body: each line's cells, an area's cell at the start of each of its pieces (a line
@@ -879,8 +996,8 @@
   cells
 }
 
-#let lines-table(body) = table(
-  columns: columns,
+#let lines-table(body, plan) = table(
+  columns: columns-of(plan),
   inset: (x: 1.9mm, y: 1.55mm),
   align: (x, y) => horizon + ds,
   stroke: (x, y) => if y == 0 { 0.6pt + accent } else if show-areas and str(y - 1) in area-ends {
@@ -892,10 +1009,10 @@
 )
 
 // Called in a context (the area plan measures).
-#let render-lines(tall, w) = {
-  let cells = make-line-cells(tall, w)
+#let render-lines(tall, w, plan) = {
+  let cells = make-line-cells(tall, w, plan)
   if show-areas {
-    let plans = area-plan(w, tall)
+    let plans = area-plan(w, tall, plan)
     let content-bottom = page-h - page-frame().bottom
     context {
       // Where the previous pass drew each line (its page) and each area cell (its top and bottom).
@@ -909,17 +1026,18 @@
         extents.insert(key, e)
       }
       let pieces = area-pieces(plans, i => pages.at(str(i), default: 0))
-      lines-table(body-cells(cells, plans: plans, pieces: pieces, extents: extents, content-bottom: content-bottom))
+      lines-table(body-cells(cells, plans: plans, pieces: pieces, extents: extents, content-bottom: content-bottom), plan)
     }
   } else {
-    lines-table(body-cells(cells))
+    lines-table(body-cells(cells), plan)
   }
 }
 
 #if data.lines.len() > 0 {
   context {
-    let w = desc-width()
-    render-lines(tall-rows(w), w)
+    let plan = billing-plan()
+    let w = desc-width(plan)
+    render-lines(tall-rows(w), w, plan)
   }
 }
 
@@ -978,6 +1096,12 @@
 // validity on the start side, the totals on the end side
 // ------------------------------------------------------------------------------------------------
 
+// A number in a label ("VAT 5% on 9,493,124,410,836,920.52") wider than its cell gets a break point after
+// each comma, so it wraps in its cell and never runs into the amount beside it, as a description's long
+// word does (D-295). Any number that fits stays whole. Called in a context (it measures).
+#let label-fit(s, width, size) = s.replace(regex("\d[\d,.]*,\d[\d,.]*"), m =>
+  if measure(text(size: size, dir: ltr, lang: "en", m.text)).width <= width { m.text } else { m.text.replace(",", ",\u{200B}") })
+
 #let totals-block = {
   let rows = ()
   for row in data.totals {
@@ -987,7 +1111,8 @@
     } else {
       rows.push(layout(size => {
         let one = box[#first(row.label, size: 8pt)#h(3pt)#text(fill: muted, size: 6.8pt)[·]#h(3pt)#second(row.label, size: 7.4pt, fill: muted)]
-        align(ds + horizon, if measure(one).width <= size.width { one } else { bi2(row.label, size: 8pt, fill2: muted, gap: 2.6pt) })
+        let fitted = (en: label-fit(row.label.en, size.width, 8pt), ar: label-fit(row.label.ar, size.width, 8pt))
+        align(ds + horizon, if measure(one).width <= size.width { one } else { bi2(fitted, size: 8pt, fill2: muted, gap: 2.6pt) })
       }))
       rows.push(align(right + horizon, ltr-iso(row.amount)))
     }

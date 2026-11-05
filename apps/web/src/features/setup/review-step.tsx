@@ -56,6 +56,7 @@ interface Effect {
 
 export function ReviewStep({
   draft,
+  heldModules,
   headingRef,
   onAdjustments,
   onChangeAnswers,
@@ -63,6 +64,7 @@ export function ReviewStep({
   onNewBusinessId,
 }: {
   draft: SetupDraft
+  heldModules: readonly string[]
   headingRef: Ref<HTMLHeadingElement>
   onAdjustments: (adjustments: SetupAdjustments) => void
   onChangeAnswers: () => void
@@ -102,6 +104,7 @@ export function ReviewStep({
     answers: normalized.answers,
     recommendation: rec,
     state,
+    heldModules,
     ...(layout ? { layout } : {}),
   })
   const tt = (key: I18nKey) => term(key, rec.terminologyProfile)

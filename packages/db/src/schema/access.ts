@@ -149,6 +149,10 @@ export const businessInvitations = tenantTable(
     index('business_invitations_email_idx').on(t.businessId, sql`lower((email)::text)`),
     // The per-user limit counts the invitations one user created in 24 hours, in every business.
     index('business_invitations_created_by_idx').on(t.createdBy, t.createdAt),
+    // The Auth hook looks for a pending invitation by address, in every business (D-355).
+    index('business_invitations_pending_email_idx')
+      .on(sql`lower((email)::text)`)
+      .where(sql`status = 'pending' and deleted_at is null`),
     check(
       'business_invitations_status_check',
       sql`status in ('pending', 'accepted', 'revoked', 'expired')`,

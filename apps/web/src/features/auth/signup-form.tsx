@@ -23,8 +23,10 @@ import { Button } from '@/components/ui/button'
 import { InvitationBanner } from '@/features/invite/invitation-banner'
 import { useLocale } from '@/lib/i18n/client'
 import { authClient } from '@/lib/supabase/browser'
+import { AcceptTerms } from './accept-terms'
 import { holdPassword } from './held-password'
 import { savePending, sentCode } from './pending'
+import { WithSupportLink } from './with-support-link'
 
 export function SignupForm() {
   const { t } = useTranslation()
@@ -34,7 +36,7 @@ export function SignupForm() {
   const [error, setError] = useState<AuthMessageKey | null>(null)
   const form = useForm<SignUpForm>({
     resolver: zodResolver(signUpSchema),
-    defaultValues: { email: '', password: '' },
+    defaultValues: { email: '', password: '', acceptTerms: false },
   })
   const password = useWatch({ control: form.control, name: 'password' })
 
@@ -42,7 +44,13 @@ export function SignupForm() {
     setError(null)
     // The auth emails are written in the language the user signed up in. Signed up again within a
     // minute, the sign-up code this tab sent still works (D-073).
-    const result = await signUp(authClient(), { ...values, locale, sent: sentCode('signUp') })
+    const { email, password: chosen } = values
+    const result = await signUp(authClient(), {
+      email,
+      password: chosen,
+      locale,
+      sent: sentCode('signUp'),
+    })
     if (!result.ok) {
       // The Auth server refused the password (its rule, D-072): the message goes under the field.
       if (isPasswordMessage(result.error)) {
@@ -72,9 +80,12 @@ export function SignupForm() {
       <InvitationBanner />
       {error ? (
         <FormAlert tone="error" className="mb-5">
-          {message(error)}
+          <WithSupportLink text={message(error) ?? ''} />
         </FormAlert>
       ) : null}
+      <p className="mb-5 text-sm leading-relaxed text-muted-foreground">
+        {t('auth.signup.byInvitation')}
+      </p>
       <form method="post" onSubmit={submit} noValidate className="space-y-5">
         <TextField
           label={t('auth.fields.email')}
@@ -95,6 +106,10 @@ export function SignupForm() {
           render={(a11y) => (
             <PasswordInput autoComplete="new-password" {...a11y} {...form.register('password')} />
           )}
+        />
+        <AcceptTerms
+          error={message(form.formState.errors.acceptTerms?.message)}
+          {...form.register('acceptTerms')}
         />
         <Button type="submit" size="lg" className="w-full" disabled={form.formState.isSubmitting}>
           {form.formState.isSubmitting ? t('status.creatingAccount') : t('auth.signup.submit')}

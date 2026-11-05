@@ -50,10 +50,10 @@
   },
   "delete": {
     "title": "Delete account",
-    "description": "Your sign-in and your name are removed, and you lose access to your businesses. This can't be undone.",
+    "description": "Your sign-in is removed, your name no longer shows in the team list, and you lose access to your businesses. This can't be undone.",
     "action": "Delete my account",
     "confirmTitle": "Delete your account?",
-    "confirmBody": "You lose access to BizCost right away. Businesses where you are the only member are deleted too. This can't be undone.",
+    "confirmBody": "You lose access to BizCost right away. Businesses where you are the only member are closed: nobody can open them, and their records stay stored until you write to us to erase them. This can't be undone.",
     "codeSent": "To keep your account safe, enter the code we sent to {{email}}.",
     "confirm": "Delete account"
   }

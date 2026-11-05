@@ -91,7 +91,14 @@ const samePasswordTwice = () =>
   )
 
 export const signInSchema = z.object({ email: emailSchema, password: passwordSchema })
-export const signUpSchema = z.object({ email: emailSchema, password: newPasswordSchema })
+export const signUpSchema = z.object({
+  email: emailSchema,
+  password: newPasswordSchema,
+  // The terms of use and the privacy policy, accepted on the form (D-358).
+  acceptTerms: z
+    .boolean()
+    .check(z.refine((accepted) => accepted, { error: 'auth.validation.acceptTerms' })),
+})
 /** "Send me a code" and "Forgot password". */
 export const emailFormSchema = z.object({ email: emailSchema })
 export const codeFormSchema = z.object({ code: codeSchema })

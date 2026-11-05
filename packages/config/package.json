@@ -6,7 +6,19 @@
   "exports": {
     "./tsconfig.base.json": "./tsconfig.base.json",
     "./eslint": "./eslint/index.js",
-    "./vitest/server-only-stub": "./vitest/server-only-stub.js"
+    "./vitest/base": {
+      "types": "./vitest/base.d.ts",
+      "default": "./vitest/base.js"
+    },
+    "./vitest/budget": {
+      "types": "./vitest/budget.d.ts",
+      "default": "./vitest/budget.js"
+    },
+    "./vitest/server-only-stub": "./vitest/server-only-stub.js",
+    "./testing/hooked-auth": {
+      "types": "./testing/hooked-auth.d.ts",
+      "default": "./testing/hooked-auth.js"
+    }
   },
   "scripts": {
     "lint": "eslint .",

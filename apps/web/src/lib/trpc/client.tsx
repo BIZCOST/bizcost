@@ -7,7 +7,12 @@ import {
   useTRPC,
   watchPermissionsVersion,
 } from '@bizcost/app-core'
-import { API_MAX_BATCH_SIZE, type BusinessContextDto, type MeDto } from '@bizcost/contracts'
+import {
+  API_MAX_BATCH_SIZE,
+  API_MAX_URL_LENGTH,
+  type BusinessContextDto,
+  type MeDto,
+} from '@bizcost/contracts'
 import {
   QueryClientProvider,
   useQuery,
@@ -35,7 +40,13 @@ function SeedMe({ me, children }: { me: MeDto | undefined; children: ReactNode }
 export function ApiProvider({ me, children }: { me?: MeDto; children: ReactNode }) {
   const [queryClient] = useState(() => createQueryClient())
   const [trpcClient] = useState(() =>
-    createApiClient([httpBatchLink({ url: '/api/trpc', maxItems: API_MAX_BATCH_SIZE })]),
+    createApiClient([
+      httpBatchLink({
+        url: '/api/trpc',
+        maxItems: API_MAX_BATCH_SIZE,
+        maxURLLength: API_MAX_URL_LENGTH,
+      }),
+    ]),
   )
   return (
     <QueryClientProvider client={queryClient}>
@@ -116,6 +127,7 @@ export function BusinessApiProvider({
       httpBatchLink({
         url: '/api/trpc',
         maxItems: API_MAX_BATCH_SIZE,
+        maxURLLength: API_MAX_URL_LENGTH,
         headers: { 'x-business-id': businessId },
         // An answer with a newer x-permissions-version (a role changed while the page is open, also
         // one that now grants more, which no refusal would show): refetch the member's access.

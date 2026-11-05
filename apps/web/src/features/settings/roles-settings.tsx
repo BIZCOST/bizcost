@@ -86,6 +86,11 @@ function PermissionEditor({
   const [keys, setKeys] = useState<Set<string>>(() => new Set(role.permissionKeys))
   const [conflict, setConflict] = useState(false)
   const [losing, setLosing] = useState<PermissionKey[] | null>(null)
+  // Only what this business can use: a key of a module held back goes too, and is not named (D-359).
+  const offered = new Set<string>([
+    ...groups.flatMap((group) => group.keys),
+    ...sensitive.flatMap((item) => item.keys),
+  ])
   const own = isOwnRole(role, access)
   const changed =
     keys.size !== role.permissionKeys.length || role.permissionKeys.some((key) => !keys.has(key))
@@ -197,7 +202,9 @@ function PermissionEditor({
               {t('settings.roles.ownRoleBody', {
                 list: formatList(
                   locale,
-                  permissionLabelKeys(losing ?? []).map((key) => term(key, profile)),
+                  permissionLabelKeys((losing ?? []).filter((key) => offered.has(key))).map((key) =>
+                    term(key, profile),
+                  ),
                 ),
               })}
             </AlertDialogDescription>

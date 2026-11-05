@@ -2,6 +2,7 @@ import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { expect, test, type Page } from '@playwright/test'
 import {
+  acceptTerms,
   createUser,
   deleteUser,
   findUserId,
@@ -54,6 +55,7 @@ async function submitSignUp(page: Page, email: string): Promise<AuthResponse> {
   await page.goto('/signup')
   await page.getByLabel('Email', { exact: true }).fill(email)
   await page.getByRole('textbox', { name: 'Password', exact: true }).fill('A-long-password-42')
+  await acceptTerms(page)
   return authResponse(page, 'signup', () =>
     page.getByRole('button', { name: 'Create account' }).click(),
   )

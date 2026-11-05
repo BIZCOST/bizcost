@@ -4,6 +4,7 @@ import { describe, expect, it } from 'vitest'
 import {
   groupTitleKey,
   isSwitchOn,
+  offeredPermissionKeys,
   offeredSensitiveSwitches,
   permissionGroups,
   permissionHintKey,
@@ -15,6 +16,41 @@ import {
   switchSensitive,
   visiblePermissionGroups,
 } from './permission-groups'
+
+describe('offeredPermissionKeys: what a role’s card may say it can do (D-359)', () => {
+  const capabilities = { has_team: true, multi_location: false }
+  const HELD = ['dashboard', 'settings', 'products', 'sales', 'quotations']
+
+  it('leaves out a module held back or still planned, and takes it back when it is on', () => {
+    const held = offeredPermissionKeys(capabilities, HELD)
+    expect(held.has('sales.documents.view')).toBe(true)
+    expect(held.has('invoices.documents.view')).toBe(false)
+    expect(held.has('inventory.stock.view')).toBe(false)
+    expect(
+      offeredPermissionKeys(capabilities, [...HELD, 'invoices']).has('invoices.documents.view'),
+    ).toBe(true)
+  })
+
+  it('keeps the sensitive data, whose switches are not one of the groups', () => {
+    const offered = offeredPermissionKeys(capabilities, HELD)
+    expect(offered.has('data.cost.view')).toBe(true)
+    expect(
+      offeredPermissionKeys(capabilities, ['dashboard', 'settings']).has('data.cost.view'),
+    ).toBe(false)
+  })
+
+  it('so a role trimmed to a sale reads no invoices while they are held', () => {
+    const keys: PermissionKey[] = [
+      'sales.documents.view',
+      'invoices.documents.view',
+      'invoices.documents.manage',
+    ]
+    const offered = offeredPermissionKeys(capabilities, HELD)
+    expect(permissionLabelKeys(keys.filter((key) => offered.has(key)))).toEqual([
+      permissionLabelKey('sales.documents.view'),
+    ])
+  })
+})
 
 describe('permission groups of the Roles section', () => {
   it('list every catalog key once, the dashboard first and private data last', () => {

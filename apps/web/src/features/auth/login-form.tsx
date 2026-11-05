@@ -29,6 +29,7 @@ import { takeReturnPath } from '@/features/invite/return-path'
 import { holdPassword } from './held-password'
 import { savePending, sentCode } from './pending'
 import { NOTICE_KEYS, type Notice } from './notices'
+import { WithSupportLink } from './with-support-link'
 
 type Method = 'password' | 'code'
 
@@ -156,7 +157,7 @@ export function LoginForm({ notice }: { notice?: Notice }) {
       <MethodSwitch value={method} onChange={switchMethod} />
       {error ? (
         <FormAlert tone="error" className="mb-5">
-          {message(error)}
+          <WithSupportLink text={message(error) ?? ''} />
         </FormAlert>
       ) : null}
 

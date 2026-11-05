@@ -1,6 +1,11 @@
 import { defineConfig, devices } from '@playwright/test'
 import {
   baseURL,
+  E2E_FEEDBACK_TO,
+  E2E_PLATFORM_ADMIN,
+  HELD_MODULES,
+  heldBaseURL,
+  heldPort,
   PREVIEW_MODULES,
   port,
   previewBaseURL,
@@ -42,6 +47,9 @@ function webEnv(origin: string): Record<string, string> {
     APP_URL: origin,
     // Invitation emails go to the stack's Mailpit (SMTP 127.0.0.1:54325).
     EMAIL_TRANSPORT: 'smtp',
+    // The closed beta (D-356, D-357): the owner's page and where feedback goes.
+    BIZCOST_PLATFORM_ADMINS: E2E_PLATFORM_ADMIN,
+    BIZCOST_FEEDBACK_EMAIL: E2E_FEEDBACK_TO,
     NEXT_TELEMETRY_DISABLED: '1',
   }
 }
@@ -86,6 +94,19 @@ export default defineConfig({
       reuseExistingServer: false,
       timeout: 300_000,
       env: { NEXT_DIST_DIR: '.next/e2e', ...webEnv(baseURL) },
+    },
+    // A second server of the build above, as a hosted deployment that holds a module back (D-359).
+    {
+      command: `${web} start --port ${heldPort}`,
+      cwd: repoRoot,
+      url: `${heldBaseURL}/login`,
+      reuseExistingServer: false,
+      timeout: 300_000,
+      env: {
+        NEXT_DIST_DIR: '.next/e2e',
+        BIZCOST_HELD_MODULES: HELD_MODULES,
+        ...webEnv(heldBaseURL),
+      },
     },
     {
       command: `${web} dev --port ${previewPort}`,

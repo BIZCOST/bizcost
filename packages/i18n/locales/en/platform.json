@@ -1,0 +1,37 @@
+{
+  "title": "Beta",
+  "subtitle": "Who may create an account, and what people tell you. Only you see this page.",
+  "list": {
+    "title": "Beta list",
+    "hint": "Only these addresses, and addresses with a pending invitation from a business, can create an account. Adding an address sends no email: tell the person yourself to sign up in the app with this same address. Taking one off stops new sign-ups and a sign-up not yet confirmed: an account already made stays.",
+    "email": "Email",
+    "note": "Note (optional)",
+    "notePlaceholder": "Who it is",
+    "add": "Add",
+    "adding": "Adding…",
+    "added": "Added to the list. Tell them to sign up with this address.",
+    "remove": "Take off {{email}}",
+    "removeTitle": "Take this address off the list?",
+    "removeBody": "{{email}} will not be able to sign up. An account already made stays.",
+    "removeAction": "Take off",
+    "removed": "{{email}} taken off the list.",
+    "empty": "Nobody on the list yet.",
+    "addedOn": "Added {{date}}",
+    "count_one": "{{count}} address",
+    "count_other": "{{count}} addresses",
+    "invalid": "Enter a valid email address."
+  },
+  "feedback": {
+    "title": "Feedback",
+    "hint": "What people sent with \"Send feedback\". A copy also goes to your email.",
+    "empty": "No feedback yet.",
+    "business": "Business",
+    "noBusiness": "Outside any business",
+    "member": "From",
+    "unknownMember": "Deleted account",
+    "page": "Page",
+    "picture": "Picture attached to this feedback",
+    "more": "Show more",
+    "loading": "Loading…"
+  }
+}

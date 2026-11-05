@@ -8,7 +8,7 @@ import { useTranslation } from 'react-i18next'
 import { useLocale, useTerminology } from '@/lib/i18n/client'
 import { useBusinessContext } from '@/lib/trpc/client'
 import { cn } from '@/lib/utils'
-import { permissionLabelKeys } from './permission-groups'
+import { offeredPermissionKeys, permissionLabelKeys } from './permission-groups'
 import { canGrantRole, isTemplateDefault, roleNameKey } from './role-labels'
 
 /** A role's name: the template's name in the page's language, or the custom role's own name. */
@@ -32,14 +32,23 @@ export function useRoleSummary() {
   const { locale } = useLocale()
   // In the business's wording ("See recipes" for a café).
   const term = useTerminology()
-  const profile = useBusinessContext().data?.terminologyProfile
+  const context = useBusinessContext().data
+  const profile = context?.terminologyProfile
+  const offered = context
+    ? offeredPermissionKeys(
+        context.capabilities,
+        context.modules.map((module) => module.id),
+      )
+    : null
   return (role: RoleDto) => {
     if (role.isOwner) return t('settings.roleInfo.owner')
     if (isRoleTemplateKey(role.templateKey) && isTemplateDefault(role)) {
       return t(`settings.roleInfo.${role.templateKey}`)
     }
     // In catalog order; costs, supplier prices and margins as their one switch (D-190).
-    const keys = permissionLabelKeys(role.permissionKeys)
+    const keys = permissionLabelKeys(
+      offered ? role.permissionKeys.filter((key) => offered.has(key)) : role.permissionKeys,
+    )
     if (keys.length === 0) return t('settings.roleInfo.customNone')
     const shown = keys.length > SUMMARY_LABELS + 1 ? keys.slice(0, SUMMARY_LABELS) : keys
     // The labels start a sentence ("See costs"); inside one, English writes them in lower case.

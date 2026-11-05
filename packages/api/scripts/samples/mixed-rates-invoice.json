@@ -1,0 +1,939 @@
+{
+  "kind": "tax_invoice",
+  "draft": false,
+  "locale": "ar",
+  "issuedAt": {
+    "year": 2026,
+    "month": 10,
+    "day": 20,
+    "hour": 8,
+    "minute": 0,
+    "second": 0
+  },
+  "labels": {
+    "title.quotation": {
+      "en": "Quotation",
+      "ar": "عرض سعر"
+    },
+    "title.taxInvoice": {
+      "en": "Tax Invoice",
+      "ar": "فاتورة ضريبية"
+    },
+    "title.invoice": {
+      "en": "Invoice",
+      "ar": "فاتورة"
+    },
+    "title.taxCreditNote": {
+      "en": "Tax Credit Note",
+      "ar": "إشعار دائن ضريبي"
+    },
+    "title.creditNote": {
+      "en": "Credit Note",
+      "ar": "إشعار دائن"
+    },
+    "title.statement": {
+      "en": "Statement of Account",
+      "ar": "كشف حساب"
+    },
+    "draft": {
+      "en": "Draft",
+      "ar": "مسودة"
+    },
+    "number.quotation": {
+      "en": "Quotation no.",
+      "ar": "رقم العرض"
+    },
+    "number.invoice": {
+      "en": "Invoice no.",
+      "ar": "رقم الفاتورة"
+    },
+    "number.creditNote": {
+      "en": "Credit note no.",
+      "ar": "رقم الإشعار"
+    },
+    "revision": {
+      "en": "Revision",
+      "ar": "النسخة"
+    },
+    "date": {
+      "en": "Date",
+      "ar": "التاريخ"
+    },
+    "validUntil": {
+      "en": "Valid until",
+      "ar": "صالح حتى"
+    },
+    "dueDate": {
+      "en": "Due date",
+      "ar": "تاريخ الاستحقاق"
+    },
+    "customerRef": {
+      "en": "Your reference",
+      "ar": "مرجعكم"
+    },
+    "lpo": {
+      "en": "LPO no.",
+      "ar": "رقم أمر الشراء"
+    },
+    "supplyDate": {
+      "en": "Date of supply",
+      "ar": "تاريخ التوريد"
+    },
+    "currency": {
+      "en": "Currency",
+      "ar": "العملة"
+    },
+    "period": {
+      "en": "Period",
+      "ar": "الفترة"
+    },
+    "periodValue": {
+      "en": "{{from}} – {{to}}",
+      "ar": "{{from}} – {{to}}"
+    },
+    "issuedOn": {
+      "en": "Issued on",
+      "ar": "تاريخ الإصدار"
+    },
+    "references.invoiceNo": {
+      "en": "Invoice no.",
+      "ar": "رقم الفاتورة"
+    },
+    "references.invoiceDate": {
+      "en": "Invoice date",
+      "ar": "تاريخ الفاتورة"
+    },
+    "references.quotation": {
+      "en": "Quotation",
+      "ar": "عرض السعر"
+    },
+    "references.order": {
+      "en": "Order",
+      "ar": "الطلب"
+    },
+    "references.invoiceSupplyDate": {
+      "en": "Invoice date of supply",
+      "ar": "تاريخ توريد الفاتورة"
+    },
+    "trn": {
+      "en": "TRN",
+      "ar": "الرقم الضريبي"
+    },
+    "tradeLicence": {
+      "en": "Trade licence",
+      "ar": "الرخصة التجارية"
+    },
+    "to": {
+      "en": "Quotation for",
+      "ar": "مقدّم إلى"
+    },
+    "billTo": {
+      "en": "Bill to",
+      "ar": "فاتورة إلى"
+    },
+    "customer": {
+      "en": "Customer",
+      "ar": "العميل"
+    },
+    "site": {
+      "en": "Project",
+      "ar": "المشروع"
+    },
+    "phone": {
+      "en": "Phone",
+      "ar": "الهاتف"
+    },
+    "email": {
+      "en": "Email",
+      "ar": "البريد الإلكتروني"
+    },
+    "address": {
+      "en": "Address",
+      "ar": "العنوان"
+    },
+    "page": {
+      "en": "Page {{page}} of {{pages}}",
+      "ar": "صفحة {{page}} من {{pages}}"
+    },
+    "dear": {
+      "en": "Dear {{name}},",
+      "ar": "السادة / {{name}}،"
+    },
+    "intro": {
+      "en": "Thank you for your interest in our services. We are pleased to submit the following quotation for your review.",
+      "ar": "شكرًا لاهتمامكم بخدماتنا. يسعدنا أن نقدّم لكم عرض السعر التالي للاطلاع عليه."
+    },
+    "amountsIn": {
+      "en": "All prices are in {{currency}}.",
+      "ar": "جميع الأسعار بعملة {{currency}}."
+    },
+    "amountsInAed": {
+      "en": "All prices are in UAE dirhams (AED).",
+      "ar": "جميع الأسعار بالدرهم الإماراتي (⁦AED⁩)."
+    },
+    "validity": {
+      "en": "This quotation is valid until {{date}}. Please feel free to contact us if you have any questions.",
+      "ar": "هذا العرض صالح حتى {{date}}. يسعدنا الردّ على أي استفسار."
+    },
+    "contact": {
+      "en": "Please feel free to contact us if you have any questions.",
+      "ar": "يسعدنا الردّ على أي استفسار."
+    },
+    "table.no": {
+      "en": "No.",
+      "ar": "م"
+    },
+    "table.picture": {
+      "en": "Picture",
+      "ar": "صورة"
+    },
+    "table.area": {
+      "en": "Area",
+      "ar": "المكان"
+    },
+    "table.description": {
+      "en": "Description",
+      "ar": "الوصف"
+    },
+    "table.unitPrice": {
+      "en": "Unit price",
+      "ar": "سعر الوحدة"
+    },
+    "table.qty": {
+      "en": "Qty",
+      "ar": "الكمية"
+    },
+    "table.discount": {
+      "en": "Discount",
+      "ar": "الخصم"
+    },
+    "table.beforeVat": {
+      "en": "Before VAT",
+      "ar": "قبل الضريبة"
+    },
+    "table.vatHead.rate": {
+      "en": "VAT {{rate}}%",
+      "ar": "VAT {{rate}}%"
+    },
+    "table.vatHead.exempt": {
+      "en": "VAT exempt",
+      "ar": "VAT exempt"
+    },
+    "table.vatHead.mixed": {
+      "en": "VAT",
+      "ar": "VAT"
+    },
+    "table.total": {
+      "en": "Total",
+      "ar": "الإجمالي"
+    },
+    "table.amount": {
+      "en": "Amount",
+      "ar": "المبلغ"
+    },
+    "table.inclVat": {
+      "en": "incl. VAT",
+      "ar": "شامل الضريبة"
+    },
+    "totals.subtotal": {
+      "en": "Subtotal",
+      "ar": "المجموع الفرعي"
+    },
+    "totals.discount": {
+      "en": "Discount",
+      "ar": "الخصم"
+    },
+    "totals.adjustment": {
+      "en": "Rounding adjustment",
+      "ar": "تعديل لتقريب الإجمالي"
+    },
+    "totals.net": {
+      "en": "Total before VAT",
+      "ar": "الإجمالي قبل الضريبة"
+    },
+    "totals.vatRate": {
+      "en": "VAT {{rate}}% on {{taxable}}",
+      "ar": "ضريبة القيمة المضافة {{rate}}% على {{taxable}}"
+    },
+    "totals.zeroRated": {
+      "en": "Zero-rated, on {{taxable}}",
+      "ar": "خاضع لنسبة الصفر، على {{taxable}}"
+    },
+    "totals.exempt": {
+      "en": "Exempt, on {{taxable}}",
+      "ar": "معفى، على {{taxable}}"
+    },
+    "totals.total": {
+      "en": "Total",
+      "ar": "الإجمالي"
+    },
+    "totals.roundingDifference": {
+      "en": "Rounding difference",
+      "ar": "فرق التقريب"
+    },
+    "totals.payable": {
+      "en": "Amount to pay",
+      "ar": "المبلغ المطلوب"
+    },
+    "totals.paid": {
+      "en": "Paid",
+      "ar": "المدفوع"
+    },
+    "totals.balanceDue": {
+      "en": "Balance due",
+      "ar": "المبلغ المتبقي"
+    },
+    "stages.title": {
+      "en": "Payment terms",
+      "ar": "شروط الدفع"
+    },
+    "stages.stage": {
+      "en": "Payment",
+      "ar": "الدفعة"
+    },
+    "stages.due": {
+      "en": "When",
+      "ar": "الموعد"
+    },
+    "stages.percent": {
+      "en": "Share",
+      "ar": "النسبة"
+    },
+    "stages.amount": {
+      "en": "Amount",
+      "ar": "المبلغ"
+    },
+    "stages.label": {
+      "en": "Payment {{n}}",
+      "ar": "الدفعة {{n}}"
+    },
+    "payments.title": {
+      "en": "Payments received",
+      "ar": "الدفعات المستلمة"
+    },
+    "payments.date": {
+      "en": "Date",
+      "ar": "التاريخ"
+    },
+    "payments.method": {
+      "en": "Method",
+      "ar": "طريقة الدفع"
+    },
+    "payments.reference": {
+      "en": "Reference",
+      "ar": "المرجع"
+    },
+    "payments.amount": {
+      "en": "Amount",
+      "ar": "المبلغ"
+    },
+    "terms": {
+      "en": "Terms and conditions",
+      "ar": "الشروط والأحكام"
+    },
+    "notes": {
+      "en": "Notes",
+      "ar": "ملاحظات"
+    },
+    "paymentDetails": {
+      "en": "Payment details",
+      "ar": "بيانات الدفع"
+    },
+    "signature.for": {
+      "en": "For {{name}}",
+      "ar": "عن {{name}}"
+    },
+    "signature.signatory": {
+      "en": "Authorised signatory",
+      "ar": "المفوّض بالتوقيع"
+    },
+    "signature.acceptance": {
+      "en": "Customer's acceptance",
+      "ar": "موافقة العميل"
+    },
+    "signature.line": {
+      "en": "Signature and date",
+      "ar": "التوقيع والتاريخ"
+    },
+    "unit.mg": {
+      "en": "mg",
+      "ar": "ملغ"
+    },
+    "unit.g": {
+      "en": "g",
+      "ar": "غرام"
+    },
+    "unit.kg": {
+      "en": "kg",
+      "ar": "كيلو"
+    },
+    "unit.ml": {
+      "en": "ml",
+      "ar": "مل"
+    },
+    "unit.l": {
+      "en": "L",
+      "ar": "لتر"
+    },
+    "unit.piece": {
+      "en": "pcs",
+      "ar": "قطعة"
+    },
+    "unit.mm": {
+      "en": "mm",
+      "ar": "مم"
+    },
+    "unit.cm": {
+      "en": "cm",
+      "ar": "سم"
+    },
+    "unit.m": {
+      "en": "m",
+      "ar": "متر"
+    },
+    "unit.mm2": {
+      "en": "mm²",
+      "ar": "مم²"
+    },
+    "unit.cm2": {
+      "en": "cm²",
+      "ar": "سم²"
+    },
+    "unit.m2": {
+      "en": "m²",
+      "ar": "م²"
+    },
+    "unit.s": {
+      "en": "sec",
+      "ar": "ثانية"
+    },
+    "unit.min": {
+      "en": "min",
+      "ar": "دقيقة"
+    },
+    "unit.h": {
+      "en": "hr",
+      "ar": "ساعة"
+    },
+    "vatCategory.zeroRated": {
+      "en": "0%",
+      "ar": "0%"
+    },
+    "vatCategory.exempt": {
+      "en": "Exempt",
+      "ar": "معفى"
+    },
+    "method.cash": {
+      "en": "Cash",
+      "ar": "نقدًا"
+    },
+    "method.card": {
+      "en": "Card",
+      "ar": "بطاقة"
+    },
+    "method.bank_transfer": {
+      "en": "Bank transfer",
+      "ar": "تحويل بنكي"
+    },
+    "method.cheque": {
+      "en": "Cheque",
+      "ar": "شيك"
+    },
+    "method.paidWhenMade": {
+      "en": "Paid at the sale",
+      "ar": "دُفع عند البيع"
+    },
+    "method.paidEarlier": {
+      "en": "Paid before this invoice",
+      "ar": "مدفوع قبل هذه الفاتورة"
+    },
+    "credit.valueBefore": {
+      "en": "Value of the supply on the invoice",
+      "ar": "قيمة التوريد في الفاتورة"
+    },
+    "credit.valueAfter": {
+      "en": "Correct value of the supply",
+      "ar": "القيمة الصحيحة للتوريد"
+    },
+    "credit.difference": {
+      "en": "Difference",
+      "ar": "الفرق"
+    },
+    "credit.vatOnDifference": {
+      "en": "VAT {{rate}}% on the difference",
+      "ar": "ضريبة القيمة المضافة {{rate}}% على الفرق"
+    },
+    "credit.zeroRatedDifference": {
+      "en": "Zero-rated difference",
+      "ar": "فرق خاضع لنسبة الصفر"
+    },
+    "credit.exemptDifference": {
+      "en": "Exempt difference",
+      "ar": "فرق معفى"
+    },
+    "credit.total": {
+      "en": "Total credited",
+      "ar": "إجمالي المبلغ الدائن"
+    },
+    "credit.payable": {
+      "en": "Credited in all",
+      "ar": "إجمالي المبلغ الدائن مع فرق التقريب"
+    },
+    "credit.reason": {
+      "en": "Reason for this credit note",
+      "ar": "سبب الإشعار الدائن"
+    },
+    "reasons.cancelled": {
+      "en": "Supply cancelled",
+      "ar": "إلغاء التوريد"
+    },
+    "reasons.tax_treatment_changed": {
+      "en": "Nature of the supply changed",
+      "ar": "تغيّر طبيعة التوريد"
+    },
+    "reasons.price_changed": {
+      "en": "Price changed",
+      "ar": "تغيّر السعر"
+    },
+    "reasons.goods_returned": {
+      "en": "Goods returned",
+      "ar": "إرجاع السلع"
+    },
+    "reasons.tax_charged_in_error": {
+      "en": "Tax charged in error",
+      "ar": "احتساب الضريبة بالخطأ"
+    },
+    "statement.date": {
+      "en": "Date",
+      "ar": "التاريخ"
+    },
+    "statement.document": {
+      "en": "Document",
+      "ar": "المستند"
+    },
+    "statement.charge": {
+      "en": "Charges",
+      "ar": "الفواتير والتسليمات"
+    },
+    "statement.credit": {
+      "en": "Payments and credits",
+      "ar": "الدفعات والإشعارات الدائنة"
+    },
+    "statement.owed": {
+      "en": "Owed",
+      "ar": "المستحق"
+    },
+    "statement.opening": {
+      "en": "Owed at the start",
+      "ar": "المستحق في البداية"
+    },
+    "statement.invoiced": {
+      "en": "Invoiced and delivered",
+      "ar": "الفواتير والتسليمات"
+    },
+    "statement.credited": {
+      "en": "Credited",
+      "ar": "الإشعارات الدائنة"
+    },
+    "statement.paid": {
+      "en": "Paid",
+      "ar": "المدفوع"
+    },
+    "statement.closing": {
+      "en": "Owed at the end",
+      "ar": "المستحق في النهاية"
+    },
+    "statement.openingRow": {
+      "en": "Owed at the start of the period",
+      "ar": "المستحق في بداية الفترة"
+    },
+    "statement.empty": {
+      "en": "Nothing in this period.",
+      "ar": "لا شيء في هذه الفترة."
+    },
+    "statement.invoice": {
+      "en": "Invoice {{number}}",
+      "ar": "فاتورة ⁦{{number}}⁩"
+    },
+    "statement.credit_note": {
+      "en": "Credit note {{number}}",
+      "ar": "إشعار دائن ⁦{{number}}⁩"
+    },
+    "statement.order": {
+      "en": "Order {{number}}",
+      "ar": "طلب ⁦{{number}}⁩"
+    },
+    "statement.sale": {
+      "en": "Sale",
+      "ar": "عملية بيع"
+    },
+    "statement.refund": {
+      "en": "Refund",
+      "ar": "استرداد"
+    },
+    "statement.payment": {
+      "en": "Payment",
+      "ar": "دفعة"
+    },
+    "statement.paymentOn": {
+      "en": "Payment – {{reference}}",
+      "ar": "دفعة – ⁦{{reference}}⁩"
+    },
+    "statement.money_back": {
+      "en": "Money given back",
+      "ar": "مبلغ أُعيد للعميل"
+    },
+    "statement.money_backOn": {
+      "en": "Money given back – {{reference}}",
+      "ar": "مبلغ أُعيد للعميل – ⁦{{reference}}⁩"
+    },
+    "statement.paidWhenMade": {
+      "en": "Paid at the sale",
+      "ar": "دُفع عند البيع"
+    },
+    "statement.saleReversed": {
+      "en": "Sale reversed",
+      "ar": "إبطال عملية بيع"
+    },
+    "statement.refundReversed": {
+      "en": "Refund reversed",
+      "ar": "إبطال استرداد"
+    },
+    "statement.paymentReversed": {
+      "en": "Payment reversed",
+      "ar": "إبطال دفعة"
+    },
+    "statement.paymentReversedOn": {
+      "en": "Payment reversed – {{reference}}",
+      "ar": "إبطال دفعة – ⁦{{reference}}⁩"
+    },
+    "statement.money_backReversed": {
+      "en": "Money given back, reversed",
+      "ar": "إبطال مبلغ أُعيد للعميل"
+    },
+    "statement.money_backReversedOn": {
+      "en": "Money given back, reversed – {{reference}}",
+      "ar": "إبطال مبلغ أُعيد للعميل – ⁦{{reference}}⁩"
+    },
+    "statement.owedThroughOrder": {
+      "en": "Already owed for order {{order}}: {{amount}}",
+      "ar": "مستحق سابقًا عن الطلب ⁦{{order}}⁩: {{amount}}"
+    },
+    "statement.owedThroughSale": {
+      "en": "Already owed for the sale: {{amount}}",
+      "ar": "مستحق سابقًا عن عملية البيع: {{amount}}"
+    },
+    "statement.stillOwedOrder": {
+      "en": "Still owed for order {{order}}: {{amount}}",
+      "ar": "ما زال مستحقًا عن الطلب ⁦{{order}}⁩: {{amount}}"
+    },
+    "statement.ahead": {
+      "en": "paid ahead",
+      "ar": "مدفوع مقدّمًا"
+    },
+    "statement.closingAhead": {
+      "en": "Paid ahead at the end",
+      "ar": "مدفوع مقدّمًا في النهاية"
+    },
+    "statement.invoiced_plain": {
+      "en": "Orders and sales",
+      "ar": "الطلبات والمبيعات"
+    },
+    "statement.credited_plain": {
+      "en": "Refunded",
+      "ar": "المسترد"
+    },
+    "statement.charge_plain": {
+      "en": "Orders and sales",
+      "ar": "الطلبات والمبيعات"
+    },
+    "statement.credit_plain": {
+      "en": "Payments and refunds",
+      "ar": "الدفعات والاستردادات"
+    }
+  },
+  "title": {
+    "en": "Tax Invoice",
+    "ar": "فاتورة ضريبية"
+  },
+  "number": "INV-0042",
+  "revision": null,
+  "date": {
+    "en": "20 October 2026",
+    "ar": "20 أكتوبر 2026"
+  },
+  "validUntil": null,
+  "dueDate": {
+    "en": "19 November 2026",
+    "ar": "19 نوفمبر 2026"
+  },
+  "customerRef": "LPO-GH-2311",
+  "references": [
+    {
+      "label": {
+        "en": "Currency",
+        "ar": "العملة"
+      },
+      "value": "AED"
+    }
+  ],
+  "currency": "AED",
+  "letterhead": {
+    "nameEn": {
+      "text": "Modern Touch Interiors",
+      "dir": "ltr"
+    },
+    "nameAr": {
+      "text": "لمسة عصرية للديكور",
+      "dir": "rtl"
+    },
+    "accent": "#1A1A1A",
+    "logo": "logo",
+    "watermark": true,
+    "phones": [
+      "+971 4 555 0142",
+      "+971 50 555 0199"
+    ],
+    "email": "hello@moderntouch.example",
+    "address": {
+      "text": "Warehouse 7, Al Quoz Industrial 3, Dubai",
+      "dir": "ltr"
+    },
+    "trn": "100345678900003",
+    "tradeLicence": "DED-884210"
+  },
+  "customer": {
+    "name": {
+      "text": "Gulf Horizon Properties LLC",
+      "dir": "ltr"
+    },
+    "site": null,
+    "phone": "+971 4 555 0300",
+    "trn": "100555666700003",
+    "address": {
+      "text": "Office 1402, Marina Plaza, Dubai Marina, Dubai",
+      "dir": "ltr"
+    }
+  },
+  "opening": null,
+  "table": {
+    "showPictures": false,
+    "showAreas": false,
+    "showDiscount": true,
+    "rows": "tax",
+    "vatHead": "VAT"
+  },
+  "lines": [
+    {
+      "no": 1,
+      "area": null,
+      "picture": null,
+      "title": {
+        "text": "واجهة زجاجية للبرج",
+        "dir": "rtl"
+      },
+      "details": {
+        "text": "Double glazing, aluminium frames, supply and fixing",
+        "dir": "ltr"
+      },
+      "note": null,
+      "qty": "12,500.5",
+      "unit": "م²",
+      "unitPrice": "18,750.00",
+      "discount": "11,747,703.68",
+      "vatRate": "5%",
+      "beforeVat": "222,636,671.32",
+      "vatAmount": "11,131,833.56",
+      "amount": "233,768,504.88",
+      "includesVat": false
+    },
+    {
+      "no": 2,
+      "area": null,
+      "picture": null,
+      "title": {
+        "text": "Joinery exported to Muscat",
+        "dir": "ltr"
+      },
+      "details": {
+        "text": "Zero-rated: exported with the customs papers",
+        "dir": "ltr"
+      },
+      "note": null,
+      "qty": "1",
+      "unit": "قطعة",
+      "unitPrice": "2,450,000.00",
+      "discount": "313.42",
+      "vatRate": "0%",
+      "beforeVat": "2,449,686.58",
+      "vatAmount": "0.00",
+      "amount": "2,449,686.58",
+      "includesVat": false
+    },
+    {
+      "no": 3,
+      "area": null,
+      "picture": null,
+      "title": {
+        "text": "إيجار سكني لموظفي الموقع",
+        "dir": "rtl"
+      },
+      "details": {
+        "text": "Exempt: residential rent, 12 months",
+        "dir": "ltr"
+      },
+      "note": null,
+      "qty": "12",
+      "unit": null,
+      "unitPrice": "104,166.67",
+      "discount": "159.91",
+      "vatRate": "معفى",
+      "beforeVat": "1,249,840.13",
+      "vatAmount": "0.00",
+      "amount": "1,249,840.13",
+      "includesVat": false
+    },
+    {
+      "no": 4,
+      "area": null,
+      "picture": null,
+      "title": {
+        "text": "Site supervision",
+        "dir": "ltr"
+      },
+      "details": {
+        "text": "Price with VAT",
+        "dir": "ltr"
+      },
+      "note": null,
+      "qty": "3",
+      "unit": null,
+      "unitPrice": "10,500.00",
+      "discount": "4.03",
+      "vatRate": "5%",
+      "beforeVat": "29,996.16",
+      "vatAmount": "1,499.81",
+      "amount": "31,495.97",
+      "includesVat": true
+    },
+    {
+      "no": 5,
+      "area": null,
+      "picture": null,
+      "title": {
+        "text": "Site survey",
+        "dir": "ltr"
+      },
+      "details": null,
+      "note": null,
+      "qty": "1",
+      "unit": null,
+      "unitPrice": "450.00",
+      "discount": "0.06",
+      "vatRate": "5%",
+      "beforeVat": "449.94",
+      "vatAmount": "22.50",
+      "amount": "472.44",
+      "includesVat": false
+    }
+  ],
+  "totals": [
+    {
+      "label": {
+        "en": "Subtotal",
+        "ar": "المجموع الفرعي"
+      },
+      "amount": "226,395,606.29",
+      "strong": false
+    },
+    {
+      "label": {
+        "en": "Rounding adjustment",
+        "ar": "تعديل لتقريب الإجمالي"
+      },
+      "amount": "-28,962.16",
+      "strong": false
+    },
+    {
+      "label": {
+        "en": "Total before VAT",
+        "ar": "الإجمالي قبل الضريبة"
+      },
+      "amount": "226,366,644.13",
+      "strong": false
+    },
+    {
+      "label": {
+        "en": "VAT 5% on 222,667,117.42",
+        "ar": "ضريبة القيمة المضافة 5% على 222,667,117.42"
+      },
+      "amount": "11,133,355.87",
+      "strong": false
+    },
+    {
+      "label": {
+        "en": "Zero-rated, on 2,449,686.58",
+        "ar": "خاضع لنسبة الصفر، على 2,449,686.58"
+      },
+      "amount": "0.00",
+      "strong": false
+    },
+    {
+      "label": {
+        "en": "Exempt, on 1,249,840.13",
+        "ar": "معفى، على 1,249,840.13"
+      },
+      "amount": "0.00",
+      "strong": false
+    },
+    {
+      "label": {
+        "en": "Total",
+        "ar": "الإجمالي"
+      },
+      "amount": "237,500,000.00",
+      "strong": true
+    }
+  ],
+  "stages": [],
+  "payments": [],
+  "validity": null,
+  "terms": {
+    "text": "Payment within 30 days of the invoice date.",
+    "dir": "ltr"
+  },
+  "notes": null,
+  "paymentDetails": {
+    "text": "Bank: Emirates Sample Bank\nAccount name: Modern Touch Interiors\nIBAN: AE00 0000 0000 0000 0000 000",
+    "dir": "ltr"
+  },
+  "signature": {
+    "signatory": {
+      "text": "عبدالله الكعبي",
+      "dir": "rtl"
+    },
+    "signature": "signature",
+    "stamp": "stamp",
+    "acceptance": false
+  },
+  "images": {
+    "logo": {
+      "path": "/img/logo.png",
+      "format": "png",
+      "width": 1,
+      "height": 1
+    },
+    "signature": {
+      "path": "/img/signature.png",
+      "format": "png",
+      "width": 1,
+      "height": 1
+    },
+    "stamp": {
+      "path": "/img/stamp.png",
+      "format": "png",
+      "width": 1,
+      "height": 1
+    }
+  }
+}

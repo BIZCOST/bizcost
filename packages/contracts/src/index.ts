@@ -1,5 +1,5 @@
 export { zBusinessDate, zBusinessMonth, zDecimal, zUuid, DECIMAL_MAX_LENGTH } from './primitives'
-export { API_MAX_BATCH_SIZE } from './batch'
+export { API_MAX_BATCH_SIZE, API_MAX_URL_LENGTH } from './batch'
 export {
   AUTH_OTP_LENGTH,
   AUTH_PASSWORD_MAX_BYTES,
@@ -41,6 +41,39 @@ export {
   type ProfileDto,
 } from './dto/me'
 export { DELETED_USER_DISPLAY_NAME, PROFILE_DISPLAY_NAME_MAX_LENGTH } from './profile'
+export { BETA_REFUSED_MESSAGE, LEGAL_METADATA_KEY, LEGAL_VERSION, SUPPORT_EMAIL } from './legal'
+export {
+  acceptTermsInput,
+  BETA_EMAIL_MAX_LENGTH,
+  BETA_NOTE_MAX_LENGTH,
+  betaAddInput,
+  betaEntryDto,
+  betaListDto,
+  betaRemoveInput,
+  FEEDBACK_IMAGE_TYPES,
+  FEEDBACK_MESSAGE_MAX_LENGTH,
+  FEEDBACK_PAGE_PATH_MAX_LENGTH,
+  FEEDBACK_PAGE_SIZE,
+  feedbackImageUploadDto,
+  feedbackImageUploadInput,
+  feedbackPagePath,
+  feedbackSendInput,
+  platformFeedbackDto,
+  platformFeedbackInput,
+  platformFeedbackItemDto,
+  type AcceptTermsInput,
+  type BetaAddInput,
+  type BetaEntryDto,
+  type BetaListDto,
+  type BetaRemoveInput,
+  type FeedbackImageType,
+  type FeedbackImageUploadDto,
+  type FeedbackImageUploadInput,
+  type FeedbackSendInput,
+  type PlatformFeedbackDto,
+  type PlatformFeedbackInput,
+  type PlatformFeedbackItemDto,
+} from './dto/platform'
 export {
   BUSINESS_NAME_MAX_LENGTH,
   INVITATION_DAILY_LIMIT,

@@ -1,9 +1,11 @@
+import { BETA_REFUSED_MESSAGE } from '@bizcost/contracts'
 import type { I18nKey } from '@bizcost/i18n'
 
 // Supabase Auth errors → i18n keys, by `error.code` only (never the message text, which changes and
 // may reveal whether an account exists). Anything unknown is `errors.internal` (docs/DECISIONS.md D-039).
 // The one message read anywhere is the wait in the "too soon" answer, for its number only
-// (email-retry.ts, D-073).
+// (email-retry.ts, D-073), and the refusal of our own Auth hook, whose words we wrote (closed sign-up,
+// D-355: Auth gives a hook's refusal no code of its own).
 
 /** Message keys an auth flow can show. */
 export type AuthMessageKey = Extract<
@@ -25,6 +27,7 @@ export const AUTH_ERROR_KEYS = {
   signup_disabled: 'auth.errors.signupDisabled',
   email_address_invalid: 'auth.validation.emailInvalid',
   email_address_not_authorized: 'auth.errors.emailNotAuthorized',
+  captcha_failed: 'auth.errors.captchaFailed',
   validation_failed: 'errors.validation',
   conflict: 'errors.conflict',
   request_timeout: 'errors.network',
@@ -57,6 +60,7 @@ function weakPasswordKey(reasons: unknown): AuthMessageKey {
 }
 
 interface ErrorLike {
+  message?: unknown
   code?: unknown
   name?: unknown
   status?: unknown
@@ -75,6 +79,10 @@ export function authErrorCode(error: unknown): string | undefined {
 /** The i18n key to show for a Supabase Auth error (or any other thrown value). */
 export function authErrorKey(error: unknown): AuthMessageKey {
   if (!isErrorLike(error)) return 'errors.internal'
+  // Closed sign-up (D-355): this address has no account, no place on the beta list and no invitation.
+  if (error.status === 403 && error.message === BETA_REFUSED_MESSAGE) {
+    return 'auth.errors.betaInviteOnly'
+  }
   const code = authErrorCode(error)
   if (code === 'weak_password') return weakPasswordKey(error.reasons)
   if (code && Object.hasOwn(AUTH_ERROR_KEYS, code)) {

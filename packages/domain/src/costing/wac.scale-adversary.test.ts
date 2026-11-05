@@ -1,3 +1,4 @@
+import { timeBudget } from '@bizcost/config/vitest/budget'
 import { describe, expect, it } from 'vitest'
 import type { CostAmount, Quantity } from '../numbers/kinds'
 import { replayWac, type WacMovement } from './wac'
@@ -27,7 +28,7 @@ import { replayWac, type WacMovement } from './wac'
 //
 // The case below is an ordinary café: milk bought twice a day for three years, one purchase in ten
 // corrected ("Correct" = reverse + a new draft, D-114 rule 3). The budgets leave a wide margin for a
-// slower machine.
+// slower machine, and CI's runners get theirs (timeBudget, D-351).
 
 /**
  * Milk bought `purchases` times (10 L, AED 6.25 to 12.25), every `correctEvery`-th one reversed `lag`
@@ -65,7 +66,7 @@ describe('the cost of a replay (what every return, credit note and reversal pays
     // The replay itself is right (1,971 receipts stand: 19,710 L)…
     expect(state.qty).toBe('19710000')
     // …but it must not take seconds.
-    expect(elapsed, `replayWac took ${elapsed} ms`).toBeLessThan(750)
+    expect(elapsed, `replayWac took ${elapsed} ms`).toBeLessThan(timeBudget(750))
   }, 60_000)
 
   // The budgets below catch the engine before D-208 (4.4 s, and more than 12 s), with room for a
@@ -75,7 +76,7 @@ describe('the cost of a replay (what every return, credit note and reversal pays
   it('the same, each correction posted a month later (60 purchases on): a fraction of the old 4.4 s', () => {
     const { state, elapsed } = timed(cafeMilk(2190, 10, 60))
     expect(state.qty).toBe('19710000')
-    expect(elapsed, `replayWac took ${elapsed} ms`).toBeLessThan(1500)
+    expect(elapsed, `replayWac took ${elapsed} ms`).toBeLessThan(timeBudget(1500))
   }, 60_000)
 
   it('six years of it, corrections a month late: the cost follows the lateness, not the age', () => {
@@ -83,6 +84,6 @@ describe('the cost of a replay (what every return, credit note and reversal pays
     // 3,942 receipts stand: 39,420 L.
     expect(state.qty).toBe('39420000')
     // Twice the ledger, twice the budget.
-    expect(elapsed, `replayWac took ${elapsed} ms`).toBeLessThan(3000)
+    expect(elapsed, `replayWac took ${elapsed} ms`).toBeLessThan(timeBudget(3000))
   }, 60_000)
 })

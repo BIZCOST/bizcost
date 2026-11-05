@@ -37,6 +37,9 @@ export const AUTH_MESSAGES: readonly MessageSpec[] = ['auth']
 /** The account page: its sections and the code flows of sign-in. */
 export const ACCOUNT_MESSAGES: readonly MessageSpec[] = ['account', 'auth']
 
+/** The owner's beta page (D-357). */
+export const PLATFORM_MESSAGES: readonly MessageSpec[] = ['platform']
+
 /** Smart Setup: the questions, the review and the module names. */
 export const SETUP_MESSAGES: readonly MessageSpec[] = ['setup', 'modules']
 
@@ -215,6 +218,11 @@ export const INVOICES_MESSAGES: readonly MessageSpec[] = [
     paths: [
       'invoices',
       'pdfFile',
+      // The invoice's page reads its lines in the columns the PDF prints (D-360).
+      'pdf.table',
+      'pdf.vatCategory',
+      'pdf.amountsIn',
+      'pdf.amountsInAed',
       'emirates',
       'quotations.editor',
       'quotations.totals',

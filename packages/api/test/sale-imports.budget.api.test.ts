@@ -1,3 +1,4 @@
+import { timeBudget } from '@bizcost/config/vitest/budget'
 import { createHash } from 'node:crypto'
 import type { LocationDto, MaterialDto, ProductDto, SaleImportDto } from '@bizcost/contracts'
 import { IMPORT_ROWS_CHUNK } from '@bizcost/contracts'
@@ -27,8 +28,8 @@ import { bought, CAFE_BRANCHES, shift } from './sales'
 // shop-shaped file (1,000 items, 31,000 day × item totals) is timed by
 // sale-imports.budget-adversary.api.test.ts (D-261).
 
-const POST_BUDGET_MS = 5000
-const FILE_BUDGET_MS = 10_000
+const POST_BUDGET_MS = timeBudget(5000)
+const FILE_BUDGET_MS = timeBudget(10_000)
 const PRODUCTS = 120
 const MATERIALS = 10
 const FILE_ROWS = 50_000

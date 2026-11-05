@@ -5,7 +5,7 @@ import type { AuthUser } from '../auth'
 import { memoized, type Context } from '../context'
 import { AppError } from '../errors'
 import { membershipLogoUrls } from '../services/business-profile'
-import { ensureProfile, profileColumns, toProfileDto } from '../services/profile'
+import { ensureProfile, isPlatformAdmin, profileColumns, toProfileDto } from '../services/profile'
 import { authedProcedure } from '../trpc'
 
 /**
@@ -109,8 +109,9 @@ async function loadMe(ctx: Context, auth: AuthUser): Promise<MeDto> {
     if (member) withRoles.push({ ...membership, roleTemplateKey: member.templateKey })
   }
 
-  const logoOf = await logos
+  const [logoOf, platformAdmin] = await Promise.all([logos, isPlatformAdmin(ctx, auth)])
   return {
+    isPlatformAdmin: platformAdmin,
     profile: toProfileDto(profile, email),
     memberships: withRoles.map((membership) => {
       const active = membership.status === 'active'

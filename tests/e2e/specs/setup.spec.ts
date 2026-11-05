@@ -1,5 +1,6 @@
 import { expect, test, type Page } from '@playwright/test'
 import {
+  acceptTerms,
   createUser,
   deleteUser,
   enterCode,
@@ -85,6 +86,7 @@ test('sign up, set up a home bakery with Smart Setup and land on its home (Engli
   await page.goto('/signup')
   await page.getByLabel('Email', { exact: true }).fill(email)
   await page.getByRole('textbox', { name: 'Password', exact: true }).fill('A-long-password-42')
+  await acceptTerms(page)
   await page.getByRole('button', { name: 'Create account' }).click()
   await expect(page).toHaveURL('/verify')
   users.push(await findUserId(email))
@@ -123,11 +125,11 @@ test('sign up, set up a home bakery with Smart Setup and land on its home (Engli
   // A reload keeps the name, the answers and the step.
   await page.reload()
   await expect(page.getByRole('heading', { level: 1 })).toHaveText('Does anyone work with you?')
-  await page.getByRole('button', { name: 'Back' }).click()
+  await page.getByRole('button', { name: 'Back', exact: true }).click()
   await onQuestion(page, 'Where do you mainly work?')
   await expect(page.getByRole('radio', { name: 'From home' })).toBeChecked()
-  await page.getByRole('button', { name: 'Back' }).click()
-  await page.getByRole('button', { name: 'Back' }).click()
+  await page.getByRole('button', { name: 'Back', exact: true }).click()
+  await page.getByRole('button', { name: 'Back', exact: true }).click()
   await expect(page.getByRole('textbox', { name: "What's your business called?" })).toHaveValue(
     "Sara's Sweets",
   )

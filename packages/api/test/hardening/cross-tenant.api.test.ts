@@ -1,4 +1,4 @@
-import { FIELD_WRAPPER_TYPES, type AppErrorCode } from '@bizcost/contracts'
+import { FIELD_WRAPPER_TYPES, LEGAL_VERSION, type AppErrorCode } from '@bizcost/contracts'
 import { ATTACHMENT_ENTITIES, newId, type AttachmentEntity } from '@bizcost/domain'
 import { QUESTION_SET_VERSION } from '@bizcost/modules'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
@@ -93,6 +93,60 @@ const PROBES: Record<string, Probe> = {
     reason: 'changes only the caller’s own profile and memberships',
     variants: () => [{ input: { displayName: 'Attacker' } }],
     answer: 'ok',
+  },
+  'account.acceptTerms': {
+    base: 'authed',
+    reason: 'changes only the caller’s own profile: the terms they accept (D-358)',
+    variants: () => [{ input: { termsVersion: LEGAL_VERSION } }],
+    answer: 'ok',
+  },
+  'feedback.imageUploadUrl': {
+    base: 'authed',
+    reason: 'registers a new path in the caller’s own folder; it names no row (D-356)',
+    variants: () => [{ input: { contentType: 'image/png' } }],
+    answer: 'ok',
+  },
+  'feedback.send': {
+    base: 'authed',
+    reason:
+      'only the caller’s own upload (a path outside their folder is VALIDATION); a business named in ' +
+      'x-business-id must be theirs, by the database (D-356; beta.api.test.ts)',
+    variants: (victim) => [
+      {
+        input: {
+          message: 'Attacker',
+          pagePath: '/',
+          imagePath: `${victim.owner.user.id}/logo/${newId()}.png`,
+        },
+      },
+    ],
+    answer: ['validation'],
+    notReferences: {
+      pagePath: 'the page the sender is on: text kept with the message, it opens nothing',
+    },
+  },
+  'platform.betaList': {
+    base: 'authed',
+    reason: 'platform admins only, whatever the caller’s roles (D-357)',
+    answer: ['forbidden'],
+  },
+  'platform.betaAdd': {
+    base: 'authed',
+    reason: 'platform admins only, whatever the caller’s roles (D-357)',
+    variants: () => [{ input: { email: 'someone@example.test' } }],
+    answer: ['forbidden'],
+  },
+  'platform.betaRemove': {
+    base: 'authed',
+    reason: 'platform admins only, whatever the caller’s roles (D-357)',
+    variants: (victim) => [{ input: { id: victim.id } }],
+    answer: ['forbidden'],
+  },
+  'platform.feedback': {
+    base: 'authed',
+    reason: 'platform admins only, whatever the caller’s roles (D-357)',
+    variants: (victim) => [{ input: { cursor: victim.id } }],
+    answer: ['forbidden'],
   },
   'account.setLastBusiness': {
     base: 'authed',

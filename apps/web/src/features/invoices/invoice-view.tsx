@@ -2,7 +2,7 @@
 
 import { apiErrorKey, useTRPC } from '@bizcost/app-core'
 import type { InvoiceDto } from '@bizcost/contracts'
-import { compareDecimal, newId, subtractDecimals, sumDecimals } from '@bizcost/domain'
+import { newId, subtractDecimals, sumDecimals } from '@bizcost/domain'
 import type { I18nKey } from '@bizcost/i18n'
 import { useMutation } from '@tanstack/react-query'
 import {
@@ -32,7 +32,6 @@ import { PdfDialog } from '@/features/quotations/pdf-dialog'
 import { maySeePayments, mayRecordPayments } from '@/features/orders/data'
 import { hasModule } from '@/features/purchasing/data'
 import { Receipts } from '@/features/purchasing/receipts'
-import { DocumentLineList } from '@/features/quotations/document-line-list'
 import { QuotationTotals } from '@/features/quotations/quotation-totals'
 import { totalsOf } from '@/features/quotations/totals'
 import { CustomerPaymentsPanel } from '@/features/receivables/payments-panel'
@@ -50,6 +49,8 @@ import {
 } from './data'
 import { isScratch } from './invoice-draft'
 import { InvoiceHistory } from './invoice-history'
+import { lineHasLeft } from './invoice-line-rows'
+import { InvoiceLines } from './invoice-lines'
 import { useBillsSummary } from './invoice-words'
 import { IssueDialog, MissingList } from './issue-dialog'
 
@@ -75,9 +76,7 @@ function Detail({ label, children }: { label: string; children: ReactNode }) {
 
 /** Whether a credit note can still take something back (a line with something left). */
 function creditLeft(invoice: InvoiceDto): boolean {
-  return invoice.lines.some(
-    (line) => line.kind !== 'deduction' && compareDecimal(line.left.total, '0') > 0,
-  )
+  return invoice.lines.some(lineHasLeft)
 }
 
 export function InvoiceView({
@@ -458,10 +457,8 @@ export function InvoiceView({
                 {t('documents.invoices.list.noLines')}
               </p>
             ) : (
-              <DocumentLineList
-                lines={invoice.lines}
-                currency={invoice.currency}
-                vat={vat}
+              <InvoiceLines
+                invoice={invoice}
                 typedLabel={isScratch(invoice) ? t('documents.invoices.editor.typed') : null}
               />
             )}

@@ -4,6 +4,9 @@ import { fileURLToPath } from 'node:url'
 import { Worker } from 'node:worker_threads'
 import 'server-only'
 
+// Keeps the file tracer's references in the bundle: a function nothing calls (D-353).
+export { deployTrace } from './deploy-trace'
+
 // The PDF engine (M3 Step 7; D-224, D-295): Typst in a worker thread of the API's function, never on
 // its main thread, one job at a time (the others wait their turn). A job is a render, or a probe (one
 // image decoded to see that it can be, at upload). The worker is replaced after `maxRenders` jobs (50
@@ -70,7 +73,7 @@ export class CompileError extends Error {
  * The folder of the PDF service (worker.mjs, templates/, fonts/). Next bundles this module, so its
  * own URL may not point at the source: the folder is looked for there first, then from the working
  * directory (apps/web, packages/api, or the repository) through the workspace's packages, and
- * BIZCOST_PDF_DIR (the hosted deploy, ARCHITECTURE.md §API "PDFs") comes before both.
+ * BIZCOST_PDF_DIR (a fallback for the hosted deploy, beta-launch.md part 2) comes before both.
  */
 export function pdfServiceDir(): string {
   const candidates: string[] = []

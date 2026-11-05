@@ -33,7 +33,13 @@ import { Progress } from './step-parts'
 // screen with skip logic, then the review. Everything is kept in sessionStorage (draft.ts), so a
 // reload or a language switch loses nothing.
 
-export function SetupWizard({ userId }: { userId: string }) {
+export function SetupWizard({
+  userId,
+  heldModules,
+}: {
+  userId: string
+  heldModules: readonly string[]
+}) {
   const { t } = useTranslation()
   // Read after mount, so the server and the browser render the same first.
   const [draft, setDraft] = useState<SetupDraft>()
@@ -97,6 +103,7 @@ export function SetupWizard({ userId }: { userId: string }) {
     content = (
       <ReviewStep
         draft={draft}
+        heldModules={heldModules}
         headingRef={heading}
         onAdjustments={(adjustments: SetupAdjustments) => update({ adjustments })}
         onChangeAnswers={() => go(normalizeAnswers(draft.answers).shown[0] ?? 'name')}

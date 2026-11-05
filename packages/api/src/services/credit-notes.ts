@@ -570,6 +570,14 @@ async function lockInvoiceRow(tx: Tx, ctx: BusinessCtx, id: string): Promise<Inv
   return invoiceHeadOf(tx, ctx, id)
 }
 
+/** What a rate's issued credit notes took back: lines priced before VAT, and lines priced with it. */
+interface CreditedAtRate {
+  readonly net: string
+  readonly netVat: string
+  readonly gross: string
+  readonly grossVat: string
+}
+
 /** A credit note's line worked out (positive amounts), and what it takes back of its invoice line. */
 interface PlannedLine {
   readonly line: InvoiceLineRecord
@@ -595,7 +603,7 @@ function planLines(
   invoice: InvoiceRecord,
   lines: readonly InvoiceLineRecord[],
   input: Pick<Fields, 'by' | 'lines'>,
-  creditedBefore: ReadonlyMap<string, { net: string; gross: string; vat: string }>,
+  creditedBefore: ReadonlyMap<string, CreditedAtRate>,
 ): PlannedLine[] {
   if (!isCurrencyCode(invoice.currency)) throw invalid('currency: not supported')
   const currency = invoice.currency
@@ -689,17 +697,18 @@ function planLines(
 }
 
 /**
- * Each rate's VAT of a credit note worked out once on the running total of its invoice's credit notes
- * (creditRateVat: PINT-AE S-09 on every note, the notes adding up to the invoice's VAT), then shared
- * over its lines at that rate: a line keeps what it takes back as typed (its net, or its total when
- * its price includes VAT), so its VAT and its other amount move together.
+ * Each rate's VAT of a credit note worked out once on the running total of its invoice's credit notes,
+ * its lines priced before VAT and those priced with VAT each on their own (creditRateVat, D-365: PINT-AE
+ * S-09 on every note, the notes adding up to what each kind was charged), then shared over its lines
+ * at that rate: a line keeps what it takes back as typed (its net, or its total when its price includes
+ * VAT), so its VAT and its other amount move together.
  */
 function withRateVat(
   invoice: InvoiceRecord,
   lines: readonly InvoiceLineRecord[],
   planned: readonly { line: InvoiceLineRecord; left: { typed: string } }[],
   out: PlannedLine[],
-  creditedBefore: ReadonlyMap<string, { net: string; gross: string; vat: string }>,
+  creditedBefore: ReadonlyMap<string, CreditedAtRate>,
   currency: Parameters<typeof creditRateVat>[2],
 ): PlannedLine[] {
   const typedOf = (p: PlannedLine) => (p.line.price_includes_vat ? p.total : p.net)
@@ -714,26 +723,36 @@ function withRateVat(
     const invoiceRate = invoice.vat_rates.find(
       (r) => rateKey({ vatCategory: r.vatCategory, vatRate: r.vatRate }) === key,
     )
-    // All that is left of the invoice's lines at this rate is taken back by this note.
-    const takesAllLeft = lines
-      .filter((l) => l.kind !== 'deduction' && keyOf(l) === key)
-      .every((l) => {
-        const k = planned.findIndex((p) => p.line.id === l.id)
-        const left =
-          k >= 0
-            ? planned[k]!.left.typed
-            : l.price_includes_vat
-              ? subtractDecimals(l.total, l.credited_total)
-              : subtractDecimals(l.net, l.credited_net)
-        const taken = k >= 0 ? typedOf(out[k]!) : '0'
-        return compareDecimal(subtractDecimals(left, taken), '0') <= 0
-      })
+    const before = creditedBefore.get(key)
+    const kindAt = (withVat: boolean) => {
+      const own = lines.filter(
+        (l) => l.kind !== 'deduction' && keyOf(l) === key && l.price_includes_vat === withVat,
+      )
+      return {
+        charged: sumDecimals(own.map((l) => l.vat)),
+        before: withVat
+          ? { typed: before?.gross ?? '0', vat: before?.grossVat ?? '0' }
+          : { typed: before?.net ?? '0', vat: before?.netVat ?? '0' },
+        // All that is left of the invoice's lines of this kind at this rate is taken back by this note.
+        takesAllLeft: own.every((l) => {
+          const k = planned.findIndex((p) => p.line.id === l.id)
+          const left =
+            k >= 0
+              ? planned[k]!.left.typed
+              : l.price_includes_vat
+                ? subtractDecimals(l.total, l.credited_total)
+                : subtractDecimals(l.net, l.credited_net)
+          const taken = k >= 0 ? typedOf(out[k]!) : '0'
+          return compareDecimal(subtractDecimals(left, taken), '0') <= 0
+        }),
+      }
+    }
     const shares = creditRateVat(
       {
         vatRate: first.vat_rate,
         invoiceVat: invoiceRate?.vat ?? '0',
-        before: creditedBefore.get(key) ?? { net: '0', gross: '0', vat: '0' },
-        takesAllLeft,
+        beforeVat: kindAt(false),
+        withVat: kindAt(true),
       },
       at.map((i) => ({
         priceIncludesVat: out[i]!.line.price_includes_vat,
@@ -772,8 +791,9 @@ async function prepare(tx: Tx, ctx: BusinessCtx, invoice: InvoiceRecord, input: 
   const before = (await tx.execute(sql`
     select cl.vat_category, trim_scale(cl.vat_rate)::text as vat_rate,
            trim_scale(coalesce(sum(cl.net) filter (where not cl.price_includes_vat), 0))::text as net,
+           trim_scale(coalesce(sum(cl.vat) filter (where not cl.price_includes_vat), 0))::text as net_vat,
            trim_scale(coalesce(sum(cl.total) filter (where cl.price_includes_vat), 0))::text as gross,
-           trim_scale(coalesce(sum(cl.vat), 0))::text as vat
+           trim_scale(coalesce(sum(cl.vat) filter (where cl.price_includes_vat), 0))::text as gross_vat
       from app.credit_note_lines cl
       join app.credit_notes c on c.business_id = cl.business_id and c.id = cl.credit_note_id
      where cl.business_id = ${ctx.businessId} and c.invoice_id = ${invoice.id}
@@ -783,13 +803,14 @@ async function prepare(tx: Tx, ctx: BusinessCtx, invoice: InvoiceRecord, input: 
     vat_category: VatCategory | null
     vat_rate: string | null
     net: string
+    net_vat: string
     gross: string
-    vat: string
+    gross_vat: string
   }[]
   const creditedBefore = new Map(
     before.map((r) => [
       rateKey({ vatCategory: r.vat_category, vatRate: r.vat_rate }),
-      { net: r.net, gross: r.gross, vat: r.vat },
+      { net: r.net, netVat: r.net_vat, gross: r.gross, grossVat: r.gross_vat },
     ]),
   )
   const planned = planLines(invoice, lines, input, creditedBefore)

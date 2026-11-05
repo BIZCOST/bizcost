@@ -2,6 +2,7 @@ import type { AuthClient } from '@bizcost/app-core'
 import { secureSessionCookies } from '@bizcost/contracts'
 import { createBrowserClient } from '@supabase/ssr'
 import type { SupabaseClient } from '@supabase/supabase-js'
+import { captchaTokens, withCaptcha } from './captcha'
 
 // supabase-js in the browser, for Auth only (sign-in, codes, token refresh); all data goes through
 // tRPC (docs/ARCHITECTURE.md §Overview). @supabase/ssr keeps the session in cookies, so the server
@@ -34,17 +35,20 @@ const auth = () => supabaseBrowser().auth
  * The auth client the app-core flows take. Flows are created while a page renders (also on the
  * server), so the browser client is only created when a flow actually calls Supabase.
  */
-const lazyAuthClient: AuthClient = {
-  signUp: (credentials) => auth().signUp(credentials),
-  signInWithPassword: (credentials) => auth().signInWithPassword(credentials),
-  signInWithOtp: (credentials) => auth().signInWithOtp(credentials),
-  verifyOtp: (params) => auth().verifyOtp(params),
-  resend: (credentials) => auth().resend(credentials),
-  resetPasswordForEmail: (email, options) => auth().resetPasswordForEmail(email, options),
-  updateUser: (attributes, options) => auth().updateUser(attributes, options),
-  signOut: (options) => auth().signOut(options),
-  getSession: () => auth().getSession(),
-}
+const lazyAuthClient: AuthClient = withCaptcha(
+  {
+    signUp: (credentials) => auth().signUp(credentials),
+    signInWithPassword: (credentials) => auth().signInWithPassword(credentials),
+    signInWithOtp: (credentials) => auth().signInWithOtp(credentials),
+    verifyOtp: (params) => auth().verifyOtp(params),
+    resend: (credentials) => auth().resend(credentials),
+    resetPasswordForEmail: (email, options) => auth().resetPasswordForEmail(email, options),
+    updateUser: (attributes, options) => auth().updateUser(attributes, options),
+    signOut: (options) => auth().signOut(options),
+    getSession: () => auth().getSession(),
+  },
+  captchaTokens,
+)
 
 export function authClient(): AuthClient {
   return lazyAuthClient

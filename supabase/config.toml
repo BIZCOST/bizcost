@@ -218,11 +218,15 @@ token_verifications = 30
 # Number of Web3 logins that can be made in a 5 minute interval per IP address.
 web3 = 30
 
-# Configure one of the supported captcha providers: `hcaptcha`, `turnstile`.
-# [auth.captcha]
-# enabled = true
-# provider = "hcaptcha"
-# secret = ""
+# BizCost (D-062, D-352, D-361): Cloudflare Turnstile on sign-up, code requests, password sign-in and
+# resets. Off on the local stack. A hosted project gets it only from db-migrate, which turns it on in its
+# own checkout (packages/config/ci/hosted-config.mjs) and fills SUPABASE_AUTH_CAPTCHA_SECRET from its
+# GitHub Environment; the web build needs NEXT_PUBLIC_TURNSTILE_SITE_KEY first
+# (apps/web/src/lib/supabase/captcha.ts). Never `config push` this file by hand.
+[auth.captcha]
+enabled = false
+provider = "turnstile"
+secret = "env(SUPABASE_AUTH_CAPTCHA_SECRET)"
 
 [auth.email]
 # Allow/disallow new user signups via email to your project.
@@ -241,15 +245,19 @@ otp_length = 6
 # Number of seconds before the email OTP expires (defaults to 1 hour).
 otp_expiry = 600
 
-# Use a production-ready SMTP server
-# [auth.email.smtp]
-# enabled = true
-# host = "smtp.sendgrid.net"
-# port = 587
-# user = "apikey"
-# pass = "env(SENDGRID_API_KEY)"
-# admin_email = "admin@email.com"
-# sender_name = "Admin"
+# BizCost (D-040, D-106, D-352, D-361): the codes go through Resend on hosted projects, from their own
+# subdomain. Off on the local stack, whose Auth server sends to Mailpit. db-migrate turns it on in its own
+# checkout and fills SUPABASE_AUTH_EMAIL_SMTP_PASS (the Resend key for Auth) from its GitHub Environment.
+# Pushed with enabled = false this section would turn SMTP off, so the workflow stops before any push
+# while that secret is missing.
+[auth.email.smtp]
+enabled = false
+host = "smtp.resend.com"
+port = 465
+user = "resend"
+pass = "env(SUPABASE_AUTH_EMAIL_SMTP_PASS)"
+admin_email = "no-reply@auth.mail.bizcost.ae"
+sender_name = "BizCost"
 
 # BizCost auth emails (D-040): code only ({{ .Token }}), no links. Subject and body switch
 # language on user_metadata.locale: "en" gives English, anything else (or missing) gives Arabic.
@@ -311,10 +319,14 @@ max_frequency = "5s"
 # Force log out if the user has been inactive longer than the specified duration.
 # inactivity_timeout = "8h"
 
-# This hook runs before a new user is created and allows developers to reject the request based on the incoming user object.
-# [auth.hook.before_user_created]
-# enabled = true
-# uri = "pg-functions://postgres/auth/before-user-created-hook"
+# BizCost (D-355, D-361): closed sign-up. Every way Auth creates a user passes through this function,
+# which lets in only an address on the beta list or with a pending invitation. Off on the local stack and
+# in the tests. A hosted project gets it only from db-migrate, which turns it on in its own checkout
+# unless its GitHub Environment has the variable CLOSED_SIGNUP set to false, and reads it back after the
+# push. (packages/config/ci/hosted-config.test.js pushes this file with the pinned CLI.)
+[auth.hook.before_user_created]
+enabled = false
+uri = "pg-functions://postgres/auth_hooks/before_user_created"
 
 # This hook runs before a token is issued and allows you to add additional claims based on the authentication method used.
 # [auth.hook.custom_access_token]

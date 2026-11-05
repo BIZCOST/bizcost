@@ -29,6 +29,24 @@ const building: readonly ModuleManifest[] = MODULES.map((m) =>
 )
 
 describe('moduleRegistry', () => {
+  it('holds a released module back everywhere, production too (D-359)', () => {
+    for (const env of ['production', 'development', 'test', undefined]) {
+      const registry = moduleRegistry({ heldModules: ['invoices'] }, env)
+      expect(availability(registry, 'invoices'), String(env)).toBe('planned')
+      expect(availability(registry, 'quotations'), String(env)).toBe('released')
+    }
+    expect(moduleRegistry({ heldModules: [] }, 'production')).toBe(MODULES)
+  })
+
+  it('a held module stays held whatever the preview says', () => {
+    const registry = moduleRegistry(
+      { previewModules: ['inventory'], heldModules: ['inventory'] },
+      'test',
+      building,
+    )
+    expect(availability(registry, 'inventory')).toBe('planned')
+  })
+
   it('is the released code’s registry when no preview module is named', () => {
     expect(moduleRegistry({}, 'development')).toBe(MODULES)
     expect(moduleRegistry({ previewModules: [] }, 'test')).toBe(MODULES)

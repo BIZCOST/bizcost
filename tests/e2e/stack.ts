@@ -1,4 +1,5 @@
 import { execSync } from 'node:child_process'
+import { randomUUID } from 'node:crypto'
 import { fileURLToPath } from 'node:url'
 
 // The local Supabase stack the e2e tests run against (docs/ARCHITECTURE.md §Local setup). Keys are
@@ -19,6 +20,25 @@ export const baseURL = `http://localhost:${port}`
 export const previewPort = Number(process.env.E2E_PREVIEW_PORT ?? port + 1)
 export const previewBaseURL = `http://localhost:${previewPort}`
 export const PREVIEW_MODULES = 'inventory'
+
+/**
+ * The same production build on a second port, with a module held back as hosted deployments hold it
+ * (BIZCOST_HELD_MODULES, D-359), on E2E_HELD_PORT (default E2E_PORT + 2). beta.spec.ts runs on it.
+ */
+export const heldPort = Number(process.env.E2E_HELD_PORT ?? port + 2)
+export const heldBaseURL = `http://localhost:${heldPort}`
+export const HELD_MODULES = 'invoices'
+
+/**
+ * The owner's beta page and where feedback goes (D-356, D-357): one address per run, so a run never
+ * meets what an earlier one left. The workers inherit them from the runner that starts the servers.
+ */
+const run = (process.env.E2E_RUN_ID ??= randomUUID()
+  .replace(/-/g, '')
+  .slice(0, 10)
+  .replace(/[0-9]/g, (digit) => String.fromCharCode(103 + Number(digit))))
+export const E2E_PLATFORM_ADMIN = `e2e-platform-${run}@test.bizcost.local`
+export const E2E_FEEDBACK_TO = `e2e-feedback-${run}@test.bizcost.local`
 
 export interface Stack {
   apiUrl: string

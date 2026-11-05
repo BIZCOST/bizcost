@@ -1,6 +1,6 @@
 import { withAnonymousTx, withTenantTx, type Tx } from '@bizcost/db'
 import { newId } from '@bizcost/domain'
-import { MODULES, withPreviewModules, type ModuleManifest } from '@bizcost/modules'
+import { MODULES, withHeldModules, withPreviewModules, type ModuleManifest } from '@bizcost/modules'
 import type { AnyRouter } from '@trpc/server'
 import { authModeOf, resolveAuth, type AuthMode, type AuthUser } from './auth'
 import type { ApiConfig, ApiDeps } from './deps'
@@ -25,9 +25,10 @@ export interface Context {
   readonly router: AnyRouter
   readonly config: ApiConfig
   /**
-   * The module registry this server runs with: the manifests as released code has them, or, in
-   * development and test only, with the preview modules counted as released (moduleRegistry, D-125).
-   * The module gates and the nav read it; nothing else does.
+   * The module registry this server runs with: the manifests as released code has them, in development
+   * and test only with the preview modules counted as released (D-125), and on any deployment without
+   * the modules it holds back (D-359; moduleRegistry). The module gates and the nav read it; nothing
+   * else does.
    */
   readonly modules: readonly ModuleManifest[]
   readonly authMode: AuthMode
@@ -59,17 +60,21 @@ const PREVIEW_ENVIRONMENTS: ReadonlySet<string> = new Set(['development', 'test'
  * preview Stock (`inventory`, M4 Step 2, until M4's Release A); between Release B (M3 Step 9) and
  * then it previewed nothing, as after the Costing Core's release (M2 Step 7) and Release A (M3 Step
  * 6). The tests may start a build in a registry of their own (`manifests`).
+ *
+ * The modules a deployment holds back (config.heldModules, D-350) then stop counting as released, in
+ * production too and whatever the preview says: the point of the list is hosted deployments.
  */
 export function moduleRegistry(
-  config: Pick<ApiConfig, 'previewModules'>,
+  config: Pick<ApiConfig, 'previewModules' | 'heldModules'>,
   nodeEnv: string | undefined,
   manifests: readonly ModuleManifest[] = MODULES,
 ): readonly ModuleManifest[] {
   const preview = config.previewModules ?? []
-  if (preview.length === 0 || nodeEnv === undefined || !PREVIEW_ENVIRONMENTS.has(nodeEnv)) {
-    return manifests
-  }
-  return withPreviewModules(preview, manifests)
+  const previewed =
+    preview.length === 0 || nodeEnv === undefined || !PREVIEW_ENVIRONMENTS.has(nodeEnv)
+      ? manifests
+      : withPreviewModules(preview, manifests)
+  return withHeldModules(config.heldModules ?? [], previewed)
 }
 
 export interface CreateContextOptions {

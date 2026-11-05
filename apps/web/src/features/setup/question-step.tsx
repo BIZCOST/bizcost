@@ -69,7 +69,7 @@ export function NameStep({
           aria-invalid={Boolean(error)}
           placeholder={t('setup.name.placeholder')}
           autoComplete="organization"
-          dir="auto"
+          dir={name ? 'auto' : undefined}
           className="mt-6 h-12 text-base sm:max-w-md md:text-base lg:pointer-fine:h-11"
         />
         {error ? <StepError id={errorId}>{t(error)}</StepError> : null}

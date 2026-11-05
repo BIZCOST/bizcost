@@ -56,7 +56,7 @@ describe("the fit-out company's tax invoice (definition of done)", () => {
     expect(invoice.pdfStored).toBe(true)
   })
 
-  it('its PDF holds the 12 particulars of VAT ER Art. 59(1)', async () => {
+  it("its PDF holds particulars (a)–(k) of VAT ER Art. 59(1) ((l), the reverse charge's statement, is not supported)", async () => {
     const pdf = await scope.invoicePdf(invoice.id)
     const text = await pdfFullText(decode(pdf.base64))
     // (a) "Tax Invoice" clearly displayed, in both languages.
@@ -81,6 +81,10 @@ describe("the fit-out company's tax invoice (definition of done)", () => {
     expect(text).toContain('5,400.00')
     expect(text).toContain('5%')
     expect(text).toContain('325.00')
+    // D-360's columns: the rate once in the VAT heading, 0.00 where there is no discount.
+    expect(text).toContain('VAT 5%')
+    expect(text).toContain('Before VAT')
+    expect(text).toContain('0.00')
     // (j) the gross amount and (k) the VAT in AED.
     expect(text).toContain('14,411.25')
     expect(text).toContain('686.25')

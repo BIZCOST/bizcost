@@ -1,3 +1,4 @@
+import { timeBudget } from '@bizcost/config/vitest/budget'
 import type { MaterialDto, PurchaseDto, SaleDto } from '@bizcost/contracts'
 import { SALE_LINES_MAX } from '@bizcost/contracts'
 import { newId } from '@bizcost/domain'
@@ -14,7 +15,7 @@ import { bought, CAFE, item, SalesApi, SaleScope, shift } from './sales'
 // 15 s statement timeout (security/m3-step2-costing-adversary posts the same purchase and checks a
 // line's cost; it timed out under a loaded full run before D-328). Only purchase.post is timed.
 
-const FILL_BUDGET_MS = 4000
+const FILL_BUDGET_MS = timeBudget(4000)
 const MATERIALS = 24
 const SALES = 3
 

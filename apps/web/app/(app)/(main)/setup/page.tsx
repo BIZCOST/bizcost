@@ -3,6 +3,7 @@ import { SetupView } from '@/features/setup/setup-view'
 import { Messages } from '@/lib/i18n/messages'
 import { SETUP_MESSAGES } from '@/lib/i18n/route-messages'
 import { getT } from '@/lib/i18n/server'
+import { heldModules } from '@/lib/trpc/server'
 
 export async function generateMetadata(): Promise<Metadata> {
   return { title: (await getT())('setup.title') }
@@ -17,7 +18,7 @@ export default async function SetupPage({
   const { done } = await searchParams
   return (
     <Messages specs={SETUP_MESSAGES}>
-      <SetupView done={typeof done === 'string' ? done : null} />
+      <SetupView done={typeof done === 'string' ? done : null} heldModules={heldModules()} />
     </Messages>
   )
 }

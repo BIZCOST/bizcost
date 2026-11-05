@@ -2,16 +2,18 @@
 
 import type { DiscountDto } from '@bizcost/contracts'
 import { compareDecimal, subtractDecimals, type StandardUnit } from '@bizcost/domain'
+import type { ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useUnitQuantity } from '@/features/catalog/unit-parts'
 import { NBSP } from '@/features/catalog/units'
 import { useMoney } from '@/features/documents/amounts'
 import { cn } from '@/lib/utils'
 
-// A document's lines as they are (a quotation, M3 Step 7; an invoice, M3 Step 8): by area, as the PDF
-// groups them, each with its number, picture, title, details, red note, quantity × price, discount
-// and amount ("Before VAT", or "incl. VAT" when its price includes VAT, D-296). A final invoice's
-// deposit taken off (a deduction) shows its own words and its amount below zero.
+// A document's lines as they are (a quotation, M3 Step 7; an invoice's draft being edited, M3 Step 8; an
+// invoice's page has its PDF's columns, invoice-lines.tsx): by area, as the PDF groups them, each with
+// its number, picture, title, details, red note, quantity × price, discount and amount ("Before VAT", or
+// "incl. VAT" when its price includes VAT, D-296). A final invoice's deposit taken off (a deduction)
+// shows its own words and its amount below zero.
 
 /** What a shown line needs (QuotationLineDto and InvoiceLineDto both have it). */
 export interface ShownLine {
@@ -35,7 +37,7 @@ export interface ShownLine {
 }
 
 /** Consecutive lines of one area (or of none), as the PDF groups them. */
-function groupsOf<T extends ShownLine>(lines: readonly T[]) {
+function groupsOf<T extends { readonly area: string | null }>(lines: readonly T[]) {
   const groups: { area: string | null; lines: T[] }[] = []
   for (const line of lines) {
     const last = groups.at(-1)
@@ -145,19 +147,14 @@ function LineItem({
   )
 }
 
-/** The lines grouped by area, numbered across the areas. */
-export function DocumentLineList({
+/** Lines grouped by area, each area with its heading, numbered across the areas. */
+export function LineGroups<T extends { readonly area: string | null }>({
   lines,
-  currency,
-  vat,
-  typedLabel,
+  children,
 }: {
-  lines: readonly ShownLine[]
-  currency: string
-  /** VAT-registered: each amount says before VAT or with it. */
-  vat: boolean
-  /** "Typed on this quotation" (an invoice says its own; null: not said). */
-  typedLabel?: string | null
+  lines: readonly T[]
+  /** A line's list item, given its number. */
+  children: (line: T, number: number) => ReactNode
 }) {
   const { t } = useTranslation()
   const groups = groupsOf(lines)
@@ -200,20 +197,41 @@ export function DocumentLineList({
           <ul className="divide-y">
             {group.lines.map((line) => {
               counter += 1
-              return (
-                <LineItem
-                  key={line.id}
-                  line={line}
-                  number={counter}
-                  currency={currency}
-                  vat={vat}
-                  typedLabel={typedLabel}
-                />
-              )
+              return children(line, counter)
             })}
           </ul>
         </section>
       ))}
     </div>
+  )
+}
+
+/** The lines grouped by area, numbered across the areas. */
+export function DocumentLineList({
+  lines,
+  currency,
+  vat,
+  typedLabel,
+}: {
+  lines: readonly ShownLine[]
+  currency: string
+  /** VAT-registered: each amount says before VAT or with it. */
+  vat: boolean
+  /** "Typed on this quotation" (an invoice says its own; null: not said). */
+  typedLabel?: string | null
+}) {
+  return (
+    <LineGroups lines={lines}>
+      {(line, number) => (
+        <LineItem
+          key={line.id}
+          line={line}
+          number={number}
+          currency={currency}
+          vat={vat}
+          typedLabel={typedLabel}
+        />
+      )}
+    </LineGroups>
   )
 }

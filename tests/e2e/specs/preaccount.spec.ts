@@ -1,5 +1,6 @@
 import { expect, test, type Page } from '@playwright/test'
 import {
+  acceptTerms,
   deleteUser,
   enterCode,
   findUserId,
@@ -51,6 +52,7 @@ async function signUpOnPage(page: Page, email: string, password: string): Promis
   await page.goto('/signup')
   await page.getByLabel('Email', { exact: true }).fill(email)
   await page.getByRole('textbox', { name: 'Password', exact: true }).fill(password)
+  await acceptTerms(page)
   await page.getByRole('button', { name: 'Create account' }).click()
   await expect(page).toHaveURL('/verify')
 }
@@ -66,6 +68,9 @@ test('signing up after a stranger: the owner’s password signs in, the stranger
   await signUpOnPage(page, email, OWNER)
   await enterCode(page, await nextCode(email, SIGN_UP_CODE))
   await expect(page).toHaveURL('/')
+  // The stranger's sign-up made the account, without the box the owner ticked: Auth keeps the first
+  // sign-up's metadata, so the terms are asked once (D-358).
+  await page.getByRole('button', { name: 'I accept' }).click()
   await expect(page.getByRole('heading', { level: 1 })).toHaveText('Welcome to BizCost')
 
   expect(await passwordWorks(email, STRANGER), 'the stranger’s password signs in').toBe(false)
@@ -119,6 +124,7 @@ test('the sign-up’s own password survives the code; after a reload the page as
   await page.goto('/signup')
   await page.getByLabel('البريد الإلكتروني', { exact: true }).fill(email)
   await page.getByRole('textbox', { name: 'كلمة المرور', exact: true }).fill(OWNER)
+  await acceptTerms(page)
   await page.getByRole('button', { name: 'إنشاء الحساب' }).click()
   await expect(page).toHaveURL('/verify')
   users.push(await findUserId(email))

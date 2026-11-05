@@ -48,6 +48,7 @@ import { MoneyInput } from '@/features/documents/line-editor'
 import { cn } from '@/lib/utils'
 import { CountedQuestion } from './counted-question'
 import { creditNoteKindKey, useRefreshInvoices } from './data'
+import { lineHasLeft } from './invoice-line-rows'
 
 // A credit note of an issued invoice (M3 Step 8; VAT DL Arts 61, 62; ER Art. 60; Q26): the reason (one
 // of the law's five, Art. 61(1); a plain credit note has no tax reasons), a short explanation printed
@@ -109,8 +110,7 @@ export function CreditNoteSheet({
       invoice.lines.filter(
         (line) =>
           line.kind !== 'deduction' &&
-          (compareDecimal(line.left.total, '0') > 0 ||
-            creditNote?.lines.some((l) => l.invoiceLineId === line.id)),
+          (lineHasLeft(line) || creditNote?.lines.some((l) => l.invoiceLineId === line.id)),
       ),
     [invoice.lines, creditNote],
   )

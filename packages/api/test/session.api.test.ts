@@ -279,6 +279,7 @@ describe('me', () => {
       displayName: user.email.split('@')[0],
       locale: 'en',
       lastBusinessId: null,
+      termsAccepted: false,
     })
     const [row] = await admin<
       { n: number }[]

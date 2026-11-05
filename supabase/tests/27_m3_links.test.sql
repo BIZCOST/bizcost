@@ -510,7 +510,9 @@ create temp view m3_tables as
        'recipes', 'recipe_lines', 'purchase_payments',
        'cost_categories', 'expenses', 'expense_payments', 'running_costs',
        -- M4's tables: their links are tried in 31_stock_counts.test.sql (M4 Step 2).
-       'stock_counts', 'stock_count_lines'
+       'stock_counts', 'stock_count_lines',
+       -- The closed beta's rows are the operator's, not a business's (33_beta.test.sql).
+       'beta_list', 'feedback', 'feedback_uploads'
      ]);
 
 -- Every foreign key of an M3 table (but business_id → businesses) is tried above, and nothing else.
@@ -597,13 +599,22 @@ select is(
     'app.audit_rows()',
     'app.audit_staged_rows()',
     'app.create_business(uuid,text,text,text,uuid,uuid)',
+    'app.drop_signup_of_revoked_invitation()',
+    'app.drop_unconfirmed_signup(text)',
     'app.enforce_active_owner()',
     'app.file_upload_limits()',
     'app.guard_business_file()',
+    'app.guard_feedback()',
     'app.invitation_limits()',
     'app.is_active_member(uuid)',
     'app.my_business_ids()',
-    'app.preview_invitation(text)'
+    'app.my_verified_email()',
+    'app.platform_beta_add(text,text)',
+    'app.platform_beta_list()',
+    'app.platform_beta_remove(uuid)',
+    'app.platform_feedback(uuid,integer)',
+    'app.preview_invitation(text)',
+    'app.signup_allowed(text)'
   ],
   'the SECURITY DEFINER functions of app are exactly the known ones: M3 added only the audits per statement (D-259, D-262); its guards, limits and links run as the caller'
 );

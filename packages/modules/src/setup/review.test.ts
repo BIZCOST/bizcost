@@ -201,6 +201,25 @@ describe('buildSetupReview', () => {
     expect(textOf(withPos, 'orders')).toBe('modules.orders.desc')
   })
 
+  it('tags a module this deployment holds back "soon", as one not yet built (D-359)', () => {
+    const recommendation = recommend(WORKSHOP)
+    const state = recommendedState(recommendation)
+    const soon = (heldModules?: readonly string[]) => {
+      const review = buildSetupReview({
+        answers: WORKSHOP,
+        recommendation,
+        state,
+        ...(heldModules ? { heldModules } : {}),
+      })
+      return [...review.chosen, ...review.basics, ...review.more]
+        .filter((row) => row.soon)
+        .map((row) => (row.item.kind === 'module' ? row.item.id : row.item.key))
+    }
+    expect(soon()).not.toContain('invoices')
+    expect(soon(['invoices'])).toContain('invoices')
+    expect(soon(['invoices'])).not.toContain('quotations')
+  })
+
   it('tags each planned module "soon" once some listed modules are released (M2 Step 7), without the banner', () => {
     const { review } = reviewOf(WORKSHOP)
     expect(review.banner).toBe(false)

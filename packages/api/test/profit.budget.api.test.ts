@@ -1,3 +1,4 @@
+import { timeBudget } from '@bizcost/config/vitest/budget'
 import type { LocationDto, MaterialDto } from '@bizcost/contracts'
 import { newId } from '@bizcost/domain'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
@@ -14,7 +15,7 @@ import { bought, CAFE_BRANCHES, shift } from './sales'
 // straight into the database (as postgres, a local test) since 1,460 postings through the API would
 // take minutes; the reads go through the API as the owner.
 
-const BUDGET_MS = 1000
+const BUDGET_MS = timeBudget(1000)
 const PRODUCTS = 20
 const MATERIALS = 10
 

@@ -547,6 +547,41 @@
       "when": 1793458664441,
       "tag": "20261031145744_stock_counts_guards",
       "breakpoints": true
+    },
+    {
+      "idx": 78,
+      "version": "7",
+      "when": 1793821749414,
+      "tag": "20261104194909_beta_tables",
+      "breakpoints": true
+    },
+    {
+      "idx": 79,
+      "version": "7",
+      "when": 1793821751661,
+      "tag": "20261104194911_beta_security",
+      "breakpoints": true
+    },
+    {
+      "idx": 80,
+      "version": "7",
+      "when": 1793823663285,
+      "tag": "20261104202103_beta_review",
+      "breakpoints": true
+    },
+    {
+      "idx": 81,
+      "version": "7",
+      "when": 1793838963789,
+      "tag": "20261105003603_feedback_upload_claim",
+      "breakpoints": true
+    },
+    {
+      "idx": 82,
+      "version": "7",
+      "when": 1793838966123,
+      "tag": "20261105003606_beta_hardening",
+      "breakpoints": true
     }
   ]
 }

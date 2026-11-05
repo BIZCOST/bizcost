@@ -88,13 +88,26 @@ export interface DocumentPdfLine {
   readonly qty: string
   readonly unit: string | null
   readonly unitPrice: string
-  /** Its own discount as an amount ("150.00"); null: none. */
+  /**
+   * A quotation: its own discount as an amount ("150.00"), null when none. An invoice or a credit note
+   * (D-360): what separates quantity × price from the amount it leads to, "0.00" when nothing does.
+   */
   readonly discount: string | null
-  /** Its VAT rate ("5%", "0%", "Exempt"); null when the document shows no VAT per line. */
+  /**
+   * What its VAT cell says under its amount, when the document mixes rates ("5%", "0%", "Exempt");
+   * null otherwise: one rate is said once, in the column's heading (`table.vatHead`).
+   */
   readonly vatRate: string | null
-  /** Its amount after its own discount, as its price was typed (with VAT when `includesVat`). */
+  /**
+   * A quotation: its amount after its own discount, as its price was typed (with VAT when
+   * `includesVat`). An invoice or a credit note (D-360): its total, with its VAT.
+   */
   readonly amount: string
-  /** Its price was typed with VAT: its row says "incl. VAT" (the totals are before VAT, D-296). */
+  /** A tax document's row (D-360): before VAT, after every discount and adjustment. */
+  readonly beforeVat?: string | null
+  /** A tax document's row (D-360): the line's VAT amount (its rate's VAT split back, D-220). */
+  readonly vatAmount?: string | null
+  /** Its price was typed with VAT: its row says "incl. VAT" (D-296, D-360). */
   readonly includesVat?: boolean
 }
 
@@ -200,8 +213,15 @@ export interface DocumentPdfInput {
   readonly table: {
     readonly showPictures: boolean
     readonly showAreas: boolean
+    /** A quotation's discount column; an invoice and a credit note always have theirs (D-360). */
     readonly showDiscount: boolean
-    readonly showVat: boolean
+    /**
+     * An invoice's or a credit note's rows (D-360): `tax` is Unit price | Qty | Discount | Before VAT |
+     * VAT | Total, `plain` is Unit price | Qty | Discount | Total. Absent: a quotation's columns.
+     */
+    readonly rows?: 'tax' | 'plain'
+    /** The heading of a tax document's VAT column ("VAT 5%"; "VAT" when it mixes rates). */
+    readonly vatHead?: string
   }
   readonly lines: readonly DocumentPdfLine[]
   readonly totals: readonly DocumentPdfTotalRow[]

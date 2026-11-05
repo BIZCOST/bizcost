@@ -265,6 +265,7 @@ describe('userFromClaims', () => {
       email: 'rashed@example.com',
       emailVerified: true,
       locale: 'en',
+      termsVersion: null,
       authenticatedAt: 1_700_000_600,
     })
   })

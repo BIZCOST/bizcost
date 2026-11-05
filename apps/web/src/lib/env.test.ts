@@ -7,6 +7,101 @@ const base = {
   DATABASE_URL: 'postgresql://bizcost_api:pw@127.0.0.1:54322/postgres',
 }
 
+describe('parseServerEnv: the closed beta', () => {
+  it('holds nothing, names no admin and emails nobody by default', () => {
+    expect(parseServerEnv(base)).toMatchObject({
+      heldModules: [],
+      platformAdmins: [],
+      feedbackEmail: undefined,
+    })
+  })
+
+  it('reads the modules held back in production too (D-359), unlike the preview', () => {
+    const production = {
+      ...base,
+      NODE_ENV: 'production',
+      APP_ORIGINS: 'https://app.bizcost.ae',
+      APP_URL: 'https://app.bizcost.ae',
+      SUPABASE_SECRET_KEY: 'sb_secret_x',
+      RESEND_API_KEY: 're_x',
+      EMAIL_FROM: 'BizCost <a@b.test>',
+    }
+    expect(parseServerEnv({ ...production, BIZCOST_HELD_MODULES: 'invoices' }).heldModules).toEqual(
+      ['invoices'],
+    )
+    expect(() => parseServerEnv({ ...production, BIZCOST_HELD_MODULES: 'invoice' })).toThrow(
+      /BIZCOST_HELD_MODULES: invoice cannot be held/,
+    )
+    expect(() => parseServerEnv({ ...production, BIZCOST_HELD_MODULES: 'settings' })).toThrow(
+      /BIZCOST_HELD_MODULES/,
+    )
+    expect(() => parseServerEnv({ ...production, BIZCOST_HELD_MODULES: 'sales' })).toThrow(
+      /invoices needs sales/,
+    )
+  })
+
+  it('reads the database CA (D-362): real line ends or written ones, and only a certificate', () => {
+    const pem = ['-----BEGIN CERTIFICATE-----', 'not a real one', '-----END CERTIFICATE-----']
+    const expected = pem.join('\n')
+    expect(parseServerEnv({ ...base, DATABASE_CA_CERT: expected }).databaseCaCert).toBe(expected)
+    expect(parseServerEnv({ ...base, DATABASE_CA_CERT: pem.join('\\n') }).databaseCaCert).toBe(
+      expected,
+    )
+    expect(parseServerEnv({ ...base, DATABASE_CA_CERT: '' }).databaseCaCert).toBeUndefined()
+    expect(() => parseServerEnv({ ...base, DATABASE_CA_CERT: 'nonsense' })).toThrow(
+      /DATABASE_CA_CERT/,
+    )
+  })
+
+  it('refuses a certificate that lost its line ends, by name, instead of every connection failing later', () => {
+    const [begin, body, end] = [
+      '-----BEGIN CERTIFICATE-----',
+      'MIIDxTCCAq2gAwIBAgIQAqxcJmoLQJuPC3nyrkYldzANBgkqhkiG9w0BAQsFADBs',
+      '-----END CERTIFICATE-----',
+    ]
+    for (const lost of [
+      [begin, body, end].join(' '),
+      [begin, body, end].join(''),
+      begin,
+      [begin, body].join('\n'),
+    ]) {
+      expect(() => parseServerEnv({ ...base, DATABASE_CA_CERT: lost })).toThrow(
+        /DATABASE_CA_CERT: must be a PEM certificate that keeps its line ends/,
+      )
+    }
+    // These all connect (checked by a real handshake, D-366), and stay accepted: Windows line ends,
+    // a body on one line, line ends written \n.
+    for (const fine of [
+      [begin, body, end].join('\r\n'),
+      `${begin}\n${body}${body}\n${end}\n`,
+      [begin, body, end].join('\\n'),
+    ]) {
+      expect(parseServerEnv({ ...base, DATABASE_CA_CERT: fine }).databaseCaCert).toContain(body)
+    }
+  })
+
+  it('reads the platform admins in lower case, and refuses what is not an address', () => {
+    expect(
+      parseServerEnv({
+        ...base,
+        BIZCOST_PLATFORM_ADMINS: ' Owner@BizCost.ae , second@bizcost.ae,',
+      }).platformAdmins,
+    ).toEqual(['owner@bizcost.ae', 'second@bizcost.ae'])
+    expect(() => parseServerEnv({ ...base, BIZCOST_PLATFORM_ADMINS: 'not-an-email' })).toThrow(
+      /BIZCOST_PLATFORM_ADMINS/,
+    )
+  })
+
+  it('reads where feedback goes, and refuses what is not an address', () => {
+    expect(
+      parseServerEnv({ ...base, BIZCOST_FEEDBACK_EMAIL: 'owner@bizcost.ae' }).feedbackEmail,
+    ).toBe('owner@bizcost.ae')
+    expect(() => parseServerEnv({ ...base, BIZCOST_FEEDBACK_EMAIL: 'nope' })).toThrow(
+      /BIZCOST_FEEDBACK_EMAIL/,
+    )
+  })
+})
+
 describe('parseServerEnv', () => {
   it('fills development defaults', () => {
     expect(parseServerEnv(base)).toEqual({
@@ -20,6 +115,9 @@ describe('parseServerEnv', () => {
       appUrl: 'http://localhost:3000',
       email: undefined,
       previewModules: [],
+      heldModules: [],
+      platformAdmins: [],
+      feedbackEmail: undefined,
     })
   })
 

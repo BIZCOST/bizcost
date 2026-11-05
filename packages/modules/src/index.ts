@@ -65,6 +65,8 @@ export {
   isModuleActive,
   isModuleEnabled,
   isModuleReleased,
+  parseHeldModules,
+  withHeldModules,
   isModuleVisible,
   moduleById,
   parsePreviewModules,
@@ -75,6 +77,7 @@ export {
   visibleQuickActions,
   withPreviewModules,
   type ModuleState,
+  type ParsedHeldModules,
   type ParsedPreviewModules,
 } from './registry'
 export {
